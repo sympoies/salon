@@ -1,0 +1,11 @@
+# Keep repository contributor instructions despite global ignore rules.
+!AGENTS.md
+
+# Local validation output and Python bytecode.
+.cache/
+__pycache__/
+*.py[cod]
+
+# Local credentials and operator configuration.
+.env
+.env.*
