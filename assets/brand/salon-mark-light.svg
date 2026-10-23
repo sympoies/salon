@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="salon-light-title">
   <title id="salon-light-title">Salon conversation ribbon</title>
   <defs>
-    <linearGradient id="salon-light-ribbon" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="salon-light-ribbon" gradientUnits="userSpaceOnUse" x1="0" y1="1.9" x2="0" y2="64.1">
       <stop offset="0" stop-color="#087f78"/>
       <stop offset="0.48" stop-color="#13a995"/>
       <stop offset="0.52" stop-color="#59dcb5"/>
