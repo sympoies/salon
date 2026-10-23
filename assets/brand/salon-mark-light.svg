@@ -9,5 +9,5 @@
     </linearGradient>
   </defs>
   <path fill="url(#salon-light-ribbon)" d="M11 20c0-4 3-7 7-9L37 3c7-3 14 1 14 8v3c0 5-3 8-8 10l-17 7c-3 1-3 3 0 4l17 7c5 2 8 5 8 10v3c0 7-7 11-14 8L18 55c-4-2-7-5-7-9v-4c0-4 3-7 7-9l13-5-13-5c-4-2-7-3-7-3z"/>
-  <path fill="none" stroke="url(#salon-light-ribbon)" stroke-width="8" stroke-linecap="round" d="M25 28c-1 3-1 7 2 10"/>
+  <path fill="none" stroke="url(#salon-light-ribbon)" stroke-width="8" stroke-linecap="round" d="M30 28c-3 3-5 7-3 10"/>
 </svg>
