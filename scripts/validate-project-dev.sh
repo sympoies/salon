@@ -14,13 +14,15 @@ for tool in git python3 shellcheck devlog; do
 done
 
 python3 scripts/validation/check-scaffold.py
+python3 -m unittest discover -s scripts/validation -p '*_test.py'
 while IFS= read -r -d '' script; do
   bash -n "$script"
   shellcheck "$script"
 done < <(find scripts .agents/scripts -type f -name '*.sh' -print0)
 devlog check
-git diff HEAD --check
+python3 scripts/validation/check-whitespace.py
+bash scripts/validate-core-packages.sh
 
 mkdir -p "$(dirname "$marker")"
 printf 'project-dev validation passed\n' > "$marker"
-printf 'Project scaffold validation passed.\n'
+printf 'Project core package validation passed.\n'

@@ -1,0 +1,122 @@
+{
+  "name": "@agent-console/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "agent-console UI: a terminal-first React 19 + @xterm/xterm client over the edge backend's WebSocket/HTTP API.",
+  "type": "module",
+  "exports": {
+    "./app": {
+      "source": "./src/mountApp.tsx",
+      "types": "./dist-package/src/mountApp.d.ts",
+      "default": "./dist-package/src/mountApp.js"
+    },
+    "./extensions": {
+      "source": "./src/extensions.tsx",
+      "types": "./dist-package/src/extensions.d.ts",
+      "default": "./dist-package/src/extensions.js"
+    },
+    "./vite": {
+      "source": "./vite.shared.ts",
+      "types": "./dist-package/vite.shared.d.ts",
+      "default": "./dist-package/vite.shared.js"
+    },
+    "./icon-button": {
+      "source": "./src/IconButton.tsx",
+      "types": "./dist-package/src/IconButton.d.ts",
+      "default": "./dist-package/src/IconButton.js"
+    },
+    "./storage": {
+      "source": "./src/storage.ts",
+      "types": "./dist-package/src/storage.d.ts",
+      "default": "./dist-package/src/storage.js"
+    },
+    "./types": {
+      "source": "./src/types.ts",
+      "types": "./dist-package/src/types.d.ts",
+      "default": "./dist-package/src/types.js"
+    },
+    "./api": {
+      "source": "./src/api.ts",
+      "types": "./dist-package/src/api.d.ts",
+      "default": "./dist-package/src/api.js"
+    },
+    "./session-filters": {
+      "source": "./src/sessionFilters.ts",
+      "types": "./dist-package/src/sessionFilters.d.ts",
+      "default": "./dist-package/src/sessionFilters.js"
+    },
+    "./reachable": {
+      "source": "./src/reachable.ts",
+      "types": "./dist-package/src/reachable.d.ts",
+      "default": "./dist-package/src/reachable.js"
+    },
+    "./async-poll": {
+      "source": "./src/useAsyncPoll.ts",
+      "types": "./dist-package/src/useAsyncPoll.d.ts",
+      "default": "./dist-package/src/useAsyncPoll.js"
+    },
+    "./async-button": {
+      "source": "./src/AsyncButton.tsx",
+      "types": "./dist-package/src/AsyncButton.d.ts",
+      "default": "./dist-package/src/AsyncButton.js"
+    },
+    "./coordinator-tree": {
+      "source": "./src/coordinatorTree.ts",
+      "types": "./dist-package/src/coordinatorTree.d.ts",
+      "default": "./dist-package/src/coordinatorTree.js"
+    },
+    "./account-defaults": {
+      "source": "./src/accountDefaults.tsx",
+      "types": "./dist-package/src/accountDefaults.d.ts",
+      "default": "./dist-package/src/accountDefaults.js"
+    },
+    "./live-conversation-panel": {
+      "source": "./src/LiveConversationPanel.tsx",
+      "types": "./dist-package/src/LiveConversationPanel.d.ts",
+      "default": "./dist-package/src/LiveConversationPanel.js"
+    },
+    "./session-conversation-pane": {
+      "source": "./src/SessionConversationPane.tsx",
+      "types": "./dist-package/src/SessionConversationPane.d.ts",
+      "default": "./dist-package/src/SessionConversationPane.js"
+    }
+  },
+  "scripts": {
+    "dev": "pnpm --filter @agent-console/shared run build:package && vite",
+    "build": "pnpm run build:package && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "NODE_OPTIONS=--conditions=source node --test test/domAssertSafety.test.ts && NODE_OPTIONS=--conditions=source node --test --test-reporter=tap --test-concurrency=3 test/*.test.ts",
+    "preview": "vite preview",
+    "build:package": "node ../../scripts/build-core-package.mjs ui"
+  },
+  "dependencies": {
+    "@agent-console/shared": "workspace:*",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-http": "^2.5.9",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "markdown-to-jsx": "9.10.3",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^20.10.6",
+    "typescript": "^7.0.0",
+    "vite": "^8.1.4",
+    "@types/node": "^24.13.2"
+  },
+  "files": [
+    "dist-package"
+  ],
+  "peerDependencies": {
+    "vite": "^8.1.4"
+  },
+  "license": "MIT"
+}

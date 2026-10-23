@@ -2,4 +2,4 @@
 context = "project-dev"
 commands = ["bash scripts/validate-project-dev.sh"]
 marker = ".cache/agent-validation/project-dev.ok"
-description = "Markdown links, validation contract, shell syntax and lint, development log structure, and whitespace."
+description = "Documentation, shell lint, devlog, committed/working whitespace, frozen install, core typecheck/tests/builds, boundary/privacy, and isolated packed-package consumption."

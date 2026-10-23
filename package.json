@@ -1,0 +1,21 @@
+{
+  "name": "salon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Core packages for a self-hosted coding-agent workspace.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "engines": { "node": ">=24 <25", "pnpm": ">=11" },
+  "scripts": {
+    "typecheck": "pnpm -r run typecheck",
+    "build:packages": "pnpm -r run build:package",
+    "build": "pnpm run build:packages",
+    "test": "pnpm run build:packages && pnpm -r --workspace-concurrency=1 run test",
+    "check:core": "node --test scripts/test/*.test.mjs && node scripts/check-core-boundary.mjs && node scripts/privacy-scan.mjs",
+    "pack:core": "pnpm run build:packages && node scripts/pack-core.mjs",
+    "test:package-consumption": "pnpm run build:packages && node --test scripts/package-consumption.test.mjs",
+    "validate:core": "bash scripts/validate-core-packages.sh"
+  },
+  "devDependencies": { "oxc-parser": "0.137.0" }
+}

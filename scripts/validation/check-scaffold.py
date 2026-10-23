@@ -40,7 +40,7 @@ if len(project) != 1:
 else:
     entry = project[0]
     if entry.get("commands") != ["bash scripts/validate-project-dev.sh"]:
-        errors.append("VALIDATION.toml: project-dev must run the scaffold gate")
+        errors.append("VALIDATION.toml: project-dev must run the declared project gate")
     if entry.get("marker") != ".cache/agent-validation/project-dev.ok":
         errors.append("VALIDATION.toml: unexpected project-dev marker")
 

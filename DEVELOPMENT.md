@@ -1,15 +1,23 @@
 # Development
 
-Salon currently has a documentation and validation scaffold. Application code,
-provider integration, packaging and container startup will arrive in later
-changes. The first developer milestone covers one provider before the full
-two-provider MVP described in [README.md](README.md).
+Salon has three reusable core libraries and local package validation. The
+complete application, container and provider milestone remains pending. The
+first application milestone covers one provider before the full two-provider
+MVP described in [README.md](README.md).
 
 ## Prerequisites
 
 Use Git, Bash, Python 3.11 or newer, ShellCheck and the `devlog` CLI from
-[nils-cli](https://github.com/sympoies/nils-cli). No application dependency
-installation or build is available at this stage.
+[nils-cli](https://github.com/sympoies/nils-cli). Select Node 24 from
+`.node-version` and pnpm 11.9.0 from `packageManager`. The UI regression suite
+uses isolated headless Chrome fixtures; install `google-chrome` or set the
+existing `CHROME_BIN` override. Browser fixture temporary files use `/tmp`.
+
+Install with `pnpm install --frozen-lockfile`. `pnpm build:packages` compiles
+the three libraries; `pnpm pack:core` creates local tarballs with provenance
+and digests. [Package consumption](docs/package-consumption.md) describes the
+outside-workspace consumer. No application/container or publication command is
+part of this producer milestone.
 
 ## Before editing
 
@@ -38,8 +46,12 @@ On Linux, run validation within the standard memory-limited scope:
 systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 bash .agents/scripts/pre-pr.sh
 ```
 
-The gate checks Markdown file links, the validation contract, shell syntax and
-ShellCheck findings, development log structure, and Git whitespace errors.
+With Node 24 and pnpm on PATH, the gate checks Markdown links, its validation
+contract, shell lint, devlog structure and Git whitespace across both the
+committed change and working tree. It runs frozen install, core compilation,
+typechecking, package tests, boundary/privacy checks and isolated packed-package
+consumption. The browser checks are headless fixtures; native/device and real
+provider acceptance remain separate.
 It removes any stale success marker before checking and writes
 `.cache/agent-validation/project-dev.ok` only after every check passes.
 [VALIDATION.toml](VALIDATION.toml) declares the finish-line command and marker;
@@ -58,6 +70,6 @@ behavior exists; do not create no-op or implementation-mirroring tests.
 
 Use a focused branch and a reviewed pull request with a semantic commit message.
 Include `Test changes`, exact validation commands and remaining limitations in
-the PR description. A scaffold pass does not establish application or provider
+the PR description. A package gate pass does not establish application or provider
 acceptance. Release publication, deployment and repository visibility changes
 require a separate maintainer decision.
