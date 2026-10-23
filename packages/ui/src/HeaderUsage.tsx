@@ -16,7 +16,7 @@ import {
   shortWindowLabel,
   usageMeterLevel,
   windowTitle,
-} from "./headerUsage.ts";
+} from "./headerUsageModel.ts";
 import { CalendarIcon, ClockIcon } from "./icons.tsx";
 import { useSharedClock } from "./useSharedClock.ts";
 import { useAccountDefaults } from "./accountDefaults.tsx";

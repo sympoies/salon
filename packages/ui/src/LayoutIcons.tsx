@@ -1,5 +1,5 @@
 import type { LayoutMode } from "./layout.ts";
-import { layoutIconCells } from "./layoutIcons.ts";
+import { layoutIconCells } from "./layoutIconGeometry.ts";
 
 export function LayoutModeIcon({ mode }: { readonly mode: LayoutMode }) {
   return (

@@ -117,7 +117,7 @@ test("UI SSR harness shares one server initialization across concurrent module l
   });
 
   const firstLoad = ssr.loadModule<{ serverId: number }>("./src/api.ts");
-  const secondLoad = ssr.loadModule<{ serverId: number }>("./src/headerUsage.ts");
+  const secondLoad = ssr.loadModule<{ serverId: number }>("./src/headerUsageModel.ts");
   releaseServer();
   const modules = await Promise.all([firstLoad, secondLoad]);
 

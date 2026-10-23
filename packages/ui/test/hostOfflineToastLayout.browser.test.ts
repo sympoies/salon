@@ -31,7 +31,7 @@ test("the phone host-offline toast lives in the trigger row's free space, or bec
   try {
     const { SessionListNavigator } = await harness.loadModule<typeof import("../src/SessionListNavigator.tsx")>("/src/SessionListNavigator.tsx");
     const { StatusNotice } = await harness.loadModule<typeof import("../src/StatusNotice.tsx")>("/src/StatusNotice.tsx");
-    const { hostOfflineNotice } = await harness.loadModule<typeof import("../src/statusNotice.ts")>("/src/statusNotice.ts");
+    const { hostOfflineNotice } = await harness.loadModule<typeof import("../src/statusNoticeModel.ts")>("/src/statusNoticeModel.ts");
     const { createElement } = await import("react");
     const { IconButton } = await harness.loadModule<typeof import("../src/IconButton.tsx")>("/src/IconButton.tsx");
     const { PlusIcon } = await harness.loadModule<typeof import("../src/icons.tsx")>("/src/icons.tsx");

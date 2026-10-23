@@ -10,7 +10,7 @@ import {
   statusNoticeAutoDismissDelay,
   unreachableStatusNotice,
   type StatusNotice,
-} from "./statusNotice.ts";
+} from "./statusNoticeModel.ts";
 
 export interface StatusNoticeOptions {
   /** Clock for the repeat window; defaults to Date.now. */

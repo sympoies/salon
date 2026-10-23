@@ -9,7 +9,7 @@ import { createUiSsrHarness, renderComponent } from "./support/ssr.ts";
 import { makeCssRuleLookup, uiStyles } from "./support/source.ts";
 import type { TimeoutScheduler } from "../src/scheduler.ts";
 import { useStatusNotice } from "../src/useStatusNotice.ts";
-import * as statusNotice from "../src/statusNotice.ts";
+import * as statusNotice from "../src/statusNoticeModel.ts";
 import { CLEAR_SESSION_FILTERS } from "../src/sessionFilters.ts";
 
 type FakeTimer = { readonly delayMs: number; readonly callback: () => void; cleared: boolean };

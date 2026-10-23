@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { layoutIconCells } from "../src/layoutIcons.ts";
+import { layoutIconCells } from "../src/layoutIconGeometry.ts";
 
 test("layoutIconCells draws one cell per pane for each mode", () => {
   assert.equal(layoutIconCells(1).length, 1);

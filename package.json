@@ -12,7 +12,7 @@
     "build:packages": "pnpm -r run build:package",
     "build": "pnpm run build:packages",
     "test": "pnpm run build:packages && pnpm -r --workspace-concurrency=1 run test",
-    "check:core": "node --test scripts/test/*.test.mjs && node scripts/check-core-boundary.mjs && node scripts/privacy-scan.mjs",
+    "check:core": "node --test scripts/test/*.test.mjs && node scripts/check-case-collisions.mjs && node scripts/check-core-boundary.mjs && node scripts/privacy-scan.mjs",
     "pack:core": "pnpm run build:packages && node scripts/pack-core.mjs",
     "test:package-consumption": "pnpm run build:packages && node --test scripts/package-consumption.test.mjs",
     "validate:core": "bash scripts/validate-core-packages.sh"

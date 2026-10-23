@@ -16,7 +16,7 @@ import {
   usageMeterLevel,
   shortWindowLabel,
   windowTitle,
-} from "../src/headerUsage.ts";
+} from "../src/headerUsageModel.ts";
 import type { ProviderUsage, UsageWindow } from "../src/api.ts";
 import { createUiSsrHarness, renderComponent } from "./support/ssr.ts";
 import { uiSource, uiStyles } from "./support/source.ts";

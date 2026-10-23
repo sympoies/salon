@@ -1,6 +1,6 @@
 import { CloseIcon } from "./icons.tsx";
 import { IconButton } from "./IconButton.tsx";
-import type { StatusNotice as StatusNoticeState } from "./statusNotice.ts";
+import type { StatusNotice as StatusNoticeState } from "./statusNoticeModel.ts";
 
 export function StatusNotice({ notice, onDismiss, surface = "dashboard", inline = false }: {
   readonly notice: StatusNoticeState;

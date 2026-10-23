@@ -1,16 +1,31 @@
 {
-  "upstreamCommit": "89a213ee4096d80ccb702618cbc935a584329218",
-  "equivalentMergeCommit": "2d00a8df5d89803f65934438113784529ec76169",
-  "excludedFiles": {
-    "packages/edge/test/buildMacosLocal.test.ts": "Distribution macOS packaging test",
-    "packages/edge/test/distributionWiring.test.ts": "Distribution platform/workflow wiring test",
-    "packages/edge/test/uiEvidence.test.ts": "Distribution evidence-tool integration test"
+  "upstreamCommit": "540ca97a492a008d63dc4410eaa4502ce7536117",
+  "equivalentReviewedCommit": "2abcd0716923f87ed59867f7be2db73cc43be260",
+  "initialImport": {
+    "upstreamCommit": "89a213ee4096d80ccb702618cbc935a584329218",
+    "equivalentMergeCommit": "2d00a8df5d89803f65934438113784529ec76169",
+    "excludedFiles": {
+      "packages/edge/test/buildMacosLocal.test.ts": "Distribution macOS packaging test",
+      "packages/edge/test/distributionWiring.test.ts": "Distribution platform/workflow wiring test",
+      "packages/edge/test/uiEvidence.test.ts": "Distribution evidence-tool integration test"
+    },
+    "excludedTestCases": {
+      "packages/ui/test/macTitleBar.test.ts": {
+        "reason": "Downstream desktop packaging files are not part of the core producer; original downstream coverage is retained there.",
+        "cases": [
+          "macOS overlays the themed title while keeping native decorations and window identity",
+          "the desktop capability admits native title-bar drag without replacing traffic lights"
+        ]
+      }
+    },
+    "distributionCoverageTransferCommit": "46bab91a207f5849c1b778ea3c10d2dc03a4a9c4",
+    "distributionCoverage": "The three original distribution test files and two native configuration cases were transferred to the downstream overlay test owner, retaining all 50 distribution cases. They are absent from the current upstream core snapshot; the three core title-bar DOM cases remain unchanged."
   },
+  "excludedFiles": {},
   "localAdaptations": [
     "Add MIT license metadata to the three package manifests.",
     "Point the two extension-contract comments to the local package boundary document.",
     "Preserve font bytes and include full upstream font licensing notices.",
-    "Retain the three core title-bar DOM cases; omit only the two downstream desktop packaging assertions listed below.",
     "Remove one redundant EOF blank line in each explicitly listed file; no behavior change."
   ],
   "files": {
@@ -179,13 +194,13 @@
     "packages/ui/src/FilterDisclosure.tsx": "712b3c419dfa3646a0df1f071555ff9b1e9f00ff8ebd0514902acefe650bbe96",
     "packages/ui/src/HeaderCountsNotice.tsx": "04bbe9e5df3483074958ad4bcfb7f69e93e4cf32d6ff936526b96029b8368e13",
     "packages/ui/src/HeaderMenu.tsx": "6ff469d0f9890a50ca3faa8b7d0218441d9792cb73a6165dcbdcf5805f516e57",
-    "packages/ui/src/HeaderUsage.tsx": "9218b71682a9d54975d4681e320d593c8822629b6db0b9bc2597157b6769eeec",
+    "packages/ui/src/HeaderUsage.tsx": "e50062c59d41d1142b6b38cfa6a9c0e9e9b6c7ef5152ab968b13c771d7fc776f",
     "packages/ui/src/HistoryConversation.tsx": "7856983e9d545064c8ce52011759255fadacf74b7c638f32fa69173f8120e425",
     "packages/ui/src/HistoryPanel.tsx": "f0a5242d141c5b401e69058725fffbfab2fb620a0939c00afc1567b0231cc652",
     "packages/ui/src/HostPreferencesSettings.tsx": "bba84ff2de909492a12473dba34bc8f8ad826fa16159d16b83c0b6b34b6804ec",
     "packages/ui/src/IconButton.tsx": "2254804e04c608cb8592125d271959a6037f18f9152d8a16f03f1933feac2377",
     "packages/ui/src/InlineTitleEditor.tsx": "ef9dbd5809b99380c783fc879cf80bd291bf0dd3e8141121741f45433400302f",
-    "packages/ui/src/LayoutIcons.tsx": "3712807e77e87603305927bcfd2602b90a8d12d488fde95d115c020e3bb2824a",
+    "packages/ui/src/LayoutIcons.tsx": "f820737df468c22fe0b3567c7053b63d1cc037479ce73acb24c347faae2cf379",
     "packages/ui/src/LayoutPicker.tsx": "1f1c3320f1578b4498ba89d3a89815877158c42b55a1478d59510ce10e1cbb8e",
     "packages/ui/src/LiveConversationPanel.tsx": "fb3a00bc25b72088ac193178b11afb24328cf26e8ca6a6491e9228ca8fa44b0d",
     "packages/ui/src/Login.tsx": "aff59b07cfd387c0aec5a1ee7aa5031a58deec3e49fc447ccda5b9acd9089107",
@@ -197,7 +212,7 @@
     "packages/ui/src/OutgoingReplies.tsx": "e6a8b6e3bbff5a0d0b96c1965903250650186c7e6bd93aa99d2fd84debfe55e9",
     "packages/ui/src/PhoneConversationPane.tsx": "7a83012adf1547172343be47fd32e975088fab218504de943c76e1e3e24c1fc0",
     "packages/ui/src/SelectMenu.tsx": "c93c7c5051b2eca10d77c85be14716e4311671f2ffff88001d360518d5f251aa",
-    "packages/ui/src/SessionAccountBadge.tsx": "c45361cc8559b81062c2f8c85b1182f62ed24ae1dd5761c6b9e201942d6a55b3",
+    "packages/ui/src/SessionAccountBadge.tsx": "c2323eebba5c6a5d7ee0b0007ce4dc57f70519df734a531734e18c84d1904e70",
     "packages/ui/src/SessionActivityPopover.tsx": "4c4a6299fce737e0d906926a55ba31e5cf393827467e1a4b97020702174f2a9b",
     "packages/ui/src/SessionConversationPane.tsx": "a170ded4b02e68a078322b34a00de2c4837be6b1e383e26d9a7e1eaf442b2cf6",
     "packages/ui/src/SessionCopyMenu.tsx": "7731adc0e8ef0fc0f8853c996dfd5dc15940676816f1607ecbea35aeb075b0e2",
@@ -213,10 +228,10 @@
     "packages/ui/src/ShellPage.tsx": "4d91c3e75af124e6b728e41f1b5a32980ee599e42897883855d7a31cdd0932f7",
     "packages/ui/src/ShortcutHelpModal.tsx": "08a41ae5f3c80fe3b7f1b82dd096562312d6c82b7c37badea94a3113afecd5df",
     "packages/ui/src/SpeechComposer.tsx": "60ec68f952d098caff017f7a29bf1bc8de20d797abaa79f79536f44f2ad49fca",
-    "packages/ui/src/StatusNotice.tsx": "6aac5883135f6385fb069e999229817b79c936616eed45dbde1314c37f9da143",
+    "packages/ui/src/StatusNotice.tsx": "f3d5bec5104a7cfd60fc588e4f12436a9ecefcf302d2d5489a8657fd10dc34de",
     "packages/ui/src/TerminalPane.tsx": "eba9737b1b69c8ea81495590333b56e846e671d70c0b756405ddc9100c7eea81",
     "packages/ui/src/TerminalView.tsx": "9815f16ed1ab78b9dedc334a24a3b1b939bb97825def0a50163cd688fd1677a1",
-    "packages/ui/src/UsagePanel.tsx": "c8e1aa2bc07bd939ae7d244e5a60dffd41b48928bcc32e46dab44758c0406be6",
+    "packages/ui/src/UsagePanel.tsx": "2b9cd70b45be4c93c9bd1d465a5928c2b849ba0610f6dd198e417d228e924ea0",
     "packages/ui/src/accountDefaults.tsx": "37aea65d0edd41c257b3ce3c6ae4488f7809214ae1528c82f7598d00ddf73e43",
     "packages/ui/src/activityClock.ts": "8df3f575339a24f5390d69df45757ad8f1523174b4fef3b60ef68a39986a58eb",
     "packages/ui/src/activityStream.ts": "d62aa778dd8bbff15cafe94492f27888fe37b65fab7f5690dc205f3c5c0749e6",
@@ -253,12 +268,12 @@
     "packages/ui/src/harnessCompact.ts": "d067a65311d04ab61bfa26db691b639f0262fdcbe175fca4b8a08f6fb7ffcb99",
     "packages/ui/src/headerCountAvailability.ts": "279bd5555cce9d5a47bc025101c5b939c1b195873c3dc465a1b6ddbc1980c990",
     "packages/ui/src/headerResponsive.ts": "e4c33b831df86cfc1dfcdd1e00145decbefe7836624422022f25660551844a3b",
-    "packages/ui/src/headerUsage.ts": "992d17749829cec99f74392da2f7e1303234b915543e51ca9579870534e8870f",
+    "packages/ui/src/headerUsageModel.ts": "992d17749829cec99f74392da2f7e1303234b915543e51ca9579870534e8870f",
     "packages/ui/src/historyResumeById.ts": "cbdfee5449326d8a3b06b7188fdfc696a7b9bf8aa705fdd39196502010a89684",
     "packages/ui/src/historyStars.ts": "4626a9fb7869bba8509eea1a599ea271e1bc243d188b51ad5e7969fff26469f1",
     "packages/ui/src/icons.tsx": "e047965e72e79d4773d3166724c17fa5e4a5fcb357edb19cfeb265b5d4683e17",
     "packages/ui/src/layout.ts": "4c9121edba06148fa2394aff221090592a1a02c3190f5e51e9ae9084adc3a6a6",
-    "packages/ui/src/layoutIcons.ts": "56235b34762b62c71180787f2acd1cfa7a568a2156e9793c132d62ed2988dc82",
+    "packages/ui/src/layoutIconGeometry.ts": "56235b34762b62c71180787f2acd1cfa7a568a2156e9793c132d62ed2988dc82",
     "packages/ui/src/layoutOrder.ts": "be0959c832da0024840adf55f35d3e53510a6e14918969ddfdb55f98382d80ab",
     "packages/ui/src/layoutPersistence.ts": "b30a45310c340bd9c2ad7c842e43fecba70115587f1c3d4eb16b21ae9f2dacc4",
     "packages/ui/src/machineColors.ts": "54806625e0979bf4bbe05f9cd134827032cac7027e604b6cca22cb5e67f8ff33",
@@ -302,7 +317,7 @@
     "packages/ui/src/sseStream.ts": "273b6bae1b9121e9415bc25c241929e79a6b07fd8786da7771517a4e4b46b70b",
     "packages/ui/src/startupDeadline.ts": "7dc9847baa74508bbd3e28b556f7b96578b004cffb76b7808412061e18b2702d",
     "packages/ui/src/startupFailure.ts": "e58d119b641b2883a86411f47dd23a49d16d4f9cbae6f57a723a373c574f7b33",
-    "packages/ui/src/statusNotice.ts": "01624fb20571c300d88df3bda8de742ade1c68ef03abf5adb687475d69cf7999",
+    "packages/ui/src/statusNoticeModel.ts": "01624fb20571c300d88df3bda8de742ade1c68ef03abf5adb687475d69cf7999",
     "packages/ui/src/storage.ts": "9b9b732bbbda512062ef99380a70065c35f0f94ba7ea6389910309bdb327b85f",
     "packages/ui/src/stuckTurn.ts": "0e0c7ce5a811537649f2b9d85dc720c1dbd0cfdfd5583cb620e3ee4af7b6bc92",
     "packages/ui/src/styles.css": "e73eea6043fc4a72f503351106549d6f3fb93ac35dd794a53cb74dc73f6a3c2a",
@@ -349,7 +364,7 @@
     "packages/ui/src/useSessionSwipe.ts": "f67b065af09f8e17b6261adf3614f5ec911e2eb0f322138502bb53eb8c639f4a",
     "packages/ui/src/useSharedClock.ts": "1d98e8b9925a1f0bdd809af9a6155f528e70c2088f2c49ef7758c3891c99aa38",
     "packages/ui/src/useSlotDrag.ts": "6e11ca8366a3b3a51d3cd35905a3432ef3ff6f98f3022dc7cde4faf3a31b524b",
-    "packages/ui/src/useStatusNotice.ts": "b7deecbccd25e906a65e661315b57505df6c98bd8ea4fa343c577791e6a0cd5c",
+    "packages/ui/src/useStatusNotice.ts": "b49925fa4aacd9d12770b93e6f4f9308f5de7f2f86eb80459ffc00520c5fdfc6",
     "packages/ui/src/useTerminalClipboard.ts": "3846d263103d63cbee9f154bba666a821615aeeeaa1a97038b6828bb86d3fe35",
     "packages/ui/src/vite-env.d.ts": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
     "packages/ui/src/voicePrompt.ts": "8f2479ed316b30c73a3fe550fff1eb5e4bca809e43df17a02ddb62a81141eab5",
@@ -429,7 +444,7 @@
     "packages/ui/test/headerResponsive.test.ts": "a4bd85e824bc44731292ae4ff5a9b0a4721bb5d7b272cb13643a2c18f52672fe",
     "packages/ui/test/headerScopeReadable.browser.test.ts": "58753bc133aa4c1e68ea3d6a31fd08094ee548fbb5d35d3763a32921e077f3c7",
     "packages/ui/test/headerSingleRow.browser.test.ts": "3a46dc3e559ae5ee15f314041fc69cdfa89e7f5397f8f43be04ddd6e1eaf14ff",
-    "packages/ui/test/headerUsage.test.ts": "e5efb07a3db3929d0ef724652c4128baca81c016d6a4990fb33bb78e2a964513",
+    "packages/ui/test/headerUsage.test.ts": "1deb538bd4418337a1db102c075a64164bfcb16d72fc263ec153610b9804e96a",
     "packages/ui/test/headerUsageAnchor.browser.test.ts": "d8b42c9d4695ed7d1bdf86212720369377c01df0566b37479cb676947c2fb604",
     "packages/ui/test/headerUsagePress.browser.test.ts": "5d7de2c23b35c476e3b289906707e821886eca24fcafe3f791228739d0e23028",
     "packages/ui/test/historyPanel.test.ts": "5bd4bd7e99ea18509461c6dc70d53b10e038bd5cb1ebd64e4dee28fdc6cd34de",
@@ -437,19 +452,19 @@
     "packages/ui/test/historyResumeById.test.ts": "52e94430974e36e7b0eb66b95bdce7b64be6768a2b0b27860bb4015275c2536b",
     "packages/ui/test/historyStars.test.ts": "cc817a9f0317ee4f85a9a2abd7ccf7c28a88d91a4de71dba5199d5ad87b3de14",
     "packages/ui/test/hostOfflineDesktopNotice.browser.test.ts": "060d8b130f685711e08585d872fbb74f28678e33a1843584b3acd78c8c3d86bb",
-    "packages/ui/test/hostOfflineToast.test.ts": "04fb4654f160bae22262580f82e3c1c380773f96e188db464eda3e29cb762bff",
-    "packages/ui/test/hostOfflineToastLayout.browser.test.ts": "35fd2a8f8f0ce77a025388b25aa7f0b30ec8c6ac0d7790f669417f6fd4516c8e",
+    "packages/ui/test/hostOfflineToast.test.ts": "fe5b43a48e8fc8be36a22231f893ff024bb809219d750968ff115066d52dcb8f",
+    "packages/ui/test/hostOfflineToastLayout.browser.test.ts": "be8d099df6616cbce87b293ebee7c43e4e49e156f85f4d8688830e7db3201acf",
     "packages/ui/test/hostPreferencesLifecycle.test.ts": "95cd5e8103d42d459adb42ecb3559114d88f3c3c440ccaf0beae8e75fdf2f85e",
     "packages/ui/test/iconButton.test.ts": "830ddb4b4ac6f2daa43b4e890e0ce7472da49041dc1065092379528a92f49764",
     "packages/ui/test/keyBarScrollbar.browser.test.ts": "f058cbc66d6bceada1020cf1609bfbfeae8baccf847ec4265c728c424248caf6",
     "packages/ui/test/keyedPrompt.test.ts": "98943b4e711563014e99f0c2a84b65c7a9dfbde11211e3404b5b7a6e26891be3",
     "packages/ui/test/layout.test.ts": "faa751fc6ba29fdbae457d889febc8c0dfb2116d0c5e5cab70058384da881f47",
-    "packages/ui/test/layoutIcons.test.ts": "2b4b3a96c84ee28c7298cc76dd99914345e4cedab2483da93a52ce351de53c8b",
+    "packages/ui/test/layoutIcons.test.ts": "506caf552183b3aa5fae6e9cf2c82796a3760618593d1da27debb3a923a9bf8f",
     "packages/ui/test/layoutOrder.test.ts": "40a8803c0bef2e68e7d4d4b2c3111dcfe7e9d42d3a3db73ff00350d46c9e82e1",
     "packages/ui/test/layoutPersistence.test.ts": "f6b89d6f729653f49b89545a11530bc1b07ce1a0780943825a74923bd2c9c2e6",
     "packages/ui/test/layoutPicker.test.ts": "3cb26829f4fec490d395ff1055162a2e2e2e38886d34256b50a92185eb16b60e",
     "packages/ui/test/liveConversationPanel.test.ts": "2c2959b447ac26d0d4e3826e66e8d5b165773486ce0ff6dd2630280849677d12",
-    "packages/ui/test/macTitleBar.test.ts": "631656e4b337bed355ea926f5bc7364944a462ba49ae7070e1b0c3d8c6d79270",
+    "packages/ui/test/macTitleBar.test.ts": "cfb1cd3714dff18b1349ce563c1fd0612374555342ff5ff8b7d9c897ff54d336",
     "packages/ui/test/macTitleBarModal.browser.test.ts": "a03cc4ff82cf6eedcb22556bc310d6d61fc1408b1d85e08201b9b277ea52b069",
     "packages/ui/test/machineColors.test.ts": "dd95cdc54d81999caca8df0c38f1f39a372e81e9e541ef232fc2270d57add439",
     "packages/ui/test/menuDismissFocus.test.ts": "ab6ca7947a7ca91abd1dfa9f0e8666a1bdc0bfcbc9e3ddb3a6a70390b1bd3d32",
@@ -536,7 +551,7 @@
     "packages/ui/test/spacingScaleCss.test.ts": "188aba88082282b57085f533aad5b8ed56fbe696ee6deb01512fd8f399c911d0",
     "packages/ui/test/speechComposer.test.ts": "2ef2af3abb87918ce0ad4d087320ba6d47904c92fdfdf206dd03867046bb35a2",
     "packages/ui/test/sseStream.test.ts": "e110b70dc560b5b729375352360d230846166346b5734d8af34b207dc52f0b39",
-    "packages/ui/test/ssrHarness.test.ts": "f894e43cf96b380e82be9ff4ef73e3797130780d3ceecc5d1c522d01f6bc4e86",
+    "packages/ui/test/ssrHarness.test.ts": "941c78b1e5aee5eb603b71c932f0968ca0d9899829747938e8529e288927b14e",
     "packages/ui/test/startupDeadline.test.ts": "48fc743eea44ed624f3205af47744d514659dfad7064ec8962591e05212581d5",
     "packages/ui/test/startupFailureCleanup.test.ts": "443ab123834c55eb1d23cef7b275e12ebb2411927919cd21e8432969fe5c7d92",
     "packages/ui/test/statusNotice.test.ts": "b93ac2a41f88c1ad9c7721e46bc225082244084309e2aa1366943a844f85fe63",
@@ -547,7 +562,7 @@
     "packages/ui/test/support/domAssert.ts": "eb0467ae33c3da0a30d323be3f2b5b2f1cfad3cd9932870653490bc47eab7400",
     "packages/ui/test/support/fixtures.ts": "96ef2d477581e654c470bbd0ab98a23949a3862ee07a06d39ee7b66c04366ea4",
     "packages/ui/test/support/focusedHeaderFixture.ts": "4710a042862ac957622b43d64d2f307f7d88547105dad27c96485e7c1fcf7654",
-    "packages/ui/test/support/headerFixture.ts": "9417551c7f4b813e0b711c644ba70f3f905361a0bdddcfa2b4cfafc5aa61757e",
+    "packages/ui/test/support/headerFixture.ts": "8f4c79c03beeabcb52ad8dd97ddd64742d3b477e10f8817e09b845c33a341a1b",
     "packages/ui/test/support/neutralBadges.ts": "c4bea8781e6f042f191ae417db7e0abf490a0f198320dac9d8378c6ccfd5b844",
     "packages/ui/test/support/noticeSurfaces.ts": "5db0d942282ac72579147d8ec24429ba98c6479b5cb519580662abaffddc7401",
     "packages/ui/test/support/phoneHeaderFixture.ts": "d1b213ac3a428f9c3debc80e3ab73fd44f0c4d6098e8e39fb0f28135fbea4441",
@@ -611,15 +626,7 @@
     "packages/ui/src/fonts/OFL.txt": "9590325331b1975eac408dc78e7d369c042f565cee8aa9e34d6b40524f400972",
     "packages/ui/src/fonts/NERD-FONTS-LICENSE": "bede0739eb2bf948765623a7a134360a6320240f4a9e29a5a68f31e191b0f8d0"
   },
-  "excludedTestCases": {
-    "packages/ui/test/macTitleBar.test.ts": {
-      "reason": "Downstream desktop packaging files are not part of the core producer; original downstream coverage is retained there.",
-      "cases": [
-        "macOS overlays the themed title while keeping native decorations and window identity",
-        "the desktop capability admits native title-bar drag without replacing traffic lights"
-      ]
-    }
-  },
+  "excludedTestCases": {},
   "normalizedEofFiles": [
     "packages/edge/src/sessionMutationCoordinator.ts",
     "packages/edge/test/sessionMutationCoordinator.test.ts",
@@ -627,7 +634,7 @@
     "packages/ui/test/performanceCapturePanel.test.ts",
     "packages/ui/test/terminalFocus.test.ts"
   ],
-  "downstreamCoverage": "Retain all excluded distribution tests/cases with their original distribution; relocate them before deleting downstream vendored core source.",
+  "downstreamCoverage": "Distribution test ownership transferred in the recorded downstream commit; the producer retains the three core title-bar DOM cases.",
   "adaptedFiles": {
     "packages/edge/package.json": {
       "upstreamSha256": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
@@ -664,10 +671,6 @@
     "packages/ui/src/fonts/LICENSE.md": {
       "upstreamSha256": "e05a85f466a5317631799330bb43a6370d1504de66d4ca1efd0bfe35090728b9",
       "importedSha256": "f2bcb80f685f19ecb76d04786aee02b632097bf58bf6e1b36de50f3b7dcb88f1"
-    },
-    "packages/ui/test/macTitleBar.test.ts": {
-      "upstreamSha256": "631656e4b337bed355ea926f5bc7364944a462ba49ae7070e1b0c3d8c6d79270",
-      "importedSha256": "cfb1cd3714dff18b1349ce563c1fd0612374555342ff5ff8b7d9c897ff54d336"
     },
     "packages/ui/test/performanceCapturePanel.test.ts": {
       "upstreamSha256": "2757896b27029f006df2b70f4afb1fac583b72090656c0e3c0e4fb20c3f6094a",

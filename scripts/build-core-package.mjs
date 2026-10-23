@@ -1,6 +1,7 @@
-import { cpSync, rmSync } from "node:fs";
+import { cpSync, readdirSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { assertCaseDistinctPaths } from "./check-case-collisions.mjs";
 
 const name = process.argv[2];
 if (!["shared", "edge", "ui"].includes(name)) throw new Error("Expected shared, edge or ui");
@@ -21,3 +22,6 @@ if (name === "ui") {
   const root = new URL("../packages/edge/", import.meta.url);
   cpSync(new URL("scripts/title-summarizer-openai-compatible.mjs", root), new URL("dist-package/scripts/title-summarizer-openai-compatible.mjs", root));
 }
+// Check real emitted JS/declarations and copied assets: .ts/.tsx inputs can
+// collide after compilation even when their complete source paths differ.
+assertCaseDistinctPaths(readdirSync(new URL("dist-package/", packageRoot), { recursive: true }), `${name} package output`);

@@ -9,7 +9,7 @@ import {
   providerUsagePresentation,
   remainingUsagePercent,
   usageMeterLevel,
-} from "./headerUsage.ts";
+} from "./headerUsageModel.ts";
 import { UsageWindowChip, useDashboardUsage } from "./HeaderUsage.tsx";
 import { usePreviewPinnedPopover } from "./SessionActivityPopover.tsx";
 import { findAccountUsage, sessionAccountView, type SessionAccountView } from "./sessionAccounts.ts";

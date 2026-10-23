@@ -25,7 +25,7 @@ import {
   usageAccountAlias,
   usageCardSelection,
   usageMeterLevel,
-} from "./headerUsage.ts";
+} from "./headerUsageModel.ts";
 import { isMacTauri } from "./runtime.ts";
 import { HostReaderUnavailable, useReachablePoll } from "./reachable.ts";
 import { useSharedClock } from "./useSharedClock.ts";
