@@ -14,6 +14,8 @@ The SVG files are the editable source. Preview PNG files are raster outputs and 
 
 Both SVG variants were rendered at their stated preview dimensions with `rsvg-convert`. The resulting PNG dimensions were checked with `identify`, and the 16 px and 32 px outputs were inspected at native size and enlarged with nearest-neighbor scaling for edge and silhouette review. The darker first turn and lighter second turn remain distinct in each theme variant.
 
+The widened waist keeps the two turns visibly connected at 16 px. Each theme uses distinct SVG title and gradient IDs so both variants can be inlined in the same document without ID collisions.
+
 ## Validation note
 
 This is original vector asset authoring and does not add executable product behavior. There is no meaningful failing-behavior test for this milestone. Validation uses the actual rendered dimensions, pixel inspection at native and enlarged sizes, contrast review against light and dark surfaces, and the repository pre-PR gate.
