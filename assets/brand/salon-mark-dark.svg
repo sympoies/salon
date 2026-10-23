@@ -1,13 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="salon-dark-title">
-  <title id="salon-dark-title">Salon conversation ribbon</title>
-  <defs>
-    <linearGradient id="salon-dark-ribbon" gradientUnits="userSpaceOnUse" x1="0" y1="1.9" x2="0" y2="64.1">
-      <stop offset="0" stop-color="#22b7aa"/>
-      <stop offset="0.48" stop-color="#36d2b3"/>
-      <stop offset="0.52" stop-color="#8cf0cf"/>
-      <stop offset="1" stop-color="#55dfbb"/>
-    </linearGradient>
-  </defs>
-  <path fill="url(#salon-dark-ribbon)" d="M11 20c0-4 3-7 7-9L37 3c7-3 14 1 14 8v3c0 5-3 8-8 10l-17 7c-3 1-3 3 0 4l17 7c5 2 8 5 8 10v3c0 7-7 11-14 8L18 55c-4-2-7-5-7-9v-4c0-4 3-7 7-9l13-5-13-5c-4-2-7-3-7-3z"/>
-  <path fill="none" stroke="url(#salon-dark-ribbon)" stroke-width="8" stroke-linecap="round" d="M30 28c-3 3-5 7-3 10"/>
+  <title id="salon-dark-title">Salon folded conversation ribbon</title>
+  <path fill="none" stroke="#a1f5d6" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="M14 27c-2 3 0 6 5 8l22 7c4 1 4 4 0 6L28 52"/>
+  <path fill="#38c9a5" d="M22 49 40 40c4-2 8-1 10 3 2 4 0 8-4 10l-17 9c-4 2-8 1-10-3-2-3-1-7 3-10z"/>
+  <path fill="#38c9a5" d="M13 24c-2-4 0-8 4-10L37 6c5-2 9 0 10 4l1 4c1 4-1 7-5 9l-19 9c-5 2-9 0-11-4z"/>
+  <path fill="#59dcb5" opacity=".42" d="m16 25 25-12c2-1 4-1 6 0 0 3-2 5-5 6L21 31c-2 1-4 0-5-2z"/>
 </svg>
