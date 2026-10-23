@@ -45,6 +45,10 @@ It removes any stale success marker before checking and writes
 [VALIDATION.toml](VALIDATION.toml) declares the finish-line command and marker;
 [the pre-PR dispatcher](.agents/scripts/pre-pr.sh) invokes that command.
 
+[CI](.github/workflows/ci.yml) invokes the same dispatcher for main-branch
+pushes and pull requests from this repository. Results appear in job logs and
+the workflow summary.
+
 For documentation and build scaffolding without a practical failing behavior
 test, explain the test-first waiver in the PR's `Test changes` section and list
 the substitute checks actually run. Add behavior tests when executable product
