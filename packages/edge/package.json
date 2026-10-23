@@ -1,0 +1,79 @@
+{
+  "name": "@agent-console/edge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "agent-console edge backend: aggregates per-machine `agent-session serve` endpoints, enforces client principal access, and serves the built UI. Compiled ESM package with a source condition for workspace development.",
+  "type": "module",
+  "exports": {
+    "./extensions": {
+      "source": "./src/extensions.ts",
+      "types": "./dist-package/src/extensions.d.ts",
+      "default": "./dist-package/src/extensions.js"
+    },
+    "./host-reader": {
+      "source": "./src/hostReader.ts",
+      "types": "./dist-package/src/hostReader.d.ts",
+      "default": "./dist-package/src/hostReader.js"
+    },
+    "./import-owner": {
+      "source": "./scripts/import-owner.ts",
+      "types": "./dist-package/scripts/import-owner.d.ts",
+      "default": "./dist-package/scripts/import-owner.js"
+    },
+    "./start": {
+      "source": "./src/start.ts",
+      "types": "./dist-package/src/start.d.ts",
+      "default": "./dist-package/src/start.js"
+    },
+    "./usage": {
+      "source": "./src/usage.ts",
+      "types": "./dist-package/src/usage.d.ts",
+      "default": "./dist-package/src/usage.js"
+    },
+    "./server": {
+      "source": "./src/server.ts",
+      "types": "./dist-package/src/server.d.ts",
+      "default": "./dist-package/src/server.js"
+    },
+    "./config": {
+      "source": "./src/config.ts",
+      "types": "./dist-package/src/config.d.ts",
+      "default": "./dist-package/src/config.js"
+    },
+    "./access-store": {
+      "source": "./src/accessStore.ts",
+      "types": "./dist-package/src/accessStore.d.ts",
+      "default": "./dist-package/src/accessStore.js"
+    },
+    "./board-record": {
+      "source": "./src/board/record.ts",
+      "types": "./dist-package/src/board/record.d.ts",
+      "default": "./dist-package/src/board/record.js"
+    },
+    "./board-store": {
+      "source": "./src/board/store.ts",
+      "types": "./dist-package/src/board/store.d.ts",
+      "default": "./dist-package/src/board/store.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "pnpm run build:package",
+    "test": "NODE_OPTIONS=--conditions=source node --test test/*.test.ts",
+    "dev": "node --conditions=source --watch src/index.ts",
+    "start": "node --conditions=source src/index.ts",
+    "build:package": "node ../../scripts/build-core-package.mjs edge"
+  },
+  "dependencies": {
+    "@agent-console/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "typescript": "^7.0.0",
+    "yaml": "^2.9.0"
+  },
+  "files": [
+    "dist-package"
+  ],
+  "license": "MIT"
+}

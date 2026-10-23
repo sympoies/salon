@@ -15,14 +15,14 @@ concurrency:
 
 jobs:
   validate:
-    name: Scaffold validation
+    name: Core package validation
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     # Private-phase repository-scoped runner; switch to GitHub-hosted before public launch.
     runs-on: [self-hosted, sympoies, salon, ci, ephemeral]
-    timeout-minutes: 10
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -31,6 +31,80 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Select Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install pinned pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          cache: false
+
+      - name: Install headless Chrome runtime libraries
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          # Chrome 156's pinned Debian package Depends, using Ubuntu 24.04's
+          # t64 package names and the libcurl4 / GTK 3 dependency alternatives.
+          # These packages live only in this disposable job container.
+          chrome_runtime_packages=(
+            ca-certificates fonts-liberation libasound2t64 libatk-bridge2.0-0t64
+            libatk1.0-0t64 libatspi2.0-0t64 libc6 libcairo2 libcups2t64 libcurl4t64
+            libdbus-1-3 libexpat1 libgbm1 libglib2.0-0t64 libgtk-3-0t64 libnspr4
+            libnss3 libpango-1.0-0 libudev1 libvulkan1 libx11-6 libxcb1
+            libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
+            wget xdg-utils
+          )
+          sudo -n apt-get update
+          sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends "${chrome_runtime_packages[@]}"
+          {
+            printf '### Chrome runtime packages\n\n```text\n'
+            dpkg-query -W -f='${binary:Package}\t${Version}\n' "${chrome_runtime_packages[@]}"
+            printf '```\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Select and probe headless Chrome
+        env:
+          CHROME_DEB_URL: https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_156.0.8078.47-1_amd64.deb
+          CHROME_DEB_SHA256: 6c92cd22e90c6e3e255d782991543fa2091db8614e8536a971a7433a5c4d7ac8
+        run: |
+          set -euo pipefail
+          chrome_bin=""
+          for candidate in google-chrome chromium; do
+            if candidate_path="$(command -v "$candidate")"; then
+              printf '%s: %s\n' "$candidate" "$candidate_path" >> "$GITHUB_STEP_SUMMARY"
+              "$candidate_path" --version | tee -a "$GITHUB_STEP_SUMMARY"
+              if [[ -z "$chrome_bin" ]]; then chrome_bin="$candidate_path"; fi
+            else
+              printf '%s: absent\n' "$candidate" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          if [[ -z "$chrome_bin" ]]; then
+            # Official Google package index SHA256, pinned with this workflow.
+            archive="$RUNNER_TEMP/chrome.deb"
+            curl --fail --location --silent --show-error --connect-timeout 15 --max-time 120 \
+              "$CHROME_DEB_URL" --output "$archive"
+            printf '%s  %s\n' "$CHROME_DEB_SHA256" "$archive" | sha256sum --check --status
+            {
+              printf '### Pinned Chrome dependency metadata\n\n```text\n'
+              dpkg-deb --field "$archive" Depends
+              printf '```\n'
+            } >> "$GITHUB_STEP_SUMMARY"
+            dpkg-deb --extract "$archive" "$RUNNER_TEMP/chrome"
+            chrome_bin="$RUNNER_TEMP/chrome/opt/google/chrome/chrome"
+            "$chrome_bin" --version | tee -a "$GITHUB_STEP_SUMMARY"
+            printf 'Official Chrome package SHA256: %s\n' "$CHROME_DEB_SHA256" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          "$chrome_bin" --headless --no-sandbox --disable-gpu \
+            --user-data-dir="$RUNNER_TEMP/chrome-probe" --dump-dom about:blank \
+            > "$RUNNER_TEMP/chrome-probe.html"
+          printf 'CHROME_BIN=%s\n' "$chrome_bin" >> "$GITHUB_ENV"
+          printf 'Headless Chrome startup probe passed.\n' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install pinned devlog
         timeout-minutes: 3
@@ -47,7 +121,7 @@ jobs:
           tar -xzf "$archive" -C "$install_dir" --strip-components=2 --wildcards '*/bin/devlog'
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
-      - name: Validate scaffold
+      - name: Validate core packages
         run: bash .agents/scripts/pre-pr.sh
 
       - name: Record validation result
@@ -56,6 +130,6 @@ jobs:
           VALIDATION_RESULT: ${{ job.status }}
           VALIDATED_COMMIT: ${{ github.sha }}
         run: |
-          printf 'Scaffold validation: %s\nCommit: %s\n' "$VALIDATION_RESULT" "$VALIDATED_COMMIT"
-          printf 'Scaffold validation: **%s**\n\nCommit: %s\n' \
+          printf 'Core package validation: %s\nCommit: %s\n' "$VALIDATION_RESULT" "$VALIDATED_COMMIT"
+          printf 'Core package validation: **%s**\n\nCommit: %s\n' \
             "$VALIDATION_RESULT" "$VALIDATED_COMMIT" >> "$GITHUB_STEP_SUMMARY"

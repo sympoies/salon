@@ -6,6 +6,12 @@
 __pycache__/
 *.py[cod]
 
+# Installed dependencies and compiled package artifacts.
+node_modules/
+dist/
+dist-package/
+dist-packages/
+
 # Local credentials and operator configuration.
 .env
 .env.*

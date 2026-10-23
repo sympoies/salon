@@ -1,0 +1,109 @@
+{
+  "schema_version": "agent-session.activity-stream.event.v1",
+  "type": "snapshot",
+  "stream_id": "nils-1120-nullable-options",
+  "sequence": 42,
+  "machine": "daemon-local-name",
+  "observed_at": "2026-07-12T02:30:00Z",
+  "sessions": [
+    {
+      "id": "hs-starting",
+      "turn_state": {
+        "schema_version": "agent-session.turn-state.v1",
+        "phase": "starting",
+        "phase_changed_at": "2026-07-12T02:29:55Z",
+        "revision": 1,
+        "source": {
+          "kind": "runtime",
+          "provider": null,
+          "confidence": "observed"
+        },
+        "current_turn": null,
+        "last_turn": null
+      }
+    },
+    {
+      "id": "hs-unknown",
+      "turn_state": {
+        "schema_version": "agent-session.turn-state.v1",
+        "phase": "unknown",
+        "phase_changed_at": "2026-07-12T02:29:56Z",
+        "revision": 2,
+        "source": {
+          "kind": "console_observation",
+          "provider": null,
+          "confidence": "inferred"
+        },
+        "current_turn": null,
+        "last_turn": null
+      }
+    },
+    {
+      "id": "hs-working",
+      "turn_state": {
+        "schema_version": "agent-session.turn-state.v1",
+        "phase": "working",
+        "phase_changed_at": "2026-07-12T02:29:57Z",
+        "revision": 3,
+        "source": {
+          "kind": "provider_hook",
+          "provider": "codex",
+          "confidence": "authoritative"
+        },
+        "current_turn": {
+          "provider_turn_id": null,
+          "started_at": "2026-07-12T02:29:57Z",
+          "last_progress_at": null,
+          "attention": null
+        },
+        "last_turn": null
+      }
+    },
+    {
+      "id": "hs-waiting",
+      "turn_state": {
+        "schema_version": "agent-session.turn-state.v1",
+        "phase": "waiting",
+        "phase_changed_at": "2026-07-12T02:29:58Z",
+        "revision": 4,
+        "source": {
+          "kind": "provider_hook",
+          "provider": "claude",
+          "confidence": "authoritative"
+        },
+        "current_turn": null,
+        "last_turn": {
+          "provider_turn_id": null,
+          "started_at": null,
+          "completed_at": "2026-07-12T02:29:58Z",
+          "outcome": "completed"
+        }
+      }
+    },
+    {
+      "id": "hs-needs-input",
+      "turn_state": {
+        "schema_version": "agent-session.turn-state.v1",
+        "phase": "needs_input",
+        "phase_changed_at": "2026-07-12T02:29:59Z",
+        "revision": 5,
+        "source": {
+          "kind": "provider_hook",
+          "provider": "codex",
+          "confidence": "authoritative"
+        },
+        "current_turn": {
+          "provider_turn_id": null,
+          "started_at": "2026-07-12T02:29:59Z",
+          "last_progress_at": null,
+          "attention": {
+            "kind": "permission",
+            "requested_at": "2026-07-12T02:29:59Z",
+            "pending_count": 1
+          }
+        },
+        "last_turn": null
+      }
+    }
+  ]
+}

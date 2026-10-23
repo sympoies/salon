@@ -1,0 +1,98 @@
+{
+  "name": "@agent-console/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared agent-console protocol contracts and title helpers used by edge and UI.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist-package/index.d.ts",
+      "default": "./dist-package/index.js"
+    },
+    "./prompt-receipt": {
+      "source": "./src/promptReceipt.ts",
+      "types": "./dist-package/promptReceipt.d.ts",
+      "default": "./dist-package/promptReceipt.js"
+    },
+    "./activity": {
+      "source": "./src/activity.ts",
+      "types": "./dist-package/activity.d.ts",
+      "default": "./dist-package/activity.js"
+    },
+    "./api": {
+      "source": "./src/api.ts",
+      "types": "./dist-package/api.d.ts",
+      "default": "./dist-package/api.js"
+    },
+    "./lineage": {
+      "source": "./src/lineage.ts",
+      "types": "./dist-package/lineage.d.ts",
+      "default": "./dist-package/lineage.js"
+    },
+    "./maintenance": {
+      "source": "./src/maintenance.ts",
+      "types": "./dist-package/maintenance.d.ts",
+      "default": "./dist-package/maintenance.js"
+    },
+    "./session-model": {
+      "source": "./src/sessionModel.ts",
+      "types": "./dist-package/sessionModel.d.ts",
+      "default": "./dist-package/sessionModel.js"
+    },
+    "./session-retitle": {
+      "source": "./src/sessionRetitle.ts",
+      "types": "./dist-package/sessionRetitle.d.ts",
+      "default": "./dist-package/sessionRetitle.js"
+    },
+    "./sse": {
+      "source": "./src/sse.ts",
+      "types": "./dist-package/sse.d.ts",
+      "default": "./dist-package/sse.js"
+    },
+    "./resources": {
+      "source": "./src/resources.ts",
+      "types": "./dist-package/resources.d.ts",
+      "default": "./dist-package/resources.js"
+    },
+    "./speech": {
+      "source": "./src/speech.ts",
+      "types": "./dist-package/speech.d.ts",
+      "default": "./dist-package/speech.js"
+    },
+    "./title": {
+      "source": "./src/title.ts",
+      "types": "./dist-package/title.d.ts",
+      "default": "./dist-package/title.js"
+    },
+    "./shell": {
+      "source": "./src/shell.ts",
+      "types": "./dist-package/shell.d.ts",
+      "default": "./dist-package/shell.js"
+    },
+    "./role-catalog": {
+      "source": "./src/roleCatalog.ts",
+      "types": "./dist-package/roleCatalog.d.ts",
+      "default": "./dist-package/roleCatalog.js"
+    },
+    "./shared-outbox": {
+      "source": "./src/sharedOutbox.ts",
+      "types": "./dist-package/sharedOutbox.d.ts",
+      "default": "./dist-package/sharedOutbox.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "pnpm run build:package",
+    "test": "NODE_OPTIONS=--conditions=source node --test test/*.test.ts",
+    "build:package": "node ../../scripts/build-core-package.mjs shared"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "typescript": "^7.0.0"
+  },
+  "files": [
+    "dist-package"
+  ],
+  "license": "MIT"
+}

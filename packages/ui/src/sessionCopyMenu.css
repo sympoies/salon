@@ -1,0 +1,47 @@
+.session-copy-root { display: inline-flex; flex: none; }
+.session-copy-menu {
+  z-index: 100;
+  padding: var(--space-xs);
+  overflow-y: auto;
+  background: var(--surface-floating);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  box-shadow: 0 12px 40px #0008;
+}
+.session-copy-menu button {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.session-copy-menu button:hover, .session-copy-menu button:focus-visible { background: var(--panel-2); }
+.session-copy-menu code { overflow-wrap: anywhere; white-space: normal; font-size: var(--text-xs); color: var(--muted); }
+.session-copy-backdrop { position: fixed; inset: 0; z-index: 99; background: #0008; }
+.session-copy-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 70dvh;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  padding-bottom: max(var(--space-sm), env(safe-area-inset-bottom));
+}
+.session-copy-feedback {
+  position: fixed;
+  z-index: 101;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 24px);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--surface-floating);
+  color: var(--ok);
+  box-shadow: 0 4px 16px #0008;
+  pointer-events: none;
+}

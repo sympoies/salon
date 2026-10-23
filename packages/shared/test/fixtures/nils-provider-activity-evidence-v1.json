@@ -1,0 +1,83 @@
+{
+  "schema_version": "agent-session.activity-stream.event.v1",
+  "type": "snapshot",
+  "stream_id": "provider-activity-evidence-v1",
+  "sequence": 1,
+  "machine": "producer-machine",
+  "observed_at": "2026-07-29T00:05:00Z",
+  "sessions": [
+    {
+      "id": "bounded-evidence",
+      "turn_state": {
+        "schema_version": "agent-session.turn-state.v1",
+        "phase": "needs_input",
+        "phase_changed_at": "2026-07-29T00:00:00Z",
+        "revision": 9,
+        "source": {
+          "kind": "provider_hook",
+          "provider": "claude",
+          "confidence": "observed"
+        },
+        "semantic_event": {
+          "kind": "progress",
+          "observed_at": "2026-07-29T00:04:00Z",
+          "provider_payload": "privacy-canary"
+        },
+        "diagnostic": {
+          "reason": "completion_evidence_pending",
+          "detail": "privacy-canary"
+        },
+        "shadow_observation": {
+          "observer_version": "terminal-shadow.v1",
+          "rule_id": "claude_prompt_visible",
+          "observed_at": "2026-07-29T00:04:30Z",
+          "projection": "waiting",
+          "disagrees": true,
+          "terminal": "privacy-canary"
+        },
+        "current_turn": {
+          "started_at": "2026-07-29T00:00:00Z",
+          "last_progress_at": "2026-07-29T00:04:00Z",
+          "attention": {
+            "kind": "approval",
+            "requested_at": "2026-07-29T00:01:00Z",
+            "pending_count": 1,
+            "certainty": "conservative",
+            "response": "privacy-canary"
+          }
+        }
+      }
+    },
+    {
+      "id": "unknown-optional-evidence",
+      "turn_state": {
+        "schema_version": "agent-session.turn-state.v1",
+        "phase": "working",
+        "phase_changed_at": "2026-07-29T00:00:00Z",
+        "revision": 3,
+        "source": {
+          "kind": "provider_hook",
+          "provider": "codex",
+          "confidence": "authoritative"
+        },
+        "semantic_event": {
+          "kind": "future-provider-event",
+          "observed_at": "2026-07-29T00:04:00Z"
+        },
+        "diagnostic": {
+          "reason": "future-diagnostic"
+        },
+        "shadow_observation": {
+          "observer_version": "terminal-shadow.v2",
+          "rule_id": "future_rule",
+          "observed_at": "2026-07-29T00:04:30Z",
+          "projection": "future-projection",
+          "disagrees": false
+        },
+        "current_turn": {
+          "started_at": "2026-07-29T00:00:00Z"
+        }
+      }
+    }
+  ]
+}

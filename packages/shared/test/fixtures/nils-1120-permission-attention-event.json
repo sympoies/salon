@@ -1,0 +1,34 @@
+{
+  "schema_version": "agent-session.activity-stream.event.v1",
+  "type": "snapshot",
+  "stream_id": "nils-1120-fixture",
+  "sequence": 31,
+  "machine": "summit",
+  "observed_at": "2026-07-11T17:35:00Z",
+  "sessions": [
+    {
+      "id": "hs-permission",
+      "turn_state": {
+        "schema_version": "agent-session.turn-state.v1",
+        "phase": "needs_input",
+        "phase_changed_at": "2026-07-11T17:34:59Z",
+        "revision": 31,
+        "source": {
+          "kind": "provider_hook",
+          "provider": "codex",
+          "confidence": "observed"
+        },
+        "current_turn": {
+          "provider_turn_id": "turn-permission",
+          "started_at": "2026-07-11T17:34:30Z",
+          "attention": {
+            "kind": "permission",
+            "requested_at": "2026-07-11T17:34:59Z",
+            "pending_count": 1
+          }
+        },
+        "last_turn": null
+      }
+    }
+  ]
+}

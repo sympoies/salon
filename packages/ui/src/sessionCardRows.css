@@ -1,0 +1,162 @@
+.mobile-session-card-row-one,
+.mobile-session-card-row-two {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+  width: 100%;
+  flex-wrap: nowrap;
+}
+
+/* Size the repo badge like the desktop card (a fixed cap, not a percentage of
+   this shrink-to-fit wrapper) so the title starts right after the role. */
+.mobile-session-card-row-one .mobile-session-card-meta {
+  flex: none;
+  min-width: 0;
+}
+
+.mobile-session-card-row-one .repo-badge {
+  flex: none;
+  max-width: 6.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-session-card-row-one .repo-badge-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-session-card-row-two .session-model-badge {
+  display: block;
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-session-card-row-two .mobile-session-card-status {
+  flex: none;
+  width: auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.slot-session-card-header {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.slot-session-card-row-one,
+.slot-session-card-row-two {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.session-workspace.desktop .slot-session-card-row-one,
+.session-workspace.desktop .slot-session-card-row-two {
+  min-height: var(--icon-standard-size);
+}
+
+.slot-session-card-row-one {
+  width: 100%;
+}
+
+.slot-session-card-row-one .slot-title-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.slot-session-card-row-one > button {
+  flex: none;
+}
+
+.slot-session-card-row-two > .agent-retitle-button {
+  flex: none;
+}
+
+.slot-session-card-row-two .session-activity-root {
+  flex: none;
+}
+
+.slot-session-card-row-two {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.slot-session-card-row-two .session-model-badge {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-session-card-row-two {
+  position: relative;
+}
+
+.slot-session-card-row-two .account-usage-root,
+.slot-session-card-row-two .session-activity-root {
+  position: static;
+}
+
+.slot-session-card-row-two .account-usage-popover,
+.slot-session-card-row-two .session-activity-popover {
+  right: auto;
+  left: 0;
+  max-width: calc(100cqi - 1rem);
+}
+
+/* New link/menu hit targets retain the existing phone chip and title bounds. */
+.mobile-session-card-row-one .repo-badge-link {
+  display: flex;
+  min-width: 0;
+  max-width: 6.5rem;
+}
+
+.mobile-session-card-row-one .repo-badge-link .repo-badge {
+  max-width: 100%;
+}
+
+.mobile-session-card-row-one .slot-title-menu {
+  flex: 1 1 0;
+}
+
+/* Keep the flexible menu container for dropdown layout, but only the visible
+   title (or its 32px minimum touch target) activates it. */
+summary.mobile-session-card-open {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 32px;
+  list-style: none;
+}
+
+.mobile-session-card-open::-webkit-details-marker {
+  display: none;
+}
+
+.mobile-session-card-head {
+  position: relative;
+}
+
+.mobile-session-card:has(.slot-title-menu[open]) {
+  overflow: visible;
+  z-index: 35;
+}
+
+/* Keyboard focus identifies only the preview Open action. */
+.mobile-session-card-open-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

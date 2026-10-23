@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- interactive-widget=resizes-content: the Android soft keyboard resizes
+         the layout viewport (not just the visual one), so `100dvh` shrinks when
+         the keyboard opens. Without it the edge-to-edge WebView keeps full
+         height and the terminal's bottom rows (prompt + shell completion menu)
+         render behind the keyboard. Shrinking .term-host fires the ResizeObserver
+         in TerminalView, which refits xterm so those rows stay visible. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#011627" />
+    <title>agent-console</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
