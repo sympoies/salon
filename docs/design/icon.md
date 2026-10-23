@@ -12,7 +12,7 @@ The SVG files are the editable source. Preview PNG files are raster outputs and 
 
 ## Inspection
 
-Both SVG variants were rendered at 16 px, 32 px, and 256 px with `rsvg-convert`. The 256 px renders were cross-checked in headless Chrome and inspected on light and dark surfaces. The join has no gap at the upper bridge cap, and the mark reads as one continuous S-shaped ribbon. The 16 px and 32 px outputs were inspected at native size and enlarged with nearest-neighbor scaling. The darker first turn and lighter second turn remain distinct in each theme variant.
+Both SVG variants were rendered at 16 px, 32 px, and 256 px with `rsvg-convert`. The 256 px renders were cross-checked in headless Chrome and inspected on light and dark surfaces. The upper bridge cap now meets the lobe without an open notch. The 16 px and 32 px outputs were inspected at native size and enlarged with nearest-neighbor scaling. The darker first turn and lighter second turn remain distinct in each theme variant.
 
 The widened waist keeps the two turns visibly connected at 16 px. The upper bridge cap overlaps the ribbon lobe to avoid a notch at larger sizes. Each theme uses distinct SVG title and gradient IDs so both variants can be inlined in the same document without ID collisions.
 
