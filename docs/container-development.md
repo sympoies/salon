@@ -8,9 +8,10 @@ choices; select Codex. Provider login and credentials remain owned by Codex.
 ## Preparation status
 
 Container source is under preparation. The first application/container build
-requires maintainer clearance of the approved icon checks, reviewed core export
-and package cutover ordering. The commands below describe the intended flow;
-they do not establish successful build or real-provider acceptance yet.
+requires the reviewed core export and maintainer clearance of package cutover
+ordering. Icon approval is no longer a first-build prerequisite. The commands
+below describe the intended flow; they do not establish successful build or
+real-provider acceptance yet.
 
 ## Start and authenticate
 
