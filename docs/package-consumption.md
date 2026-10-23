@@ -1,8 +1,9 @@
 # Compiled package preparation
 
-This prepares local private package consumption. It does not publish packages,
-create a release, change a repository's visibility or establish a downstream
-published-version pin.
+The preparation commands build local private packages without publishing them,
+creating a release, changing repository visibility or establishing a downstream
+published-version pin. The private SDK release entrypoint below is a separately
+authorized publisher operation.
 
 The current import follows merged source commit
 `540ca97a492a008d63dc4410eaa4502ce7536117`, whose full tree is identical to
@@ -45,6 +46,44 @@ The local override of the shared dependency ensures both edge and UI resolve the
 same tarball. It is a proof for unpublished packages, with no registry fallback.
 The root lockfile is for this producer workspace; a downstream distribution owns
 its own dependency lock and acquisition policy.
+
+## Private SDK release
+
+Publication is reserved for the authorized publisher after designated review and
+merge. The first SDK release is fixed at `v0.1.0`, a private GitHub prerelease
+with `latest=false`; root and package versions remain `0.1.0`. It uploads only
+`shared.tgz`, `edge.tgz`, `ui.tgz` and `manifest.json`. The existing manifest is
+the checksum record; no additional asset format is created.
+
+Use a clean managed checkout at the exact approved full source SHA, with Node 24,
+pnpm 11.9.0, installed frozen dependencies, `agent-run`, `forge-cli`, `gh` and
+`tar`. Retain the exact source's gate, CI and designated review. Prepare notes
+outside the checkout naming that full SHA, approved PR/CI, package versions and
+compiled SDK scope; application/provider/container acceptance remains separate.
+Run the entrypoint through the repository environment:
+
+```bash
+systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 \
+  agent-run exec --cwd "$salon_checkout" -- ./.agents/scripts/release.sh \
+  "$approved_source_sha" "$release_notes_file" --dry-run
+```
+
+The publisher runs the same command without `--dry-run` only under its existing
+release authorization. The script checks private repository scope, clean exact
+source already merged into main, fixed versions and an unused tag. It runs the
+existing `pack:core`, verifies manifest source/cleanliness/versions plus actual
+archive sizes, hashes and compiled-only payloads, then repeats the private-scope
+check before the native publisher. Main may advance without changing the exact
+approved release source. Dry-run performs the same local checks and the native
+`forge-cli release create --dry-run`; it does not publish.
+
+After publication the entrypoint checks actual tag resolution, prerelease state,
+four distinct uploaded asset IDs and provider sizes/digests, then downloads each
+asset by ID and compares its bytes, including the manifest itself. Its final
+stdout records those actual identities. A failed readback does not roll back or
+replace a release; stop and hand the observed state to the release owner. Route
+the verified identities through the lead/coordinator for the separate reader-App
+byte/scope probe before downstream acquisition and exact pins.
 
 ## Remaining delivery work
 
