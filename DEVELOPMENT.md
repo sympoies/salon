@@ -16,8 +16,8 @@ existing `CHROME_BIN` override. Browser fixture temporary files use `/tmp`.
 Install with `pnpm install --frozen-lockfile`. `pnpm build:packages` compiles
 the three libraries; `pnpm pack:core` creates local tarballs with provenance
 and digests. [Package consumption](docs/package-consumption.md) describes the
-outside-workspace consumer. No application/container or publication command is
-part of this producer milestone.
+outside-workspace consumer and the separately authorized private SDK release
+entrypoint. Application/container acceptance remains a separate milestone.
 
 ## Before editing
 
