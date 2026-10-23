@@ -1,6 +1,6 @@
 # Salon icon
 
-The Salon mark uses concept B: a continuous S-shaped conversation ribbon with two turns. Its two-part teal and mint gradient keeps the shape readable on light and dark surfaces.
+The Salon mark follows concept B: three folded ribbon bands form an S-shaped conversation mark. A dark teal upper band and lower band frame the light mint diagonal fold. A subtle fold highlight keeps the three main bands distinct at small sizes.
 
 ## Assets
 
@@ -12,9 +12,9 @@ The SVG files are the editable source. Preview PNG files are raster outputs and 
 
 ## Inspection
 
-Both SVG variants were rendered at 16 px, 32 px, and 256 px with `rsvg-convert`. The 256 px renders were cross-checked in headless Chrome and inspected on light and dark surfaces. The upper bridge cap now meets the lobe without an open notch. The 16 px and 32 px outputs were inspected at native size and enlarged with nearest-neighbor scaling. The darker first turn and lighter second turn remain distinct in each theme variant.
+Both SVG variants were rendered at their stated preview dimensions with `rsvg-convert`. The resulting PNG dimensions were checked with `identify`, and the 16 px, 32 px, and 256 px outputs were inspected at native size and enlarged with nearest-neighbor scaling for edge and silhouette review. The dark upper and lower bands remain distinct from the mint fold in each theme variant.
 
-The widened waist keeps the two turns visibly connected at 16 px. The upper bridge cap overlaps the ribbon lobe to avoid a notch at larger sizes. Each theme uses distinct SVG title and gradient IDs so both variants can be inlined in the same document without ID collisions.
+The layered bands keep the diagonal mint fold visible at 16 px. Each theme uses a distinct SVG title ID so both variants can be inlined in the same document without ID collisions.
 
 ## Validation note
 
