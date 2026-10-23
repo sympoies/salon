@@ -32,7 +32,7 @@ RUN npm install --global pnpm@11.9.0 @openai/codex@0.162.1 \
        | sha256sum --check
 
 WORKDIR /opt/salon
-COPY LICENSE package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+COPY LICENSE package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts ./scripts
 COPY packages ./packages
 COPY apps/workspace ./apps/workspace
