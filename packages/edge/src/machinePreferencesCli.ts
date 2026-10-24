@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { lstatSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { MachinePreferencesStore, validPreferenceReason } from "./machinePreferences.ts";

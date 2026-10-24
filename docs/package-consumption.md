@@ -24,11 +24,13 @@ model output paths from colliding on case-insensitive filesystems. The package
 builder checks actual emitted JavaScript, declarations and copied assets; the
 project gate also checks tracked paths.
 
-The [source manifest](core-source-manifest.json) records baseline hashes, final
-hashes for the 11 retained license/comment/EOF adaptations, and implementation
-input/final hashes for the image-toolbar files. It preserves the original reviewed snapshot
-and completed downstream distribution-test transfer. No upstream Git history, private
-composition or environment files are imported. The Sign out fixture adaptation
+The [source manifest](core-source-manifest.json) records baseline hashes and
+final hashes for 13 retained local adaptations across package metadata, owner
+command entrypoints, and existing license/comment/EOF adjustments. It records
+implementation input/final hashes for the image-toolbar files and preserves
+the original reviewed snapshot and completed downstream distribution-test
+transfer. No upstream Git history, private composition or environment files
+are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
 and browser assertions and their original execution bounds.
 
@@ -61,6 +63,14 @@ matching user turn and checks that history takes over. A fresh document with a
 later history window must retain the journaled handover. Unexpected reads,
 writes and browser errors fail the probe. No internal imports or source aliases
 replace the installed implementation.
+
+The installed edge package exposes two owner-local commands:
+`agent-console-test-credential` for creating, revoking and auditing test
+credentials, and `agent-console-machine-preferences` for enabling or disabling
+a machine preference. Both invoke the compiled package files and retain their
+existing explicit database, principal and operation arguments. Invalid or
+empty invocations fail before opening a store; the package-consumer smoke
+probes both commands without supplying a database.
 
 The local override of the shared dependency ensures both edge and UI resolve the
 same tarball. It is a proof for unpublished packages, with no registry fallback.

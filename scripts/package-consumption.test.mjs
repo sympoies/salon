@@ -19,6 +19,22 @@ test("installed compiled core starts an authenticated edge and composes a generi
   const run = (command, args, cwd = consumer) => execFileSync(command, args, {
     cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000,
   });
+  const expectHarmlessOwnerCommandProbe = (name, expectedError) => {
+    let failure;
+    try {
+      run(join(consumer, "node_modules/.bin", name), []);
+    } catch (error) {
+      failure = error;
+    }
+    assert.ok(failure, `${name} should reject an empty invocation`);
+    assert.equal(
+      failure.status,
+      1,
+      `${name} should be installed and fail argument validation before store access (${failure.message})`,
+    );
+    assert.equal(failure.stdout, "");
+    assert.match(failure.stderr, expectedError);
+  };
   try {
     mkdirSync(consumer);
     const packs = join(temporary, "packs");
@@ -43,6 +59,14 @@ test("installed compiled core starts an authenticated edge and composes a generi
     }, null, 2));
     writeFileSync(join(consumer, "pnpm-workspace.yaml"), "overrides:\n" + ["shared", "edge", "ui"].map(name => `  '@agent-console/${name}': 'file:../packs/${name}.tgz'\n`).join(""));
     run("pnpm", ["install", "--ignore-scripts", "--config.node-linker=hoisted"]);
+    expectHarmlessOwnerCommandProbe(
+      "agent-console-test-credential",
+      /test-credential: operation failed; check action, tester principal, database and private output path/,
+    );
+    expectHarmlessOwnerCommandProbe(
+      "agent-console-machine-preferences",
+      /machine preference failed: usage:/,
+    );
     // Node 24 rejects TypeScript modules in node_modules on the source-only base.
     run(process.execPath, ["--input-type=module", "--eval", "await import('@agent-console/edge/start')"]);
     for (const name of ["shared", "edge", "ui"]) {
