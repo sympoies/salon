@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const repository = "sympoies/salon";
-const version = "0.1.0";
+const version = "0.1.1";
 const tag = `v${version}`;
 const names = ["shared", "edge", "ui"];
 const assets = [...names.map(name => `${name}.tgz`), "manifest.json"];
@@ -34,7 +34,7 @@ assertPrivate();
 requireValue(api(`compare/${source}...main`).merge_base_commit?.sha === source,
   "Approved source must be merged into main; a later main does not change the release source");
 requireValue(run("pnpm", ["--version"]).trim() === "11.9.0", "SDK release requires pnpm 11.9.0");
-requireValue(readJson("package.json").version === version, "Root SDK version must remain 0.1.0");
+requireValue(readJson("package.json").version === version, "Root SDK version must match the release version");
 for (const name of names) {
   const manifest = readJson(`packages/${name}/package.json`);
   requireValue(manifest.name === `@agent-console/${name}` && manifest.version === version, "SDK package name/version mismatch");
@@ -42,7 +42,7 @@ for (const name of names) {
 const notes = resolve(notesPath);
 requireValue(readFileSync(notes, "utf8").includes(source), "Release notes must name the exact approved source");
 requireValue(!api(`git/matching-refs/tags/${tag}`).some(ref => ref.ref === `refs/tags/${tag}`),
-  "First SDK release tag already exists; do not replace or reuse published identities");
+  "SDK release tag already exists; do not replace or reuse published identities");
 
 execFileSync("pnpm", ["run", "pack:core"], { cwd: root, stdio: "inherit" });
 assertSource();

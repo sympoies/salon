@@ -342,3 +342,47 @@ test("client-supplied authority and stale compose targets are rejected before st
     operation: "begin_compose", hold_id: "draft-a" })).status, 410);
   assert.equal((await f.list()).items.length, 0);
 });
+
+test("discard of a refused reply is durable and shared, including an old incarnation, and sends nothing", async t => {
+  for (const multiUser of [false, true]) await t.test(multiUser ? "session owner" : "legacy principal", async t => {
+    const f = await fixture(t, multiUser);
+    await f.admit();
+    await f.until(async () => (await f.list()).items[0]?.state === "refused");
+    const refused = (await f.list()).items[0]!;
+    f.state.incarnation = "replacement";
+    if (multiUser) {
+      const ownership = new AccessStore(f.statePath);
+      ownership.claimSession({ principalId: "alice", machine: "fixture", sessionId: "session-a", incarnation: "replacement" });
+      ownership.close();
+    }
+    const posts = f.state.posts.length;
+    const response = await f.request("/intent-a", "PATCH", { operation: "discard_refused", base_revision: refused.revision,
+      expected_session_incarnation: incarnation });
+    assert.equal(response.status, 200);
+    assert.equal((await f.list()).items[0]?.state, "cancelled");
+    await f.restart();
+    assert.equal((await f.list()).items[0]?.state, "cancelled", "another authenticated viewer after restart sees the recorded discard");
+    assert.equal(f.state.posts.length, posts);
+  });
+});
+
+test("retry of a refused reply is incarnation fenced, revision fenced, and uses a new provider request once", async t => {
+  const f = await fixture(t);
+  await f.admit();
+  await f.until(async () => (await f.list()).items[0]?.state === "refused");
+  const refused = (await f.list()).items[0]!;
+  const action = { operation: "retry_refused", base_revision: refused.revision, expected_session_incarnation: incarnation };
+  f.state.incarnation = "replacement";
+  assert.equal((await f.request("/intent-a", "PATCH", action)).status, 409);
+  assert.equal(f.state.posts.length, 1);
+  f.state.incarnation = incarnation; f.state.mode = "submitted";
+  assert.equal((await f.request("/intent-a", "PATCH", action)).status, 200);
+  assert.equal((await f.request("/intent-a", "PATCH", action)).status, 409, "double click or lost-ack replay cannot schedule another attempt");
+  await f.until(async () => (await f.list()).items[0]?.state === "submitted");
+  assert.equal(f.state.posts.length, 2);
+  assert.notEqual(f.state.posts[0]?.request_id, f.state.posts[1]?.request_id);
+  assert.equal(f.state.posts[1]?.text, refused.text);
+  const submitted = (await f.list()).items[0]!;
+  assert.equal((await f.request("/intent-a", "PATCH", { ...action, operation: "discard_refused", base_revision: submitted.revision })).status, 409,
+    "discard must never hide an input that may have been sent");
+});

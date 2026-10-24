@@ -6,8 +6,8 @@ published-version pin. The private SDK release entrypoint below is a separately
 authorized publisher operation.
 
 The current import follows merged source commit
-`540ca97a492a008d63dc4410eaa4502ce7536117`, whose full tree is identical to
-reviewed head `2abcd0716923f87ed59867f7be2db73cc43be260`. It includes the three
+`c1df368099b9ecffec7ae655732395aa0c1db6db`, whose full tree is identical to
+reviewed head `f3c2478ba6e05b6f4e4a9c305335353d70c283de`. It includes the three
 helper-module renames that prevent component and
 model output paths from colliding on case-insensitive filesystems. The package
 builder checks actual emitted JavaScript, declarations and copied assets; the
@@ -47,11 +47,27 @@ same tarball. It is a proof for unpublished packages, with no registry fallback.
 The root lockfile is for this producer workspace; a downstream distribution owns
 its own dependency lock and acquisition policy.
 
+## Shared reply and terminal recovery
+
+The SDK patch includes the canonical refused-reply and terminal recovery repair.
+Only definitely refused replies offer Discard and Retry. Discard sends nothing
+and records cancellation durably, including for an earlier session incarnation.
+Capacity pruning retains that cancellation so an old admission cannot recreate
+or send a discarded intent. Retry requires the current incarnation and item
+revision, retains the intent and allocates a fresh provider request ID.
+
+After rejected or unconfirmed terminal input, a later provider-confirmed
+submission for the current pane/provider releases input uncertainty. Historical
+events, transport acknowledgements and Clear draft alone do not. Locally tracked
+slash drafts remain guarded after recovery. The port retains the canonical
+shared, edge and mounted UI behavior tests; application/provider and native
+acceptance remain separate.
+
 ## Private SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The first SDK release is fixed at `v0.1.0`, a private GitHub prerelease
-with `latest=false`; root and package versions remain `0.1.0`. It uploads only
+merge. The current SDK patch release is fixed at `v0.1.1`, a private GitHub prerelease
+with `latest=false`; root and package versions are `0.1.1`. The existing `v0.1.0` tag and assets stay immutable. It uploads only
 `shared.tgz`, `edge.tgz`, `ui.tgz` and `manifest.json`. The existing manifest is
 the checksum record; no additional asset format is created.
 

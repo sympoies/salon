@@ -61,11 +61,16 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
         const item = snapshot.items.find(item => item.id === intent)!;
         if (body.base_revision !== item.revision) return Response.json({ ok: false, error: { code: "outbox-revision-conflict" } }, { status: 409 });
         const changed: SharedOutboxItem = { ...item, revision: item.revision + 1,
-          ...(body.operation === "cancel" ? { state: "cancelled" as const } : {}),
+          ...(body.operation === "discard_refused" || body.operation === "cancel" ? { state: "cancelled" as const } : {}),
+          ...(body.operation === "retry_refused" ? { state: "queued" as const, receipt: null, request_id: null } : {}),
           ...(body.operation === "begin_edit" ? { edit_hold: body.hold_id } : {}),
           ...(body.operation === "release_edit" || body.operation === "save_edit" ? { edit_hold: null } : {}),
           ...(body.operation === "save_edit" ? { text: body.text } : {}) };
         snapshot = { ...snapshot, revision: snapshot.revision + 1, items: snapshot.items.map(item => item.id === intent ? changed : item) };
+        if (body.operation === "retry_refused" || body.operation === "discard_refused") {
+          if (mode === "lost-patch") throw new TypeError("Synthetic lost mutation acknowledgement");
+          return Response.json({ ok: true, data: { item: changed } });
+        }
       } else {
         if (body.base_revision !== snapshot.revision) return Response.json({ ok: false, error: { code: "outbox-revision-conflict" } }, { status: 409 });
         snapshot = { ...snapshot, revision: snapshot.revision + 1,
@@ -401,5 +406,30 @@ test("a replaced shared cookie cannot move a retained intention into another acc
     await h.client.sync(h.target);
     assert.deepEqual(h.admissions, [{ id, text: "Alice retained text" }]);
     assert.ok(h.principalHeaders.every(value => value === "alice"));
+  } finally { await h.close(); }
+});
+
+for (const current of [true, false]) test(`refused shared reply offers global Discard and ${current ? "Retry" : "no Retry for a prior incarnation"}`, async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const item: SharedOutboxItem = { id: "refused-action", text: "unsent reply", state: "refused", revision: 2,
+      session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: null, receipt: null, edit_hold: null, error_code: "auth-quarantined" };
+    h.server({ revision: 2, items: [item], compose_holds: [] });
+    await h.client.sync(h.target);
+    await h.showReplies(current ? session : { ...session, session_incarnation: "inc-2" });
+    const button = (label: string) => [...h.container.querySelectorAll<HTMLButtonElement>("button")].find(node => node.textContent === label);
+    assert.ok(button("Discard"), "a refused reply can be discarded without sending it");
+    assert.equal(Boolean(button("Retry")), current);
+    if (current) {
+      await act(async () => button("Retry")!.click()); await h.settle();
+      assert.equal(h.snapshot().items[0]?.state, "queued");
+      assert.equal(h.admissions.length, 0, "retry mutates the existing refused intent rather than duplicating it");
+      h.server({ revision: 4, items: [{ ...item, revision: 4 }], compose_holds: [] });
+      await act(async () => h.client.sync(h.target)); await h.settle();
+    }
+    await act(async () => button("Discard")!.click()); await h.settle();
+    assert.equal(h.snapshot().items[0]?.state, "cancelled");
+    assertNoElement(h.container, '[data-status="refused"]', "discard removes the refused bubble after server confirmation");
+    assert.equal(h.admissions.length, 0);
   } finally { await h.close(); }
 });

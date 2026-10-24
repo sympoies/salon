@@ -49,16 +49,18 @@ export interface TerminalContextCommandGuard {
   noteNavigation(): void;
   markInputUncertain(): string | null;
   uncertaintyMessage(): string | null;
+  confirmSubmission(submittedAt: string): boolean;
 }
 
 export function createTerminalContextCommandGuard(agent: string | undefined): TerminalContextCommandGuard {
   const commands = agent && Object.hasOwn(CONTEXT_COMMANDS, agent) ? CONTEXT_COMMANDS[agent]! : [];
   let draft = emptyDraft();
   let inputUncertain = false;
+  let uncertainSince = 0;
   const uncertaintyMessage = () => inputUncertain && commands.length > 0
     ? "The provider draft is uncertain after rejected or unconfirmed input. Enter is blocked. "
-      + "Use Console's New session action or the managed role restart flow. "
-      + "Clear draft does not confirm that the provider's draft is empty."
+      + "Send a reply from Conversation after the provider recovers; a confirmed submission unlocks Enter. "
+      + "Clear draft alone does not confirm recovery."
     : null;
   const noteNavigation = (next: Draft) => {
     next.slash ||= next.chars.join("").trimStart().startsWith("/");
@@ -241,7 +243,17 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
     noteNavigation() { noteNavigation(draft); },
     markInputUncertain() {
       inputUncertain = commands.length > 0;
+      uncertainSince = Date.now();
       return uncertaintyMessage();
+    },
+    confirmSubmission(submittedAt) {
+      // Attach prompt events come from provider history, not terminal pixels or
+      // a transport write acknowledgement. Replayed/older events cannot prove
+      // that a rejected input has since been consumed. Keep local draft tracking:
+      // a slash command typed meanwhile still needs its ordinary refusal/clear.
+      if (!inputUncertain || !(Date.parse(submittedAt) > uncertainSince)) return false;
+      inputUncertain = false;
+      return true;
     },
     uncertaintyMessage,
   };

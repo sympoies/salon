@@ -954,6 +954,15 @@ button.history-outgoing-bubble {
   text-align: right;
 }
 
+/* Refused replies stay actionable at narrow conversation widths. */
+.history-shared-outgoing .history-outgoing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .conversation-file-input {
   display: none;
 }

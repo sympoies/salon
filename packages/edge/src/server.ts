@@ -1,6 +1,6 @@
 import {isPromptRequestId,isPromptIncarnation} from "@agent-console/shared/prompt-receipt";
 import {forwardPromptReceipt} from "./promptReceipts.ts";
-import { normalizeOutboxAdmission } from "@agent-console/shared/shared-outbox";
+import { normalizeOutboxAdmission, normalizeRefusedOutboxAction } from "@agent-console/shared/shared-outbox";
 import { OutboxError, OutboxStore, type OutboxTarget } from "./outboxStore.ts";
 import { outboxCredentialGeneration, SharedOutboxDispatcher } from "./sharedOutbox.ts";
 import { TestCredentialStore, testCredentialHash } from "./testCredentials.ts";
@@ -776,11 +776,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         }
         // Older clients may still expose queued-message editing. Retire the
         // operation explicitly instead of silently changing submitted text.
-        if (method === "PATCH") throw new OutboxError("outbox-actions-retired", 410);
         const raw = method === "GET" ? undefined : await readJsonBody(req).catch(() => undefined);
         const admission = method === "PUT" ? normalizeOutboxAdmission(raw) : null;
+        const action = method === "PATCH" && route.id === "outbox-item" ? normalizeRefusedOutboxAction(raw) : null;
+        if (method === "PATCH" && !action) throw new OutboxError("outbox-actions-retired", 410);
         const incarnation = method === "GET" ? url.searchParams.get("expected_session_incarnation")
-          : admission?.expected_session_incarnation;
+          : (admission ?? action)?.expected_session_incarnation;
         if (!isPromptIncarnation(incarnation)
           || (method === "GET" && (url.searchParams.getAll("expected_session_incarnation").length !== 1
             || [...url.searchParams.keys()].some(key => key !== "expected_session_incarnation")))
@@ -797,7 +798,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             if (!value) throw new OutboxError("outbox-intent-not-found", 404);
             sendJson(res, 200, { ok: true, data: intent ? { item: value } : value }); return;
           }
-          if (admission) {
+          if (admission || action?.operation === "retry_refused") {
             const observed = await aggregateSessions([machine]);
             if (!observed.machines.some(m => m.ok)) throw new OutboxError("outbox-target-unavailable", 503);
             const session = observed.sessions.find(s => s.id === sessionId);
@@ -807,6 +808,16 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               throw new OutboxError("outbox-provider-unsupported", 409);
             }
             if (!outboxAccess(target)) throw new OutboxError("outbox-authorization-changed", 403);
+          }
+          if (action && intent) {
+            // Route authorization and the principal-scoped target already fence
+            // discard. It sends nothing and may retire an earlier incarnation.
+            const allowed = action.operation === "retry_refused" ? outboxAccess(target) : null;
+            if (action.operation === "retry_refused" && !allowed) throw new OutboxError("outbox-authorization-changed", 403);
+            const item = outboxStore.actOnRefused(target, intent, action,
+              allowed ? outboxCredentialGeneration(allowed.principal, allowed.machine) : undefined);
+            if (action.operation === "retry_refused") void outboxDispatcher?.tick();
+            sendJson(res, 200, { ok: true, data: { item } }); return;
           }
           if (admission && intent) {
             const allowed = outboxAccess(target);

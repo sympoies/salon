@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { validOutboxText, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
-import { admitSharedOutbox, readSharedOutbox, SharedOutboxRequestError, type SharedOutboxTarget } from "./api.ts";
+import { validOutboxText, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
+import { actOnRefusedSharedOutbox, admitSharedOutbox, readSharedOutbox, SharedOutboxRequestError, type SharedOutboxTarget } from "./api.ts";
 import { apiBase, nativeConnectionConfigGeneration, nativePrincipalIsActive } from "./runtime.ts";
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import type { Session } from "./types.ts";
@@ -141,6 +141,23 @@ export class SharedOutboxClient {
       return { ...row, admissions: [...row.admissions, { id, text, created_at: Date.now(), attempted: false }] };
     });
     void this.sync(target).then(() => this.sync(target)); return id;
+  }
+  async actOnRefused(session: Session, target: SharedOutboxTarget, item: SharedOutboxItem,
+    operation: RefusedOutboxAction["operation"]): Promise<void> {
+    const key = this.key(target);
+    try {
+      this.requireActive();
+      if (item.state !== "refused" || target.machine !== session.machine || target.id !== session.id
+        || (operation === "retry_refused" && target.incarnation !== session.session_incarnation)) {
+        throw new SharedOutboxRequestError(409, "outbox-session-changed");
+      }
+      // Server revision CAS arbitrates concurrent viewers and repeated clicks.
+      // Never persist/replay a mutation whose acknowledgement may be lost.
+      await actOnRefusedSharedOutbox(target, item, operation); this.requireActive();
+      await this.sync(target);
+    } catch (error) {
+      if (this.active()) { this.errors.set(key, errorText(error)); this.changed(); }
+    }
   }
   async sync(target: SharedOutboxTarget): Promise<void> {
     const key = this.key(target);

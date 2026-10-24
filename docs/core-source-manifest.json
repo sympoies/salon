@@ -1,6 +1,6 @@
 {
-  "upstreamCommit": "540ca97a492a008d63dc4410eaa4502ce7536117",
-  "equivalentReviewedCommit": "2abcd0716923f87ed59867f7be2db73cc43be260",
+  "upstreamCommit": "c1df368099b9ecffec7ae655732395aa0c1db6db",
+  "equivalentReviewedCommit": "f3c2478ba6e05b6f4e4a9c305335353d70c283de",
   "initialImport": {
     "upstreamCommit": "89a213ee4096d80ccb702618cbc935a584329218",
     "equivalentMergeCommit": "2d00a8df5d89803f65934438113784529ec76169",
@@ -23,7 +23,7 @@
   },
   "excludedFiles": {},
   "localAdaptations": [
-    "Add MIT license metadata to the three package manifests.",
+    "Set the three SDK package versions to 0.1.1 and retain MIT license metadata.",
     "Point the two extension-contract comments to the local package boundary document.",
     "Preserve font bytes and include full upstream font licensing notices.",
     "Remove one redundant EOF blank line in each explicitly listed file; no behavior change."
@@ -59,11 +59,11 @@
     "packages/edge/src/machinePreferences.ts": "b4a7b42c5587e4b2d522d943c0b4c6523bb56313ca6039baaf6d17eba24722be",
     "packages/edge/src/machinePreferencesCli.ts": "ab5b8c75d32d6194299f7dc43fc2b98686980fd27b3e8b93171a8c76d4e753a0",
     "packages/edge/src/normalize.ts": "6158d8ffbcd568f2b5b060c69abf8ee1dc8308895db1b5d5e849d1a2660f9167",
-    "packages/edge/src/outboxStore.ts": "6e7773d0a6ba22e1f72ca4357d913ecae72425ae59a14339a8ca75be245d1de0",
+    "packages/edge/src/outboxStore.ts": "0154d4eaffe6d3cf3caea2658eb4466a37e7b1d6ec86dc42c314d09400766c59",
     "packages/edge/src/promptReceipts.ts": "34153f34470c4423e401ffdb6137ca9a26ced0ab24273ce94143c8f3527eea95",
     "packages/edge/src/resourceWatch.ts": "1601f066538e4377157c7b9c39c5dc2efd1d2da76ad3dc800f9bd7ea614e8aa8",
     "packages/edge/src/runtimeHealth.ts": "17ba092b70a9bd424b8f9618872e0b44664136627caa14e6fd768b0c8a88bcaf",
-    "packages/edge/src/server.ts": "fafef8ed17992580f500f010543d47c9570dfa8c5139cbfb7aedeff80368229f",
+    "packages/edge/src/server.ts": "07381e77648b8332b3eb323d39e18e8bc2d9c21ec5bc10b30d09c3a59b06e813",
     "packages/edge/src/sessionMutationCoordinator.ts": "58737a43b8518a806289325897f43a295200d0b87bb4d2b23de3f0a29933a620",
     "packages/edge/src/sharedActivity.ts": "42eae21d46f2047300594f91bf94eedbc7f9b31a60a3438f1a9095fe9504c3a6",
     "packages/edge/src/sharedOutbox.ts": "fc0f320d0f3d801f72fcf89363a8e4e35b858d7cc7e08545c7673e3b7de39137",
@@ -104,7 +104,7 @@
     "packages/edge/test/machinePreferencesApi.test.ts": "633e768e50ec2ba10d22961d38faa74c99bf50d9710ce19e366078b45005ec87",
     "packages/edge/test/machinePreferencesStore.test.ts": "c0ac8c0eec8a3726c24b7283149ef50db7f083cf2c90167e2776e87ad517989d",
     "packages/edge/test/multiUserServer.test.ts": "75ab8e1547e68e566b9153806cb60194d9214fab17580b520e96ddcdc53449eb",
-    "packages/edge/test/outboxCapacity.test.ts": "ebf247d8e98a66f6e4584bfdd15d58c13940f51b3f1bc9402404971325679a94",
+    "packages/edge/test/outboxCapacity.test.ts": "f00cb15a122667844daf511b88a82cc0374f49f6cf77e7e8f2f3f9a872be2bb5",
     "packages/edge/test/outboxMigration.test.ts": "167948ece17f81dec7ad65426f626d1d796a2d70a18b9005201e447450efe2f2",
     "packages/edge/test/promptReceipts.test.ts": "84b54191f3db05aafed0ba6958f1978f1f5c37d3db048f45b4a9e751e0e2b8a6",
     "packages/edge/test/resource-events.test.ts": "3f10c072577de88d6b86ca7d516f3ec8b73cec6ceb72657ba455afb031338334",
@@ -118,7 +118,7 @@
     "packages/edge/test/sessionMutationCoordinator.test.ts": "e8a80acdd698b790294710bc3da3a9d48e401f4cbdf207555437a5a63958e40b",
     "packages/edge/test/sessionRetitleProxy.test.ts": "23629bec5249b004c92a0a7c028b67e4cd5aaf8fa063bf85387627cd8fed6bbe",
     "packages/edge/test/sharedDeliveryAuth.test.ts": "b187b09d3b0bce5a449ed70ddaf38b7e3854aa8b214224eccd3f0c5b74c4b8d2",
-    "packages/edge/test/sharedOutbox.test.ts": "8dcaf9dd5e3a7f5f411f15cc13b0eadd108f89c718e08d9fc24ec1af6f0ed0be",
+    "packages/edge/test/sharedOutbox.test.ts": "c1bc7b1d8c43bf6c7ac836c17ba8f0a715b661970ee40d79a0f9cdf67ff21d14",
     "packages/edge/test/sharedOutboxFences.test.ts": "05bcd1a56217b6c3f8529baac349502baa25d9faf8c32b4c12969be91c370b4e",
     "packages/edge/test/sharedStream.test.ts": "3c06cd36af1b317ca3eac56fa754478568bb4427bafe1de6c741aedc113f526d",
     "packages/edge/test/speech.test.ts": "265842f9b3b4b1e01e4f6d7f0a04e37f1657eb81cd24c3bf4fa61577ec20cd94",
@@ -150,7 +150,7 @@
     "packages/shared/src/roleCatalog.ts": "761be5c02ed79e800fc549d98f2ba84018589bd65c0ec6e2279fa50cc3e67a06",
     "packages/shared/src/sessionModel.ts": "ffc9eac56c6becb289539de197a4fc3ccf16db26f8af9e030092815133c7e603",
     "packages/shared/src/sessionRetitle.ts": "df456dba44a016cedcbe55455ae7ef26928cf4e253638361157aa8467fbb0c7e",
-    "packages/shared/src/sharedOutbox.ts": "1dedc299aa88082db1f3d467913a1a54981484d76b8c4a584a992d72d4a11839",
+    "packages/shared/src/sharedOutbox.ts": "937a8ccb47f440248114cdf82bba9d8f2134d450c97675b203c06d8b7927627d",
     "packages/shared/src/shell.ts": "361f24dc27be19fe81ab8c3820a60723a140e571a01be8aded5cb32ed1a2da42",
     "packages/shared/src/speech.ts": "ff65b22adb9734056d9812f2daa51ecd3435ee3125ef8729eae1664c94068432",
     "packages/shared/src/sse.ts": "f9076276454f584749e895df9049cd1d24e181bec46c9bda2a2b4d851f9752ac",
@@ -224,18 +224,18 @@
     "packages/ui/src/SessionStatusCountButtons.tsx": "b64314ac3ade470162e874b8e97c3f2443c86fdae16e1d9bc256d9c081a8f7e1",
     "packages/ui/src/SessionTitleMenu.tsx": "37049e708dc434e82f8b943fb6fa79973c802ea679d5aee739d458fc9c67c3d3",
     "packages/ui/src/Settings.tsx": "119828c81ae0ac2148f1d623e11f3ab2800cf46433f95b6a8ec9b23592f401f3",
-    "packages/ui/src/SharedOutgoingReplies.tsx": "c572386801e61368f3ebc91123b0c3f9d299ce0674bb4b45eb30b864e0e78a4f",
+    "packages/ui/src/SharedOutgoingReplies.tsx": "457743d7de074c04f8fd2be311386f6b71194287ff69d45ebdb45df14f182d45",
     "packages/ui/src/ShellPage.tsx": "4d91c3e75af124e6b728e41f1b5a32980ee599e42897883855d7a31cdd0932f7",
     "packages/ui/src/ShortcutHelpModal.tsx": "08a41ae5f3c80fe3b7f1b82dd096562312d6c82b7c37badea94a3113afecd5df",
     "packages/ui/src/SpeechComposer.tsx": "60ec68f952d098caff017f7a29bf1bc8de20d797abaa79f79536f44f2ad49fca",
     "packages/ui/src/StatusNotice.tsx": "f3d5bec5104a7cfd60fc588e4f12436a9ecefcf302d2d5489a8657fd10dc34de",
-    "packages/ui/src/TerminalPane.tsx": "eba9737b1b69c8ea81495590333b56e846e671d70c0b756405ddc9100c7eea81",
+    "packages/ui/src/TerminalPane.tsx": "6eb625337a52486f911a22b9af9457a121b994b82ba0f32aa8e3d9af3b6df500",
     "packages/ui/src/TerminalView.tsx": "9815f16ed1ab78b9dedc334a24a3b1b939bb97825def0a50163cd688fd1677a1",
     "packages/ui/src/UsagePanel.tsx": "2b9cd70b45be4c93c9bd1d465a5928c2b849ba0610f6dd198e417d228e924ea0",
     "packages/ui/src/accountDefaults.tsx": "37aea65d0edd41c257b3ce3c6ae4488f7809214ae1528c82f7598d00ddf73e43",
     "packages/ui/src/activityClock.ts": "8df3f575339a24f5390d69df45757ad8f1523174b4fef3b60ef68a39986a58eb",
     "packages/ui/src/activityStream.ts": "d62aa778dd8bbff15cafe94492f27888fe37b65fab7f5690dc205f3c5c0749e6",
-    "packages/ui/src/api.ts": "d3e7b74b0e66654d05f2c29b9ff4b5b83f39ddb62f34c57291d9d4fdc64a4f3b",
+    "packages/ui/src/api.ts": "20ae4d2ab0a9d8abb7c6cb16abd939f22f373b4bdbd2bea68b924fe4ee0326ff",
     "packages/ui/src/assets/agent-console-icon.svg": "c42de2274edafb1307426ab1afc2c13edbf0148717a37f813ed0e89f543b42aa",
     "packages/ui/src/attentionAlerts.ts": "49d7850f49007e0966b109c4812252f37cae20965dd592a814ec0297f6510bd0",
     "packages/ui/src/autoResumeDefault.ts": "2b724f5b654d06ae766d7c2366fe7de7153537535a05ab60cda6ee492ad5f2ac",
@@ -310,7 +310,7 @@
     "packages/ui/src/sessionStatusGroups.ts": "6c181754f7ca0fefaf03d58a03a3d5ee9810709c7cb4032bf255549948fdb827",
     "packages/ui/src/sessionSwipe.ts": "2a5b2a93d6627d1197ecdb6ee9dfe36e48cc415c11c684af92a87df26f79dec0",
     "packages/ui/src/sessionTitle.ts": "7d38e036041523b2b8c3c4b96359694ab49014cdae2b7ee02ce00c9a81220eb9",
-    "packages/ui/src/sharedOutboxClient.ts": "f98e26335090a90aacad0c967d9d4015685ff460a88817df8c1ab5edcdbe73db",
+    "packages/ui/src/sharedOutboxClient.ts": "e051b7da6bb9cbe5a8c9a46572ebe99d3b205351272f785dc2ee3299c3487a09",
     "packages/ui/src/shellQuote.ts": "5ceec839e4be9c2d0951396237e837fd3856ae4c17a670ca8858b27a6bf348b6",
     "packages/ui/src/singleFlightRequest.ts": "8c40eaffeb13c19a7aca83560503a16fdecd10435a452589fed56ef479de5785",
     "packages/ui/src/slotDrag.ts": "92d09caa5cb85702bb807bad76d38473e3b526b5357f2b236792b09791b1ae21",
@@ -320,11 +320,11 @@
     "packages/ui/src/statusNoticeModel.ts": "01624fb20571c300d88df3bda8de742ade1c68ef03abf5adb687475d69cf7999",
     "packages/ui/src/storage.ts": "9b9b732bbbda512062ef99380a70065c35f0f94ba7ea6389910309bdb327b85f",
     "packages/ui/src/stuckTurn.ts": "0e0c7ce5a811537649f2b9d85dc720c1dbd0cfdfd5583cb620e3ee4af7b6bc92",
-    "packages/ui/src/styles.css": "e73eea6043fc4a72f503351106549d6f3fb93ac35dd794a53cb74dc73f6a3c2a",
+    "packages/ui/src/styles.css": "15dec731fb83b3def2dceca4068be9026c1da38007f4474fd8957841bb2bd9e9",
     "packages/ui/src/terminalBottomPin.ts": "f686089b7a43182e39a261eabbbb964a74259120f5893eaca663ed2639500f7d",
     "packages/ui/src/terminalClipboard.ts": "5395c94cd236f89914d7d6720a93659f398463ec9f7de4ecc00305fffc4324a7",
     "packages/ui/src/terminalComposition.ts": "4fcf3a9dc01c3374fe94e30b438f481f442f910baecbc8f790b3d8d5672e70b8",
-    "packages/ui/src/terminalContextCommandGuard.ts": "61b901baeadd0d1ca2b0495aaf2e2f2f768f5449a27d5da77e66a86ba5e54164",
+    "packages/ui/src/terminalContextCommandGuard.ts": "25203c7489ff98b923a48c7b62b04abe4400dd6185194183e136214a30f902b7",
     "packages/ui/src/terminalFit.ts": "315cdfd15e3233f58702e44838dff5a655ec8310321c797acf6e560e6928ffab",
     "packages/ui/src/terminalFocus.ts": "0de0ac882710397b462284e36003bbfd6dacf62a51386ac1e09b13d574aed81e",
     "packages/ui/src/terminalInput.ts": "e57a3557ce8f150fa0d1c795cb7fd20b52c94fe82aa1229bb07abdb22c78f13a",
@@ -539,7 +539,7 @@
     "packages/ui/test/settingsFilterGap.browser.test.ts": "edbf79b197c30256084b9de0190516f32d3dea3e861c16dc2fdf89ff770baae7",
     "packages/ui/test/settingsSignOut.test.ts": "ba02fd686bf2ac7589bcbc4dec4b128bdad42b170832f3675fda91eaaa53687b",
     "packages/ui/test/settingsTokenExposure.test.ts": "c1e0eb085c2dce8a9c62cf8909ce25ccfced5bbbc94af32db8469eeb378976fa",
-    "packages/ui/test/sharedOutboxClient.test.ts": "6afa9180114d5ba4889c05c03199c43d645fb0dafe690287deafcaf35275f1fe",
+    "packages/ui/test/sharedOutboxClient.test.ts": "2e49fce66150e1720240aac07699f6edadf0575f7b1c063e9bc3c8592543bf85",
     "packages/ui/test/sharedOutboxNativeConnection.test.ts": "ecafd8676b9771252c63666f53008b0c39b5d30ab0dd0daa127e9225b8925321",
     "packages/ui/test/shellPage.test.ts": "08af53b20053ed27c31a410e44e7034ebd8a63b60b61f82e444a398000a65453",
     "packages/ui/test/shellQuote.test.ts": "28d10c404dec3819d3be24f792e09a5729bfe9aca3f91ecfdb52711a0081cb5c",
@@ -574,7 +574,7 @@
     "packages/ui/test/terminalBottomPin.test.ts": "ecf1f39d772bf28fc59f6b8b073478ae2f51660286ea4d1a225e951663e8ee69",
     "packages/ui/test/terminalClipboard.test.ts": "bed60dbb224549e3961d95f0f7bd523d335dfa8d06cae1e6b5d5bd693ec58f77",
     "packages/ui/test/terminalComposition.test.ts": "1a40a8108f516a8d6e1399c3dcaabaaa9d414b208ab075e7d4c428deba234894",
-    "packages/ui/test/terminalContextCommands.test.ts": "40f36782700f6abb23aac7c7b89d2f99949855a8f8958fae1a5b74f1ff60faec",
+    "packages/ui/test/terminalContextCommands.test.ts": "9307f9a09d22d3393eb51c1842cdf8946c953ddccb629fde57602ac671b39672",
     "packages/ui/test/terminalCopyOneLine.test.ts": "ecb885e1d36fcd72c85b4f737132dad5fbfb16b88cb900e1ce24d437e31a039e",
     "packages/ui/test/terminalFit.test.ts": "1ab8d05b12551f029bd8721c13ec68d30078737adf72c7992038ca3415f9c057",
     "packages/ui/test/terminalFocus.test.ts": "9b25b9ad30e358b859dd3e3aaf57d3c6dd9243f8e2a21ab73a95d4e607c53329",
@@ -638,7 +638,7 @@
   "adaptedFiles": {
     "packages/edge/package.json": {
       "upstreamSha256": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
-      "importedSha256": "83b3052da1d9d579a08a974e3baffef3bed0299c3ecd124984884bda0bd78983"
+      "importedSha256": "c7ea2bbbec6c966b103d89be225b18b0b5eba6ebe06a0a1055f334f47aa9027f"
     },
     "packages/edge/src/extensions.ts": {
       "upstreamSha256": "d531a65a12da2fa814a95ac41a78cf19e4e59179be55793278d0541bf6eff205",
@@ -654,7 +654,7 @@
     },
     "packages/shared/package.json": {
       "upstreamSha256": "a26d1189ed4b3a34a6f3289c67d2c2d4f349983ccdf65a68b9b2253608356ca1",
-      "importedSha256": "5ce7f1465541a8aade7571e23849a99811e713465148fe5adfa2c3b11503b82f"
+      "importedSha256": "feac0b32f324fb92f4c9fdcbe61c365e27b087c652d0982614d1ae3b3f8ec731"
     },
     "packages/shared/src/sse.ts": {
       "upstreamSha256": "f9076276454f584749e895df9049cd1d24e181bec46c9bda2a2b4d851f9752ac",
@@ -662,7 +662,7 @@
     },
     "packages/ui/package.json": {
       "upstreamSha256": "879df3dda266feb2d41574e164b7846c5c44e2d4e5ac5f452925af6f3978538a",
-      "importedSha256": "0254faff4bff25841cd7200ceab2d683946a88a9620f06fd328bd861bd5156a0"
+      "importedSha256": "10564f907ebd40259103f5341566b5e47414fbc8f95ef6c432c2b02720e46649"
     },
     "packages/ui/src/extensions.tsx": {
       "upstreamSha256": "d74f36fb4a5dff7fd66f7f0c3a1ce739403fd36af2ab9a41ac9fc29ed193c1b1",
