@@ -22,6 +22,9 @@ done < <(find scripts .agents/scripts -type f -name '*.sh' -print0)
 devlog check
 python3 scripts/validation/check-whitespace.py
 bash scripts/validate-core-packages.sh
+node --test docker/start.test.mjs
+node --check apps/workspace/src/server.mjs
+pnpm --filter @salon/workspace run build
 
 mkdir -p "$(dirname "$marker")"
 printf 'project-dev validation passed\n' > "$marker"

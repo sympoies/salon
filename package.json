@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "pnpm -r run typecheck",
     "build:packages": "pnpm -r run build:package",
-    "build": "pnpm run build:packages",
+    "build": "pnpm run build:packages && pnpm --filter @salon/workspace run build",
     "test": "pnpm run build:packages && pnpm -r --workspace-concurrency=1 run test",
     "check:core": "node --test scripts/test/*.test.mjs && node scripts/check-case-collisions.mjs && node scripts/check-core-boundary.mjs && node scripts/privacy-scan.mjs",
     "pack:core": "pnpm run build:packages && node scripts/pack-core.mjs",

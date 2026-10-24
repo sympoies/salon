@@ -1,0 +1,23 @@
+{
+  "name": "@salon/workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "start": "node ../../docker/start.mjs"
+  },
+  "dependencies": {
+    "@agent-console/edge": "workspace:*",
+    "@agent-console/ui": "workspace:*",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.2",
+    "typescript": "7.0.2",
+    "vite": "8.1.6"
+  }
+}
