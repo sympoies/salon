@@ -1,6 +1,7 @@
-import { constants, closeSync, fstatSync, openSync, unlinkSync, writeFileSync } from "node:fs";
+#!/usr/bin/env node
+import { constants, closeSync, fstatSync, openSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { TestCredentialStore, validTesterId } from "../src/testCredentials.ts";
 
@@ -44,7 +45,7 @@ export function runTestCredential(args: string[]): void {
   } finally { store.close(); }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
   try { runTestCredential(process.argv.slice(2)); }
   catch {
     // SQLite/OS/argument errors can include paths or user input. Fixed output
