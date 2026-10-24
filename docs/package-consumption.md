@@ -5,19 +5,23 @@ creating a release, changing repository visibility or establishing a downstream
 published-version pin. The private SDK release entrypoint below is a separately
 authorized publisher operation.
 
-The current import follows actual merged source commit
+The upstream import baseline follows actual merged source commit
 `c0d52234c8a5c62180f38b319c30903f4563ee35`, including the preceding refused-reply
 and conversation-image repairs and the accepted submitted-reply handover change.
-The six submitted-reply implementation/test files are byte-identical to accepted
-review head `112e886557533c44e9db50280ea32d37bc4fc2e8`. The actual merge also
-includes the separately accepted fresh-document Sign out fixture already present
+At that baseline, the six submitted-reply implementation/test files were
+byte-identical to accepted review head
+`112e886557533c44e9db50280ea32d37bc4fc2e8`. The actual merge also includes the separately accepted fresh-document Sign out fixture already present
 here; that fixture differs from the submitted-reply review head. The source
 manifest records the 600 selected package paths at that baseline. Its
 `adaptedFiles` entries keep upstream and retained hashes separate. The generic
 image-toolbar implementation input is recorded by source commit and patch digest,
 with input and final hashes for each of its 10 paths. This input is not presented
 as an approved upstream baseline. The retained source inventory has 601 paths:
-the 600 baseline paths and the added save adapter.
+the 600 baseline paths and the added save adapter. SDK 0.1.4 also retains the
+actionable terminal-draft refusal wording and regression from [PR29](https://github.com/sympoies/salon/pull/29),
+merged as `300502a4ae8777d9678aae83d44efbce42e336e2` after review at
+`e11a6c1b880ffba9a79c9e6490507b906b681bfe`. These later changes do not redefine
+the recorded upstream baseline, reviewed snapshot or implementation input.
 
 The import retains the three helper-module renames that prevent component and
 model output paths from colliding on case-insensitive filesystems. The package
@@ -29,7 +33,9 @@ final hashes for 13 retained local adaptations across package metadata, owner
 command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
-transfer. No upstream Git history, private composition or environment files
+transfer. The three package metadata adaptation hashes reflect the final
+0.1.4 versions; upstream hashes and historical/input identities remain unchanged.
+No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
 and browser assertions and their original execution bounds.
@@ -90,8 +96,11 @@ After rejected or unconfirmed terminal input, a later provider-confirmed
 submission for the current pane/provider releases input uncertainty. Historical
 events, transport acknowledgements and Clear draft alone do not. Locally tracked
 slash drafts remain guarded after recovery. The port retains the canonical
-shared, edge and mounted UI behavior tests; application/provider and native
-acceptance remain separate.
+shared, edge and mounted UI behavior tests. A definite terminal-draft refusal
+now explains that the owner must clear the draft in the terminal before explicit
+retry. This wording does not establish a fix for native empty-composer
+classification in [nils-cli#2922](https://github.com/sympoies/nils-cli/issues/2922);
+application/provider and native acceptance remain separate.
 
 ## Conversation images
 
@@ -113,9 +122,9 @@ views. Real provider/native acceptance remains with its owning milestone.
 ## Private SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The prepared SDK patch release is fixed at `v0.1.3`, a private GitHub prerelease
-with `latest=false`; root and package versions are `0.1.3`. The existing `v0.1.0`,
-`v0.1.1` and `v0.1.2` tags and assets stay immutable. Source preparation does not authorize
+merge. The prepared SDK patch release is fixed at `v0.1.4`, a private GitHub prerelease
+with `latest=false`; root and package versions are `0.1.4`. The existing `v0.1.0`,
+`v0.1.1`, `v0.1.2` and `v0.1.3` tags and assets stay immutable. Source preparation does not authorize
 publication. The authorized publisher uploads only
 `shared.tgz`, `edge.tgz`, `ui.tgz` and `manifest.json`. The existing manifest is
 the checksum record; no additional asset format is created.
