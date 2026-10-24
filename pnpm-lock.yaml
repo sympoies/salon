@@ -12,6 +12,31 @@ importers:
         specifier: 0.137.0
         version: 0.137.0
 
+  apps/workspace:
+    dependencies:
+      '@agent-console/edge':
+        specifier: workspace:*
+        version: link:../../packages/edge
+      '@agent-console/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      react:
+        specifier: 19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: 19.2.7
+        version: 19.2.7(react@19.2.7)
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.2
+        version: 24.13.2
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vite:
+        specifier: 8.1.6
+        version: 8.1.6(@types/node@24.13.2)(jiti@2.7.0)(yaml@2.9.0)
+
   packages/edge:
     dependencies:
       '@agent-console/shared':

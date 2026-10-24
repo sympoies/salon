@@ -5,17 +5,17 @@ and UI packages, agent-session, tmux and the official Codex CLI. Only Codex is
 installed for this milestone. The shared UI retains its existing provider
 choices; select Codex. Provider login and credentials remain owned by Codex.
 
-## Preparation status
+## Validation status
 
-Container source is under preparation. The first application/container build
-requires the reviewed core export and maintainer clearance of package cutover
-ordering. Icon approval is no longer a first-build prerequisite. The commands
-below describe the intended flow; they do not establish successful build or
-real-provider acceptance yet.
+The isolated application and container build, authenticated HTTP and emergency
+shell transport, browser login/reload and volume persistence checks have passed.
+Official provider login, a real provider session, prompt/reply and conversation
+reconnect still require scheduled acceptance. These checks use the canonical
+core packages; the application does not implement its own session lifecycle.
 
 ## Start and authenticate
 
-After the prerequisites are admitted, start from a clean checkout:
+Start from a clean checkout:
 
 ```bash
 docker compose up --build -d
@@ -77,15 +77,22 @@ local state.
 
 ## Validation and acceptance
 
-Run the [project gate](../DEVELOPMENT.md#validation), focused startup tests and
-an isolated Compose build/start smoke after the build prerequisites clear.
-The focused startup command is `node --test docker/start.test.mjs` (use the
-standard memory scope on Linux). It covers readiness, token separation, durable
-browser credentials, failure and shutdown with isolated process fixtures. It
-does not build the application or contact a provider.
+Run the [project gate](../DEVELOPMENT.md#validation). It includes the actual
+workspace typecheck/build and `node --test docker/start.test.mjs`. The startup
+tests cover readiness, token separation, durable browser credentials, failure
+and shutdown with isolated process fixtures. They do not contact a provider.
+On Linux, use the documented memory scope for build/test commands; give an
+isolated BuildKit builder the same six-GiB memory and zero-swap budget because
+the client scope alone does not constrain a Docker daemon's build workers.
 
 Check non-root execution, authenticated assets/session writes/attach, refusal
 without browser authentication, token separation and state persistence.
+The isolated smoke exercised real tmux input/output and socket reconnect through
+the core's authenticated emergency-shell route without starting a provider.
+Container recreation preserved all three volumes and the browser login token;
+the expired browser cookie required login again, and the stopped shell was not
+silently recreated. Headless Chrome rendered login and the Codex session dialog
+and retained authenticated access after reload at desktop and mobile sizes.
 
 A fixture response, headless UI run or successful daemon inventory request
 cannot establish real-provider acceptance. The scheduled tester must complete
