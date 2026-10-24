@@ -6,6 +6,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Plugin } from "vite";
 import type { SharedOutboxItem, SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
+import type { HistoryMessage } from "../src/types.ts";
 import { makeSession } from "./support/fixtures.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 import { assertNoElement } from "./support/domAssert.ts";
@@ -28,6 +29,7 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
   const principalHeaders: (string | null)[] = [];
   let remotePrincipal: string | undefined;
   let nextRead: (() => Promise<Response>) | undefined;
+  let transcript: readonly HistoryMessage[] = [];
   let snapshot: SharedOutboxSnapshot = { revision: 0, items: [], compose_holds: [] };
   const fetch = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost"), method = init?.method ?? "GET";
@@ -106,9 +108,9 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
       nextRead = async () => { const saved = snapshot; started(); await gate; return Response.json({ ok: true, data: saved }); };
       return { entered, release };
     },
-    async showReplies(shown = session) {
+    async showReplies(shown = session, messages: readonly HistoryMessage[] = transcript) {
       const { SharedOutgoingReplies } = await ssr.loadModule<typeof import("../src/SharedOutgoingReplies.tsx")>("/src/SharedOutgoingReplies.tsx");
-      await act(async () => root.render(createElement(SharedOutgoingReplies, { session: shown }))); await settle();
+      await act(async () => root.render(createElement(SharedOutgoingReplies, { session: shown, messages }))); await settle();
     },
     async showFailedComposer() {
       await act(async () => root.render(createElement(ConversationComposer, {
@@ -120,6 +122,7 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
     },
     mode(value: typeof mode) { mode = value; },
     online(value: boolean) { Object.defineProperty(window.navigator, "onLine", { value, configurable: true }); },
+    messages(value: readonly HistoryMessage[]) { transcript = value; },
     server(value: SharedOutboxSnapshot) { snapshot = value; },
     async send(text: string) {
       const node = editor(), key = Object.keys(node).find(key => key.startsWith("__reactProps$"))!;
@@ -298,8 +301,9 @@ test("an unknown server delivery remains visible with no retry or provider repla
 });
 
 // The transcript shows a submitted message; a second bubble would repeat it.
-for (const provider of ["codex", "claude"] as const) test(`a submitted ${provider} reply leaves no outgoing bubble`, async () => {
-  const h = await fixture(new IDBFactory(), false);
+for (const provider of ["codex", "claude"] as const) test(`a submitted ${provider} reply stays visible until its transcript arrives`, async () => {
+  const factory = new IDBFactory();
+  let h = await fixture(factory, false);
   try {
     const id = crypto.randomUUID(), requestId = crypto.randomUUID();
     h.server({ revision: 3, compose_holds: [], items: [{
@@ -310,7 +314,57 @@ for (const provider of ["codex", "claude"] as const) test(`a submitted ${provide
     await h.client.sync(h.target);
     await h.showReplies({ ...session, agent: provider, provider_resume: { provider, session_id: "fixture-thread" } });
     assert.equal(h.client.state(h.target).snapshot.items[0]?.state, "submitted");
-    assert.ok(!h.container.textContent?.includes("already in the transcript"), "a submitted reply must not be shown again below the transcript");
+    assert.ok(h.container.textContent?.includes("already in the transcript"), "the server receipt must not erase the only visible copy before history arrives");
+    await h.showReplies({ ...session, agent: provider, provider_resume: { provider, session_id: "fixture-thread" } }, [
+      { id: "first-user-turn", role: "user", text: "already in the transcript", timestamp: new Date(3).toISOString() },
+    ]);
+    assert.ok(!h.container.textContent?.includes("already in the transcript"), "the transcript takes over the bubble once it proves this reply");
+    const laterWindow: HistoryMessage[] = Array.from({ length: 50 }, (_, index) => ({
+      id: `later-${index}`, role: "assistant", text: `Later progress ${index}`, timestamp: new Date(10 + index).toISOString(),
+    }));
+    await h.showReplies({ ...session, agent: provider }, laterWindow);
+    assert.ok(!h.container.textContent?.includes("already in the transcript"), "a later history page must not resurrect the settled reply");
+    await h.close();
+    h = await fixture(factory, false);
+    h.online(false);
+    await h.client.ready;
+    assert.equal(h.client.state(h.target).snapshot.items[0]?.id, id, "the retained server row still exists after client remount");
+    await h.showReplies({ ...session, agent: provider }, []);
+    assert.ok(!h.container.textContent?.includes("already in the transcript"), "remount with unloaded history must preserve the handover");
+  } finally { await h.close(); }
+});
+
+test("a settled transcript part cannot hide another identical submitted reply", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const first = crypto.randomUUID(), second = crypto.randomUUID();
+    const item = (id: string) => ({
+      id, text: "same submitted text", state: "submitted" as const, revision: 3, session_incarnation: "inc-1",
+      created_at: 1, updated_at: 2, request_id: id, edit_hold: null, error_code: null,
+      receipt: { request_id: id, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted" as const, code: null },
+    });
+    const messages: HistoryMessage[] = [{ id: "one-user-turn", role: "user", text: "same submitted text", timestamp: new Date(3).toISOString() }];
+    h.server({ revision: 3, compose_holds: [], items: [item(first)] });
+    await h.client.sync(h.target); await h.showReplies(session, messages);
+    h.server({ revision: 4, compose_holds: [], items: [item(first), item(second)] });
+    await h.client.sync(h.target); await h.showReplies(session, messages);
+    assert.equal(h.container.querySelectorAll('.history-outgoing-reply[data-status="submitted"]').length, 1,
+      "the turn already spent on the first reply must not settle a genuinely unconfirmed second reply");
+  } finally { await h.close(); }
+});
+
+test("a replacement incarnation does not resurrect prior submitted replies", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const id = crypto.randomUUID(), requestId = crypto.randomUUID();
+    h.server({ revision: 3, compose_holds: [], items: [{
+      id, text: "previous incarnation submitted reply", state: "submitted", revision: 3, session_incarnation: "inc-1",
+      created_at: 1, updated_at: 2, request_id: requestId, edit_hold: null, error_code: null,
+      receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null },
+    }] });
+    await h.client.sync(h.target);
+    await h.showReplies({ ...session, session_incarnation: "inc-2" });
+    assert.ok(!h.container.textContent?.includes("previous incarnation submitted reply"), "completed history from a prior runtime must stay out of its replacement");
   } finally { await h.close(); }
 });
 
@@ -328,6 +382,7 @@ const contract: Record<string, { run(h: Harness, s: typeof session): Promise<voi
     h.server({ ...now, revision: now.revision + 1, items: now.items.map(item => item.id === id ? { ...item, state: "submitted" as const,
       revision: item.revision + 1, request_id, receipt: { request_id, session_id: s.id, session_incarnation: "inc-1", outcome: "submitted" as const, code: null } } : item) });
     await h.client.sync(h.target);
+    h.messages([{ id: "reply-turn", role: "user", text: "contract reply", timestamp: new Date().toISOString() }]);
   } },
   cancel: { bubbles: ["contract cancel"], submissions: 1, async run(h, s) {
     await h.client.enqueue(s, "contract cancel"); await h.client.sync(h.target); await h.showReplies(s);

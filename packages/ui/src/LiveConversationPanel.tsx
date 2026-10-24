@@ -108,7 +108,7 @@ export function LiveConversationPanel({ session, onClose, machineReachable = tru
     close();
   }, [close]);
 
-  const outgoing = <><OutgoingReplies session={session} messages={conversation.messages} /><SharedOutgoingReplies session={session} /></>;
+  const outgoing = <><OutgoingReplies session={session} messages={conversation.messages} /><SharedOutgoingReplies session={session} messages={conversation.messages} /></>;
   return (
     <div ref={panelRef} hidden={voiceOpen}>
     <Modal

@@ -23,7 +23,7 @@ export function SessionConversationPane({ session, machineReachable, replyDrafts
   const { conversation, providerSessionId, error, resolving } = useLiveConversation(session, {
     machineReachable, paused: !active || voiceOpen,
   });
-  const outgoing = <><OutgoingReplies session={session} messages={conversation.messages} /><SharedOutgoingReplies session={session} /></>;
+  const outgoing = <><OutgoingReplies session={session} messages={conversation.messages} /><SharedOutgoingReplies session={session} messages={conversation.messages} /></>;
   return (
     <section className="slot-conversation-pane history-viewer" aria-label={`Conversation for ${sessionLabel(session)}`}
       onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>

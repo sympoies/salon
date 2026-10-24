@@ -1,6 +1,5 @@
 {
-  "upstreamCommit": "0982a6d58a74774285c6367deb2fb0ea25148d7b",
-  "equivalentReviewedCommit": "9abc76c0422e6042094bb38f2cfcccf763b708ce",
+  "upstreamCommit": "c0d52234c8a5c62180f38b319c30903f4563ee35",
   "initialImport": {
     "upstreamCommit": "89a213ee4096d80ccb702618cbc935a584329218",
     "equivalentMergeCommit": "2d00a8df5d89803f65934438113784529ec76169",
@@ -23,11 +22,10 @@
   },
   "excludedFiles": {},
   "localAdaptations": [
-    "Set the three SDK package versions to 0.1.1 and retain MIT license metadata.",
+    "Set the three SDK package versions to 0.1.2 and retain MIT license metadata.",
     "Point the two extension-contract comments to the local package boundary document.",
     "Preserve font bytes and include full upstream font licensing notices.",
-    "Remove one redundant EOF blank line in each explicitly listed file; no behavior change.",
-    "Give each Sign out fixture document its own boot clock while preserving every existing assertion and timeout."
+    "Remove one redundant EOF blank line in each explicitly listed file; no behavior change."
   ],
   "files": {
     "packages/edge/package.json": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
@@ -209,7 +207,7 @@
     "packages/ui/src/InlineTitleEditor.tsx": "ef9dbd5809b99380c783fc879cf80bd291bf0dd3e8141121741f45433400302f",
     "packages/ui/src/LayoutIcons.tsx": "f820737df468c22fe0b3567c7053b63d1cc037479ce73acb24c347faae2cf379",
     "packages/ui/src/LayoutPicker.tsx": "1f1c3320f1578b4498ba89d3a89815877158c42b55a1478d59510ce10e1cbb8e",
-    "packages/ui/src/LiveConversationPanel.tsx": "fb3a00bc25b72088ac193178b11afb24328cf26e8ca6a6491e9228ca8fa44b0d",
+    "packages/ui/src/LiveConversationPanel.tsx": "a729da53c8a1b9a897ec1d77a0d9977afbd9668ccc0526f9980c51180f7b4a12",
     "packages/ui/src/Login.tsx": "aff59b07cfd387c0aec5a1ee7aa5031a58deec3e49fc447ccda5b9acd9089107",
     "packages/ui/src/MacTitleBar.tsx": "8271e163a80814a48b69b5f4bdf3e24b1dcf6ab026dae937b9445255a34c1c57",
     "packages/ui/src/MachineBadge.tsx": "4c2b9528f77d19df68d412a750ba0c59702631ee2bb7caff78ff0d2522bcd774",
@@ -217,11 +215,11 @@
     "packages/ui/src/MobileSessionList.tsx": "d7c31c3aa92433d866e118f4e863a8c491d3245ffe067c20fa5eabf2970664f3",
     "packages/ui/src/Modal.tsx": "596461965890a9c44e8dc13bc2fea48902d50e8e7c28b88e1085f0849433c05a",
     "packages/ui/src/OutgoingReplies.tsx": "e6a8b6e3bbff5a0d0b96c1965903250650186c7e6bd93aa99d2fd84debfe55e9",
-    "packages/ui/src/PhoneConversationPane.tsx": "7a83012adf1547172343be47fd32e975088fab218504de943c76e1e3e24c1fc0",
+    "packages/ui/src/PhoneConversationPane.tsx": "857172703f90b8e7155960ad3244fa799bdaf6c1c4f01e85db5409c07605ec21",
     "packages/ui/src/SelectMenu.tsx": "c93c7c5051b2eca10d77c85be14716e4311671f2ffff88001d360518d5f251aa",
     "packages/ui/src/SessionAccountBadge.tsx": "c2323eebba5c6a5d7ee0b0007ce4dc57f70519df734a531734e18c84d1904e70",
     "packages/ui/src/SessionActivityPopover.tsx": "4c4a6299fce737e0d906926a55ba31e5cf393827467e1a4b97020702174f2a9b",
-    "packages/ui/src/SessionConversationPane.tsx": "a170ded4b02e68a078322b34a00de2c4837be6b1e383e26d9a7e1eaf442b2cf6",
+    "packages/ui/src/SessionConversationPane.tsx": "4be94eeac7d5d51d5b4057f52ac644718b2e812bd57533ca24008b7718932fd6",
     "packages/ui/src/SessionCopyMenu.tsx": "7731adc0e8ef0fc0f8853c996dfd5dc15940676816f1607ecbea35aeb075b0e2",
     "packages/ui/src/SessionFiltersBar.tsx": "a0d20ccdb39d0bfd92c87e16a06c0dccbb18282f2c4e6976285f4184c1b08475",
     "packages/ui/src/SessionListNavigator.tsx": "841268cf16107422fc851e6d9e82ec4f0e6a572a21a856217a2b8969510c6b30",
@@ -231,7 +229,7 @@
     "packages/ui/src/SessionStatusCountButtons.tsx": "b64314ac3ade470162e874b8e97c3f2443c86fdae16e1d9bc256d9c081a8f7e1",
     "packages/ui/src/SessionTitleMenu.tsx": "37049e708dc434e82f8b943fb6fa79973c802ea679d5aee739d458fc9c67c3d3",
     "packages/ui/src/Settings.tsx": "119828c81ae0ac2148f1d623e11f3ab2800cf46433f95b6a8ec9b23592f401f3",
-    "packages/ui/src/SharedOutgoingReplies.tsx": "457743d7de074c04f8fd2be311386f6b71194287ff69d45ebdb45df14f182d45",
+    "packages/ui/src/SharedOutgoingReplies.tsx": "1145bb395ba4e635559de0468e6477a9b3f3583f5c302e0e791982a14a84ad00",
     "packages/ui/src/ShellPage.tsx": "4d91c3e75af124e6b728e41f1b5a32980ee599e42897883855d7a31cdd0932f7",
     "packages/ui/src/ShortcutHelpModal.tsx": "08a41ae5f3c80fe3b7f1b82dd096562312d6c82b7c37badea94a3113afecd5df",
     "packages/ui/src/SpeechComposer.tsx": "60ec68f952d098caff017f7a29bf1bc8de20d797abaa79f79536f44f2ad49fca",
@@ -318,7 +316,7 @@
     "packages/ui/src/sessionStatusGroups.ts": "6c181754f7ca0fefaf03d58a03a3d5ee9810709c7cb4032bf255549948fdb827",
     "packages/ui/src/sessionSwipe.ts": "2a5b2a93d6627d1197ecdb6ee9dfe36e48cc415c11c684af92a87df26f79dec0",
     "packages/ui/src/sessionTitle.ts": "7d38e036041523b2b8c3c4b96359694ab49014cdae2b7ee02ce00c9a81220eb9",
-    "packages/ui/src/sharedOutboxClient.ts": "e051b7da6bb9cbe5a8c9a46572ebe99d3b205351272f785dc2ee3299c3487a09",
+    "packages/ui/src/sharedOutboxClient.ts": "5b89f1c228f3a79d7a74de10b3d92a53c88d729651e72525111da8e46a1a6e18",
     "packages/ui/src/shellQuote.ts": "5ceec839e4be9c2d0951396237e837fd3856ae4c17a670ca8858b27a6bf348b6",
     "packages/ui/src/singleFlightRequest.ts": "8c40eaffeb13c19a7aca83560503a16fdecd10435a452589fed56ef479de5785",
     "packages/ui/src/slotDrag.ts": "92d09caa5cb85702bb807bad76d38473e3b526b5357f2b236792b09791b1ae21",
@@ -546,9 +544,9 @@
     "packages/ui/test/sessionTitle.test.ts": "28c4beb3233a4968cd784afc68efdba3f8928e47351b65d0e61e0a8434e63ac4",
     "packages/ui/test/settings.test.ts": "bce4088060433d20e5de28be6ae43f582324e8a13e28108cbaa759ce9b45fad0",
     "packages/ui/test/settingsFilterGap.browser.test.ts": "edbf79b197c30256084b9de0190516f32d3dea3e861c16dc2fdf89ff770baae7",
-    "packages/ui/test/settingsSignOut.test.ts": "ba02fd686bf2ac7589bcbc4dec4b128bdad42b170832f3675fda91eaaa53687b",
+    "packages/ui/test/settingsSignOut.test.ts": "7ea5af858877cdbbb38e7dab7ce3103cc6660a361ed71fc015357042fa27baba",
     "packages/ui/test/settingsTokenExposure.test.ts": "c1e0eb085c2dce8a9c62cf8909ce25ccfced5bbbc94af32db8469eeb378976fa",
-    "packages/ui/test/sharedOutboxClient.test.ts": "2e49fce66150e1720240aac07699f6edadf0575f7b1c063e9bc3c8592543bf85",
+    "packages/ui/test/sharedOutboxClient.test.ts": "09b383fa418dec5bd5b69c1dde8b7d87244e2b78efdda9a489bfb7d9f9622935",
     "packages/ui/test/sharedOutboxNativeConnection.test.ts": "ecafd8676b9771252c63666f53008b0c39b5d30ab0dd0daa127e9225b8925321",
     "packages/ui/test/shellPage.test.ts": "08af53b20053ed27c31a410e44e7034ebd8a63b60b61f82e444a398000a65453",
     "packages/ui/test/shellQuote.test.ts": "28d10c404dec3819d3be24f792e09a5729bfe9aca3f91ecfdb52711a0081cb5c",
@@ -647,7 +645,7 @@
   "adaptedFiles": {
     "packages/edge/package.json": {
       "upstreamSha256": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
-      "importedSha256": "c7ea2bbbec6c966b103d89be225b18b0b5eba6ebe06a0a1055f334f47aa9027f"
+      "importedSha256": "8ac8bd3e12c84766984b93433e28849c89b45ebc7b7a3030b2bf6eb0270bf183"
     },
     "packages/edge/src/extensions.ts": {
       "upstreamSha256": "d531a65a12da2fa814a95ac41a78cf19e4e59179be55793278d0541bf6eff205",
@@ -663,7 +661,7 @@
     },
     "packages/shared/package.json": {
       "upstreamSha256": "cc30b019d2887dddab4ada98dda0ac791444f55f81fb7dde56d469d897191b61",
-      "importedSha256": "7f86f8692ba38bdc45e4c0c8e238419e8385a65136f1d71bbc50e6a973d369ff"
+      "importedSha256": "6b52c096850e96dd7dae73b4ed93b5ff9a90bb051c1655e83a9b7213e4c648b5"
     },
     "packages/shared/src/sse.ts": {
       "upstreamSha256": "f9076276454f584749e895df9049cd1d24e181bec46c9bda2a2b4d851f9752ac",
@@ -671,7 +669,7 @@
     },
     "packages/ui/package.json": {
       "upstreamSha256": "879df3dda266feb2d41574e164b7846c5c44e2d4e5ac5f452925af6f3978538a",
-      "importedSha256": "10564f907ebd40259103f5341566b5e47414fbc8f95ef6c432c2b02720e46649"
+      "importedSha256": "3ee2a1e1bc2ee2ae1c72a30f25ce7f18081793189c1687b88d619fbc0744f76e"
     },
     "packages/ui/src/extensions.tsx": {
       "upstreamSha256": "d74f36fb4a5dff7fd66f7f0c3a1ce739403fd36af2ab9a41ac9fc29ed193c1b1",
@@ -685,13 +683,18 @@
       "upstreamSha256": "2757896b27029f006df2b70f4afb1fac583b72090656c0e3c0e4fb20c3f6094a",
       "importedSha256": "560d31e61d3399b1a544d98fae1ef9c9b041f128f31679f8fbc19299592041ad"
     },
-    "packages/ui/test/settingsSignOut.test.ts": {
-      "upstreamSha256": "ba02fd686bf2ac7589bcbc4dec4b128bdad42b170832f3675fda91eaaa53687b",
-      "importedSha256": "7ea5af858877cdbbb38e7dab7ce3103cc6660a361ed71fc015357042fa27baba"
-    },
     "packages/ui/test/terminalFocus.test.ts": {
       "upstreamSha256": "9b25b9ad30e358b859dd3e3aaf57d3c6dd9243f8e2a21ab73a95d4e607c53329",
       "importedSha256": "f746bc418dc4b342cad9221d94949dcea90871876eddcde4163f2251bf1d4847"
     }
-  }
+  },
+  "acceptedChangeReviewedCommit": "112e886557533c44e9db50280ea32d37bc4fc2e8",
+  "acceptedChangeFiles": [
+    "packages/ui/src/LiveConversationPanel.tsx",
+    "packages/ui/src/PhoneConversationPane.tsx",
+    "packages/ui/src/SessionConversationPane.tsx",
+    "packages/ui/src/SharedOutgoingReplies.tsx",
+    "packages/ui/src/sharedOutboxClient.ts",
+    "packages/ui/test/sharedOutboxClient.test.ts"
+  ]
 }

@@ -75,7 +75,7 @@ export function PhoneConversationPane({ session, machineReachable, replyDrafts, 
     },
   } : {};
 
-  const outgoing = <><OutgoingReplies session={session} messages={conversation.messages} /><SharedOutgoingReplies session={session} /></>;
+  const outgoing = <><OutgoingReplies session={session} messages={conversation.messages} /><SharedOutgoingReplies session={session} messages={conversation.messages} /></>;
   return (
     // A double-click selects history text; it never toggles the focused session.
     <div className="phone-conversation-pane" onDoubleClick={(event) => event.stopPropagation()}>

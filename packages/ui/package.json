@@ -1,6 +1,6 @@
 {
   "name": "@agent-console/ui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "agent-console UI: a terminal-first React 19 + @xterm/xterm client over the edge backend's WebSocket/HTTP API.",
   "type": "module",

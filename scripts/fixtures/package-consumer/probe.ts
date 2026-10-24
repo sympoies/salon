@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { startEdge } from "@agent-console/edge/start";
 import type { EdgeExtension } from "@agent-console/edge/extensions";
 import { normalizeOrder } from "@agent-console/shared/api";
@@ -43,6 +45,81 @@ const server = startEdge({
   AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: "fixture", url: `http://127.0.0.1:${upstreamAddress.port}`, token: "fixture-daemon-token" }]),
   AGENT_CONSOLE_TOKEN: "fixture-token", AGENT_CONSOLE_UI_DIR: fileURLToPath(new URL("./dist", import.meta.url)),
 }, { extensions: [extension] });
+
+async function checkSubmittedUi(base: string) {
+  const profile = mkdtempSync("/tmp/packed-ui-chrome-");
+  const chrome = spawn(process.env.CHROME_BIN ?? "google-chrome", ["--headless", "--no-sandbox", "--disable-gpu",
+    "--no-first-run", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"],
+  { stdio: ["ignore", "ignore", "pipe"] });
+  let socket: WebSocket | undefined;
+  try {
+    const endpoint = await new Promise<string>((resolve, reject) => {
+      let output = "";
+      const timeout = setTimeout(() => reject(Error(`Chrome endpoint timeout: ${output.slice(-2000)}`)), 10_000);
+      chrome.once("error", error => { clearTimeout(timeout); reject(error); });
+      chrome.stderr.on("data", bytes => {
+        output += bytes;
+        const match = output.match(/DevTools listening on (ws:\/\/\S+)/);
+        if (match) { clearTimeout(timeout); resolve(match[1]!); }
+      });
+    });
+    socket = new WebSocket(endpoint);
+    await once(socket, "open");
+    let sequence = 0;
+    const pending = new Map<number, { resolve(value: any): void; reject(error: Error): void }>();
+    socket.addEventListener("message", event => {
+      const value = JSON.parse(String(event.data)), call = pending.get(value.id);
+      if (call) { pending.delete(value.id); value.error ? call.reject(Error(value.error.message)) : call.resolve(value.result); }
+    });
+    const rpc = (method: string, params = {}, sessionId?: string): Promise<any> => new Promise((resolve, reject) => {
+      const id = ++sequence;
+      pending.set(id, { resolve, reject });
+      socket!.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+    });
+    const { targetId } = await rpc("Target.createTarget", { url: "about:blank" });
+    const { sessionId } = await rpc("Target.attachToTarget", { targetId, flatten: true });
+    await rpc("Page.enable", {}, sessionId);
+    await rpc("Page.addScriptToEvaluateOnNewDocument", { source: `window.fixtureErrors=[];
+      addEventListener('error',event=>fixtureErrors.push(event.message));
+      addEventListener('unhandledrejection',event=>fixtureErrors.push(String(event.reason)));` }, sessionId);
+    const evaluate = async (expression: string) => {
+      const result = await rpc("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, sessionId);
+      assert.equal(result.exceptionDetails, undefined, "browser fixture evaluation completes");
+      return result.result.value;
+    };
+    const wait = async (matches: (value: any) => boolean) => {
+      const deadline = Date.now() + 15_000;
+      let value;
+      do {
+        value = await evaluate("window.submittedFixture?.inspect()");
+        if (value?.ready && value.submittedRows === 1 && matches(value)) {
+          assert.equal(value.writes, 0); assert.deepEqual(value.unexpected, []);
+          assert.deepEqual(await evaluate("window.fixtureErrors"), []);
+          return value;
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } while (Date.now() < deadline);
+      assert.fail(`public UI did not reach expected state: ${JSON.stringify(value)}`);
+    };
+    await rpc("Page.navigate", { url: `${base}/?submitted-fixture` }, sessionId);
+    const before = await wait(value => value.outboxReads > 0);
+    assert.equal(before.visibleEchoes, 1, "submitted echo remains visible after empty history and durable snapshot readiness");
+    await evaluate("window.submittedFixture.handover()");
+    const handed = await wait(value => value.historyReads > before.historyReads && value.proofCount === 1);
+    assert.equal(handed.visibleEchoes, 0, "matching history takes over the outgoing echo");
+    assert.equal(handed.matchingHistoryTurns, 1, "exactly one matching history turn remains visible");
+    await rpc("Page.navigate", { url: `${base}/?submitted-fixture&later` }, sessionId);
+    const remounted = await wait(value => value.outboxReads > 0 && value.proofCount === 1);
+    assert.equal(remounted.visibleEchoes, 0, "fresh document with a later history window preserves durable handover");
+    console.log(`packed public UI: PASS ${JSON.stringify({ before, handed, remounted })}`);
+  } finally {
+    socket?.close();
+    if (chrome.exitCode === null && chrome.signalCode === null) {
+      const exited = once(chrome, "exit"); chrome.kill("SIGTERM"); await exited;
+    }
+    rmSync(profile, { recursive: true, force: true });
+  }
+}
 try {
   if (!server.listening) await once(server, "listening");
   const address = server.address();
@@ -94,7 +171,12 @@ try {
     }
   }
   assert.ok(fontsFetched >= 2, "both font assets survive packing and composition");
+  await checkSubmittedUi(base);
   console.log("packed edge and generic UI: PASS (auth, extension route, shared runtime/refused action, authenticated image bytes, page, JS, CSS, fonts)");
+} catch (error) {
+  // The server deliberately catches uncaught errors; the probe must still fail.
+  process.exitCode = 1;
+  throw error;
 } finally {
   server.closeAllConnections();
   upstream.closeAllConnections();
