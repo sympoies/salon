@@ -80,6 +80,12 @@ async function checkSubmittedUi(base: string) {
     const { sessionId } = await rpc("Target.attachToTarget", { targetId, flatten: true });
     await rpc("Page.enable", {}, sessionId);
     await rpc("Page.addScriptToEvaluateOnNewDocument", { source: `window.fixtureErrors=[];
+      // Inspect as soon as the fixture is published, before React initializes
+      // the journal. An observer must not create a schema-less database.
+      let submittedFixture;
+      Object.defineProperty(window, 'submittedFixture', { configurable: true,
+        get: () => submittedFixture,
+        set: value => { submittedFixture = value; void value.inspect(); } });
       addEventListener('error',event=>fixtureErrors.push(event.message));
       addEventListener('unhandledrejection',event=>fixtureErrors.push(String(event.reason)));` }, sessionId);
     const evaluate = async (expression: string) => {

@@ -52,7 +52,9 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
       document.querySelector<HTMLButtonElement>('button[aria-label="Refresh conversation"]')!.click();
     },
     async inspect() {
-      const rows = await new Promise<Array<{ snapshot: { items: Array<{ state: string }> }; submittedProofs?: Record<string, string> }>>((resolve, reject) => {
+      // Observation must leave schema creation to the production client.
+      const exists = (await indexedDB.databases()).some(database => database.name === "agent-console-shared-admissions");
+      const rows = exists ? await new Promise<Array<{ snapshot: { items: Array<{ state: string }> }; submittedProofs?: Record<string, string> }>>((resolve, reject) => {
         const request = indexedDB.open("agent-console-shared-admissions", 1);
         request.onerror = () => reject(request.error);
         request.onsuccess = () => {
@@ -62,7 +64,7 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
           tx.oncomplete = () => { db.close(); resolve(read.result); };
           tx.onerror = () => { db.close(); reject(tx.error); };
         };
-      });
+      }) : [];
       const history = document.querySelector(".history-messages");
       return { ready: historyReads > 0 && Boolean(history) && !history!.textContent?.includes("Loading conversation"),
         historyReads, outboxReads, writes, unexpected,
