@@ -46,3 +46,18 @@ export function normalizeOutboxAdmission(value: unknown): OutboxAdmission | null
     && isPromptIncarnation(raw.expected_session_incarnation) && validOutboxText(raw.text)
     ? { text: raw.text, expected_session_incarnation: raw.expected_session_incarnation } : null;
 }
+
+/** Only definitely refused replies can be discarded or explicitly retried. */
+export interface RefusedOutboxAction {
+  readonly operation: "discard_refused" | "retry_refused";
+  readonly expected_session_incarnation: string;
+  readonly base_revision: number;
+}
+export function normalizeRefusedOutboxAction(value: unknown): RefusedOutboxAction | null {
+  const raw = record(value);
+  return raw && only(raw, ["operation", "expected_session_incarnation", "base_revision"])
+    && (raw.operation === "discard_refused" || raw.operation === "retry_refused")
+    && isPromptIncarnation(raw.expected_session_incarnation)
+    && Number.isSafeInteger(raw.base_revision) && Number(raw.base_revision) > 0
+    ? { operation: raw.operation, expected_session_incarnation: raw.expected_session_incarnation, base_revision: Number(raw.base_revision) } : null;
+}

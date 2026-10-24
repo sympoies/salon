@@ -37,7 +37,14 @@ export function SharedOutgoingReplies({ session }: { readonly session: Session }
           <div className="history-outgoing-body"><div className="history-bubble history-outgoing-bubble">
             <span className="history-outgoing-text">{item.text}</span>
           </div>
-            {item.state === "refused" ? <p role="alert" className="history-outgoing-note">This message was not sent.</p> : null}
+            {item.state === "refused" ? <>
+              <p role="alert" className="history-outgoing-note">This message was not sent.</p>
+              <div className="history-outgoing-actions">
+                <button type="button" className="btn ghost" onClick={() => void client.actOnRefused(session, row.target, item, "discard_refused")}>Discard</button>
+                {row.target.incarnation === session.session_incarnation
+                  ? <button type="button" className="btn ghost" onClick={() => void client.actOnRefused(session, row.target, item, "retry_refused")}>Retry</button> : null}
+              </div>
+            </> : null}
             {item.edit_hold ? <p role="alert" className="history-outgoing-note">This older message was paused before the update and has not been sent.</p> : null}
             {row.target.incarnation !== session.session_incarnation ? <p role="alert" className="history-outgoing-note">This message belongs to the previous session.</p> : null}
           </div>

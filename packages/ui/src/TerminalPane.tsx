@@ -531,11 +531,13 @@ export function TerminalPane({
       onSessionSwipeRef,
       onPromptFocusRef,
       onProviderPromptCapability: (capability) => promptTitleSourceRef.current?.setCapability(capability),
-      onProviderPromptEvent: (event) => promptTitleSourceRef.current?.acceptProvider({
-        eventId: event.eventId,
-        text: event.text,
-        submittedAt: event.submittedAt,
-      }),
+      onProviderPromptEvent: (event) => {
+        if (inputGuard !== contextCommandGuardRef.current) return;
+        promptTitleSourceRef.current?.acceptProvider({ eventId: event.eventId, text: event.text, submittedAt: event.submittedAt });
+        if (event.provider === agent && inputGuard.confirmSubmission(event.submittedAt)) {
+          setContextCommandRefusal(null);
+        }
+      },
       onInputRejected: (rejection) => {
         if (inputGuard === contextCommandGuardRef.current) showInputRejection(rejection);
       },

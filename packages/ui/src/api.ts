@@ -1,5 +1,5 @@
 import { getPrincipalStorageNamespace } from "./storage.ts";
-import { validOutboxText, SHARED_OUTBOX_MAX_ITEMS, SHARED_OUTBOX_MAX_HOLDS, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
+import { validOutboxText, SHARED_OUTBOX_MAX_ITEMS, SHARED_OUTBOX_MAX_HOLDS, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
 import { isPromptRequestId, normalizePromptReceipt, type PromptReceipt } from "@agent-console/shared/prompt-receipt";
 import { notePromptDelivery } from "./promptDelivery.ts";
 import { normalizeSessionModelSettings } from "@agent-console/shared/session-model";
@@ -2314,6 +2314,16 @@ export async function admitSharedOutbox(target: SharedOutboxTarget, id: string, 
   const item = sharedItem(raw.item, target, id);
   if (!item) throw new SharedOutboxRequestError(0, "outbox-response-unconfirmed");
   return item;
+}
+
+export async function actOnRefusedSharedOutbox(target: SharedOutboxTarget, item: SharedOutboxItem,
+  operation: RefusedOutboxAction["operation"]): Promise<SharedOutboxItem> {
+  const raw = await sharedOutboxRequest(target, "PATCH", item.id, {
+    operation, base_revision: item.revision, expected_session_incarnation: target.incarnation,
+  });
+  const result = sharedItem(raw.item, target, item.id);
+  if (!result) throw new SharedOutboxRequestError(0, "outbox-response-unconfirmed");
+  return result;
 }
 
 /** Authenticated transport for statically registered distribution extensions. */

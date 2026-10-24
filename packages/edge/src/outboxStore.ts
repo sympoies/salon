@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { SHARED_OUTBOX_MAX_ITEMS,
-  type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
+  type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
 import { normalizePromptReceipt, type PromptReceipt } from "@agent-console/shared/prompt-receipt";
 
 export interface OutboxTarget {
@@ -62,6 +62,10 @@ export class OutboxStore {
         request_id TEXT PRIMARY KEY, scope TEXT NOT NULL, intent_id TEXT NOT NULL,
         payload_hash TEXT NOT NULL, receipt TEXT
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS outbox_cancellations (
+        scope TEXT NOT NULL, id TEXT NOT NULL, admission_hash TEXT NOT NULL,
+        value TEXT NOT NULL, PRIMARY KEY(scope,id)
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS outbox_lifecycle (
         machine TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY(machine,session_id)
       ) STRICT;
@@ -91,15 +95,19 @@ export class OutboxStore {
     return (this.#db.prepare("SELECT count(*) AS count FROM outbox_items").get() as { count: number }).count;
   }
   /**
-   * At capacity the oldest submitted rows make room, keeping the newest `keep`
-   * rows of the scope (or the whole store) untouched (#1051). Their attempts
-   * remain, so a late retry of a pruned intent is still recognised in admit.
+   * At capacity the oldest submitted/cancelled rows make room, keeping the
+   * newest `keep` rows untouched (#1051). Cancellation records also cover
+   * pre-dispatch refusals, which have no attempt to fence a late PUT replay.
    */
   #prune(scope: string | null, keep: number): void {
     const where = scope === null ? "" : "scope=? AND";
     const args = scope === null ? [keep] : [scope, scope, keep];
-    this.#db.prepare(`DELETE FROM outbox_items WHERE ${where} json_extract(value,'$.state') = 'submitted'
-      AND sequence < (SELECT min(sequence) FROM (SELECT sequence FROM outbox_items ${scope === null ? "" : "WHERE scope=?"} ORDER BY sequence DESC LIMIT ?))`)
+    const older = `sequence < (SELECT min(sequence) FROM (SELECT sequence FROM outbox_items ${scope === null ? "" : "WHERE scope=?"} ORDER BY sequence DESC LIMIT ?))`;
+    this.#db.prepare(`INSERT INTO outbox_cancellations(scope,id,admission_hash,value)
+      SELECT scope,id,admission_hash,value FROM outbox_items
+      WHERE ${where} json_extract(value,'$.state') = 'cancelled' AND ${older}`)
+      .run(...args);
+    this.#db.prepare(`DELETE FROM outbox_items WHERE ${where} json_extract(value,'$.state') IN ('submitted','cancelled') AND ${older}`)
       .run(...args);
   }
   #row(target: OutboxTarget, id: string): ItemRow | undefined {
@@ -129,7 +137,11 @@ export class OutboxStore {
     });
   }
   get(target: OutboxTarget, id: string): SharedOutboxItem | undefined {
-    const row = this.#row(target, id); return row ? item(row) : undefined;
+    const row = this.#row(target, id);
+    if (row) return item(row);
+    const cancelled = this.#db.prepare("SELECT value FROM outbox_cancellations WHERE scope=? AND id=?")
+      .get(key(target), id) as { value: string } | undefined;
+    return cancelled ? JSON.parse(cancelled.value) as SharedOutboxItem : undefined;
   }
   admit(target: OutboxTarget, id: string, text: string, credentialGeneration: string): { created: boolean; item: SharedOutboxItem } {
     return this.#transaction(() => {
@@ -137,6 +149,12 @@ export class OutboxStore {
       if (existing) {
         if (existing.admission_hash !== fingerprint(text)) throw new OutboxError("outbox-intent-conflict", 409);
         return { created: false, item: item(existing) };
+      }
+      const cancelled = this.#db.prepare("SELECT admission_hash,value FROM outbox_cancellations WHERE scope=? AND id=?")
+        .get(key(target), id) as { admission_hash: string; value: string } | undefined;
+      if (cancelled) {
+        if (cancelled.admission_hash !== fingerprint(text)) throw new OutboxError("outbox-intent-conflict", 409);
+        return { created: false, item: JSON.parse(cancelled.value) as SharedOutboxItem };
       }
       const pruned = this.#db.prepare("SELECT request_id, payload_hash, receipt FROM outbox_attempts WHERE scope=? AND intent_id=? ORDER BY rowid DESC LIMIT 1")
         .get(key(target), id) as { request_id: string; payload_hash: string; receipt: string | null } | undefined;
@@ -158,6 +176,25 @@ export class OutboxStore {
       this.#db.prepare("INSERT INTO outbox_items(scope,id,admission_hash,credential_generation,next_attempt_at,value,native_handoff) VALUES(?,?,?,?,?,?,1)")
         .run(key(target), id, fingerprint(text), credentialGeneration, 0, JSON.stringify(value));
       this.#bump(target); return { created: true, item: value };
+    });
+  }
+  actOnRefused(target: OutboxTarget, id: string, action: RefusedOutboxAction, credentialGeneration?: string): SharedOutboxItem {
+    return this.#transaction(() => {
+      const current = this.get(target, id);
+      if (!current) throw new OutboxError("outbox-intent-not-found", 404);
+      if (current.revision !== action.base_revision) throw new OutboxError("outbox-revision-conflict", 409);
+      if (current.state !== "refused") throw new OutboxError("outbox-not-refused", 409);
+      if (action.operation === "discard_refused") {
+        // Keep the item and its refusal receipt as the durable discard record.
+        return this.#write(target, { ...current, state: "cancelled" });
+      }
+      if (!credentialGeneration) throw new OutboxError("outbox-authorization-changed", 403);
+      if (this.#lifecycleBlocked(target)) throw new OutboxError("outbox-lifecycle-pending", 409);
+      this.#db.prepare("UPDATE outbox_items SET credential_generation=?,native_handoff=1 WHERE scope=? AND id=?")
+        .run(credentialGeneration, key(target), id);
+      // Prior attempt receipts remain in outbox_attempts. Claim allocates a new
+      // request ID; replaying this action with its old revision cannot resend.
+      return this.#write(target, { ...current, state: "queued", request_id: null, receipt: null, error_code: null, edit_hold: null });
     });
   }
   /** Caller authorizes this exact candidate after asynchronous daemon reads. Claim rechecks the transaction winner. */

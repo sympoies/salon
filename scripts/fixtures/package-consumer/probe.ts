@@ -4,8 +4,15 @@ import { fileURLToPath } from "node:url";
 import { startEdge } from "@agent-console/edge/start";
 import type { EdgeExtension } from "@agent-console/edge/extensions";
 import { normalizeOrder } from "@agent-console/shared/api";
+import { normalizeRefusedOutboxAction, type RefusedOutboxAction } from "@agent-console/shared/shared-outbox";
 
 assert.deepEqual(normalizeOrder({ order: ["a", "a", ""] }), ["a"]);
+const refusedAction: RefusedOutboxAction = {
+  operation: "discard_refused", expected_session_incarnation: "fixture-incarnation", base_revision: 1,
+};
+assert.deepEqual(normalizeRefusedOutboxAction(refusedAction), refusedAction);
+assert.equal(normalizeRefusedOutboxAction({ ...refusedAction, base_revision: 0 }), null);
+assert.equal(normalizeRefusedOutboxAction({ ...refusedAction, operation: "cancel" }), null);
 const extension: EdgeExtension = {
   id: "fixture",
   routes: [{ id: "ping", pattern: "/api/ext/fixture/ping", methods: ["GET"], permission: "debug",
@@ -56,7 +63,7 @@ try {
     }
   }
   assert.ok(fontsFetched >= 2, "both font assets survive packing and composition");
-  console.log("packed edge and generic UI: PASS (auth, extension route, shared runtime, page, JS, CSS, fonts)");
+  console.log("packed edge and generic UI: PASS (auth, extension route, shared runtime/refused action, page, JS, CSS, fonts)");
 } finally {
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
 }

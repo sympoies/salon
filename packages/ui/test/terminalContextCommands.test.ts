@@ -7,7 +7,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Plugin } from "vite";
-import type { SpecialKey } from "../src/frames.ts";
+import type { ProviderPromptSubmittedFrame, SpecialKey } from "../src/frames.ts";
 import type { TerminalPaneProps } from "../src/TerminalPane.tsx";
 import { createUiSsrHarness } from "./support/ssr.ts";
 import { hasHeadlessChrome, measureUiMarkup } from "./support/browserLayout.ts";
@@ -25,6 +25,7 @@ interface Fixture {
     sendKeyFrame(key: SpecialKey): void;
     terminalPasteInputRef: { current: boolean };
     onProviderPromptCapability(mode: "fallback"): void;
+    onProviderPromptEvent(event: ProviderPromptSubmittedFrame): void;
     onInputRejected(rejection: {message: string; outcomeUnknown?: boolean}): void;
   };
 }
@@ -67,6 +68,7 @@ async function withPane(agent: string, socket: boolean, run: (fixture: {
   key(key: SpecialKey): Promise<void>;
   enter(): Promise<void>;
   click(label: string): Promise<void>;
+  confirmPrompt(submittedAt: string): Promise<void>;
   prompts: string[];
   notice(): string;
   html(): string;
@@ -123,6 +125,10 @@ async function withPane(agent: string, socket: boolean, run: (fixture: {
     };
     await run({
       inputs: fixture.inputs,
+      confirmPrompt: async submittedAt => { await act(async () => fixture.deps!.onProviderPromptEvent({
+        kind: "prompt_submitted", eventId: `confirmed-${submittedAt}`, provider: agent as "codex" | "claude",
+        submittedAt, text: "Console recovery reply", truncated: false,
+      })); },
       deferNext: () => {fixture.deferNext=true;},
       rejectDeferred: async () => {await act(async () => fixture.rejectDeferred!());},
       rejectNext: (unknown = false) => {fixture.rejectNext=true;fixture.rejectionUnknown=unknown;},
@@ -603,7 +609,7 @@ test("an asynchronous rejection callback latches only its pane", async () => {
     const before = p.inputs.length;
     await p.enter();
     assert.equal(p.inputs.length, before);
-    assert.match(p.notice(), /New session.*restart/);
+    assert.match(p.notice(), /Conversation.*confirmed submission/);
   });
   await withPane("claude", true, async p => {
     await p.text("ordinary prompt"); await p.enter();
@@ -893,5 +899,42 @@ for (const agent of ["codex", "claude"] as const) for (const socket of [false, t
         assert.match(p.notice(), /selected slash menu item.*Type the command in full/);
       });
     }
+  });
+}
+
+for (const agent of ["claude", "codex"]) for (const socket of [false, true]) {
+  test(`${agent} later confirmed submission releases input uncertainty over ${socket ? "socket" : "HTTP"}`, async () => {
+    await withPane(agent, socket, async p => {
+      const old = new Date(Date.now() - 60_000).toISOString();
+      p.rejectNext(); await p.text("hi");
+      await p.confirmPrompt(old);
+      const before = p.inputs.length;
+      await p.enter();
+      assert.equal(p.inputs.length, before, "historical provider events cannot unlock Enter");
+      await p.confirmPrompt(new Date(Date.now() + 1).toISOString());
+      await p.enter();
+      assert.equal(p.inputs.length, before + 1, "a later provider-confirmed Console reply releases the latch");
+      for (const command of ["/clear", "/new", "/resume"]) {
+        await p.text(command);
+        const sent = p.inputs.length;
+        await p.enter();
+        assert.equal(p.inputs.length, sent, `${command} remains guarded after recovery`);
+        await p.click("Clear draft");
+      }
+    });
+  });
+  test(`${agent} confirmation preserves a context draft edited after rejection over ${socket ? "socket" : "HTTP"}`, async () => {
+    await withPane(agent, socket, async p => {
+      p.rejectNext(true); await p.text("hi");
+      await p.click("Clear draft");
+      await p.text("/resume");
+      await p.confirmPrompt(new Date(Date.now() + 1).toISOString());
+      const before = p.inputs.length;
+      await p.enter();
+      assert.equal(p.inputs.length, before, "a confirmation never erases a newer locally tracked slash draft");
+      await p.click("Clear draft");
+      await p.text("hello"); await p.enter();
+      assert.doesNotMatch(p.notice(), /provider draft is uncertain|Enter is blocked/, "ordinary input recovers without a remount");
+    });
   });
 }
