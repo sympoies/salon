@@ -12,17 +12,21 @@ The six submitted-reply implementation/test files are byte-identical to accepted
 review head `112e886557533c44e9db50280ea32d37bc4fc2e8`. The actual merge also
 includes the separately accepted fresh-document Sign out fixture already present
 here; that fixture differs from the submitted-reply review head. The source
-manifest compares all 600 package paths with the actual merged source and records
-the retained producer adaptations, rather than claiming whole-tree equivalence.
+manifest records the 600 selected package paths at that baseline. Its
+`adaptedFiles` entries keep upstream and retained hashes separate. The generic
+image-toolbar implementation input is recorded by source commit and patch digest,
+with input and final hashes for each of its 10 paths. This input is not presented
+as an approved upstream baseline. The retained source inventory has 601 paths:
+the 600 baseline paths and the added save adapter.
 
 The import retains the three helper-module renames that prevent component and
 model output paths from colliding on case-insensitive filesystems. The package
 builder checks actual emitted JavaScript, declarations and copied assets; the
 project gate also checks tracked paths.
 
-The [source manifest](core-source-manifest.json) records current source hashes,
-11 local license/comment/EOF adaptations and two full font license
-notices. Its initial-import history preserves the original reviewed snapshot
+The [source manifest](core-source-manifest.json) records baseline hashes, final
+hashes for the 11 retained license/comment/EOF adaptations, and implementation
+input/final hashes for the image-toolbar files. It preserves the original reviewed snapshot
 and completed downstream distribution-test transfer. No upstream Git history, private
 composition or environment files are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native

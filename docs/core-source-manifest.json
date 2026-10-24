@@ -28,7 +28,7 @@
     "Remove one redundant EOF blank line in each explicitly listed file; no behavior change."
   ],
   "files": {
-    "packages/edge/package.json": "e4c68d8da3ab03da71f85645618d4ca4774ba35a22322a3b764bfbfa4787442a",
+    "packages/edge/package.json": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
     "packages/edge/scripts/import-owner.ts": "465d7b48151782d860ee0f53ad78daf28a7467954186eac876997265c362b07b",
     "packages/edge/scripts/test-credential.ts": "6aa6702c19b3dcb2a3ade9d639c7606a6cf4f2b29e9106df1c2af706826347f4",
     "packages/edge/scripts/title-summarizer-openai-compatible.mjs": "60c7f5aec06ad2e59f2af2d67f2375f825783ee1c998cfa18ed739a5ad9a6ffb",
@@ -49,8 +49,8 @@
     "packages/edge/src/csrf.ts": "c5595358ab61c71f80aa6caae843cafa52af74c1ac9b7e725f4f89d0a20b400b",
     "packages/edge/src/daemonEnvelope.ts": "4b76b68b873c41648ce3c487f834c5606114c85727c788bf91871eab2d391320",
     "packages/edge/src/debugEvents.ts": "95ced7348e5f5ac1f6bfa497a8541a494885acfd7765b1f750affaaf0c13076a",
-    "packages/edge/src/extensions.ts": "38bb248798a1d57701f9cb5417ae7e3dbda83562563b223119356e78611a9428",
-    "packages/edge/src/historyImages.ts": "9509370bdf1bbd955797dbabd1c835424d819a106eafe632cf23a9396b3c13e2",
+    "packages/edge/src/extensions.ts": "d531a65a12da2fa814a95ac41a78cf19e4e59179be55793278d0541bf6eff205",
+    "packages/edge/src/historyImages.ts": "f99b5100ed1ab726c2b625ea65f7b7382f1e803fb687dfb18670b8997db410dc",
     "packages/edge/src/hostReader.ts": "c7ef27da88c967fef6e48b1ad1baf37d9290cbc7671aad0bfd4f1d9620edbd01",
     "packages/edge/src/http.ts": "0b3c9150a34ba53a92e81503394262978aaec7d72244422458abc01cc6b97b95",
     "packages/edge/src/index.ts": "82cfc8659040844fc1f91dfba1c90ae66bc3516d84c6b6ecde4e014cb933c441",
@@ -64,7 +64,7 @@
     "packages/edge/src/resourceWatch.ts": "1601f066538e4377157c7b9c39c5dc2efd1d2da76ad3dc800f9bd7ea614e8aa8",
     "packages/edge/src/runtimeHealth.ts": "17ba092b70a9bd424b8f9618872e0b44664136627caa14e6fd768b0c8a88bcaf",
     "packages/edge/src/server.ts": "dec4f33e905d0d5f13cf721007539c5951b890520783cad0ff4e1fc6a6f5bbcc",
-    "packages/edge/src/sessionMutationCoordinator.ts": "23a078ee24ae1a133885a3002cf8857e7304aa7f2045910d656f54a3494e9938",
+    "packages/edge/src/sessionMutationCoordinator.ts": "58737a43b8518a806289325897f43a295200d0b87bb4d2b23de3f0a29933a620",
     "packages/edge/src/sharedActivity.ts": "42eae21d46f2047300594f91bf94eedbc7f9b31a60a3438f1a9095fe9504c3a6",
     "packages/edge/src/sharedOutbox.ts": "fc0f320d0f3d801f72fcf89363a8e4e35b858d7cc7e08545c7673e3b7de39137",
     "packages/edge/src/sharedStream.ts": "b0157c8742a0d7277ebd07dc61047ad8e36de604df4adfe60d480e1538bb722f",
@@ -92,7 +92,7 @@
     "packages/edge/test/crossOwnerMessaging.test.ts": "a76188a8db48548302c5327d08bcb8e2e386f65aac436a659a3c70ab301323e3",
     "packages/edge/test/debug-events.test.ts": "ab1297c4a5fdeea57278bdaf64fc1fab4de8721b69492a0b40a06ccb5ce8b388",
     "packages/edge/test/edgeExtensions.test.ts": "1b9c66c482563ee68fdcda9abc23b59997568f91334ef2eccb1181cad6680b00",
-    "packages/edge/test/history-images.test.ts": "9fcc83bb17083217c6c05715500e6728b9643beaa40d1807889a61c26bd1286a",
+    "packages/edge/test/history-images.test.ts": "011e46a515f1f66e79d39deb66e6aaa7d02fb44330bf5b209f6b4123a899bd07",
     "packages/edge/test/history-projection.test.ts": "ddad6580a04a0d8707c1b295715279350bd5940a88c8c92d0fd069ac87e72eb1",
     "packages/edge/test/history-routes.test.ts": "2f0d72d5d1be0da1b02f96bb8f101da8d6f355522050be9d36f4c48d597d92fd",
     "packages/edge/test/history-star-proxy.test.ts": "44b5ae21c1add58115e1eb02df23dbbbccd981a68697df6594d162e949d7bdfb",
@@ -116,7 +116,7 @@
     "packages/edge/test/server-routes.test.ts": "35398ed90ace0e90ad653fdbb641f637820e1ff89832fd812b1f0969a9001a7e",
     "packages/edge/test/server.test.ts": "47526c143c854db967cfb6bfe3b79f0306a69fe5b442cc829432b0a22e113b64",
     "packages/edge/test/sessionDisplayMetadata.test.ts": "c6df0048489beb9554d1218e2e6ec04e5d54c42401b22d26b7423c9b62ff6a9a",
-    "packages/edge/test/sessionMutationCoordinator.test.ts": "114fb3f37a90ff1da51ea806ed8b5c24cb84ac4d7ca77a364bc9d5e16df48f18",
+    "packages/edge/test/sessionMutationCoordinator.test.ts": "e8a80acdd698b790294710bc3da3a9d48e401f4cbdf207555437a5a63958e40b",
     "packages/edge/test/sessionRetitleProxy.test.ts": "23629bec5249b004c92a0a7c028b67e4cd5aaf8fa063bf85387627cd8fed6bbe",
     "packages/edge/test/sharedDeliveryAuth.test.ts": "b187b09d3b0bce5a449ed70ddaf38b7e3854aa8b214224eccd3f0c5b74c4b8d2",
     "packages/edge/test/sharedOutbox.test.ts": "c1bc7b1d8c43bf6c7ac836c17ba8f0a715b661970ee40d79a0f9cdf67ff21d14",
@@ -140,10 +140,10 @@
     "packages/edge/test/wsproxy.test.ts": "2f03728e66b6e5add7aa4bb9092be4520a21150d506c3417e917252715de6f69",
     "packages/edge/tsconfig.build.json": "4a1aa861d4a54d451d244707ffe5e5a6a340bae02df89ffc052019505341ed7b",
     "packages/edge/tsconfig.json": "87c35c8f59080517b2b29d48dac62cae0209a496c8fa4861faaae84ba88c5555",
-    "packages/shared/package.json": "7d08b53acd49e05528679745f0e32e6d93308291b46e2df2598011a45c492d9f",
+    "packages/shared/package.json": "cc30b019d2887dddab4ada98dda0ac791444f55f81fb7dde56d469d897191b61",
     "packages/shared/src/activity.ts": "19f35628dc6c9973ccc0410dfe164d1fa50b161d9053484280d760dfa19bc271",
     "packages/shared/src/api.ts": "c122fe4c8a99efbdd337f78963432d0ecd243e029b47485d597a305699f82cb8",
-    "packages/shared/src/conversationImages.ts": "44f3e7424ff2aa8f0786cefc61fd7ef267d25d26c03d53287e55e38e44fabcc5",
+    "packages/shared/src/conversationImages.ts": "98e72ff11a56cf5ac585a7f730fb6b99f09309d4cb03feeeb6bf74817c2c629c",
     "packages/shared/src/index.ts": "87f2ac0b7b8004d1c346404d25b9970e98fe534f88e6a5ad40542745d041cf0f",
     "packages/shared/src/lineage.ts": "d602afde4379c98f09ebe538ba2c7dc4a7503e0df048318b0c0cd4f64520a446",
     "packages/shared/src/maintenance.ts": "2ccf70c753c1008c8ffe773f18ba276d44133f52b7cb61ef706d1af4e78c80e2",
@@ -155,7 +155,7 @@
     "packages/shared/src/sharedOutbox.ts": "937a8ccb47f440248114cdf82bba9d8f2134d450c97675b203c06d8b7927627d",
     "packages/shared/src/shell.ts": "361f24dc27be19fe81ab8c3820a60723a140e571a01be8aded5cb32ed1a2da42",
     "packages/shared/src/speech.ts": "ff65b22adb9734056d9812f2daa51ecd3435ee3125ef8729eae1664c94068432",
-    "packages/shared/src/sse.ts": "420585bd1b929207c797b85757f57e90382de13a200ad1bb92ac1e7b71f5fb96",
+    "packages/shared/src/sse.ts": "f9076276454f584749e895df9049cd1d24e181bec46c9bda2a2b4d851f9752ac",
     "packages/shared/src/title.ts": "627b8bf48a56269deab72d09a9aa04aa73fe36e885e70a669be31c08afd1cffb",
     "packages/shared/test/accounts.test.ts": "a6f83fb5e83bed91a98ca4a59e7d0a92aff37c61a97f0157a67cef2a076acb4d",
     "packages/shared/test/activity.test.ts": "8579550767d9747537bf08c71ec5334491bc04c3f0cadca246c5b2be4f8ee731",
@@ -164,7 +164,7 @@
     "packages/shared/test/boundary.test.ts": "c3e740603967aeaa57fd77935140a7a1d914f196c96feee9dc07cf4427e61045",
     "packages/shared/test/claudeAccount.test.ts": "2e18608afb26ea7c56515d6fe612134d8db66577e2d603806f6913bf182bebc5",
     "packages/shared/test/codexAccount.test.ts": "e561bf4abfcbd26733449b865b48fac4d7d5c2da35b125f01bd67cce8e6b4abb",
-    "packages/shared/test/conversationImages.test.ts": "7583aa5e09652fcebb18f97242d320bf87b747cc2dedde7c5f106185b7dd5fda",
+    "packages/shared/test/conversationImages.test.ts": "99eda6f86c259864dcd5a5669864e28f2454c47efbcb619ec2ff1641d76b1436",
     "packages/shared/test/fixtures/nils-1120-ff24ea72-activity-stream-v1-multi-session.json": "fbf731e97c679b19a039842bbfe5d275ce34aea81acaf3031428f69a86dc4365",
     "packages/shared/test/fixtures/nils-1120-nullable-multi-session-event.json": "e9ff5b43aa2d6922426d95b7c25132a77f69b9efc08cb169086b1b8d6437bebe",
     "packages/shared/test/fixtures/nils-1120-permission-attention-event.json": "79afcc1c7defed4bb66c83e0d9383883d49e93f850a46fdb554c0f58dc9550bc",
@@ -181,7 +181,7 @@
     "packages/shared/tsconfig.build.json": "b06dc6f4ba58f52b387262beda6176ba8505e96de5061971709842b8a29ef307",
     "packages/shared/tsconfig.json": "d59905950bc485d2f48612437a8e68e36b488f23602848527e9c5f709f5a2f00",
     "packages/ui/index.html": "ad9fc40c2ac1951f8a86db5ec21143fb683d3f292573f9e22133c08102b9357d",
-    "packages/ui/package.json": "1d9891a40d7eba804de3e78036e15f5c2370419fe8f215b239e0074704e9ec08",
+    "packages/ui/package.json": "879df3dda266feb2d41574e164b7846c5c44e2d4e5ac5f452925af6f3978538a",
     "packages/ui/public/apple-touch-icon.png": "6341196727648cd031f1a553557d35c6184450261288eede277db2dce71f1464",
     "packages/ui/public/favicon-32.png": "4df3320517a71dbba4d10e934ef05decb717b6e6e89b60286989f95cd54cc1e2",
     "packages/ui/public/favicon.svg": "c42de2274edafb1307426ab1afc2c13edbf0148717a37f813ed0e89f543b42aa",
@@ -191,8 +191,8 @@
     "packages/ui/src/BrandTitle.tsx": "0e23c6b368a48d9465e87b9aef05c03591972892c6fce053c64b60f8af6a088b",
     "packages/ui/src/CardStatusIcon.tsx": "7141a9e97174dee2916979e70e02129a6eb0bca94fe8adbae7611c49f83fef5c",
     "packages/ui/src/ConversationComposer.tsx": "d54a2e71088045388f8ed22f112147a760f8e917c52c5cd81695d7dd86ecd214",
-    "packages/ui/src/ConversationImages.css": "439da807691a9260fe365761cff77f4efd675e41b58ee26f7a7ce7e1c57497a9",
-    "packages/ui/src/ConversationImages.tsx": "327ba9ab6078e458d7009f711e688e93444219e0ca063d84abb666a09da7ba17",
+    "packages/ui/src/ConversationImages.css": "e2f5db1c3c48528ac64f9344044e738fcb036cb94c7d3fb5b314fe928f1ed8b2",
+    "packages/ui/src/ConversationImages.tsx": "1f239aa01c503bccec98d179318e4039a2745a76a31ed08a4961e36e280fbeda",
     "packages/ui/src/CreateDialog.tsx": "4fe254faae21dba8a6d92bb82a77938f106a049f2b29263a3d6a63cb3e230011",
     "packages/ui/src/Dashboard.tsx": "4dec99d67444a561b57e68e5e0d62c6e5a702c81d7860cc80566e46650dd85c9",
     "packages/ui/src/DebugPanel.tsx": "889c4312f3fc21104ff7a6a476cc3edfcb3f40b34760960aa95ed95df67cede2",
@@ -250,7 +250,7 @@
     "packages/ui/src/clientVersion.ts": "92cdda5c0744b7eaeb61aa7f4ce847b04abf5509a3263185d885313a898934a0",
     "packages/ui/src/codexRuntimeFallback.ts": "651bd6105448131cdb768ffeb06047b77732c54c79dc07dcab79c1772de5e2e7",
     "packages/ui/src/contextUsage.ts": "6d593b932a0cf17b27c6c8aa2ac37c94715b6e9e240f1fc30165c1d70210a048",
-    "packages/ui/src/conversationImageData.ts": "a96f26a7088f9318e19c290e617467ff50cd66f7ade9ae68d1b7b7a845c94c93",
+    "packages/ui/src/conversationImageData.ts": "448489cc36cf992044813df35aa05ddb84644280afbe6493ab0ed46c8ad6bfe7",
     "packages/ui/src/conversationOutbox.ts": "a9ea9d388d18dbc252a8f88aa0afcb46ad26b6dffbff755d6e17b96aafac97eb",
     "packages/ui/src/coordinatorTree.ts": "d386d375e06bde7bfb5d0bae4b88255123f5da6693dbd4ef2fc1574a7e5684c5",
     "packages/ui/src/createLifecycle.ts": "021bc3947e4a029a3ee3faa4d0f087b8c415377b7646c68bb9a91052d69ecfe7",
@@ -264,11 +264,11 @@
     "packages/ui/src/debugLog.ts": "302ca01f074a50c03b40c38d9e7698482c0213199cf11d370cbd1bc6688ac71a",
     "packages/ui/src/dshAgent.ts": "6275a7cfeb15fd7331723228f73b47e8dc3fe8bbf9525e59df4350b6ed917682",
     "packages/ui/src/enabledMachines.ts": "f6a6bbe18596c167ce5ce5c882529e2f8207f2415754f8afcd18719de7c86655",
-    "packages/ui/src/extensions.tsx": "d7176f6263ad243f6649a2315b0331c0b130c5d889594c9da0951a2ba701686b",
+    "packages/ui/src/extensions.tsx": "d74f36fb4a5dff7fd66f7f0c3a1ce739403fd36af2ab9a41ac9fc29ed193c1b1",
     "packages/ui/src/focusedGridProjection.ts": "4d5b3e02aa6133a1135f70cb129c0ea786f3de3c4a81e95f255d4050e19f06b6",
     "packages/ui/src/fonts/BlexMonoNerdFontMono-Bold.woff2": "262ff3cc9580ece788dd5a9c6b663cd47f01cc5d8d7320b321595695834ca947",
     "packages/ui/src/fonts/BlexMonoNerdFontMono-Regular.woff2": "62d0a00da4b934beeff0e215ab56207703fff6c9765cdacddb8ec542cb056bb0",
-    "packages/ui/src/fonts/LICENSE.md": "f2bcb80f685f19ecb76d04786aee02b632097bf58bf6e1b36de50f3b7dcb88f1",
+    "packages/ui/src/fonts/LICENSE.md": "e05a85f466a5317631799330bb43a6370d1504de66d4ca1efd0bfe35090728b9",
     "packages/ui/src/format.ts": "3d9460da000520f010dd071146bbcbad7d9e9f34e8093135c75f25d637901d75",
     "packages/ui/src/frames.ts": "e3dc2016d1e12608686a8217b53e8436ddd98f4f8a2e51c26a2ddfe2f5277209",
     "packages/ui/src/harnessCompact.ts": "d067a65311d04ab61bfa26db691b639f0262fdcbe175fca4b8a08f6fb7ffcb99",
@@ -277,7 +277,7 @@
     "packages/ui/src/headerUsageModel.ts": "992d17749829cec99f74392da2f7e1303234b915543e51ca9579870534e8870f",
     "packages/ui/src/historyResumeById.ts": "cbdfee5449326d8a3b06b7188fdfc696a7b9bf8aa705fdd39196502010a89684",
     "packages/ui/src/historyStars.ts": "4626a9fb7869bba8509eea1a599ea271e1bc243d188b51ad5e7969fff26469f1",
-    "packages/ui/src/icons.tsx": "2b3d768c6f466e52d5d42f4a10d023e7243c5c0d2fe14572b6a156e3e35b8099",
+    "packages/ui/src/icons.tsx": "e047965e72e79d4773d3166724c17fa5e4a5fcb357edb19cfeb265b5d4683e17",
     "packages/ui/src/layout.ts": "4c9121edba06148fa2394aff221090592a1a02c3190f5e51e9ae9084adc3a6a6",
     "packages/ui/src/layoutIconGeometry.ts": "56235b34762b62c71180787f2acd1cfa7a568a2156e9793c132d62ed2988dc82",
     "packages/ui/src/layoutOrder.ts": "be0959c832da0024840adf55f35d3e53510a6e14918969ddfdb55f98382d80ab",
@@ -298,7 +298,6 @@
     "packages/ui/src/resourceEvents.ts": "f91781b222f9410a410c15eaabec5e595fc02401f8d2ce53a5a57b0f34722359",
     "packages/ui/src/resumeClipboard.ts": "b5bccf204674d4ad148464e52609fd322b5a615964ec04d80781713233993756",
     "packages/ui/src/runtime.ts": "d0a61fc9ea99f7c7fde30bb5a0fa1d4037d9adcf9658464f45582d6550cc0c4d",
-    "packages/ui/src/saveConversationImage.ts": "77905232a3f8874530ed6d757a51c0e066bd30fd0562e78f83c80e11b4848381",
     "packages/ui/src/scheduler.ts": "6e6dd3d6b454044fb78e5f21fb3e152e02ef4306c303f076b657f7b7d0384131",
     "packages/ui/src/sessionAccounts.ts": "1f39b09e85b58b0f0d6245a3ac45afcd83a9b564f7f9ea4e7a475debfe7937e3",
     "packages/ui/src/sessionActivity.ts": "bcb2210fb3d9ac60621e87174b0202f03e68fc47fac3d6179035dfc179e9eeae",
@@ -406,7 +405,7 @@
     "packages/ui/test/conversationContrast.test.ts": "5e4360c34755e0f3443beee70d7580a3e962419e56dab58b8537ca311c2656cb",
     "packages/ui/test/conversationGrid.browser.test.ts": "dcbdee5b05fba9f6d2acd85a6b385fcee476dc4e164e6df5535546705c9131cc",
     "packages/ui/test/conversationGridBenchmark.fixture.ts": "523d0065fae3ea0dbd23709acf8736fb2b531684e87b71243a3025319ec5869e",
-    "packages/ui/test/conversationImages.test.ts": "a5e1cc43ef424e7f572726e4f8542fd2e9f74bc8e7118e50f505f748ea2ff888",
+    "packages/ui/test/conversationImages.test.ts": "8de93674b9eba380d779757887d7929501735b3769dbbac67149c9031f97963a",
     "packages/ui/test/conversationOutbox.test.ts": "e5ed1888ea040f7b0b5598ebc664175509868fd395dfa1f10a72290d5f058337",
     "packages/ui/test/coordinatorTree.test.ts": "e57ce09cf1ae498a7c50007073f5c159e4e7dd79e929569fa018dc7286907ee7",
     "packages/ui/test/createDialog.test.ts": "e29d4e1c31f44ea956a4652f68d1f1efd0424f6127f1c6793aae790a2a3b22a6",
@@ -485,7 +484,7 @@
     "packages/ui/test/outboxNativeConnection.test.ts": "73727f3d0118fded05cfff975230fdad1adea572648baafe7a586bcc3a4e5ace",
     "packages/ui/test/outboxNativePrincipal.test.ts": "811422529c0a24b068e90e82eb937c0c4945e3bfe40fa7510d3596e6c0729092",
     "packages/ui/test/overviewFilterPanel.browser.test.ts": "e23de9a4ffcdecd7fd304c4f9abcd228693303bd68491c3a955c7669d19e7321",
-    "packages/ui/test/performanceCapturePanel.test.ts": "560d31e61d3399b1a544d98fae1ef9c9b041f128f31679f8fbc19299592041ad",
+    "packages/ui/test/performanceCapturePanel.test.ts": "2757896b27029f006df2b70f4afb1fac583b72090656c0e3c0e4fb20c3f6094a",
     "packages/ui/test/performanceSummary.test.ts": "4d4e5a9a6f9122d05fea126c650fa34d1ccb8a0d72beedf1060f185989be9311",
     "packages/ui/test/phoneConversationLock.test.ts": "2cd2344fb9d493edca3301b8841acc517883f0bb19f284519964df53445055c6",
     "packages/ui/test/phoneConversationMode.test.ts": "419e5d8bee624af45107c0bda8c680a78971db3d45980308acb8fe3d0bda8c5b",
@@ -585,7 +584,7 @@
     "packages/ui/test/terminalContextCommands.test.ts": "9307f9a09d22d3393eb51c1842cdf8946c953ddccb629fde57602ac671b39672",
     "packages/ui/test/terminalCopyOneLine.test.ts": "ecb885e1d36fcd72c85b4f737132dad5fbfb16b88cb900e1ce24d437e31a039e",
     "packages/ui/test/terminalFit.test.ts": "1ab8d05b12551f029bd8721c13ec68d30078737adf72c7992038ca3415f9c057",
-    "packages/ui/test/terminalFocus.test.ts": "f746bc418dc4b342cad9221d94949dcea90871876eddcde4163f2251bf1d4847",
+    "packages/ui/test/terminalFocus.test.ts": "9b25b9ad30e358b859dd3e3aaf57d3c6dd9243f8e2a21ab73a95d4e607c53329",
     "packages/ui/test/terminalInput.test.ts": "e3f1ea85e3cd0bac30d33623f364df65e790e8a3285be071e5cfe69186df68a0",
     "packages/ui/test/terminalInstance.test.ts": "2b89632077c31a70946d4858eaccbaf595a5fd30768b4d84425504d519482679",
     "packages/ui/test/terminalKeyBar.test.ts": "3be81ca2a5ec03919db21ff3a2894e759918834646c7155a2f642cf84c635617",
@@ -646,7 +645,7 @@
   "adaptedFiles": {
     "packages/edge/package.json": {
       "upstreamSha256": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
-      "importedSha256": "8ac8bd3e12c84766984b93433e28849c89b45ebc7b7a3030b2bf6eb0270bf183"
+      "importedSha256": "e4c68d8da3ab03da71f85645618d4ca4774ba35a22322a3b764bfbfa4787442a"
     },
     "packages/edge/src/extensions.ts": {
       "upstreamSha256": "d531a65a12da2fa814a95ac41a78cf19e4e59179be55793278d0541bf6eff205",
@@ -662,7 +661,7 @@
     },
     "packages/shared/package.json": {
       "upstreamSha256": "cc30b019d2887dddab4ada98dda0ac791444f55f81fb7dde56d469d897191b61",
-      "importedSha256": "6b52c096850e96dd7dae73b4ed93b5ff9a90bb051c1655e83a9b7213e4c648b5"
+      "importedSha256": "7d08b53acd49e05528679745f0e32e6d93308291b46e2df2598011a45c492d9f"
     },
     "packages/shared/src/sse.ts": {
       "upstreamSha256": "f9076276454f584749e895df9049cd1d24e181bec46c9bda2a2b4d851f9752ac",
@@ -670,7 +669,7 @@
     },
     "packages/ui/package.json": {
       "upstreamSha256": "879df3dda266feb2d41574e164b7846c5c44e2d4e5ac5f452925af6f3978538a",
-      "importedSha256": "3ee2a1e1bc2ee2ae1c72a30f25ce7f18081793189c1687b88d619fbc0744f76e"
+      "importedSha256": "1d9891a40d7eba804de3e78036e15f5c2370419fe8f215b239e0074704e9ec08"
     },
     "packages/ui/src/extensions.tsx": {
       "upstreamSha256": "d74f36fb4a5dff7fd66f7f0c3a1ce739403fd36af2ab9a41ac9fc29ed193c1b1",
@@ -697,5 +696,54 @@
     "packages/ui/src/SharedOutgoingReplies.tsx",
     "packages/ui/src/sharedOutboxClient.ts",
     "packages/ui/test/sharedOutboxClient.test.ts"
-  ]
+  ],
+  "implementationInput": {
+    "repository": "serenvia/agent-console",
+    "baseCommit": "c0d52234c8a5c62180f38b319c30903f4563ee35",
+    "commit": "3dbe7a8b3b244d1caa222aad778e38be5167f467",
+    "patchSha256": "217ddf1b7dc23abe80f933ee25541f15cc34bc811e12b1f7f0bc36aea1aa6eb3",
+    "role": "Generic implementation input; not an approved upstream baseline.",
+    "files": {
+      "packages/edge/src/historyImages.ts": {
+        "sourceSha256": "9509370bdf1bbd955797dbabd1c835424d819a106eafe632cf23a9396b3c13e2",
+        "finalSha256": "2854e80c21417920a6d79a6b7c40f3afd48744aad35be00f68baa166d8e27bca"
+      },
+      "packages/edge/test/history-images.test.ts": {
+        "sourceSha256": "9fcc83bb17083217c6c05715500e6728b9643beaa40d1807889a61c26bd1286a",
+        "finalSha256": "f3ee4991d0cfa842f33c3843d51f50cfa82dfc63395a00b300a51b610b843cea"
+      },
+      "packages/shared/src/conversationImages.ts": {
+        "sourceSha256": "44f3e7424ff2aa8f0786cefc61fd7ef267d25d26c03d53287e55e38e44fabcc5",
+        "finalSha256": "89a3324811ff124b1fa275b7970d3722349dc2e67156ab072b98413cf06c3c80"
+      },
+      "packages/shared/test/conversationImages.test.ts": {
+        "sourceSha256": "7583aa5e09652fcebb18f97242d320bf87b747cc2dedde7c5f106185b7dd5fda",
+        "finalSha256": "596a7a2eb1e20474c0432343df2408b24ee964c87df9504283cd0563830f5954"
+      },
+      "packages/ui/src/ConversationImages.css": {
+        "sourceSha256": "439da807691a9260fe365761cff77f4efd675e41b58ee26f7a7ce7e1c57497a9",
+        "finalSha256": "439da807691a9260fe365761cff77f4efd675e41b58ee26f7a7ce7e1c57497a9"
+      },
+      "packages/ui/src/ConversationImages.tsx": {
+        "sourceSha256": "327ba9ab6078e458d7009f711e688e93444219e0ca063d84abb666a09da7ba17",
+        "finalSha256": "327ba9ab6078e458d7009f711e688e93444219e0ca063d84abb666a09da7ba17"
+      },
+      "packages/ui/src/conversationImageData.ts": {
+        "sourceSha256": "a96f26a7088f9318e19c290e617467ff50cd66f7ade9ae68d1b7b7a845c94c93",
+        "finalSha256": "a96f26a7088f9318e19c290e617467ff50cd66f7ade9ae68d1b7b7a845c94c93"
+      },
+      "packages/ui/src/icons.tsx": {
+        "sourceSha256": "2b3d768c6f466e52d5d42f4a10d023e7243c5c0d2fe14572b6a156e3e35b8099",
+        "finalSha256": "2b3d768c6f466e52d5d42f4a10d023e7243c5c0d2fe14572b6a156e3e35b8099"
+      },
+      "packages/ui/src/saveConversationImage.ts": {
+        "sourceSha256": "77905232a3f8874530ed6d757a51c0e066bd30fd0562e78f83c80e11b4848381",
+        "finalSha256": "77905232a3f8874530ed6d757a51c0e066bd30fd0562e78f83c80e11b4848381"
+      },
+      "packages/ui/test/conversationImages.test.ts": {
+        "sourceSha256": "a5e1cc43ef424e7f572726e4f8542fd2e9f74bc8e7118e50f505f748ea2ff888",
+        "finalSha256": "ba1aed1859184c623de126f6bf89ff67be51a1144a2f537e2d2f90a2f0842b0a"
+      }
+    }
+  }
 }
