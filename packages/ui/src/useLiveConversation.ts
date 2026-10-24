@@ -22,29 +22,51 @@ export function useLiveConversation(session: Session, {
   const [resolving, setResolving] = useState(false);
   const conversation = useHistoryConversation(setError);
   const openConversation = conversation.open;
+  const resetConversation = conversation.reset;
   const providerSessionId = session.provider_resume?.session_id;
   const label = providerLabel(session);
+  const latestRef = useRef(conversation.refreshLatest);
+  latestRef.current = conversation.refreshLatest;
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
+    resetConversation();
+    setResolving(false);
+    setError(undefined);
     if (!providerSessionId) return;
     let cancelled = false;
-    setResolving(true);
-    setError(undefined);
-    void findHistoryEntry(session.machine, { providerSessionId, label }, listHistorySessions)
-      .catch((cause: Error) => ({ ok: false as const, error: cause.message }))
-      .then(async (found) => {
+    let searching = false;
+    let bound = false;
+    // The first transcript may appear after this view opens. Reuse ordinary
+    // refresh triggers for discovery until bound, then only refresh messages.
+    const refresh = async () => {
+      if (cancelled) return;
+      if (bound) return latestRef.current();
+      if (searching) return;
+      searching = true;
+      setResolving(true);
+      try {
+        const found = await findHistoryEntry(session.machine, { providerSessionId, label }, listHistorySessions)
+          .catch((cause: Error) => ({ ok: false as const, error: cause.message }));
         if (cancelled) return;
-        setResolving(false);
         if (!found.ok) {
           setError(found.error);
           return;
         }
+        bound = true;
         await openConversation(found.session, found.latestMessagePaging);
-      });
+      } finally {
+        searching = false;
+        if (!cancelled) setResolving(false);
+      }
+    };
+    refreshRef.current = refresh;
+    void refresh();
     return () => {
       cancelled = true;
+      resetConversation();
     };
-  }, [label, openConversation, providerSessionId, session.machine]);
+  }, [label, openConversation, resetConversation, providerSessionId, session.machine]);
 
   // A reply this browser sent is delivered once the transcript shows it (#969).
   const messages = conversation.messages;
@@ -57,8 +79,6 @@ export function useLiveConversation(session: Session, {
   const completedAt = session.turn_state?.last_turn?.completed_at;
   const applyLatestRef = useRef(conversation.applyLatest);
   applyLatestRef.current = conversation.applyLatest;
-  const refreshRef = useRef(conversation.refreshLatest);
-  refreshRef.current = conversation.refreshLatest;
   const pollingPausedRef = useRef(false);
   pollingPausedRef.current = conversation.loading || conversation.browsingOlder
     || (!conversation.latestMessagePaging && conversation.messagePage > 0);
