@@ -54,13 +54,13 @@ test("message Markdown keeps only http(s) links and opens them outside the conso
       + "![shot](https://example.com/shot.png)",
   );
   const anchors = [...container.querySelectorAll("a")];
-  assert.deepEqual(anchors.map((anchor) => anchor.getAttribute("href")), ["https://example.com/a", "https://example.com/shot.png"]);
+  assert.deepEqual(anchors.map((anchor) => anchor.getAttribute("href")), ["https://example.com/a"]);
   for (const anchor of anchors) {
     assert.equal(anchor.getAttribute("target"), "_blank");
     assert.equal(anchor.getAttribute("rel"), "noopener noreferrer");
   }
-  assertNoElement(container, "img", "an image is offered as a link instead of loaded inline");
-  assert.match(container.textContent ?? "", /bad data rel ok shot/);
+  assertNoElement(container, "img", "unsupported sources never fetch an external image");
+  assert.match(container.textContent ?? "", /bad data rel ok Image unavailable/);
 
   const opened: unknown[][] = [];
   Object.assign(window, { open: (...args: unknown[]) => { opened.push(args); return {}; } });

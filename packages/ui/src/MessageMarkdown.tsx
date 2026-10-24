@@ -21,10 +21,9 @@ function MessageLink({ href, title, children }: {
   return <a href={safeUrl} title={title} target="_blank" rel="noopener noreferrer" onClick={open}>{children}</a>;
 }
 
-// An image is offered as a link rather than fetched into the conversation.
-function MessageImage({ src, alt, title }: { readonly src?: string; readonly alt?: string; readonly title?: string }) {
-  return <MessageLink href={src} title={title}>{alt || src}</MessageLink>;
-}
+// Unsupported sources remain explicit and never fetch an external image.
+function MessageImage() { return <span>Image unavailable</span>; }
+function HiddenMessageImage() { return null; }
 
 // Message text chooses some element attributes (heading and footnote ids,
 // code-fence attributes), so built-in elements keep only what the formatting
@@ -85,11 +84,11 @@ class MessageMarkdownBoundary extends Component<{ readonly text: string; readonl
 }
 
 /** One conversation or history message rendered as safe Markdown. */
-export const MessageMarkdown = memo(function MessageMarkdown({ text }: { readonly text: string }) {
+export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressImages = false }: { readonly text: string; readonly suppressImages?: boolean }) {
   return (
     <div className="message-markdown">
       <MessageMarkdownBoundary key={text} text={text}>
-        <Markdown options={MESSAGE_MARKDOWN_OPTIONS}>{text}</Markdown>
+        <Markdown options={suppressImages ? { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: MessageLink, img: HiddenMessageImage } } : MESSAGE_MARKDOWN_OPTIONS}>{text}</Markdown>
       </MessageMarkdownBoundary>
     </div>
   );

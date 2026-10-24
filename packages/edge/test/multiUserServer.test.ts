@@ -1174,3 +1174,16 @@ test("root recovery leaves a reused runtime's stale owner grant untouched", asyn
     restore.close();
   }
 });
+
+
+test("history image reads require the caller's history ownership before contacting a daemon", async () => {
+  await api("/api/history/sessions?machine=hub", "owner-token");
+  const image = `${"a".repeat(16)}.0.0.${"b".repeat(32)}`;
+  const before = daemonRequests;
+  assert.equal((await api(`/api/history/sessions/hub/viewer-history/images/${image}`, "owner-token")).status,404);
+  assert.equal(daemonRequests,before,"cross-owner image reads never reach upstream");
+  assert.equal((await api(`/api/history/sessions/hub/owner-history/images/${image}`, "owner-token")).status,422);
+  assert.equal(daemonRequests,before + 1,"owned history uses the history gate rather than live-session admission");
+  assert.equal((await api(`/api/history/sessions/hub/viewer-history/images/${image}`, "root-token")).status,422,
+    "root can read history images through the same history read policy");
+});

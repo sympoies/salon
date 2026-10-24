@@ -1,3 +1,4 @@
+import { normalizeConversationImages } from "@agent-console/shared/conversation-images";
 import type { ServerResponse } from "node:http";
 import { sendJson } from "./http.ts";
 import type { DaemonResult } from "./upstream.ts";
@@ -384,9 +385,10 @@ function projectHistoryMessage(value: unknown): Record<string, unknown> | null {
   const raw = value as Record<string, unknown>;
   const id = boundedHistoryString(raw.id, 160);
   const role = raw.role === "user" || raw.role === "assistant" || raw.role === "goal" ? raw.role : undefined;
-  const text = boundedHistoryString(raw.text, 64 * 1024);
-  if (!id || !role || !text) return null;
-  const projected: Record<string, unknown> = { id, role, text };
+  const text = typeof raw.text === "string" && raw.text.length <= 64 * 1024 ? raw.text : undefined;
+  const images = normalizeConversationImages(raw.images);
+  if (!id || !role || text === undefined || (!text && !images.length)) return null;
+  const projected: Record<string, unknown> = { id, role, text, ...(images.length ? { images } : {}) };
   const timestamp = boundedHistoryString(raw.timestamp, 64);
   if (timestamp) projected.timestamp = timestamp;
   return projected;

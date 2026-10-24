@@ -1,3 +1,4 @@
+import { ConversationImages } from "./ConversationImages.tsx";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, Fragment, type ReactNode, type RefObject } from "react";
 import type { ConversationSnapshot } from "@agent-console/shared/resources";
 import { normalizeActivityTurnState } from "@agent-console/shared/activity";
@@ -375,7 +376,7 @@ export function HistoryConversationView({
                 className={`history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
                 {user ? time : null}
-                <div className="history-bubble">{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(message.text) : message.text} /></div>
+                <div className="history-bubble">{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(message.text) : message.text} suppressImages={Boolean(message.images?.length)} />{message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}</div>
                 {user ? null : time}
               </article>
             </Fragment>

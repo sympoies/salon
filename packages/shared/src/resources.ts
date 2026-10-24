@@ -1,3 +1,4 @@
+import { normalizeConversationImages, type ConversationImage } from "./conversationImages.ts";
 import { NormalizedSseDecoder } from "./sse.ts";
 
 export type ResourceSubscription =
@@ -14,7 +15,7 @@ export function resourceKey(subscription: ResourceSubscription): string {
 // pages stay on HTTP so an eight-conversation stream remains bounded.
 export const CONVERSATION_SNAPSHOT_MAX_BYTES = 60 * 1024;
 export interface ConversationSnapshot {
-  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal"; readonly text: string; readonly timestamp?: string }>;
+  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal"; readonly text: string; readonly images?: readonly ConversationImage[]; readonly timestamp?: string }>;
   readonly next_cursor?: string;
   readonly older_cursor?: string;
 }
@@ -31,8 +32,9 @@ export function normalizeConversationSnapshot(value: unknown): ConversationSnaps
       || !["user", "assistant", "goal"].includes(String(item.role))
       || typeof item.text !== "string" || item.text.length > 64 * 1024
       || (item.timestamp !== undefined && (typeof item.timestamp !== "string" || item.timestamp.length > 64))) return undefined;
+    const images = normalizeConversationImages(item.images);
     ids.add(item.id);
-    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal", text: item.text,
+    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal", text: item.text, ...(images.length ? { images } : {}),
       ...(typeof item.timestamp === "string" ? { timestamp: item.timestamp } : {}) });
   }
   const snapshot: ConversationSnapshot = { messages };

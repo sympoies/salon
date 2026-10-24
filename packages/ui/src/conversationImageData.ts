@@ -1,0 +1,23 @@
+import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, isConversationImageId } from "@agent-console/shared/conversation-images";
+import { appFetch } from "./runtime.ts";
+
+export type ConversationImageData = { readonly state: "ready"; readonly url: string }
+  | { readonly state: "loading" | "deleted" | "unavailable" };
+
+export async function fetchConversationImage(machine: string, history: string, image: string, signal: AbortSignal): Promise<ConversationImageData> {
+  if (!isConversationImageId(image)) return {state:"unavailable"};
+  try {
+    const response = await appFetch(`/api/history/sessions/${encodeURIComponent(machine)}/${encodeURIComponent(history)}/images/${encodeURIComponent(image)}`,
+      {signal:AbortSignal.any([signal,AbortSignal.timeout(15_000)]),cache:"no-store"});
+    if (response.status === 404) {
+      const error = await response.json().catch(() => null) as { error?: { code?: string } } | null;
+      return {state:error?.error?.code === "history-image-deleted" ? "deleted" : "unavailable"};
+    }
+    const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
+    if (!response.ok || !CONVERSATION_IMAGE_TYPES.some(type => type === mime)
+      || Number(response.headers.get("content-length")) > CONVERSATION_IMAGE_MAX_BYTES) return {state:"unavailable"};
+    const blob = await response.blob();
+    if (signal.aborted || blob.size > CONVERSATION_IMAGE_MAX_BYTES || !blob.size) return {state:"unavailable"};
+    return {state:"ready",url:URL.createObjectURL(blob)};
+  } catch { return {state:"unavailable"}; }
+}

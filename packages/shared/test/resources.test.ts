@@ -27,3 +27,14 @@ test("conversation snapshots carry only bounded normalized messages and cursors"
   }
   assert.deepEqual(normalizeResourceEvent({ ...metadata, resource: "sessions", conversation: snapshot }), { ...metadata, resource: "sessions" });
 });
+
+
+test("conversation snapshots preserve bounded image-only descriptors without paths or bytes", () => {
+  const id = `${"a".repeat(16)}.0.0.${"b".repeat(32)}`;
+  const event = {schema_version:"agent-console.resource-event.v1",type:"changed",resource:"conversation/fixture/history",revision:1};
+  const image = {id,path:"/private/image.png",data:"private"};
+  const conversation = {messages:[{id:"image-only",role:"user",text:"",images:[image]}]};
+  assert.deepEqual(normalizeResourceEvent({...event,conversation}),{...event,conversation:{messages:[{id:"image-only",role:"user",text:"",images:[{id}]}]}});
+  const bounded = normalizeResourceEvent({...event,conversation:{messages:[{id:"many",role:"assistant",text:"images",images:Array(30).fill(image)}]}});
+  assert.equal(bounded?.conversation?.messages[0]?.images?.length,16);
+});

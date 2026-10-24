@@ -55,6 +55,7 @@ test("managed testers can view granted sessions but cannot invoke daemon, termin
   const access = new AccessStore(path);
   access.claimSession({ principalId: "tester-fixture", machine: "fixture", sessionId: "granted", incarnation: "granted-inc" });
   access.claimSession({ principalId: "owner", machine: "fixture", sessionId: "private", incarnation: "private-inc" });
+  access.claimHistory("tester-fixture", "fixture", "granted-history", "codex", "granted-provider");
   access.close();
   const edge = createEdgeServer(config, { extensions: [{ id: "account-control", permissions: ["extension_control"], routes: [{
     id: "default", pattern: "/api/ext/account-control/:provider/default", methods: ["GET", "PUT"], permission: "extension_control",
@@ -111,6 +112,13 @@ test("managed testers can view granted sessions but cannot invoke daemon, termin
       assert.deepEqual(sessions.map((session: { id: string }) => session.id), ["granted"]);
       assert.equal((await fetch(`${base}/api/sessions/fixture/granted/buffer`, { headers })).status, 200);
       assert.equal((await fetch(`${base}/api/sessions/fixture/private/buffer`, { headers })).status, 404);
+      const image = `${"a".repeat(16)}.0.0.${"b".repeat(32)}`;
+      const beforeImage = upstreamRequests.length;
+      assert.equal((await fetch(`${base}/api/history/sessions/fixture/private-history/images/${image}`, { headers })).status, 404);
+      assert.equal(upstreamRequests.length,beforeImage,"ungranted history image reads never reach serve");
+      assert.equal((await fetch(`${base}/api/history/sessions/fixture/granted-history/images/${image}`, { headers })).status, 422);
+      assert.equal(upstreamRequests.at(-1),`GET /history/sessions/granted-history/images/${image}`,
+        "read-only testers can inspect granted images with either auth transport");
       for (const [method, endpoint] of actions) await t.test(`${Object.hasOwn(headers, "cookie") ? "cookie" : "bearer"} denies ${method} ${endpoint}`, async () => {
         const before = upstreamRequests.length;
         const denied = await fetch(`${base}${endpoint}`, {
