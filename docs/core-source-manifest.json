@@ -26,7 +26,8 @@
     "Set the three SDK package versions to 0.1.1 and retain MIT license metadata.",
     "Point the two extension-contract comments to the local package boundary document.",
     "Preserve font bytes and include full upstream font licensing notices.",
-    "Remove one redundant EOF blank line in each explicitly listed file; no behavior change."
+    "Remove one redundant EOF blank line in each explicitly listed file; no behavior change.",
+    "Give each Sign out fixture document its own boot clock while preserving every existing assertion and timeout."
   ],
   "files": {
     "packages/edge/package.json": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
@@ -675,6 +676,10 @@
     "packages/ui/test/performanceCapturePanel.test.ts": {
       "upstreamSha256": "2757896b27029f006df2b70f4afb1fac583b72090656c0e3c0e4fb20c3f6094a",
       "importedSha256": "560d31e61d3399b1a544d98fae1ef9c9b041f128f31679f8fbc19299592041ad"
+    },
+    "packages/ui/test/settingsSignOut.test.ts": {
+      "upstreamSha256": "ba02fd686bf2ac7589bcbc4dec4b128bdad42b170832f3675fda91eaaa53687b",
+      "importedSha256": "7ea5af858877cdbbb38e7dab7ce3103cc6660a361ed71fc015357042fa27baba"
     },
     "packages/ui/test/terminalFocus.test.ts": {
       "upstreamSha256": "9b25b9ad30e358b859dd3e3aaf57d3c6dd9243f8e2a21ab73a95d4e607c53329",

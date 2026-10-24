@@ -34,7 +34,11 @@ const fixture: Plugin = {
 
 for (const scenario of ["success", "http-failure", "unreachable", "stalled", "browser"] as const) {
   test(scenario === "browser" ? "browser Sign out keeps cookie login behavior and leaves device storage untouched"
-    : `${scenario} Sign out clears the native token and stays signed out after App reload`, { timeout: 15_000 }, async () => {
+    : `${scenario} Sign out clears the native token and stays signed out after App reload`, { timeout: 15_000 }, async (t) => {
+    // Each scenario is a fresh document; earlier tests must not spend its boot budget.
+    const processNow = performance.now.bind(performance);
+    const documentStartedAt = processNow();
+    t.mock.method(performance, "now", () => processNow() - documentStartedAt);
     const native = scenario !== "browser";
     const window = new Window({ url: "http://localhost" });
     if (native) Object.assign(window, { __TAURI_INTERNALS__: {} });
