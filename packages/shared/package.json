@@ -79,6 +79,11 @@
       "source": "./src/sharedOutbox.ts",
       "types": "./dist-package/sharedOutbox.d.ts",
       "default": "./dist-package/sharedOutbox.js"
+    },
+    "./conversation-images": {
+      "source": "./src/conversationImages.ts",
+      "types": "./dist-package/conversationImages.d.ts",
+      "default": "./dist-package/conversationImages.js"
     }
   },
   "scripts": {

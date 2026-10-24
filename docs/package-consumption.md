@@ -5,10 +5,15 @@ creating a release, changing repository visibility or establishing a downstream
 published-version pin. The private SDK release entrypoint below is a separately
 authorized publisher operation.
 
-The current import follows merged source commit
-`c1df368099b9ecffec7ae655732395aa0c1db6db`, whose full tree is identical to
-reviewed head `f3c2478ba6e05b6f4e4a9c305335353d70c283de`. It includes the three
-helper-module renames that prevent component and
+The current import follows actual merged source commit
+`0982a6d58a74774285c6367deb2fb0ea25148d7b`, including the preceding refused-reply
+repair and the accepted conversation-image change. All 600 package paths are
+byte-identical to image change review head
+`9abc76c0422e6042094bb38f2cfcccf763b708ce`; other repository files differ, so
+this is package-source equivalence rather than a whole-tree identity claim.
+The source manifest compares every package path with the actual merged source.
+
+The import retains the three helper-module renames that prevent component and
 model output paths from colliding on case-insensitive filesystems. The package
 builder checks actual emitted JavaScript, declarations and copied assets; the
 project gate also checks tracked paths.
@@ -64,6 +69,23 @@ events, transport acknowledgements and Clear draft alone do not. Locally tracked
 slash drafts remain guarded after recovery. The port retains the canonical
 shared, edge and mounted UI behavior tests; application/provider and native
 acceptance remain separate.
+
+## Conversation images
+
+The SDK preserves bounded opaque image selectors through history HTTP and SSE.
+The explicit `@agent-console/shared/conversation-images` export provides the
+shared normalization contract. Descriptors contain neither paths nor bytes;
+unsupported URLs are not fetched. Image bytes use the authenticated history
+ownership route, injected daemon credentials, bounded raster admission and
+private no-store responses. Deleted images remain distinct from unavailable
+images; abandoned transfers are cancelled.
+
+History, full Conversation panels, phone panes and desktop tiles use the same
+lazy thumbnails and message-scoped viewer. Fit, zoom, pan, image navigation,
+keyboard focus and native Back dismissal retain the accepted behavior. The
+isolated compiled consumer checks the actual image contract declarations and
+authenticated exact byte forwarding; source headless fixtures cover the mounted
+views. Real provider/native acceptance remains with its owning milestone.
 
 ## Private SDK release
 

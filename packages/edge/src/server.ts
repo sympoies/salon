@@ -1,3 +1,4 @@
+import { forwardHistoryImage } from "./historyImages.ts";
 import {isPromptRequestId,isPromptIncarnation} from "@agent-console/shared/prompt-receipt";
 import {forwardPromptReceipt} from "./promptReceipts.ts";
 import { normalizeOutboxAdmission, normalizeRefusedOutboxAction } from "@agent-console/shared/shared-outbox";
@@ -710,7 +711,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // Managed testers have no ordinary-principal base powers. This allowlist
     // fails closed for new routes, including GET endpoints for shells/settings.
     if (_principal.managedCredential && (method !== "GET" || ![
-      "machines", "sessions", "board", "history-sessions", "history-messages",
+      "machines", "sessions", "board", "history-sessions", "history-messages", "history-image",
       "resource-events", "activity-events", "glance", "buffer",
     ].includes(route.id))) {
       sendJson(res, 403, { ok: false, error: { message: "forbidden" } });
@@ -724,7 +725,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     }
 
     let rootSessionIncarnation: string | undefined;
-    const isHistoryItem = ["history-messages", "history-star", "history-resume"].includes(route.id);
+    const isHistoryItem = ["history-messages", "history-star", "history-resume", "history-image"].includes(route.id);
     if (config.multiUser && route.params.machine && route.params.id && !isHistoryItem) {
       const machine = routeParam(route, "machine");
       const sessionId = routeParam(route, "id");
@@ -739,7 +740,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     if (config.multiUser && isHistoryItem) {
       const machine = routeParam(route, "machine");
       const historyId = routeParam(route, "id");
-      if (route.id === "history-messages" ? !canReadHistory(_principal, machine, historyId)
+      if (["history-messages", "history-image"].includes(route.id) ? !canReadHistory(_principal, machine, historyId)
         : !accessStore?.ownsHistory(_principal.id, machine, historyId)) {
         sendJson(res, 404, { ok: false, error: { message: "history session not found" } });
         return;
@@ -1261,6 +1262,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               : undefined,
           );
         });
+        return;
+      }
+
+      case "history-image": {
+        await withMachine(res, routeParam(route, "machine"), (machine) =>
+          forwardHistoryImage(res, machine, routeParam(route, "id"), routeParam(route, "image")));
         return;
       }
 

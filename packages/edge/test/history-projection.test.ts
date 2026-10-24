@@ -152,3 +152,10 @@ test("history star projection keeps only the acknowledged id and star", () => {
   );
   assert.equal(projectHistoryStarDaemonData({ starred_at: "2026-09-01T00:00:00Z" }), null);
 });
+
+test("image-only history messages retain bounded opaque descriptors", () => {
+  const id = `${"a".repeat(16)}.0.0.${"b".repeat(32)}`;
+  assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [
+    { id: "image-only", role: "user", text: "", images: [{ id, path: "/private/image.png", data: "private" }] },
+  ] }), { messages: [{ id: "image-only", role: "user", text: "", images: [{ id }] }] });
+});

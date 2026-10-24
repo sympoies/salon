@@ -1,3 +1,4 @@
+import { normalizeConversationImages } from "@agent-console/shared/conversation-images";
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { validOutboxText, SHARED_OUTBOX_MAX_ITEMS, SHARED_OUTBOX_MAX_HOLDS, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
 import { isPromptRequestId, normalizePromptReceipt, type PromptReceipt } from "@agent-console/shared/prompt-receipt";
@@ -762,12 +763,14 @@ function normalizeHistoryMessage(value: unknown): HistoryMessage | undefined {
   const raw = value as Record<string, unknown>;
   const id = boundedString(raw.id, 160);
   const role = raw.role === "user" || raw.role === "assistant" || raw.role === "goal" ? raw.role : undefined;
-  const text = boundedString(raw.text, 64 * 1024);
-  if (!id || !role || !text) return undefined;
+  const text = typeof raw.text === "string" && raw.text.length <= 64 * 1024 ? raw.text : undefined;
+  const images = normalizeConversationImages(raw.images);
+  if (!id || !role || text === undefined || (!text && !images.length)) return undefined;
   return {
     id,
     role,
     text,
+    ...(images.length ? { images } : {}),
     ...(boundedString(raw.timestamp, 64) ? { timestamp: raw.timestamp as string } : {}),
   };
 }

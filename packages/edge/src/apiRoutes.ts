@@ -61,6 +61,7 @@ const API_ROUTES = [
     methods: ["POST"],
     params: ["machine", "id"],
   },
+  { id: "history-image", pattern: "/api/history/sessions/:machine/:id/images/:image", methods: ["GET"], params: ["machine", "id", "image"] },
   { id: "resource-events", pattern: "/api/resources/events", methods: ["GET"], params: [] },
   { id: "activity-events", pattern: "/api/activity/events", methods: ["GET"], params: [] },
   { id: "usage", pattern: "/api/usage", methods: ["GET"], params: [] },
