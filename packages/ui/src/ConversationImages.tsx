@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import type { ConversationImage } from "@agent-console/shared/conversation-images";
 import { Modal } from "./Modal.tsx";
 import { fetchConversationImage, type ConversationImageData } from "./conversationImageData.ts";
+import { saveConversationImage } from "./saveConversationImage.ts";
+import { IconButton } from "./IconButton.tsx";
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, DownloadIcon, FitImageIcon, ZoomInIcon, ZoomOutIcon } from "./icons.tsx";
 import "./ConversationImages.css";
 
 interface ImageTarget { readonly machine: string; readonly history: string; readonly image: string }
@@ -25,7 +28,7 @@ function useImage(target: ImageTarget, enabled: boolean) {
     });
     return () => { controller.abort(); release(); };
   },[target.machine,target.history,target.image,enabled,release]);
-  return {data,fail:() => { release(); setData({state:"unavailable"}); }};
+  return {data,unavailable:(result: Exclude<ConversationImageData,{state:"ready"}>) => { release(); setData(result); },fail:() => { release(); setData({state:"unavailable"}); }};
 }
 function ImageContent({data,fail}: { readonly data: ConversationImageData; readonly fail: () => void }) {
   return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} />
@@ -59,7 +62,31 @@ function ImageViewer({machine,history,images,initial,onClose}: {
   const points = useRef(new Map<number,Point>());
   const gesture = useRef<{start:Point;previous:Point;distance:number;pinched:boolean;moved:boolean;outside:boolean} | null>(null);
   const current = images[Math.min(index,images.length - 1)]!;
-  const {data,fail} = useImage({machine,history,image:current.id},true);
+  const {data,fail,unavailable} = useImage({machine,history,image:current.id},true);
+  const [saving,setSaving] = useState(false);
+  const [saveError,setSaveError] = useState(false);
+  const downloadController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setSaveError(false);
+    return () => { downloadController.current?.abort(); };
+  },[current.id]);
+  const download = async () => {
+    if (saving || data.state !== "ready") return;
+    const controller = new AbortController();
+    downloadController.current = controller;
+    stage.current?.closest<HTMLElement>('[role="dialog"]')?.focus();
+    setSaving(true); setSaveError(false);
+    const fresh = await fetchConversationImage(machine,history,current.id,controller.signal);
+    try {
+      if (controller.signal.aborted) return;
+      if (fresh.state !== "ready") { unavailable(fresh); return; }
+      await saveConversationImage(fresh.blob,fresh.filename,fresh.url);
+    } catch { if (!controller.signal.aborted) setSaveError(true); }
+    finally {
+      if (fresh.state === "ready") URL.revokeObjectURL(fresh.url);
+      if (downloadController.current === controller) { downloadController.current = null; setSaving(false); }
+    }
+  };
   const move = (delta: number) => {
     // A boundary arrow becomes disabled after this update. Move focus before
     // that happens so keyboard events still reach the dialog in real browsers.
@@ -117,15 +144,18 @@ function ImageViewer({machine,history,images,initial,onClose}: {
   return createPortal(<Modal onClose={onClose} ariaLabel="Conversation images" androidBackEntry="conversation-images" lightDismiss
     backdropClassName="conversation-image-backdrop" className="conversation-image-viewer"
     onDialogKeyDown={event => {
+      if (event.key === "Tab") event.stopPropagation();
       if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); event.stopPropagation(); move(event.key === "ArrowRight" ? 1 : -1); }
     }}>
     <div className="conversation-image-toolbar">
       <span aria-live="polite">{index + 1} / {images.length}</span>
-      <button type="button" aria-label="Zoom out" disabled={scale <= 1} onClick={() => setScale(value => clampZoom(value / 1.5))}>−</button>
-      <button type="button" aria-label="Fit image" onClick={fit}>Fit</button>
-      <button type="button" aria-label="Zoom in" disabled={scale >= 6} onClick={() => setScale(value => clampZoom(value * 1.5))}>+</button>
-      <button type="button" aria-label="Close image viewer" onClick={onClose}>×</button>
+      <IconButton aria-label="Zoom out" title="Zoom out" disabled={scale <= 1} onClick={() => setScale(value => clampZoom(value / 1.5))}><ZoomOutIcon /></IconButton>
+      <IconButton aria-label="Fit image" title="Fit image" onClick={fit}><FitImageIcon /></IconButton>
+      <IconButton aria-label="Zoom in" title="Zoom in" disabled={scale >= 6} onClick={() => setScale(value => clampZoom(value * 1.5))}><ZoomInIcon /></IconButton>
+      <IconButton aria-label="Download image" title="Download image" disabled={data.state !== "ready" || saving} aria-busy={saving} onClick={() => void download()}><DownloadIcon /></IconButton>
+      <IconButton aria-label="Close image viewer" title="Close image viewer" onClick={onClose}><CloseIcon /></IconButton>
     </div>
+    {saveError ? <div className="conversation-image-save-error" role="status">Image could not be saved</div> : null}
     <div ref={stage} className="conversation-image-stage" onPointerDown={down} onPointerMove={drag} onPointerUp={event => up(event)} onPointerCancel={event => up(event,true)}
       onTouchStart={event => event.stopPropagation()} onTouchMove={event => event.stopPropagation()} onTouchEnd={event => event.stopPropagation()}
       onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget && !gesture.current?.moved && gesture.current?.outside) onClose(); }}
@@ -135,8 +165,8 @@ function ImageViewer({machine,history,images,initial,onClose}: {
       </div>
     </div>
     {images.length > 1 ? <div className="conversation-image-navigation">
-      <button type="button" aria-label="Previous image" disabled={index === 0} onClick={() => move(-1)}>‹</button>
-      <button type="button" aria-label="Next image" disabled={index === images.length - 1} onClick={() => move(1)}>›</button>
+      <IconButton aria-label="Previous image" title="Previous image" disabled={index === 0} onClick={() => move(-1)}><ChevronLeftIcon /></IconButton>
+      <IconButton aria-label="Next image" title="Next image" disabled={index === images.length - 1} onClick={() => move(1)}><ChevronRightIcon /></IconButton>
     </div> : null}
   </Modal>,document.body);
 }

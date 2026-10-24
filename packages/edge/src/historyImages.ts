@@ -1,9 +1,13 @@
 import type { ServerResponse } from "node:http";
-import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, isConversationImageId } from "@agent-console/shared/conversation-images";
+import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, conversationImageFilename, isConversationImageId } from "@agent-console/shared/conversation-images";
 import type { MachineConfig } from "./config.ts";
 import { authedFetch, sendJson } from "./http.ts";
 
 class ImageUnavailableError extends Error {}
+
+function encodeFilename(filename: string): string {
+  return encodeURIComponent(filename).replace(/[!'()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+}
 
 async function readBounded(response: Response, limit: number): Promise<Buffer> {
   if (Number(response.headers.get("content-length")) > limit) { await response.body?.cancel(); throw new ImageUnavailableError("Image unavailable"); }
@@ -48,6 +52,8 @@ export async function forwardHistoryImage(res: ServerResponse, machine: MachineC
       const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
       if (!CONVERSATION_IMAGE_TYPES.some(type => type === mime)) { await response.body?.cancel(); unavailable(); return; }
       const bytes = await readBounded(response,CONVERSATION_IMAGE_MAX_BYTES);
+      const filename = conversationImageFilename(response.headers.get("content-disposition"));
+      if (filename) res.setHeader("content-disposition",`inline; filename*=UTF-8''${encodeFilename(filename)}`);
       res.writeHead(200,{"content-type":mime!,"content-length":bytes.byteLength});
       res.end(bytes);
     },{token:machine.token,timeoutMs:10_000,redirect:"error",signal:controller.signal});

@@ -99,9 +99,9 @@ views. Real provider/native acceptance remains with its owning milestone.
 ## Private SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The prepared SDK patch release is fixed at `v0.1.2`, a private GitHub prerelease
-with `latest=false`; root and package versions are `0.1.2`. The existing `v0.1.0`
-and `v0.1.1` tags and assets stay immutable. Source preparation does not authorize
+merge. The prepared SDK patch release is fixed at `v0.1.3`, a private GitHub prerelease
+with `latest=false`; root and package versions are `0.1.3`. The existing `v0.1.0`,
+`v0.1.1` and `v0.1.2` tags and assets stay immutable. Source preparation does not authorize
 publication. The authorized publisher uploads only
 `shared.tgz`, `edge.tgz`, `ui.tgz` and `manifest.json`. The existing manifest is
 the checksum record; no additional asset format is created.
