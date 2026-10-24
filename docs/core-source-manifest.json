@@ -25,7 +25,8 @@
     "Set the three SDK package versions to 0.1.3 and retain MIT license metadata.",
     "Point the two extension-contract comments to the local package boundary document.",
     "Preserve font bytes and include full upstream font licensing notices.",
-    "Remove one redundant EOF blank line in each explicitly listed file; no behavior change."
+    "Remove one redundant EOF blank line in each explicitly listed file; no behavior change.",
+    "Expose the existing test credential and machine preferences owner CLIs through compiled package bins; their accepted source entrypoints include direct execution shebangs."
   ],
   "files": {
     "packages/edge/package.json": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
@@ -645,11 +646,19 @@
   "adaptedFiles": {
     "packages/edge/package.json": {
       "upstreamSha256": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
-      "importedSha256": "e4c68d8da3ab03da71f85645618d4ca4774ba35a22322a3b764bfbfa4787442a"
+      "importedSha256": "9ba1f58b64bed19e08bd5d80e62ec630d6a13c4a108741e6958976d85d1ca5d2"
+    },
+    "packages/edge/scripts/test-credential.ts": {
+      "upstreamSha256": "6aa6702c19b3dcb2a3ade9d639c7606a6cf4f2b29e9106df1c2af706826347f4",
+      "importedSha256": "638b602fa33e86eef9affaa36f50688ae4f9721ab2be9bc41680b5571340d401"
     },
     "packages/edge/src/extensions.ts": {
       "upstreamSha256": "d531a65a12da2fa814a95ac41a78cf19e4e59179be55793278d0541bf6eff205",
       "importedSha256": "38bb248798a1d57701f9cb5417ae7e3dbda83562563b223119356e78611a9428"
+    },
+    "packages/edge/src/machinePreferencesCli.ts": {
+      "upstreamSha256": "ab5b8c75d32d6194299f7dc43fc2b98686980fd27b3e8b93171a8c76d4e753a0",
+      "importedSha256": "de2b8eb59239b658b6b77b12bc7a327329225ee12fe45f02ebf33f01861ffcb2"
     },
     "packages/edge/src/sessionMutationCoordinator.ts": {
       "upstreamSha256": "58737a43b8518a806289325897f43a295200d0b87bb4d2b23de3f0a29933a620",

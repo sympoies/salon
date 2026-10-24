@@ -4,6 +4,10 @@
   "private": true,
   "description": "agent-console edge backend: aggregates per-machine `agent-session serve` endpoints, enforces client principal access, and serves the built UI. Compiled ESM package with a source condition for workspace development.",
   "type": "module",
+  "bin": {
+    "agent-console-test-credential": "./dist-package/scripts/test-credential.js",
+    "agent-console-machine-preferences": "./dist-package/src/machinePreferencesCli.js"
+  },
   "exports": {
     "./extensions": {
       "source": "./src/extensions.ts",
