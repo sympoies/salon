@@ -3,7 +3,8 @@ import { validOutboxText, type RefusedOutboxAction, type SharedOutboxItem, type 
 import { actOnRefusedSharedOutbox, admitSharedOutbox, readSharedOutbox, SharedOutboxRequestError, type SharedOutboxTarget } from "./api.ts";
 import { apiBase, nativeConnectionConfigGeneration, nativePrincipalIsActive } from "./runtime.ts";
 import { getPrincipalStorageNamespace } from "./storage.ts";
-import type { Session } from "./types.ts";
+import { transcriptProof } from "./conversationOutbox.ts";
+import type { HistoryMessage, Session } from "./types.ts";
 
 export interface LocalSharedAdmission {
   readonly id: string;
@@ -17,6 +18,8 @@ export interface SharedClientTarget {
   readonly target: SharedOutboxTarget;
   readonly snapshot: SharedOutboxSnapshot;
   readonly admissions: readonly LocalSharedAdmission[];
+  /** User-turn parts already observed for submitted rows; scoped by this target incarnation. */
+  readonly submittedProofs?: Readonly<Record<string, string>>;
 }
 const emptySnapshot: SharedOutboxSnapshot = { revision: 0, items: [], compose_holds: [] };
 const databases = new WeakMap<IDBFactory, Promise<IDBDatabase>>();
@@ -93,6 +96,21 @@ export class SharedOutboxClient {
   targets(session: Session): readonly SharedClientTarget[] {
     return [...this.rows.values()].filter(row => row.target.machine === session.machine && row.target.id === session.id);
   }
+  submittedProof(row: SharedClientTarget, messages: readonly HistoryMessage[]): Readonly<Record<string, string>> {
+    const settled = row.submittedProofs ?? {};
+    const matches = transcriptProof(row.snapshot.items.filter(item => item.state === "submitted" && !Object.hasOwn(settled, item.id)).map(item => ({
+      id: item.id, text: item.text, incarnation: item.session_incarnation, requestId: item.request_id!,
+      state: "delivered" as const, attemptedAt: item.created_at,
+    })), messages, Object.values(settled));
+    return matches.size ? { ...settled, ...Object.fromEntries(matches) } : settled;
+  }
+  async confirmSubmitted(target: SharedOutboxTarget, messages: readonly HistoryMessage[]): Promise<void> {
+    const row = this.state(target), proof = this.submittedProof(row, messages);
+    if (Object.keys(proof).length === Object.keys(row.submittedProofs ?? {}).length) return;
+    // Merge under the journal transaction, so another pane/tab cannot undo a
+    // handover or spend the same transcript part on two identical replies.
+    await this.update(target, current => ({ ...current, submittedProofs: this.submittedProof(current, messages) }));
+  }
   /** Read-only recovery of text left by the retired editor. Never replay it. */
   retainedEdits(session: Session): readonly { id: string; text: string }[] {
     return this.targets(session).flatMap(row => {
@@ -130,7 +148,8 @@ export class SharedOutboxClient {
   }
   private async acceptSnapshot(target: SharedOutboxTarget, snapshot: SharedOutboxSnapshot) {
     return this.update(target, row => snapshot.revision < row.snapshot.revision ? row : { ...row, snapshot,
-      admissions: row.admissions.filter(admission => !snapshot.items.some(item => item.id === admission.id)) });
+      admissions: row.admissions.filter(admission => !snapshot.items.some(item => item.id === admission.id)),
+      submittedProofs: Object.fromEntries(Object.entries(row.submittedProofs ?? {}).filter(([id]) => snapshot.items.some(item => item.id === id))) });
   }
   async enqueue(session: Session, text: string): Promise<string> {
     this.requireActive();

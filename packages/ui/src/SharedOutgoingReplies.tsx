@@ -1,16 +1,31 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
-import type { Session } from "./types.ts";
+import type { HistoryMessage, Session } from "./types.ts";
 
 /** Local echoes are immutable once sent. Provider receipts stay internal. */
-export function SharedOutgoingReplies({ session }: { readonly session: Session }) {
+export function SharedOutgoingReplies({ session, messages = [] }: {
+  readonly session: Session;
+  readonly messages?: readonly HistoryMessage[];
+}) {
   const client = useSharedOutbox(session);
   const rows = client.targets(session);
   const retainedEdits = client.retainedEdits(session);
   const section = useRef<HTMLElement>(null);
   const following = useRef(true);
-  const count = rows.reduce((total, row) => total + row.admissions.length + row.snapshot.items.filter(item =>
-    item.state !== "submitted" && item.state !== "cancelled").length, 0);
+  // A provider receipt can precede the first history page. Keep the local
+  // echo until this view actually has the matching user turn (#1094).
+  const visibleRows = rows.map(row => {
+    const current = row.target.incarnation === session.session_incarnation;
+    const proven = current ? client.submittedProof(row, messages) : {};
+    return { ...row, items: row.snapshot.items.filter(item => item.state !== "cancelled"
+      && (item.state !== "submitted" || (current && !Object.hasOwn(proven, item.id)))) };
+  });
+  useEffect(() => {
+    for (const row of rows) if (row.target.incarnation === session.session_incarnation && messages.length) {
+      void client.confirmSubmitted(row.target, messages).catch(() => {});
+    }
+  }, [client, rows, messages, session.session_incarnation]);
+  const count = visibleRows.reduce((total, row) => total + row.admissions.length + row.items.length, 0);
   useLayoutEffect(() => {
     const viewport = section.current?.closest<HTMLElement>(".history-messages");
     if (!viewport) return;
@@ -25,14 +40,14 @@ export function SharedOutgoingReplies({ session }: { readonly session: Session }
       <p role="alert" className="history-outgoing-note">An earlier edit was not confirmed. Its text is preserved below.</p>
       <div className="history-bubble history-outgoing-bubble"><span className="history-outgoing-text">{draft.text}</span></div>
     </div>)}
-    {rows.map(row => <div key={row.key}>
+    {visibleRows.map(row => <div key={row.key}>
       {client.error(row.target) ? <p role="alert" className="history-outgoing-note">{client.error(row.target)}</p> : null}
       {row.admissions.map(item => <article key={item.id} className="history-message is-user history-outgoing-reply">
         <div className="history-outgoing-body"><div className="history-bubble history-outgoing-bubble">
           <span className="history-outgoing-text">{item.text}</span>
         </div></div>
       </article>)}
-      {row.snapshot.items.filter(item => item.state !== "submitted" && item.state !== "cancelled").map(item =>
+      {row.items.map(item =>
         <article key={item.id} className="history-message is-user history-outgoing-reply" data-status={item.state}>
           <div className="history-outgoing-body"><div className="history-bubble history-outgoing-bubble">
             <span className="history-outgoing-text">{item.text}</span>

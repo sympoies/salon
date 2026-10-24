@@ -6,12 +6,14 @@ published-version pin. The private SDK release entrypoint below is a separately
 authorized publisher operation.
 
 The current import follows actual merged source commit
-`0982a6d58a74774285c6367deb2fb0ea25148d7b`, including the preceding refused-reply
-repair and the accepted conversation-image change. All 600 package paths are
-byte-identical to image change review head
-`9abc76c0422e6042094bb38f2cfcccf763b708ce`; other repository files differ, so
-this is package-source equivalence rather than a whole-tree identity claim.
-The source manifest compares every package path with the actual merged source.
+`c0d52234c8a5c62180f38b319c30903f4563ee35`, including the preceding refused-reply
+and conversation-image repairs and the accepted submitted-reply handover change.
+The six submitted-reply implementation/test files are byte-identical to accepted
+review head `112e886557533c44e9db50280ea32d37bc4fc2e8`. The actual merge also
+includes the separately accepted fresh-document Sign out fixture already present
+here; that fixture differs from the submitted-reply review head. The source
+manifest compares all 600 package paths with the actual merged source and records
+the retained producer adaptations, rather than claiming whole-tree equivalence.
 
 The import retains the three helper-module renames that prevent component and
 model output paths from colliding on case-insensitive filesystems. The package
@@ -19,7 +21,7 @@ builder checks actual emitted JavaScript, declarations and copied assets; the
 project gate also checks tracked paths.
 
 The [source manifest](core-source-manifest.json) records current source hashes,
-12 local license/comment/EOF/fixture adaptations and two full font license
+11 local license/comment/EOF adaptations and two full font license
 notices. Its initial-import history preserves the original reviewed snapshot
 and completed downstream distribution-test transfer. No upstream Git history, private
 composition or environment files are imported. The Sign out fixture adaptation
@@ -48,6 +50,13 @@ payload contains declarations and no TypeScript source. It typechecks against
 installed declarations, composes a generic UI from exported modules, starts the
 compiled authenticated edge and requests the page, JavaScript, CSS and fonts.
 The smoke supplies its own neutral environment and requires no live upstream.
+Its isolated headless Chrome probe mounts the public compiled conversation panel
+with native IndexedDB. It waits for both the authoritative submitted row and
+empty history to load, checks that one outgoing echo remains, then loads the
+matching user turn and checks that history takes over. A fresh document with a
+later history window must retain the journaled handover. Unexpected reads,
+writes and browser errors fail the probe. No internal imports or source aliases
+replace the installed implementation.
 
 The local override of the shared dependency ensures both edge and UI resolve the
 same tarball. It is a proof for unpublished packages, with no registry fallback.
@@ -90,8 +99,10 @@ views. Real provider/native acceptance remains with its owning milestone.
 ## Private SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The current SDK patch release is fixed at `v0.1.1`, a private GitHub prerelease
-with `latest=false`; root and package versions are `0.1.1`. The existing `v0.1.0` tag and assets stay immutable. It uploads only
+merge. The prepared SDK patch release is fixed at `v0.1.2`, a private GitHub prerelease
+with `latest=false`; root and package versions are `0.1.2`. The existing `v0.1.0`
+and `v0.1.1` tags and assets stay immutable. Source preparation does not authorize
+publication. The authorized publisher uploads only
 `shared.tgz`, `edge.tgz`, `ui.tgz` and `manifest.json`. The existing manifest is
 the checksum record; no additional asset format is created.
 

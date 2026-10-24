@@ -12,7 +12,7 @@ const readJson = path => JSON.parse(readFileSync(path, "utf8"));
 test("installed compiled core starts an authenticated edge and composes a generic UI", { timeout: 180_000 }, () => {
   const temporary = mkdtempSync("/tmp/core-package-consumer-");
   const consumer = join(temporary, "consumer");
-  const env = { ...process.env };
+  const env = { ...process.env, TMPDIR: "/tmp" };
   delete env.NODE_OPTIONS;
   delete env.NODE_PATH;
   for (const key of Object.keys(env)) if (key.startsWith("AGENT_CONSOLE_")) delete env[key];
@@ -66,6 +66,7 @@ test("installed compiled core starts an authenticated edge and composes a generi
     run("pnpm", ["exec", "vite", "build"]);
     const evidence = run(process.execPath, ["probe.ts"]);
     assert.match(evidence, /packed edge and generic UI: PASS/);
+    assert.match(evidence, /packed public UI: PASS/);
     console.log(evidence.trim());
   } catch (error) {
     error.message += `\n${error.stdout ?? ""}\n${error.stderr ?? ""}`;
