@@ -17,14 +17,14 @@ const refusedAction: RefusedOutboxAction = {
 assert.deepEqual(normalizeRefusedOutboxAction(refusedAction), refusedAction);
 assert.equal(normalizeRefusedOutboxAction({ ...refusedAction, base_revision: 0 }), null);
 assert.equal(normalizeRefusedOutboxAction({ ...refusedAction, operation: "cancel" }), null);
-const image: ConversationImage = { id: `${"a".repeat(16)}.0.0.${"b".repeat(32)}` };
+const image: ConversationImage = { id: `${"a".repeat(16)}.0.u0-0.${"b".repeat(32)}` };
 assert.deepEqual(normalizeConversationImages([{ ...image, path: "/workspace/image.png" }, { id: "https://example.invalid/image.png" }]), [image]);
-const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 const imageCredentials: Array<string | undefined> = [];
 const upstream = createServer((request, response) => {
   if (request.url?.includes("/images/")) {
     imageCredentials.push(request.headers.authorization);
-    response.writeHead(200, { "content-type": "image/png", "set-cookie": "upstream=fixture" });
+    response.writeHead(200, { "content-type": "image/png", "content-disposition": "inline; filename*=UTF-8''original%20plot.png", "set-cookie": "upstream=fixture" });
     response.end(png);
   } else {
     response.writeHead(200, { "content-type": "application/json" });
@@ -79,7 +79,11 @@ async function checkSubmittedUi(base: string) {
     const { targetId } = await rpc("Target.createTarget", { url: "about:blank" });
     const { sessionId } = await rpc("Target.attachToTarget", { targetId, flatten: true });
     await rpc("Page.enable", {}, sessionId);
-    await rpc("Page.addScriptToEvaluateOnNewDocument", { source: `window.fixtureErrors=[];
+    await rpc("Page.addScriptToEvaluateOnNewDocument", { source: `window.fixtureErrors=[]; window.imageDownload=null;
+      const nativeFetch=window.fetch.bind(window), nativeAnchorClick=HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click=function(){ if(!this.download){nativeAnchorClick.call(this);return;}
+        const name=this.download; void nativeFetch(this.href).then(response=>response.arrayBuffer())
+          .then(buffer=>window.imageDownload={name,bytes:Array.from(new Uint8Array(buffer))}); };
       // Inspect as soon as the fixture is published, before React initializes
       // the journal. An observer must not create a schema-less database.
       let submittedFixture;
@@ -105,7 +109,8 @@ async function checkSubmittedUi(base: string) {
         }
         await new Promise(resolve => setTimeout(resolve, 50));
       } while (Date.now() < deadline);
-      assert.fail(`public UI did not reach expected state: ${JSON.stringify(value)}`);
+      const fixtureErrors = await evaluate("window.fixtureErrors");
+      assert.fail(`public UI did not reach expected state: ${JSON.stringify({ value, fixtureErrors })}`);
     };
     await rpc("Page.navigate", { url: `${base}/?submitted-fixture` }, sessionId);
     const before = await wait(value => value.outboxReads > 0);
@@ -114,6 +119,33 @@ async function checkSubmittedUi(base: string) {
     const handed = await wait(value => value.historyReads > before.historyReads && value.proofCount === 1);
     assert.equal(handed.visibleEchoes, 0, "matching history takes over the outgoing echo");
     assert.equal(handed.matchingHistoryTurns, 1, "exactly one matching history turn remains visible");
+    await evaluate("document.querySelector('[aria-label=\\\"Open image 1\\\"]')?.click()");
+    await new Promise<void>((resolve, reject) => {
+      const deadline = Date.now() + 10_000;
+      const poll = async () => {
+        try {
+          const loaded = await evaluate("document.querySelector('[aria-label=\\\"Conversation images\\\"] img')?.naturalWidth > 0");
+          if (loaded) { resolve(); return; }
+          if (Date.now() >= deadline) { reject(Error("packed UI image did not load")); return; }
+          setTimeout(poll, 50);
+        } catch (error) { reject(error); }
+      };
+      void poll();
+    });
+    await evaluate("document.querySelector('[aria-label=\\\"Download image\\\"]')?.click()");
+    const imageDownload = await new Promise<any>((resolve, reject) => {
+      const deadline = Date.now() + 10_000;
+      const poll = async () => {
+        try {
+          const value = await evaluate("window.imageDownload");
+          if (value) { resolve(value); return; }
+          if (Date.now() >= deadline) { reject(Error("packed UI did not complete the image save")); return; }
+          setTimeout(poll, 50);
+        } catch (error) { reject(error); }
+      };
+      void poll();
+    });
+    assert.deepEqual(imageDownload, { name: "original plot.png", bytes: [...png] }, "compiled UI saves the authenticated original bytes and filename");
     await rpc("Page.navigate", { url: `${base}/?submitted-fixture&later` }, sessionId);
     const remounted = await wait(value => value.outboxReads > 0 && value.proofCount === 1);
     assert.equal(remounted.visibleEchoes, 0, "fresh document with a later history window preserves durable handover");
@@ -145,6 +177,7 @@ try {
   const imageResponse = await fetch(imageUrl, { headers });
   assert.equal(imageResponse.status, 200);
   assert.equal(imageResponse.headers.get("content-type"), "image/png");
+  assert.equal(imageResponse.headers.get("content-disposition"), "inline; filename*=UTF-8''original%20plot.png");
   assert.equal(imageResponse.headers.get("cache-control"), "private, no-store");
   assert.equal(imageResponse.headers.get("set-cookie"), null);
   assert.deepEqual(Buffer.from(await imageResponse.arrayBuffer()), png);
@@ -178,6 +211,8 @@ try {
   }
   assert.ok(fontsFetched >= 2, "both font assets survive packing and composition");
   await checkSubmittedUi(base);
+  assert.ok(imageCredentials.length >= 4, "thumbnail, viewer and download use authenticated image reads");
+  assert.ok(imageCredentials.every(credential => credential === "Bearer fixture-daemon-token"));
   console.log("packed edge and generic UI: PASS (auth, extension route, shared runtime/refused action, authenticated image bytes, page, JS, CSS, fonts)");
 } catch (error) {
   // The server deliberately catches uncaught errors; the probe must still fail.

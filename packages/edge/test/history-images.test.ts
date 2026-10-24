@@ -19,7 +19,8 @@ test("history images use authenticated proxy bytes and preserve only explicit de
     else if (req.url?.includes("/misconfigured/")) { res.writeHead(401);res.end("private upstream auth"); }
     else if (req.url?.includes("/redirect/")) { res.writeHead(302,{location:"https://example.invalid/image.png"});res.end(); }
     else if (req.url?.includes("/unsupported/")) { res.writeHead(200,{"content-type":"image/svg+xml"});res.end("<svg/>"); }
-    else { res.writeHead(200,{"content-type":"image/png","set-cookie":"upstream=private"});res.end(png); }
+    else if (req.url?.includes("/encoded/")) { res.writeHead(200,{"content-type":"image/png","content-disposition":"inline; filename*=UTF-8''O%27Reilly%20%281%29%2A.png"});res.end(png); }
+    else { res.writeHead(200,{"content-type":"image/png","content-disposition":"inline; filename*=UTF-8''original%20plot.png","set-cookie":"upstream=private"});res.end(png); }
   });
   const {base:upstream} = await listenOnLoopback(daemon);
   const edge = createEdgeServer(makeEdgeConfig({openAccess:false,clientToken:"client-secret",machines:[{name:"fixture",url:upstream,token:"daemon-secret"}]}));
@@ -32,11 +33,21 @@ test("history images use authenticated proxy bytes and preserve only explicit de
     const response = await fetch(path("history"),{headers:{cookie}});
     assert.equal(response.status,200);
     assert.equal(response.headers.get("content-type"),"image/png");
+    assert.equal(response.headers.get("content-disposition"),"inline; filename*=UTF-8''original%20plot.png");
     assert.equal(response.headers.get("cache-control"),"private, no-store");
     assert.equal(response.headers.get("set-cookie"),null);
     assert.deepEqual(Buffer.from(await response.arrayBuffer()),png);
     assert.equal(seen[0]?.authorization,"Bearer daemon-secret");
     assert.equal(seen[0]?.path,`/history/sessions/history/images/${image}`);
+    const encodedName = await fetch(path("encoded"),{headers:{cookie}});
+    assert.equal(encodedName.headers.get("content-disposition"),"inline; filename*=UTF-8''O%27Reilly%20%281%29%2A.png");
+    assert.equal(seen[1]?.path,`/history/sessions/encoded/images/${image}`);
+    const uploadReference = `${"a".repeat(16)}.0.u0-0.${"b".repeat(32)}`;
+    const uploadedImage = await fetch(path("history", uploadReference),{headers:{cookie}});
+    assert.equal(uploadedImage.status,200);
+    assert.deepEqual(Buffer.from(await uploadedImage.arrayBuffer()),png);
+    assert.equal(seen[2]?.authorization,"Bearer daemon-secret");
+    assert.equal(seen[2]?.path,`/history/sessions/history/images/${uploadReference}`);
     const deleted = await fetch(path("deleted"),{headers:{cookie}});
     assert.equal(deleted.status,404);
     assert.deepEqual(await deleted.json(),{ok:false,error:{code:"history-image-deleted",message:"Image deleted"}});
@@ -52,6 +63,7 @@ test("history images use authenticated proxy bytes and preserve only explicit de
     }
     const count = seen.length;
     assert.equal((await fetch(path("history","invalid-selector"),{headers:{cookie}})).status,422);
+    assert.equal((await fetch(path("history",`${"a".repeat(16)}.0.u0-.${"b".repeat(32)}`),{headers:{cookie}})).status,422);
     assert.equal(seen.length,count);
   } finally { edge.closeAllConnections();daemon.closeAllConnections(); await Promise.all([new Promise<void>(r=>edge.close(()=>r())),new Promise<void>(r=>daemon.close(()=>r()))]); }
 });

@@ -1,7 +1,7 @@
-import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, isConversationImageId } from "@agent-console/shared/conversation-images";
+import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, conversationImageFilename, isConversationImageId } from "@agent-console/shared/conversation-images";
 import { appFetch } from "./runtime.ts";
 
-export type ConversationImageData = { readonly state: "ready"; readonly url: string }
+export type ConversationImageData = { readonly state: "ready"; readonly url: string; readonly blob: Blob; readonly filename: string }
   | { readonly state: "loading" | "deleted" | "unavailable" };
 
 export async function fetchConversationImage(machine: string, history: string, image: string, signal: AbortSignal): Promise<ConversationImageData> {
@@ -18,6 +18,8 @@ export async function fetchConversationImage(machine: string, history: string, i
       || Number(response.headers.get("content-length")) > CONVERSATION_IMAGE_MAX_BYTES) return {state:"unavailable"};
     const blob = await response.blob();
     if (signal.aborted || blob.size > CONVERSATION_IMAGE_MAX_BYTES || !blob.size) return {state:"unavailable"};
-    return {state:"ready",url:URL.createObjectURL(blob)};
+    const extension = mime === "image/jpeg" ? "jpg" : mime!.slice("image/".length);
+    const filename = conversationImageFilename(response.headers.get("content-disposition")) ?? `image-${image.slice(-32,-26)}.${extension}`;
+    return {state:"ready",url:URL.createObjectURL(blob),blob,filename};
   } catch { return {state:"unavailable"}; }
 }

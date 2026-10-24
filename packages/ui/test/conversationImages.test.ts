@@ -10,7 +10,8 @@ const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 const imageId = (index: number) => `${"a".repeat(16)}.0.${index}.${"b".repeat(32)}`;
 
-async function mountImages() {
+async function mountImages(responseFor?: (path: string) => Response, nested = false,
+  images: Array<{id:string}> = [{id:imageId(0)},{id:imageId(1)}]) {
   const window = new Window({ url: "http://localhost" });
   const saved = { window: globalThis.window, document: globalThis.document, HTMLElement: globalThis.HTMLElement,
     IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT, fetch: globalThis.fetch };
@@ -18,6 +19,7 @@ async function mountImages() {
   Object.assign(globalThis, { window, document: window.document, HTMLElement: window.HTMLElement,
     IS_REACT_ACT_ENVIRONMENT: true, fetch: async (path: string) => {
       requests.push(path);
+      if (responseFor) return responseFor(path);
       return path.includes(`.${1}.`) ? new Response(JSON.stringify({ok:false,error:{code:"history-image-deleted"}}),{status:404})
         : new Response(new Uint8Array([137,80,78,71,13,10,26,10]),{headers:{"content-type":"image/png"}});
     } });
@@ -26,11 +28,23 @@ async function mountImages() {
   cleanups.push(async () => { await act(async () => root.unmount()); await ssr.close(); Object.assign(globalThis,saved); window.close(); });
   const { HistoryConversationView } = await ssr.loadModule<typeof import("../src/HistoryConversation.tsx")>("/src/HistoryConversation.tsx");
   const conversation = { session:{ id:"history",machine:"fixture",provider:"codex" },messages:[
-    {id:"message",role:"user",text:"Look at these",images:[{id:imageId(0)},{id:imageId(1)}]}
+    {id:"message",role:"user",text:"Look at these",images}
   ],latestMessagePaging:true,loading:false,viewportRef:{current:null} };
-  await act(async () => root.render(createElement(HistoryConversationView,{conversation:conversation as never,onJumpToLatest(){}})));
+  const content = createElement(HistoryConversationView,{conversation:conversation as never,onJumpToLatest(){}});
+  const { Modal } = await ssr.loadModule<typeof import("../src/Modal.tsx")>("/src/Modal.tsx");
+  await act(async () => root.render(nested ? createElement(Modal,{onClose(){},ariaLabel:"Conversation panel",children:content}) : content));
   return {window,requests};
 }
+
+test("conversation UI requests images through the opaque quoted-upload selector",async () => {
+  const id = `${"a".repeat(16)}.0.u0-0.${"b".repeat(32)}`;
+  const {window,requests} = await mountImages(undefined,false,[{id}]);
+  await act(async () => {
+    window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click();
+    await new Promise(resolve => setTimeout(resolve,0));
+  });
+  assert.ok(requests.some(path => path === `/api/history/sessions/fixture/history/images/${id}`));
+});
 
 test("conversation images show thumbnails and deleted state, with a message-scoped viewer",async () => {
   const {window,requests} = await mountImages();
@@ -64,6 +78,88 @@ test("conversation images show thumbnails and deleted state, with a message-scop
   await act(async () => viewer.dispatchEvent(new window.KeyboardEvent("keydown",{key:"Escape",bubbles:true})));
   assertNoElement(window.document,'[role="dialog"]');
   assert.ok(requests.every(path => path.startsWith("/api/history/sessions/fixture/history/images/")));
+});
+
+test("Tab in the image viewer stays above the parent conversation modal",async () => {
+  const {window} = await mountImages(undefined,true);
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
+  const fit = window.document.querySelector<HTMLButtonElement>('[aria-label="Fit image"]')!;
+  fit.focus();
+  await act(async () => fit.dispatchEvent(new window.KeyboardEvent("keydown",{key:"Tab",bubbles:true,cancelable:true})));
+  assertActiveElement(window,fit,"the parent modal must not steal focus before the browser advances Tab inside the viewer");
+  await act(async () => fit.dispatchEvent(new window.KeyboardEvent("keydown",{key:"Escape",bubbles:true})));
+  assertNoElement(window.document,'[aria-label="Conversation images"]');
+  assert.ok(window.document.querySelector('[aria-label="Conversation panel"]'));
+});
+
+test("download reauthenticates the selected image and saves its exact original bytes and filename",async () => {
+  const originalFetch = globalThis.fetch;
+  const bytes = new Uint8Array([137,80,78,71,13,10,26,10]);
+  const {window,requests} = await mountImages(() => new Response(bytes,{headers:{"content-type":"image/png","content-disposition":"inline; filename*=UTF-8''original%20plot.png"}}));
+  const downloads: Array<{name:string;bytes:Uint8Array}> = [];
+  window.HTMLAnchorElement.prototype.click = function () {
+    const name = this.download;
+    void originalFetch(this.href).then(response => response.arrayBuffer()).then(buffer => downloads.push({name,bytes:new Uint8Array(buffer)}));
+  };
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
+  const count = requests.length;
+  const button = window.document.querySelector<HTMLButtonElement>('[aria-label="Download image"]');
+  assert.ok(button,"viewer exposes download");
+  await act(async () => button.click());
+  assert.equal(requests.length,count + 1,"download uses a fresh authenticated read rather than stale preview bytes");
+  assert.deepEqual(downloads,[{name:"original plot.png",bytes}]);
+});
+
+test("download derives a safe filename from the validated image MIME when upstream omits one",async () => {
+  const originalFetch = globalThis.fetch;
+  const bytes = new Uint8Array([137,80,78,71,13,10,26,10]);
+  const {window} = await mountImages(() => new Response(bytes,{headers:{"content-type":"image/png"}}));
+  const downloads: Array<{name:string;bytes:Uint8Array}> = [];
+  window.HTMLAnchorElement.prototype.click = function () {
+    const name = this.download;
+    void originalFetch(this.href).then(response => response.arrayBuffer()).then(buffer => downloads.push({name,bytes:new Uint8Array(buffer)}));
+  };
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Download image"]')!.click());
+  assert.deepEqual(downloads,[{name:"image-bbbbbb.png",bytes}]);
+});
+
+for (const status of [401,404]) test(`download does not save after image read returns ${status}`,async () => {
+  let unavailable = false;
+  const {window} = await mountImages(() => unavailable
+    ? new Response(JSON.stringify({error:{code:status === 404 ? "history-image-deleted" : "unauthorized"}}),{status})
+    : new Response(new Uint8Array([137,80,78,71]),{headers:{"content-type":"image/png"}}));
+  let downloaded = false;
+  window.HTMLAnchorElement.prototype.click = () => { downloaded = true; };
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
+  unavailable = true;
+  const button = window.document.querySelector<HTMLButtonElement>('[aria-label="Download image"]');
+  assert.ok(button,"viewer exposes download");
+  await act(async () => button.click());
+  assert.equal(downloaded,false);
+  assert.match(window.document.querySelector('[aria-label="Conversation images"]')!.textContent ?? "",status === 404 ? /Image deleted/ : /Image unavailable/);
+  assert.equal(button.disabled,true);
+});
+
+for (const status of ["saved","cancelled","failed"]) test(`Android image save hands original bytes to the native picker and handles ${status}`,async () => {
+  const bytes = new Uint8Array([137,80,78,71]);
+  const {window} = await mountImages(() => new Response(bytes,{headers:{"content-type":"image/png"}}));
+  Object.defineProperty(window,"__TAURI__",{value:{},configurable:true});
+  Object.defineProperty(window.navigator,"userAgent",{value:"Android",configurable:true});
+  // Authentication is tested above; this test begins after that read and
+  // exercises the native save boundary without reaching a real device.
+  const ssr = createUiSsrHarness();
+  cleanups.push(() => ssr.close());
+  const {saveConversationImage} = await ssr.loadModule<typeof import("../src/saveConversationImage.ts")>("/src/saveConversationImage.ts");
+  let received: unknown;
+  Object.assign(window,{agentConsoleAndroidImageSave:{save(id: string,name: string,mime: string,base64: string) {
+    received = {name,mime,bytes:new Uint8Array(Buffer.from(base64,"base64"))};
+    window.dispatchEvent(new window.CustomEvent("agent-console-image-save",{detail:{id,status}}));
+  }}});
+  const saving = saveConversationImage(new Blob([bytes],{type:"image/png"}),"image-bbbbbb.png","blob:unused");
+  if (status === "failed") await assert.rejects(saving,/Image save failed/);
+  else await saving;
+  assert.deepEqual(received,{name:"image-bbbbbb.png",mime:"image/png",bytes});
 });
 
 

@@ -22,7 +22,7 @@
   },
   "excludedFiles": {},
   "localAdaptations": [
-    "Set the three SDK package versions to 0.1.2 and retain MIT license metadata.",
+    "Set the three SDK package versions to 0.1.3 and retain MIT license metadata.",
     "Point the two extension-contract comments to the local package boundary document.",
     "Preserve font bytes and include full upstream font licensing notices.",
     "Remove one redundant EOF blank line in each explicitly listed file; no behavior change."
@@ -645,7 +645,7 @@
   "adaptedFiles": {
     "packages/edge/package.json": {
       "upstreamSha256": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
-      "importedSha256": "8ac8bd3e12c84766984b93433e28849c89b45ebc7b7a3030b2bf6eb0270bf183"
+      "importedSha256": "e4c68d8da3ab03da71f85645618d4ca4774ba35a22322a3b764bfbfa4787442a"
     },
     "packages/edge/src/extensions.ts": {
       "upstreamSha256": "d531a65a12da2fa814a95ac41a78cf19e4e59179be55793278d0541bf6eff205",
@@ -661,7 +661,7 @@
     },
     "packages/shared/package.json": {
       "upstreamSha256": "cc30b019d2887dddab4ada98dda0ac791444f55f81fb7dde56d469d897191b61",
-      "importedSha256": "6b52c096850e96dd7dae73b4ed93b5ff9a90bb051c1655e83a9b7213e4c648b5"
+      "importedSha256": "7d08b53acd49e05528679745f0e32e6d93308291b46e2df2598011a45c492d9f"
     },
     "packages/shared/src/sse.ts": {
       "upstreamSha256": "f9076276454f584749e895df9049cd1d24e181bec46c9bda2a2b4d851f9752ac",
@@ -669,7 +669,7 @@
     },
     "packages/ui/package.json": {
       "upstreamSha256": "879df3dda266feb2d41574e164b7846c5c44e2d4e5ac5f452925af6f3978538a",
-      "importedSha256": "3ee2a1e1bc2ee2ae1c72a30f25ce7f18081793189c1687b88d619fbc0744f76e"
+      "importedSha256": "1d9891a40d7eba804de3e78036e15f5c2370419fe8f215b239e0074704e9ec08"
     },
     "packages/ui/src/extensions.tsx": {
       "upstreamSha256": "d74f36fb4a5dff7fd66f7f0c3a1ce739403fd36af2ab9a41ac9fc29ed193c1b1",
@@ -696,5 +696,54 @@
     "packages/ui/src/SharedOutgoingReplies.tsx",
     "packages/ui/src/sharedOutboxClient.ts",
     "packages/ui/test/sharedOutboxClient.test.ts"
-  ]
+  ],
+  "implementationInput": {
+    "repository": "serenvia/agent-console",
+    "baseCommit": "c0d52234c8a5c62180f38b319c30903f4563ee35",
+    "commit": "3dbe7a8b3b244d1caa222aad778e38be5167f467",
+    "patchSha256": "217ddf1b7dc23abe80f933ee25541f15cc34bc811e12b1f7f0bc36aea1aa6eb3",
+    "role": "Generic implementation input; not an approved upstream baseline.",
+    "files": {
+      "packages/edge/src/historyImages.ts": {
+        "sourceSha256": "9509370bdf1bbd955797dbabd1c835424d819a106eafe632cf23a9396b3c13e2",
+        "finalSha256": "2854e80c21417920a6d79a6b7c40f3afd48744aad35be00f68baa166d8e27bca"
+      },
+      "packages/edge/test/history-images.test.ts": {
+        "sourceSha256": "9fcc83bb17083217c6c05715500e6728b9643beaa40d1807889a61c26bd1286a",
+        "finalSha256": "f3ee4991d0cfa842f33c3843d51f50cfa82dfc63395a00b300a51b610b843cea"
+      },
+      "packages/shared/src/conversationImages.ts": {
+        "sourceSha256": "44f3e7424ff2aa8f0786cefc61fd7ef267d25d26c03d53287e55e38e44fabcc5",
+        "finalSha256": "89a3324811ff124b1fa275b7970d3722349dc2e67156ab072b98413cf06c3c80"
+      },
+      "packages/shared/test/conversationImages.test.ts": {
+        "sourceSha256": "7583aa5e09652fcebb18f97242d320bf87b747cc2dedde7c5f106185b7dd5fda",
+        "finalSha256": "596a7a2eb1e20474c0432343df2408b24ee964c87df9504283cd0563830f5954"
+      },
+      "packages/ui/src/ConversationImages.css": {
+        "sourceSha256": "439da807691a9260fe365761cff77f4efd675e41b58ee26f7a7ce7e1c57497a9",
+        "finalSha256": "439da807691a9260fe365761cff77f4efd675e41b58ee26f7a7ce7e1c57497a9"
+      },
+      "packages/ui/src/ConversationImages.tsx": {
+        "sourceSha256": "327ba9ab6078e458d7009f711e688e93444219e0ca063d84abb666a09da7ba17",
+        "finalSha256": "327ba9ab6078e458d7009f711e688e93444219e0ca063d84abb666a09da7ba17"
+      },
+      "packages/ui/src/conversationImageData.ts": {
+        "sourceSha256": "a96f26a7088f9318e19c290e617467ff50cd66f7ade9ae68d1b7b7a845c94c93",
+        "finalSha256": "a96f26a7088f9318e19c290e617467ff50cd66f7ade9ae68d1b7b7a845c94c93"
+      },
+      "packages/ui/src/icons.tsx": {
+        "sourceSha256": "2b3d768c6f466e52d5d42f4a10d023e7243c5c0d2fe14572b6a156e3e35b8099",
+        "finalSha256": "2b3d768c6f466e52d5d42f4a10d023e7243c5c0d2fe14572b6a156e3e35b8099"
+      },
+      "packages/ui/src/saveConversationImage.ts": {
+        "sourceSha256": "77905232a3f8874530ed6d757a51c0e066bd30fd0562e78f83c80e11b4848381",
+        "finalSha256": "77905232a3f8874530ed6d757a51c0e066bd30fd0562e78f83c80e11b4848381"
+      },
+      "packages/ui/test/conversationImages.test.ts": {
+        "sourceSha256": "a5e1cc43ef424e7f572726e4f8542fd2e9f74bc8e7118e50f505f748ea2ff888",
+        "finalSha256": "ba1aed1859184c623de126f6bf89ff67be51a1144a2f537e2d2f90a2f0842b0a"
+      }
+    }
+  }
 }

@@ -14,6 +14,9 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
   // and the browser's native IndexedDB journal run unchanged.
   setPrincipalStorageNamespace("fixture");
   const text = "Submitted reply awaiting matching history";
+  const imageId = `${"a".repeat(16)}.0.u0-0.${"b".repeat(32)}`;
+  const imageMessage: HistoryMessage = { id: "image-message", role: "user", text: "Image fixture",
+    timestamp: new Date(4).toISOString(), images: [{ id: imageId }] };
   const session = { id: "fixture-session", machine: "fixture", agent: "codex", status: "running",
     title: "Conversation fixture", session_incarnation: "fixture-incarnation",
     provider_resume: { provider: "codex", session_id: "fixture-thread" } } as Session;
@@ -24,10 +27,16 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
   let historyReads = 0, outboxReads = 0, writes = 0;
   const unexpected: string[] = [];
   let messages: readonly HistoryMessage[] = new URLSearchParams(location.search).has("later")
-    ? [{ id: "later-assistant", role: "assistant", text: "Later progress", timestamp: new Date(10).toISOString() }] : [];
+    ? [{ id: "later-assistant", role: "assistant", text: "Later progress", timestamp: new Date(10).toISOString() }, imageMessage] : [];
+  const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     if (init?.method && !["GET", "HEAD"].includes(init.method)) { writes++; throw Error("Unexpected fixture write"); }
     const url = new URL(String(input), location.origin);
+    if (url.pathname.endsWith(`/images/${imageId}`)) {
+      const headers = new Headers(init?.headers);
+      headers.set("authorization", "Bearer fixture-token");
+      return nativeFetch(url, { ...init, headers });
+    }
     if (url.pathname === "/api/resources/events") return new Response(new ReadableStream({ start(controller) {
       controller.enqueue(new TextEncoder().encode(": fixture\n\n"));
       init?.signal?.addEventListener("abort", () => controller.close(), { once: true });
@@ -48,7 +57,7 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
     onClose={() => {}} docked showComposer replyDrafts={new Map()} />);
   Object.assign(window, { submittedFixture: {
     handover() {
-      messages = [{ id: "matching-user-turn", role: "user", text, timestamp: new Date(3).toISOString() }];
+      messages = [{ id: "matching-user-turn", role: "user", text, timestamp: new Date(3).toISOString() }, imageMessage];
       document.querySelector<HTMLButtonElement>('button[aria-label="Refresh conversation"]')!.click();
     },
     async inspect() {
@@ -68,6 +77,8 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
       const history = document.querySelector(".history-messages");
       return { ready: historyReads > 0 && Boolean(history) && !history!.textContent?.includes("Loading conversation"),
         historyReads, outboxReads, writes, unexpected,
+        targetRows: rows.length,
+        snapshotStates: rows.flatMap(row => row.snapshot.items).map(item => item.state),
         submittedRows: rows.flatMap(row => row.snapshot.items).filter(item => item.state === "submitted").length,
         proofCount: rows.reduce((count, row) => count + Object.keys(row.submittedProofs ?? {}).length, 0),
         visibleEchoes: document.querySelectorAll('[aria-label="Shared replies"] article[data-status="submitted"]').length,
