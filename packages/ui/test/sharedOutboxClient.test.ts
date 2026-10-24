@@ -464,6 +464,30 @@ test("a replaced shared cookie cannot move a retained intention into another acc
   } finally { await h.close(); }
 });
 
+test("a shared composer draft refusal explains safe recovery without automatic retry", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const requestId = crypto.randomUUID();
+    h.server({ revision: 2, compose_holds: [], items: [{
+      id: "draft-refusal", text: "preserved reply", state: "refused", revision: 2,
+      session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: requestId,
+      edit_hold: null, error_code: "composer-not-empty",
+      receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1",
+        outcome: "refused", code: "composer-not-empty" },
+    }] });
+    await h.client.sync(h.target);
+    await h.showReplies();
+    const refused = h.container.querySelector('[data-status="refused"]');
+    assert.ok(refused);
+    assert.match(refused.querySelector('[role="alert"]')?.textContent ?? "", /Terminal has a draft/);
+    assert.match(refused.querySelector('[role="alert"]')?.textContent ?? "", /Clear it in the terminal, then Retry/);
+    assert.match(refused.textContent ?? "", /preserved reply/);
+    await act(async () => h.client.sync(h.target));
+    assert.equal(h.admissions.length, 0, "a refusal never automatically resubmits the text");
+    assert.equal(h.patches.length, 0, "showing recovery never clears or retries the draft");
+  } finally { await h.close(); }
+});
+
 for (const current of [true, false]) test(`refused shared reply offers global Discard and ${current ? "Retry" : "no Retry for a prior incarnation"}`, async () => {
   const h = await fixture(new IDBFactory(), false);
   try {
