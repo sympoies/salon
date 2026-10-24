@@ -14,10 +14,12 @@ builder checks actual emitted JavaScript, declarations and copied assets; the
 project gate also checks tracked paths.
 
 The [source manifest](core-source-manifest.json) records current source hashes,
-11 local license/comment/EOF adaptations and two full font license notices. Its
-initial-import history preserves the original reviewed snapshot and completed
-downstream distribution-test transfer. No upstream Git history, private
-composition or environment files are imported.
+12 local license/comment/EOF/fixture adaptations and two full font license
+notices. Its initial-import history preserves the original reviewed snapshot
+and completed downstream distribution-test transfer. No upstream Git history, private
+composition or environment files are imported. The Sign out fixture adaptation
+gives each synthetic fresh document its own boot clock, preserving all native
+and browser assertions and their original execution bounds.
 
 Select Node 24 from `.node-version` and pnpm 11.9.0 from `packageManager`, then:
 
