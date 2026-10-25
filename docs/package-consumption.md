@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.4 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.5 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -102,6 +102,19 @@ retry. This wording does not establish a fix for native empty-composer
 classification in [nils-cli#2922](https://github.com/sympoies/nils-cli/issues/2922);
 application/provider and native acceptance remain separate.
 
+## Targeted discard of definitely refused local replies
+
+The conversation view offers Discard for one definitely refused reply retained
+by the legacy local queue, including a reply from an earlier session
+incarnation. The durable transaction removes only the selected local row and
+its echo; Retry, unconfirmed replies, unrelated state, and shared/server rows
+remain intact. Discard does not submit again. This is separate from submitted
+reply identity reconciliation.
+
+Real native IndexedDB/client acceptance for the legacy local-row Discard
+remains pending. No real-browser/native or automatic cross-window result is
+claimed by source-package validation.
+
 ## Conversation images
 
 The SDK preserves bounded opaque image selectors through history HTTP and SSE.
@@ -122,10 +135,13 @@ views. Real provider/native acceptance remains with its owning milestone.
 ## Private SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The prepared SDK patch release is fixed at `v0.1.4`, a private GitHub prerelease
-with `latest=false`; root and package versions are `0.1.4`. The existing `v0.1.0`,
-`v0.1.1`, `v0.1.2` and `v0.1.3` tags and assets stay immutable. Source preparation does not authorize
-publication. The authorized publisher uploads only
+merge. The proposed SDK patch release is `v0.1.5`, a private GitHub prerelease with
+`latest=false`; root and package versions are `0.1.5`. It carries the accepted
+late transcript discovery, authenticated image MIME handling, and targeted
+Discard for a definitely refused legacy local reply. Existing `v0.1.0` through
+`v0.1.4` tags and assets stay immutable. This metadata preparation does not establish version-merge or
+publication GO. Source preparation does not authorize publication. The
+authorized publisher uploads only
 `shared.tgz`, `edge.tgz`, `ui.tgz` and `manifest.json`. The existing manifest is
 the checksum record; no additional asset format is created.
 
