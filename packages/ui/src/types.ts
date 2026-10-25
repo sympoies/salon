@@ -80,6 +80,8 @@ export interface Session {
   readonly activity_observed_at?: string;
   /** Most-recent user prompt preview from the edge (capability-gated); absent for old daemons/edge. */
   readonly last_prompt?: SessionLastPrompt;
+  /** Newest user or assistant message; optional during daemon upgrades. */
+  readonly last_message?: SessionLastPrompt & { readonly role: "user" | "assistant" };
   /** Exact producer freshness state; absent for old or incompatible daemon/edge pairs. */
   readonly last_prompt_state?: SessionLastPromptState;
   /** Opaque response-only fence that rotates when exact transcript continuity is lost. */
@@ -129,6 +131,7 @@ export interface SessionsResponse {
     readonly managed_resume_command?: boolean;
     readonly resume_blocked_reason?: boolean;
     readonly last_prompt?: boolean;
+    readonly last_message?: boolean;
     readonly history?: boolean;
     readonly archive?: boolean;
     readonly session_retitle_v2?: boolean;

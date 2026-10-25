@@ -25,6 +25,11 @@ support two providers. The intended user flow for those milestones is:
 These are planned application acceptance steps. They are not established by the
 local core package checks.
 
+The UI core's session overview cards show the latest user or agent message when
+available, falling back to the last user prompt for older servers. In Settings,
+**Card preview** offers **Latest message** (default) and **My last prompt**.
+The choice is saved on the current device, including on the mobile layout.
+
 ## Contributing
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for prerequisites and validation, and

@@ -413,6 +413,7 @@ export async function listSessions(
   const managedResumeCommand = b?.data?.capabilities?.managed_resume_command === true;
   const resumeBlockedReason = b?.data?.capabilities?.resume_blocked_reason === true;
   const lastPrompt = b?.data?.capabilities?.last_prompt === true;
+  const lastMessage = b?.data?.capabilities?.last_message === true;
   const history = b?.data?.capabilities?.history === true;
   const archive = b?.data?.capabilities?.archive === true;
   const sessionRetitleV2 = b?.data?.capabilities?.session_retitle_v2 === true;
@@ -452,6 +453,7 @@ export async function listSessions(
       resume_blocked_reason: _resumeBlockedReason,
       managed_resume_command_available: _managedResumeCommandAvailable,
       last_prompt: _lastPrompt,
+      last_message: _lastMessage,
       last_prompt_state: _lastPromptState,
       last_prompt_continuity: _lastPromptContinuity,
       startup: _startup,
@@ -502,6 +504,8 @@ export async function listSessions(
         : {}),
       ...(normalizedResumeBlockedReason ? { resume_blocked_reason: normalizedResumeBlockedReason } : {}),
       ...(normalizedLastPrompt ? { last_prompt: normalizedLastPrompt } : {}),
+      ...(lastMessage && daemonCapabilities?.last_message === true && session.last_message
+        ? { last_message: session.last_message } : {}),
       ...(normalizedLastPromptState ? { last_prompt_state: normalizedLastPromptState } : {}),
       ...(normalizedLastPromptContinuity
         ? { last_prompt_continuity: normalizedLastPromptContinuity }
@@ -540,6 +544,7 @@ export async function listSessions(
       managed_resume_command: managedResumeCommand,
       resume_blocked_reason: resumeBlockedReason,
       last_prompt: lastPrompt,
+      last_message: lastMessage,
       history,
       archive,
       session_retitle_v2: sessionRetitleV2,

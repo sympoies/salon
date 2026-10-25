@@ -102,6 +102,7 @@ import { DashboardUsageProvider, HeaderUsage } from "./HeaderUsage.tsx";
 import { accountRecoveryPolicy, sessionAccountChoices, sessionAccountProvider } from "./sessionAccounts.ts";
 import { accountMachineKeys, useAccountInventories } from "./useAccountInventories.ts";
 import { SessionSlot } from "./SessionSlot.tsx";
+import type { CardPreview } from "./cardPreview.ts";
 import type { SessionListDisplay } from "./sessionListDisplay.ts";
 import { SessionListNavigator } from "./SessionListNavigator.tsx";
 import { countSessionStatuses, sessionStatusEvidence } from "./sessionStatusGroups.ts";
@@ -528,6 +529,7 @@ export interface DashboardProps {
   /** Phones show the single-session count row unless this device hid it (#938). */
   readonly phoneFocusCounts?: boolean;
   readonly sessionListDisplay?: SessionListDisplay;
+  readonly cardPreview?: CardPreview;
   readonly operatorCapabilities?: {
     readonly debug: boolean;
     readonly usage: boolean;
@@ -558,6 +560,7 @@ export function Dashboard({
   phoneSessionOpen = "conversation",
   phoneFocusCounts = true,
   sessionListDisplay = "terminal",
+  cardPreview = "latest-message",
   operatorCapabilities = DEFAULT_OPERATOR_CAPABILITIES,
   onDebug,
   onUsage,
@@ -3001,6 +3004,7 @@ export function Dashboard({
       ) : viewport.mobile && !focusedKey ? (
         <MobileSessionList
           sessions={overviewPageSessions}
+          cardPreview={cardPreview}
           options={overviewFilteredSessions}
           editingTitleKey={editingTitleKey}
           beginTitleEdit={beginTitleEdit}
