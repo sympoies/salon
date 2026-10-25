@@ -1,6 +1,6 @@
 {
   "name": "@agent-console/edge",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "agent-console edge backend: aggregates per-machine `agent-session serve` endpoints, enforces client principal access, and serves the built UI. Compiled ESM package with a source condition for workspace development.",
   "type": "module",
