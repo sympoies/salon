@@ -97,13 +97,14 @@ async function checkSubmittedUi(base: string) {
       assert.equal(result.exceptionDetails, undefined, "browser fixture evaluation completes");
       return result.result.value;
     };
+    let expectedWrites = 0;
     const wait = async (matches: (value: any) => boolean) => {
       const deadline = Date.now() + 15_000;
       let value;
       do {
         value = await evaluate("window.submittedFixture?.inspect()");
         if (value?.ready && value.submittedRows === 1 && matches(value)) {
-          assert.equal(value.writes, 0); assert.deepEqual(value.unexpected, []);
+          assert.equal(value.writes, expectedWrites); assert.deepEqual(value.unexpected, []);
           assert.deepEqual(await evaluate("window.fixtureErrors"), []);
           return value;
         }
@@ -114,7 +115,11 @@ async function checkSubmittedUi(base: string) {
     };
     await rpc("Page.navigate", { url: `${base}/?submitted-fixture` }, sessionId);
     const before = await wait(value => value.outboxReads > 0);
-    assert.equal(before.visibleEchoes, 1, "submitted echo remains visible after empty history and durable snapshot readiness");
+    assert.equal(before.visibleEchoes, 0, "another client's submitted reply is not a local echo before history arrives");
+    expectedWrites = 1;
+    await evaluate("window.submittedFixture.send()");
+    const sent = await wait(value => value.writes === 1 && value.visibleEchoes === 1);
+    assert.equal(sent.visibleEchoes, 1, "the sender's submitted echo stays visible until matching history");
     await evaluate("window.submittedFixture.handover()");
     const handed = await wait(value => value.historyReads > before.historyReads && value.proofCount === 1);
     assert.equal(handed.visibleEchoes, 0, "matching history takes over the outgoing echo");
@@ -146,6 +151,7 @@ async function checkSubmittedUi(base: string) {
       void poll();
     });
     assert.deepEqual(imageDownload, { name: "original plot.png", bytes: [...png] }, "compiled UI saves the authenticated original bytes and filename");
+    expectedWrites = 0;
     await rpc("Page.navigate", { url: `${base}/?submitted-fixture&later` }, sessionId);
     const remounted = await wait(value => value.outboxReads > 0 && value.proofCount === 1);
     assert.equal(remounted.visibleEchoes, 0, "fresh document with a later history window preserves durable handover");
