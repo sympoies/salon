@@ -166,9 +166,13 @@ export class SharedOutboxClient {
     this.requireActive(); this.rows.set(value.key, value); this.changed(); return value;
   }
   private async acceptSnapshot(target: SharedOutboxTarget, snapshot: SharedOutboxSnapshot) {
+    // PUT can acknowledge an item before the local snapshot revision advances.
+    // An equal-revision delayed read cannot revoke that known ownership.
     return this.update(target, row => snapshot.revision < row.snapshot.revision ? row : { ...row, snapshot,
-      localIntentIds: row.localIntentIds!.filter(id => row.admissions.some(item => item.id === id) || snapshot.items.some(item => item.id === id)),
-      unattributedIntentIds: row.unattributedIntentIds!.filter(id => snapshot.items.some(item => item.id === id)),
+      localIntentIds: snapshot.revision > row.snapshot.revision
+        ? row.localIntentIds!.filter(id => row.admissions.some(item => item.id === id) || snapshot.items.some(item => item.id === id)) : row.localIntentIds,
+      unattributedIntentIds: snapshot.revision > row.snapshot.revision
+        ? row.unattributedIntentIds!.filter(id => snapshot.items.some(item => item.id === id)) : row.unattributedIntentIds,
       admissions: row.admissions.filter(admission => !snapshot.items.some(item => item.id === admission.id)),
       submittedProofs: Object.fromEntries(Object.entries(row.submittedProofs ?? {}).filter(([id]) => snapshot.items.some(item => item.id === id))) });
   }

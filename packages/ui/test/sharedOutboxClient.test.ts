@@ -589,6 +589,9 @@ for (const state of ["submitted", "queued", "sending", "unknown", "refused"] as 
         await act(async () => h.client.sync(h.target)); await h.showReplies();
         assertNoElement(h.container, ".history-outgoing-reply", "server confirmation reconciles the legacy uncertain row");
       }
+      h.server({ ...h.snapshot(), revision: h.snapshot().revision + 1, items: [] });
+      await act(async () => h.client.sync(h.target));
+      assert.deepEqual(h.client.state(h.target).unattributedIntentIds, [], "a newer authoritative removal prunes legacy attribution");
     } finally { await h.close(); }
   });
 }
@@ -610,4 +613,45 @@ test("a pre-ownership local admission remains owned when a lost acknowledgement 
     assert.match(h.container.textContent ?? "", /Known legacy local intent/);
     assert.deepEqual(h.requests.filter(method => method !== "GET"), [], "server acknowledgement never replays the local admission");
   } finally { await h.close(); }
+});
+
+test("a delayed equal-revision snapshot cannot hide the sender's acknowledged queued reply", async () => {
+  const factory = new IDBFactory(), h = await fixture(factory, false);
+  const other = new h.module.SharedOutboxClient(h.client.namespace, factory);
+  const deferred = () => { let release!: () => void; const ready = new Promise<void>(resolve => { release = resolve; }); return { ready, release }; };
+  const putStarted = deferred(), allowPut = deferred(), staleStarted = deferred(), allowStale = deferred(), freshStarted = deferred(), allowFresh = deferred();
+  const transport = globalThis.fetch;
+  let reads = 0;
+  globalThis.fetch = async (input, init) => {
+    const method = init?.method ?? "GET";
+    if (method === "PUT") { putStarted.release(); await allowPut.ready; }
+    const response = await transport(input, init);
+    if (method === "GET") {
+      const ordinal = ++reads;
+      if (ordinal === 2) { staleStarted.release(); await allowStale.ready; }
+      if (ordinal === 3) { freshStarted.release(); await allowFresh.ready; }
+    }
+    return response;
+  };
+  try {
+    await other.ready;
+    const id = await h.client.enqueue(session, "Known queued reply"); await putStarted.ready;
+    const delayed = other.sync(h.target); await staleStarted.ready;
+    allowPut.release(); await freshStarted.ready;
+    assert.deepEqual(h.client.state(h.target).localIntentIds, [id], "the acknowledged local intent is still owned");
+    allowStale.release(); await delayed;
+    allowFresh.release(); await h.client.sync(h.target);
+    assert.equal(other.error(h.target), undefined, "the delayed response completes without a fixture timeout");
+    assert.equal(h.client.state(h.target).snapshot.items[0]?.state, "queued");
+    await h.showReplies();
+    assert.match(h.container.textContent ?? "", /Known queued reply/, "fresh server state must restore the known sender's visible reply");
+    assert.deepEqual(h.client.state(h.target).localIntentIds, [id]);
+    assert.equal(h.admissions.length, 1, "concurrent snapshots never replay the intention");
+    h.server({ ...h.snapshot(), revision: h.snapshot().revision + 1, items: [] });
+    await act(async () => h.client.sync(h.target));
+    assert.deepEqual(h.client.state(h.target).localIntentIds, [], "a newer authoritative removal can retire the owned ID after acknowledgement");
+  } finally {
+    allowPut.release(); allowStale.release(); allowFresh.release(); globalThis.fetch = transport;
+    other.close(); await h.close();
+  }
 });
