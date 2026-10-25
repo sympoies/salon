@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import type { ConversationImage } from "@agent-console/shared/conversation-images";
 import { Modal } from "./Modal.tsx";
@@ -30,12 +30,15 @@ function useImage(target: ImageTarget, enabled: boolean) {
   },[target.machine,target.history,target.image,enabled,release]);
   return {data,unavailable:(result: Exclude<ConversationImageData,{state:"ready"}>) => { release(); setData(result); },fail:() => { release(); setData({state:"unavailable"}); }};
 }
-function ImageContent({data,fail}: { readonly data: ConversationImageData; readonly fail: () => void }) {
-  return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} />
+function ImageContent({data,fail,onLoad}: { readonly data: ConversationImageData; readonly fail: () => void; readonly onLoad?: (image: HTMLImageElement) => void }) {
+  return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} onLoad={event => onLoad?.(event.currentTarget)} />
     : <span role="status">{data.state === "deleted" ? "Image deleted" : data.state === "unavailable" ? "Image unavailable" : "Loading image…"}</span>;
 }
 function Thumbnail({target,index,onOpen}: { readonly target: ImageTarget; readonly index: number; readonly onOpen: () => void }) {
   const ref = useRef<HTMLButtonElement>(null);
+  // The shared descriptor is ID-only. Retain decoded dimensions when lazy
+  // loading restarts so a known image keeps its place in the conversation.
+  const [size,setSize] = useState<{width:number;height:number} | null>(null);
   const [visible,setVisible] = useState(typeof IntersectionObserver === "undefined");
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined" || !ref.current) return;
@@ -44,8 +47,11 @@ function Thumbnail({target,index,onOpen}: { readonly target: ImageTarget; readon
     return () => observer.disconnect();
   },[]);
   const {data,fail} = useImage(target,visible);
-  return <button ref={ref} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }}>
-    <ImageContent data={data} fail={fail} />
+  const sizing = size ? {"--image-width":`${size.width}px`,"--image-ratio":size.width / size.height} as CSSProperties : undefined;
+  return <button ref={ref} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }}>
+    <ImageContent data={data} fail={fail} onLoad={image => {
+      if (image.naturalWidth && image.naturalHeight) setSize({width:image.naturalWidth,height:image.naturalHeight});
+    }} />
   </button>;
 }
 const clampZoom = (scale: number) => Math.max(1,Math.min(6,scale));
