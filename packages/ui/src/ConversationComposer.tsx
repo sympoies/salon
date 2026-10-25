@@ -86,7 +86,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const shared = useSharedOutbox(session);
   const sharedReply = usesSharedOutbox(session);
   const sharedPending = sharedReply && shared.targets(session).some(row =>
-    row.admissions.length > 0 || row.snapshot.items.some(item =>
+    row.admissions.length > 0 || shared.outgoingItems(row).some(item =>
       item.state !== "submitted" && item.state !== "cancelled" && item.state !== "refused"));
   const queued = outbox.items(session);
   const outboxVersion = outbox.snapshot();

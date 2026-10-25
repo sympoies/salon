@@ -18,10 +18,20 @@ export interface SharedClientTarget {
   readonly target: SharedOutboxTarget;
   readonly snapshot: SharedOutboxSnapshot;
   readonly admissions: readonly LocalSharedAdmission[];
+  /** Recorded with the local intention, before any upload. Snapshots confer no ownership. */
+  readonly localIntentIds?: readonly string[];
+  /** Pre-ownership cached rows: preserve unresolved text without adopting new remote rows. */
+  readonly unattributedIntentIds?: readonly string[];
   /** User-turn parts already observed for submitted rows; scoped by this target incarnation. */
   readonly submittedProofs?: Readonly<Record<string, string>>;
 }
 const emptySnapshot: SharedOutboxSnapshot = { revision: 0, items: [], compose_holds: [] };
+function ownership(row: SharedClientTarget) {
+  const localIntentIds = [...new Set([...(row.localIntentIds ?? []), ...row.admissions.map(item => item.id)])];
+  const unattributedIntentIds = row.unattributedIntentIds ?? (row.localIntentIds === undefined
+    ? row.snapshot.items.filter(item => !localIntentIds.includes(item.id)).map(item => item.id) : []);
+  return { localIntentIds, unattributedIntentIds };
+}
 const databases = new WeakMap<IDBFactory, Promise<IDBDatabase>>();
 function database(factory: IDBFactory | undefined): Promise<IDBDatabase> {
   if (!factory) return Promise.reject(new Error("Durable storage is unavailable. Your draft has been kept."));
@@ -89,16 +99,21 @@ export class SharedOutboxClient {
   private requireActive() { if (!this.active()) throw new Error("Connection or account changed. Return to the original account to reconcile this reply."); }
   private key(target: SharedOutboxTarget) { return JSON.stringify([this.namespace, target.machine, target.id, target.incarnation]); }
   private initial(target: SharedOutboxTarget): SharedClientTarget {
-    return { key: this.key(target), namespace: this.namespace, target, snapshot: emptySnapshot, admissions: [] };
+    return { key: this.key(target), namespace: this.namespace, target, snapshot: emptySnapshot, admissions: [], localIntentIds: [], unattributedIntentIds: [] };
   }
   state(target: SharedOutboxTarget): SharedClientTarget { return this.rows.get(this.key(target)) ?? this.initial(target); }
   error(target: SharedOutboxTarget): string | undefined { return this.errors.get(this.key(target)); }
   targets(session: Session): readonly SharedClientTarget[] {
     return [...this.rows.values()].filter(row => row.target.machine === session.machine && row.target.id === session.id);
   }
+  outgoingItems(row: SharedClientTarget): readonly SharedOutboxItem[] {
+    const { localIntentIds, unattributedIntentIds } = ownership(row);
+    return row.snapshot.items.filter(item => localIntentIds.includes(item.id)
+      || (unattributedIntentIds.includes(item.id) && item.state !== "submitted"));
+  }
   submittedProof(row: SharedClientTarget, messages: readonly HistoryMessage[]): Readonly<Record<string, string>> {
     const settled = row.submittedProofs ?? {};
-    const matches = transcriptProof(row.snapshot.items.filter(item => item.state === "submitted" && !Object.hasOwn(settled, item.id)).map(item => ({
+    const matches = transcriptProof(this.outgoingItems(row).filter(item => item.state === "submitted" && !Object.hasOwn(settled, item.id)).map(item => ({
       id: item.id, text: item.text, incarnation: item.session_incarnation, requestId: item.request_id!,
       state: "delivered" as const, attemptedAt: item.created_at,
     })), messages, Object.values(settled));
@@ -138,7 +153,11 @@ export class SharedOutboxClient {
       const tx = db.transaction("targets", "readwrite"), store = tx.objectStore("targets");
       const request = store.get(this.key(target)); let next: SharedClientTarget;
       request.onsuccess = () => {
-        try { this.requireActive(); next = change(request.result ?? this.initial(target)); store.put(next); }
+        try {
+          this.requireActive();
+          const current = request.result ?? this.initial(target);
+          next = change({ ...current, ...ownership(current) }); store.put(next);
+        }
         catch (error) { tx.abort(); reject(error); }
       };
       tx.oncomplete = () => resolve(next);
@@ -148,6 +167,8 @@ export class SharedOutboxClient {
   }
   private async acceptSnapshot(target: SharedOutboxTarget, snapshot: SharedOutboxSnapshot) {
     return this.update(target, row => snapshot.revision < row.snapshot.revision ? row : { ...row, snapshot,
+      localIntentIds: row.localIntentIds!.filter(id => row.admissions.some(item => item.id === id) || snapshot.items.some(item => item.id === id)),
+      unattributedIntentIds: row.unattributedIntentIds!.filter(id => snapshot.items.some(item => item.id === id)),
       admissions: row.admissions.filter(admission => !snapshot.items.some(item => item.id === admission.id)),
       submittedProofs: Object.fromEntries(Object.entries(row.submittedProofs ?? {}).filter(([id]) => snapshot.items.some(item => item.id === id))) });
   }
@@ -157,7 +178,8 @@ export class SharedOutboxClient {
     const target = sharedOutboxTarget(session), id = crypto.randomUUID();
     await this.update(target, row => {
       if (row.admissions.length >= 256) throw new Error("This device's reply queue is full. Your draft has been kept.");
-      return { ...row, admissions: [...row.admissions, { id, text, created_at: Date.now(), attempted: false }] };
+      return { ...row, localIntentIds: [...row.localIntentIds!, id],
+        admissions: [...row.admissions, { id, text, created_at: Date.now(), attempted: false }] };
     });
     void this.sync(target).then(() => this.sync(target)); return id;
   }

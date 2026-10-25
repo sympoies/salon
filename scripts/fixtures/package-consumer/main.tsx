@@ -20,7 +20,7 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
   const session = { id: "fixture-session", machine: "fixture", agent: "codex", status: "running",
     title: "Conversation fixture", session_incarnation: "fixture-incarnation",
     provider_resume: { provider: "codex", session_id: "fixture-thread" } } as Session;
-  const item = { id: "fixture-intent", text, state: "submitted", revision: 1, created_at: 1, updated_at: 1,
+  const item = { id: sessionStorage.getItem("fixture-intent-id") ?? "fixture-intent", text, state: "submitted", revision: 1, created_at: 1, updated_at: 1,
     session_incarnation: session.session_incarnation, request_id: "fixture-request", edit_hold: null, error_code: null,
     receipt: { request_id: "fixture-request", session_id: session.id, session_incarnation: session.session_incarnation,
       outcome: "submitted", code: null } };
@@ -30,8 +30,14 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
     ? [{ id: "later-assistant", role: "assistant", text: "Later progress", timestamp: new Date(10).toISOString() }, imageMessage] : [];
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
-    if (init?.method && !["GET", "HEAD"].includes(init.method)) { writes++; throw Error("Unexpected fixture write"); }
     const url = new URL(String(input), location.origin);
+    if (init?.method === "PUT" && url.pathname.includes("/outbox/")) {
+      writes++;
+      item.id = url.pathname.split("/").at(-1)!;
+      sessionStorage.setItem("fixture-intent-id", item.id);
+      return Response.json({ ok: true, data: { item } }, { status: 201 });
+    }
+    if (init?.method && !["GET", "HEAD"].includes(init.method)) { writes++; throw Error("Unexpected fixture write"); }
     if (url.pathname.endsWith(`/images/${imageId}`)) {
       const headers = new Headers(init?.headers);
       headers.set("authorization", "Bearer fixture-token");
@@ -56,6 +62,13 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
   createRoot(document.getElementById("root")!).render(<LiveConversationPanel session={session} machineReachable
     onClose={() => {}} docked showComposer replyDrafts={new Map()} />);
   Object.assign(window, { submittedFixture: {
+    async send() {
+      const editor = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Reply to session"]')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(editor, text);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      document.querySelector<HTMLButtonElement>('button[aria-label="Send reply"]')!.click();
+    },
     handover() {
       messages = [{ id: "matching-user-turn", role: "user", text, timestamp: new Date(3).toISOString() }, imageMessage];
       document.querySelector<HTMLButtonElement>('button[aria-label="Refresh conversation"]')!.click();
