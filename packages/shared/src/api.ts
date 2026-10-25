@@ -182,6 +182,7 @@ export interface AgentSessionCapabilities {
   readonly managed_resume_command?: boolean;
   readonly resume_blocked_reason?: boolean;
   readonly last_prompt?: boolean;
+  readonly last_message?: boolean;
   readonly history?: boolean;
   readonly archive?: boolean;
   readonly history_star?: boolean;
@@ -242,6 +243,7 @@ export function normalizeAgentSessionCapabilities(value: unknown): AgentSessionC
     ...(raw.managed_resume_command === true ? { managed_resume_command: true } : {}),
     ...(raw.resume_blocked_reason === true ? { resume_blocked_reason: true } : {}),
     ...(raw.last_prompt === true ? { last_prompt: true } : {}),
+    ...(raw.last_message === true ? { last_message: true } : {}),
     ...(raw.history === true ? { history: true } : {}),
     ...(raw.archive === true ? { archive: true } : {}),
     ...(raw.history_star === true ? { history_star: true } : {}),
@@ -489,6 +491,14 @@ export function projectPublicAgentSession(value: unknown): Record<string, unknow
   ) {
     const lastPrompt = normalizePublicLastPrompt(raw.last_prompt);
     if (lastPrompt) out.last_prompt = lastPrompt;
+  }
+  const message = raw.last_message;
+  if (message && typeof message === "object" && !Array.isArray(message)) {
+    const role = (message as Record<string, unknown>).role;
+    const preview = normalizePublicLastPrompt(message);
+    if (preview && (role === "user" || role === "assistant")) {
+      out.last_message = { role, ...preview };
+    }
   }
   if (lastPromptState) out.last_prompt_state = lastPromptState;
   const lastPromptContinuity = lastPromptState

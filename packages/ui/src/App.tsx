@@ -7,6 +7,7 @@ import { Login } from "./Login.tsx";
 import { Settings } from "./Settings.tsx";
 import { loadPhoneSessionOpen, savePhoneSessionOpen } from "./phoneSessionOpen.ts";
 import { loadPhoneFocusCounts, savePhoneFocusCounts } from "./phoneFocusCounts.ts";
+import { loadCardPreview, saveCardPreview, type CardPreview } from "./cardPreview.ts";
 import { loadSessionListDisplay, saveSessionListDisplay, type SessionListDisplay } from "./sessionListDisplay.ts";
 import { Dashboard } from "./Dashboard.tsx";
 import { DebugPanel } from "./DebugPanel.tsx";
@@ -126,6 +127,7 @@ export default function App() {
   const [attentionAlerts, setAttentionAlerts] = useState(() => loadAttentionAlerts());
   const [phoneSessionOpen, setPhoneSessionOpen] = useState<SessionListDisplay>(() => loadPhoneSessionOpen());
   const [phoneFocusCounts, setPhoneFocusCounts] = useState(() => loadPhoneFocusCounts());
+  const [cardPreview, setCardPreview] = useState<CardPreview>(() => loadCardPreview());
   const [sessionListDisplay, setSessionListDisplay] = useState<SessionListDisplay>(() => loadSessionListDisplay());
   const [terminalRenderMode, setTerminalRenderMode] = useState<TerminalRenderMode>(() => loadTerminalRenderMode());
   const [terminalSelectedPaneRealtime, setTerminalSelectedPaneRealtime] = useState(
@@ -175,6 +177,9 @@ export default function App() {
   }, []);
   const updatePhoneFocusCounts = useCallback((shown: boolean) => {
     if (savePhoneFocusCounts(shown)) setPhoneFocusCounts(shown);
+  }, []);
+  const updateCardPreview = useCallback((preview: CardPreview) => {
+    if (saveCardPreview(preview)) setCardPreview(preview);
   }, []);
   const updateSessionListDisplay = useCallback((display: SessionListDisplay) => {
     if (saveSessionListDisplay(display)) setSessionListDisplay(display);
@@ -242,6 +247,7 @@ export default function App() {
       setDefaultAutoResume(loadDefaultAutoResume());
       setAttentionAlerts(loadAttentionAlerts());
       setSessionListDisplay(loadSessionListDisplay());
+      setCardPreview(loadCardPreview());
       setPhoneSessionOpen(loadPhoneSessionOpen());
       setPhoneFocusCounts(loadPhoneFocusCounts());
       setTerminalRenderMode(loadTerminalRenderMode());
@@ -298,9 +304,11 @@ export default function App() {
         phoneSessionOpen={phoneSessionOpen}
         phoneFocusCounts={phoneFocusCounts}
         sessionListDisplay={sessionListDisplay}
+        cardPreview={cardPreview}
         onPhoneSessionOpenChange={updatePhoneSessionOpen}
         onPhoneFocusCountsChange={updatePhoneFocusCounts}
         onSessionListDisplayChange={updateSessionListDisplay}
+        onCardPreviewChange={updateCardPreview}
         terminalRenderMode={terminalRenderMode}
         terminalSelectedPaneRealtime={terminalSelectedPaneRealtime}
         onMachineColorChange={updateMachineColor}
@@ -347,6 +355,7 @@ export default function App() {
         phoneSessionOpen={phoneSessionOpen}
         phoneFocusCounts={phoneFocusCounts}
         sessionListDisplay={sessionListDisplay}
+        cardPreview={cardPreview}
         terminalRenderMode={terminalRenderMode}
         terminalSelectedPaneRealtime={terminalSelectedPaneRealtime}
         operatorCapabilities={operatorCapabilities}
@@ -397,9 +406,11 @@ export default function App() {
           phoneSessionOpen={phoneSessionOpen}
           phoneFocusCounts={phoneFocusCounts}
           sessionListDisplay={sessionListDisplay}
+          cardPreview={cardPreview}
           onPhoneSessionOpenChange={updatePhoneSessionOpen}
           onPhoneFocusCountsChange={updatePhoneFocusCounts}
           onSessionListDisplayChange={updateSessionListDisplay}
+          onCardPreviewChange={updateCardPreview}
           terminalRenderMode={terminalRenderMode}
           terminalSelectedPaneRealtime={terminalSelectedPaneRealtime}
           onMachineColorChange={updateMachineColor}

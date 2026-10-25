@@ -1170,6 +1170,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               managed_resume_command: true,
               resume_blocked_reason: true,
               last_prompt: true,
+              last_message: true,
               history: true,
               archive: true,
               session_retitle_v2: true,

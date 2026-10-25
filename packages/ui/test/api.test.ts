@@ -3724,3 +3724,17 @@ test("session list keeps response extension capabilities without deriving privat
   assert.deepEqual(result.ext, { sample: { mode: "custom" } });
   assert.equal(result.capabilities?.sample_mode, "custom");
 });
+
+
+test("listSessions gates last_message on both edge and daemon support", async () => {
+  for (const edge of [true, false]) for (const daemon of [true, false]) {
+    setFetchMock(async () => jsonResponse({ok: true, data: {
+      capabilities: {last_message: edge}, machines: [{name: "fixture", ok: true, capabilities: {last_message: daemon}}],
+      sessions: [{id: "s", agent: "codex", status: "running", machine: "fixture", last_message: {role: "assistant", text: "Done\nnow"}, last_prompt: {text: "Check this"}}],
+    }}));
+    const response = await listSessions();
+    assert.deepEqual(response.sessions[0]?.last_message, edge && daemon ? {role: "assistant", text: "Done now"} : undefined);
+    assert.equal(response.sessions[0]?.last_prompt?.text, "Check this");
+    assert.equal(response.capabilities?.last_message, edge);
+  }
+});

@@ -4,7 +4,8 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import { AgentBadge } from "./AgentBadge.tsx";
 import { SessionActivityPopover } from "./SessionActivityPopover.tsx";
 import { SessionBadges, type SessionBadgeNavigation } from "./extensions.tsx";
-import { sessionLastPromptPreview } from "./sessionPromptPreview.ts";
+import type { CardPreview } from "./cardPreview.ts";
+import { sessionCardPreview } from "./sessionPromptPreview.ts";
 import { AutoResumeBadge, RepoBadgeLink } from "./SessionSlot.tsx";
 import { SessionAccountBadge } from "./SessionAccountBadge.tsx";
 import "./sessionCardRows.css";
@@ -20,6 +21,7 @@ import type { ActivityDeliveryState } from "./activityStream.ts";
 import type { DashboardSession, Session } from "./types.ts";
 
 export interface MobileSessionListProps {
+  readonly cardPreview?: CardPreview;
   /**
    * Sessions in the shared cross-device order (the same ⌘-nav / picker order the
    * macOS grid uses); rendered as-is so the mobile overview, the session picker,
@@ -65,6 +67,7 @@ export interface MobileSessionListProps {
 // one live terminal runs on a phone.
 export function MobileSessionList({
   sessions,
+  cardPreview = "latest-message",
   options = sessions,
   editingTitleKey,
   beginTitleEdit,
@@ -119,7 +122,7 @@ export function MobileSessionList({
         const canResume =
           session.status === "stopped" && session.resumable === true;
         const resuming = resumingKey === key;
-        const promptPreview = sessionLastPromptPreview(session);
+        const promptPreview = sessionCardPreview(session, cardPreview);
         const promptId = `${listId}-prompt-${key}`;
         return (
           <li key={key} className="mobile-session-card">

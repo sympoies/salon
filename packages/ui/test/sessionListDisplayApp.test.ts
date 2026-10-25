@@ -19,8 +19,8 @@ const fixture: Plugin = {
     if (id === "\0display-shell") return "export function ShellPage() { return null; }";
     if (id === "\0display-dashboard") return `
       import React from "react";
-      export function Dashboard({sessionListDisplay,phoneSessionOpen,phoneFocusCounts,onSettings}) {
-        return React.createElement("div",{"data-display-mode":sessionListDisplay,"data-phone-mode":phoneSessionOpen,"data-phone-focus-counts":String(phoneFocusCounts)},
+      export function Dashboard({sessionListDisplay,phoneSessionOpen,phoneFocusCounts,cardPreview,onSettings}) {
+        return React.createElement("div",{"data-display-mode":sessionListDisplay,"data-card-preview":cardPreview,"data-phone-mode":phoneSessionOpen,"data-phone-focus-counts":String(phoneFocusCounts)},
           React.createElement("button",{onClick:onSettings,"aria-label":"Open Settings"},"Settings"));
       }
     `;
@@ -86,17 +86,34 @@ test("App saves the Settings choice, restores it on remount and reloads the new 
     await act(async()=>window.dispatchEvent(new window.Event("resize")));
     await act(async()=>container.querySelector<HTMLButtonElement>('[aria-label="Open Settings"]')!.click());
     const phoneSelect=container.querySelector<HTMLSelectElement>('[aria-label="Open session as"]');assert.ok(phoneSelect);
+    const preview = container.querySelector<HTMLSelectElement>('[aria-label="Card preview"]');
+    assert.ok(preview, "phone Settings offers the preview choice");
+    assert.equal(preview.value, "latest-message");
+    preview.value = "last-prompt";
+    await act(async () => preview.dispatchEvent(new window.Event("change", {bubbles: true})));
+    assert.equal(container.querySelector("[data-card-preview]")?.getAttribute("data-card-preview"), "last-prompt");
+    assert.equal(window.localStorage.getItem("agent-console.principal.viewer-one.ac.cardPreview"), "last-prompt");
     assert.equal(phoneSelect.value,"conversation");phoneSelect.value="terminal";
     await act(async()=>phoneSelect.dispatchEvent(new window.Event("change",{bubbles:true})));
     assert.equal(mode(),"conversation","phone preference does not change desktop tiles");
     assert.equal(window.localStorage.getItem("agent-console.principal.viewer-one.ac.phoneSessionOpen"),"terminal");
     await act(async()=>root.render(null));await mount();
     assert.equal(container.querySelector("[data-phone-mode]")?.getAttribute("data-phone-mode"),"terminal");
+    assert.equal(container.querySelector("[data-card-preview]")?.getAttribute("data-card-preview"), "last-prompt", "reload restores preview choice");
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Open Settings"]')!.click());
+    const latest = container.querySelector<HTMLSelectElement>('[aria-label="Card preview"]');
+    assert.ok(latest);
+    latest.value = "latest-message";
+    await act(async () => latest.dispatchEvent(new window.Event("change", {bubbles: true})));
+    await act(async () => root.render(null));
+    await mount();
+    assert.equal(container.querySelector("[data-card-preview]")?.getAttribute("data-card-preview"), "latest-message", "switching back also survives reload");
 
     await act(async () => root.render(null));
     globalThis.__agentConsoleDisplayPrincipal = "viewer-two";
     await mount();
     assert.equal(mode(), "terminal", "sign-in reload uses the new principal namespace");
+    assert.equal(container.querySelector("[data-card-preview]")?.getAttribute("data-card-preview"), "latest-message", "new principal uses the default");
     assert.equal(container.querySelector("[data-phone-mode]")?.getAttribute("data-phone-mode"),"conversation","phone default reloads per principal");
   } finally {
     await act(async () => root.unmount());

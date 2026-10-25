@@ -553,3 +553,16 @@ test("aggregation retains workspace and public origin for Console filtering acro
   const out = await aggregateSessions([m("host-a")]);
   assert.deepEqual(out.sessions.map(row => [row.workspace, row.origin]), [["team-a", { parent }], [null, { parent: null }], [undefined, undefined]]);
 });
+
+
+test("aggregateSessions passes normalized last_message only with the daemon capability", async () => {
+  for (const advertised of [true, false]) {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ok: true, data: {
+      capabilities: {last_message: advertised},
+      sessions: [{id: "s", agent: "codex", status: "running", last_message: {role: "assistant", text: "Done\nnow", private_field: "omit"}}],
+    }}), {status: 200})) as typeof fetch;
+    const out = await aggregateSessions([m("fixture")]);
+    assert.deepEqual(out.sessions[0]?.last_message, advertised ? {role: "assistant", text: "Done now"} : undefined);
+    assert.equal(out.machines[0]?.capabilities?.last_message, advertised ? true : undefined);
+  }
+});

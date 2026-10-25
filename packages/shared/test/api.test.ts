@@ -556,3 +556,21 @@ test("principal projection retains configured extension permissions and rejects 
     assert.equal(normalizeAgentConsolePrincipal({ id: "owner", permissions }), null);
   }
 });
+
+
+test("public last_message uses prompt hygiene, bounded metadata and exact roles", () => {
+  const project = (last_message: unknown) => projectPublicAgentSession({ id: "s", agent: "codex", status: "running", last_message }).last_message;
+  for (const role of ["user", "assistant"]) {
+    assert.deepEqual(project({ role, text: "<system-reminder>scaffold</system-reminder>Done\nwith\tspaces", submitted_at: "2026-10-25T00:00:00Z", truncated: false, private_field: "omit" }),
+      { role, text: "Done with spaces", submitted_at: "2026-10-25T00:00:00Z", truncated: false });
+    const long = "x".repeat(3000);
+    assert.equal((project({role, text: long}) as {text: string}).text.length,
+      (projectPublicAgentSession({last_prompt: {text: long}}).last_prompt as {text: string}).text.length);
+  }
+  for (const value of [null, [], "text", {role: "tool", text: "No"}, {role: "assistant", text: "\u0000bad"}, {role: "user", text: "   "}, {role: "assistant", text: "<system-reminder>only scaffold</system-reminder>"}]) {
+    assert.equal(project(value), undefined);
+  }
+  assert.deepEqual(project({role: "assistant", text: "Done", submitted_at: "x".repeat(65), truncated: "true"}), {role: "assistant", text: "Done"});
+  assert.deepEqual(normalizeAgentSessionCapabilities({last_message: true}), {last_message: true});
+  assert.deepEqual(normalizeAgentSessionCapabilities({last_message: "true"}), {});
+});

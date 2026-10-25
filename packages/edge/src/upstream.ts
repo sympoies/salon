@@ -309,6 +309,7 @@ export async function aggregateSessions(
           },
           sessions: list.map((s) => {
             const session = projectPublicAgentSession(s);
+            if (capabilities.last_message !== true) delete session.last_message;
             if (session.title_state_supported !== true) {
               delete session.title_state_supported;
             }

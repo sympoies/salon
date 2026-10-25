@@ -21,6 +21,7 @@ import {
 } from "./machineColors.ts";
 import { useUiExtensions } from "./extensions.tsx";
 import type { TerminalRenderMode } from "./terminalRenderMode.ts";
+import type { CardPreview } from "./cardPreview.ts";
 import type { SessionListDisplay } from "./sessionListDisplay.ts";
 import { browserNotificationPermission } from "./attentionAlerts.ts";
 import { clientVersionInfo, versionCopyText } from "./clientVersion.ts";
@@ -46,6 +47,8 @@ export interface SettingsProps {
   readonly phoneFocusCounts?: boolean;
   readonly onPhoneFocusCountsChange?: (shown: boolean) => void;
   readonly sessionListDisplay?: SessionListDisplay;
+  readonly cardPreview?: CardPreview;
+  readonly onCardPreviewChange?: (preview: CardPreview) => void;
   readonly onSessionListDisplayChange?: (display: SessionListDisplay) => void;
   readonly onMachineColorChange: (name: string, color: string) => void;
   readonly onMachineColorReset: (name: string) => void;
@@ -80,6 +83,8 @@ export function Settings({
   phoneFocusCounts = true,
   onPhoneFocusCountsChange,
   sessionListDisplay = "terminal",
+  cardPreview = "latest-message",
+  onCardPreviewChange,
   onSessionListDisplayChange,
   onMachineColorChange,
   onMachineColorReset,
@@ -406,6 +411,15 @@ export function Settings({
 
         <section className="settings-section">
           <h2 className="settings-section-title">Sessions</h2>
+          <label className="settings-field">
+            Card preview
+            <select aria-label="Card preview" value={cardPreview}
+              onChange={event => onCardPreviewChange?.(event.currentTarget.value as CardPreview)}>
+              <option value="latest-message">Latest message</option>
+              <option value="last-prompt">My last prompt</option>
+            </select>
+          </label>
+          <p className="settings-hint">Choose the session card preview on this device.</p>
           <label className="settings-field">
             {phone ? "Open session as" : "Session list display"}
             <select aria-label={phone ? "Open session as" : "Session list display"}

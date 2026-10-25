@@ -61,12 +61,13 @@ function reconcileMobileSession(previous: Session, incoming: Session): Dashboard
 async function renderMobileSessions(
   sessions: readonly DashboardSession[],
   resumingKey: string | null = null,
+  cardPreview: "latest-message" | "last-prompt" = "latest-message",
 ): Promise<string> {
   const module = await ssr.loadModule<{
     MobileSessionList: ComponentType<MobileSessionListProps>;
   }>("/src/MobileSessionList.tsx");
   return renderComponent(module.MobileSessionList, {
-    sessions, options: sessions, editingTitleKey: null,
+    sessions, options: sessions, cardPreview, editingTitleKey: null,
     beginTitleEdit: () => {}, saveTitleEdit: async () => {}, cancelTitleEdit: () => {},
     onRetitle: () => {}, onNewSession: () => {}, onSelectSession: () => {},
     machineColors: {},
@@ -178,13 +179,6 @@ test("mobile cards ignore legacy orchestration metadata", async () => {
 
   assert.doesNotMatch(html, />Standalone</);
   assert.doesNotMatch(html, /orchestration-strip|Main Agent/);
-});
-
-test("MobileSessionList renders the last user prompt as its own secondary line", () => {
-  // The last prompt shows below the title in a dedicated (small, gray) element,
-  // and only when present so old daemons/edge degrade gracefully to no line.
-  assert.match(mobileSource, /mobile-session-card-prompt/);
-  assert.match(mobileSource, /sessionLastPromptPreview\(session\)/);
 });
 
 test("mounted mobile cards retain only a same-runtime pending prompt", async () => {
@@ -486,4 +480,23 @@ test("mobile card headers keep one repo line and two consistent toolbar rows at 
   assert.match(cssRuleFor(".card-status-icon"), /width:\s*var\(--card-status-icon-size\)/);
   assert.match(cssRuleFor(".card-status-icon"), /height:\s*var\(--card-status-icon-size\)/);
   assert.match(uiSource("CardStatusIcon.tsx"), /<circle cx="12" cy="12" r="6"/);
+});
+
+
+test("card previews choose either side, mark assistant replies and preserve prompt fallback", async () => {
+  const item = makeSession({last_prompt: {text: "Review the change"}, last_message: {role: "assistant", text: "The change is ready"}});
+  const preview = async (session: Session, mode: "latest-message" | "last-prompt") => {
+    const window = new Window();
+    window.document.body.innerHTML = await renderMobileSessions([session], null, mode);
+    const text = window.document.querySelector(".mobile-session-card-prompt")?.textContent;
+    await window.happyDOM.close();
+    return text;
+  };
+  assert.equal(await preview(item, "latest-message"), "Agent: The change is ready");
+  assert.equal(await preview(item, "last-prompt"), "Review the change");
+  assert.equal(await preview({...item, last_message: {role: "user", text: "A newer prompt"}}, "latest-message"), "A newer prompt");
+  assert.equal(await preview({...item, last_message: undefined}, "latest-message"), "Review the change");
+  const pending = reconcileMobileSession({...item, last_prompt_state: "current", last_prompt_continuity: "fixture-epoch"},
+    {...item, last_prompt: undefined, last_prompt_state: "pending", last_prompt_continuity: "fixture-epoch"});
+  assert.equal(await preview(pending, "last-prompt"), "Review the change", "pending prompt continuity still applies");
 });
