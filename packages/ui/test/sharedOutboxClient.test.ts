@@ -124,6 +124,23 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
     online(value: boolean) { Object.defineProperty(window.navigator, "onLine", { value, configurable: true }); },
     messages(value: readonly HistoryMessage[]) { transcript = value; },
     server(value: SharedOutboxSnapshot) { snapshot = value; },
+    // Rendering fixtures that represent a known local send must retain that
+    // ownership explicitly; a server snapshot alone is never sender evidence.
+    async ownServer(value: SharedOutboxSnapshot) {
+      await this.cacheJournal({ ...client.state(target), localIntentIds: value.items.map(item => item.id) });
+      snapshot = value;
+    },
+    async cacheJournal(row: import("../src/sharedOutboxClient.ts").SharedClientTarget) {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const open = factory!.open("agent-console-shared-admissions", 1);
+        open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("targets", "readwrite"); tx.objectStore("targets").put(row);
+        tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    },
     async send(text: string) {
       const node = editor(), key = Object.keys(node).find(key => key.startsWith("__reactProps$"))!;
       await act(async () => (node as unknown as Record<string, { onChange(e: { target: { value: string } }): void }>)[key]!.onChange({ target: { value: text } }));
@@ -286,7 +303,7 @@ test("an unknown server delivery remains visible with no retry or provider repla
   const h = await fixture(new IDBFactory(), false);
   try {
     const id = crypto.randomUUID(), requestId = crypto.randomUUID();
-    h.server({ revision: 4, compose_holds: [], items: [{
+    await h.ownServer({ revision: 4, compose_holds: [], items: [{
       id, text: "uncertain server delivery", state: "unknown", revision: 4, session_incarnation: "inc-1",
       created_at: 1, updated_at: 2, request_id: requestId, edit_hold: null, error_code: "structured-prompt-outcome-unknown",
       receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "unknown", code: "structured-prompt-outcome-unknown" },
@@ -306,7 +323,7 @@ for (const provider of ["codex", "claude"] as const) test(`a submitted ${provide
   let h = await fixture(factory, false);
   try {
     const id = crypto.randomUUID(), requestId = crypto.randomUUID();
-    h.server({ revision: 3, compose_holds: [], items: [{
+    await h.ownServer({ revision: 3, compose_holds: [], items: [{
       id, text: "already in the transcript", state: "submitted", revision: 3, session_incarnation: "inc-1",
       created_at: 1, updated_at: 2, request_id: requestId, edit_hold: null, error_code: null,
       receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null },
@@ -344,9 +361,9 @@ test("a settled transcript part cannot hide another identical submitted reply", 
       receipt: { request_id: id, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted" as const, code: null },
     });
     const messages: HistoryMessage[] = [{ id: "one-user-turn", role: "user", text: "same submitted text", timestamp: new Date(3).toISOString() }];
-    h.server({ revision: 3, compose_holds: [], items: [item(first)] });
+    await h.ownServer({ revision: 3, compose_holds: [], items: [item(first)] });
     await h.client.sync(h.target); await h.showReplies(session, messages);
-    h.server({ revision: 4, compose_holds: [], items: [item(first), item(second)] });
+    await h.ownServer({ revision: 4, compose_holds: [], items: [item(first), item(second)] });
     await h.client.sync(h.target); await h.showReplies(session, messages);
     assert.equal(h.container.querySelectorAll('.history-outgoing-reply[data-status="submitted"]').length, 1,
       "the turn already spent on the first reply must not settle a genuinely unconfirmed second reply");
@@ -357,7 +374,7 @@ test("a replacement incarnation does not resurrect prior submitted replies", asy
   const h = await fixture(new IDBFactory(), false);
   try {
     const id = crypto.randomUUID(), requestId = crypto.randomUUID();
-    h.server({ revision: 3, compose_holds: [], items: [{
+    await h.ownServer({ revision: 3, compose_holds: [], items: [{
       id, text: "previous incarnation submitted reply", state: "submitted", revision: 3, session_incarnation: "inc-1",
       created_at: 1, updated_at: 2, request_id: requestId, edit_hold: null, error_code: null,
       receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null },
@@ -379,7 +396,7 @@ const contract: Record<string, { run(h: Harness, s: typeof session): Promise<voi
   reply: { bubbles: [], submissions: 1, async run(h, s) {
     const id = await h.client.enqueue(s, "contract reply"); await h.client.sync(h.target);
     const now = h.snapshot(), request_id = crypto.randomUUID();
-    h.server({ ...now, revision: now.revision + 1, items: now.items.map(item => item.id === id ? { ...item, state: "submitted" as const,
+    await h.ownServer({ ...now, revision: now.revision + 1, items: now.items.map(item => item.id === id ? { ...item, state: "submitted" as const,
       revision: item.revision + 1, request_id, receipt: { request_id, session_id: s.id, session_incarnation: "inc-1", outcome: "submitted" as const, code: null } } : item) });
     await h.client.sync(h.target);
     h.messages([{ id: "reply-turn", role: "user", text: "contract reply", timestamp: new Date().toISOString() }]);
@@ -433,7 +450,7 @@ test("a refused shared reply does not hide the failed-turn resend", async () => 
   const h = await fixture(new IDBFactory(), false);
   try {
     const id = crypto.randomUUID(), requestId = crypto.randomUUID();
-    h.server({ revision: 2, compose_holds: [], items: [{
+    await h.ownServer({ revision: 2, compose_holds: [], items: [{
       id, text: "refused by the provider", state: "refused", revision: 2, session_incarnation: "inc-1",
       created_at: 1, updated_at: 2, request_id: requestId, edit_hold: null, error_code: "session-blocked",
       receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "refused", code: "session-blocked" },
@@ -468,7 +485,7 @@ test("a shared composer draft refusal explains safe recovery without automatic r
   const h = await fixture(new IDBFactory(), false);
   try {
     const requestId = crypto.randomUUID();
-    h.server({ revision: 2, compose_holds: [], items: [{
+    await h.ownServer({ revision: 2, compose_holds: [], items: [{
       id: "draft-refusal", text: "preserved reply", state: "refused", revision: 2,
       session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: requestId,
       edit_hold: null, error_code: "composer-not-empty",
@@ -493,7 +510,7 @@ for (const current of [true, false]) test(`refused shared reply offers global Di
   try {
     const item: SharedOutboxItem = { id: "refused-action", text: "unsent reply", state: "refused", revision: 2,
       session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: null, receipt: null, edit_hold: null, error_code: "auth-quarantined" };
-    h.server({ revision: 2, items: [item], compose_holds: [] });
+    await h.ownServer({ revision: 2, items: [item], compose_holds: [] });
     await h.client.sync(h.target);
     await h.showReplies(current ? session : { ...session, session_incarnation: "inc-2" });
     const button = (label: string) => [...h.container.querySelectorAll<HTMLButtonElement>("button")].find(node => node.textContent === label);
@@ -503,7 +520,7 @@ for (const current of [true, false]) test(`refused shared reply offers global Di
       await act(async () => button("Retry")!.click()); await h.settle();
       assert.equal(h.snapshot().items[0]?.state, "queued");
       assert.equal(h.admissions.length, 0, "retry mutates the existing refused intent rather than duplicating it");
-      h.server({ revision: 4, items: [{ ...item, revision: 4 }], compose_holds: [] });
+      await h.ownServer({ revision: 4, items: [{ ...item, revision: 4 }], compose_holds: [] });
       await act(async () => h.client.sync(h.target)); await h.settle();
     }
     await act(async () => button("Discard")!.click()); await h.settle();
@@ -511,4 +528,130 @@ for (const current of [true, false]) test(`refused shared reply offers global Di
     assertNoElement(h.container, '[data-status="refused"]', "discard removes the refused bubble after server confirmation");
     assert.equal(h.admissions.length, 0);
   } finally { await h.close(); }
+});
+
+test("the sender retains its own queued, uncertain, refused and submitted echoes across restart", async () => {
+  const factory = new IDBFactory();
+  let h = await fixture(factory, false);
+  try {
+    h.online(false);
+    const id = await h.client.enqueue(session, "sender's retained reply");
+    assert.deepEqual(h.client.state(h.target).localIntentIds, [id], "ownership is durable before upload");
+    await h.close(); h = await fixture(factory, false);
+    h.online(true); await h.client.sync(h.target);
+    assert.deepEqual(h.admissions, [{ id, text: "sender's retained reply" }]);
+    let snapshot = h.snapshot();
+    const requestId = crypto.randomUUID();
+    for (const state of ["queued", "unknown", "refused", "submitted"] as const) {
+      snapshot = { ...snapshot, revision: snapshot.revision + 1, items: snapshot.items.map(item => ({ ...item, state,
+        request_id: state === "queued" ? null : requestId,
+        receipt: state === "queued" ? null : { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: state,
+          code: state === "submitted" ? null : state === "unknown" ? "structured-prompt-outcome-unknown" : "session-blocked" },
+      })) };
+      h.server(snapshot); await act(async () => h.client.sync(h.target)); await h.showReplies();
+      assert.match(h.container.textContent ?? "", /sender's retained reply/, `${state}: the sender keeps its echo`);
+      await h.close(); h = await fixture(factory, false); h.server(snapshot);
+      await h.client.sync(h.target); await h.showReplies();
+      assert.match(h.container.textContent ?? "", /sender's retained reply/, `${state}: restart preserves sender visibility`);
+      assert.deepEqual(h.requests.filter(method => method !== "GET"), [], "restart never replays an admitted send");
+    }
+    await h.showReplies(session, [{ id: "sender-turn", role: "user", text: "sender's retained reply", timestamp: new Date().toISOString() }]);
+    assertNoElement(h.container, ".history-outgoing-reply", "only matching history takes over a known sender's submitted echo");
+    assert.deepEqual(h.client.state(h.target).snapshot, snapshot, "handover leaves authoritative rows intact");
+  } finally { await h.close(); }
+});
+
+for (const state of ["submitted", "queued", "sending", "unknown", "refused"] as const) {
+  test(`pre-ownership cached ${state} rows are ${state === "submitted" ? "excluded" : "preserved"} across reconnect and restart`, async () => {
+    const factory = new IDBFactory();
+    let h = await fixture(factory, false);
+    try {
+      const id = crypto.randomUUID(), requestId = crypto.randomUUID();
+      const item: SharedOutboxItem = { id, text: "Unattributed cached reply", state, revision: 2,
+        session_incarnation: "inc-1", created_at: 1, updated_at: 2, edit_hold: null, error_code: null,
+        request_id: state === "queued" ? null : requestId,
+        receipt: state === "submitted" || state === "unknown" || state === "refused"
+          ? { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: state,
+            code: state === "submitted" ? null : state === "unknown" ? "structured-prompt-outcome-unknown" : "session-blocked" } : null };
+      const snapshot = { revision: 2, items: [item], compose_holds: [] };
+      const { localIntentIds: _local, unattributedIntentIds: _unattributed, ...legacy } = h.client.state(h.target);
+      await h.cacheJournal({ ...legacy, snapshot });
+      await h.close(); h = await fixture(factory, false); h.server(snapshot);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await h.client.sync(h.target); await h.showReplies();
+        assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, state === "submitted" ? 0 : 1);
+        assert.deepEqual(h.client.state(h.target).snapshot, snapshot, "projection does not delete or rewrite the cached server rows");
+        assert.deepEqual(h.requests.filter(method => method !== "GET"), [], "compatibility never replays or mutates the row");
+        if (attempt === 0) { await h.close(); h = await fixture(factory, false); h.server(snapshot); }
+      }
+      if (state === "unknown") {
+        h.server({ ...snapshot, revision: 3, items: [{ ...item, state: "submitted", receipt: { ...item.receipt!, outcome: "submitted", code: null } }] });
+        await act(async () => h.client.sync(h.target)); await h.showReplies();
+        assertNoElement(h.container, ".history-outgoing-reply", "server confirmation reconciles the legacy uncertain row");
+      }
+      h.server({ ...h.snapshot(), revision: h.snapshot().revision + 1, items: [] });
+      await act(async () => h.client.sync(h.target));
+      assert.deepEqual(h.client.state(h.target).unattributedIntentIds, [], "a newer authoritative removal prunes legacy attribution");
+    } finally { await h.close(); }
+  });
+}
+
+test("a pre-ownership local admission remains owned when a lost acknowledgement is reconciled", async () => {
+  const factory = new IDBFactory();
+  let h = await fixture(factory, false);
+  try {
+    const id = crypto.randomUUID(), requestId = crypto.randomUUID(), text = "Known legacy local intent";
+    const { localIntentIds: _local, unattributedIntentIds: _unattributed, ...legacy } = h.client.state(h.target);
+    await h.cacheJournal({ ...legacy, admissions: [{ id, text, created_at: 1, attempted: true }] });
+    await h.close(); h = await fixture(factory, false);
+    h.server({ revision: 3, compose_holds: [], items: [{ id, text, state: "submitted", revision: 3,
+      session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: requestId, edit_hold: null, error_code: null,
+      receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null } }] });
+    await h.client.sync(h.target); await h.showReplies();
+    assert.deepEqual(h.client.state(h.target).localIntentIds, [id]);
+    assert.equal(h.client.state(h.target).admissions.length, 0);
+    assert.match(h.container.textContent ?? "", /Known legacy local intent/);
+    assert.deepEqual(h.requests.filter(method => method !== "GET"), [], "server acknowledgement never replays the local admission");
+  } finally { await h.close(); }
+});
+
+test("a delayed equal-revision snapshot cannot hide the sender's acknowledged queued reply", async () => {
+  const factory = new IDBFactory(), h = await fixture(factory, false);
+  const other = new h.module.SharedOutboxClient(h.client.namespace, factory);
+  const deferred = () => { let release!: () => void; const ready = new Promise<void>(resolve => { release = resolve; }); return { ready, release }; };
+  const putStarted = deferred(), allowPut = deferred(), staleStarted = deferred(), allowStale = deferred(), freshStarted = deferred(), allowFresh = deferred();
+  const transport = globalThis.fetch;
+  let reads = 0;
+  globalThis.fetch = async (input, init) => {
+    const method = init?.method ?? "GET";
+    if (method === "PUT") { putStarted.release(); await allowPut.ready; }
+    const response = await transport(input, init);
+    if (method === "GET") {
+      const ordinal = ++reads;
+      if (ordinal === 2) { staleStarted.release(); await allowStale.ready; }
+      if (ordinal === 3) { freshStarted.release(); await allowFresh.ready; }
+    }
+    return response;
+  };
+  try {
+    await other.ready;
+    const id = await h.client.enqueue(session, "Known queued reply"); await putStarted.ready;
+    const delayed = other.sync(h.target); await staleStarted.ready;
+    allowPut.release(); await freshStarted.ready;
+    assert.deepEqual(h.client.state(h.target).localIntentIds, [id], "the acknowledged local intent is still owned");
+    allowStale.release(); await delayed;
+    allowFresh.release(); await h.client.sync(h.target);
+    assert.equal(other.error(h.target), undefined, "the delayed response completes without a fixture timeout");
+    assert.equal(h.client.state(h.target).snapshot.items[0]?.state, "queued");
+    await h.showReplies();
+    assert.match(h.container.textContent ?? "", /Known queued reply/, "fresh server state must restore the known sender's visible reply");
+    assert.deepEqual(h.client.state(h.target).localIntentIds, [id]);
+    assert.equal(h.admissions.length, 1, "concurrent snapshots never replay the intention");
+    h.server({ ...h.snapshot(), revision: h.snapshot().revision + 1, items: [] });
+    await act(async () => h.client.sync(h.target));
+    assert.deepEqual(h.client.state(h.target).localIntentIds, [], "a newer authoritative removal can retire the owned ID after acknowledgement");
+  } finally {
+    allowPut.release(); allowStale.release(); allowFresh.release(); globalThis.fetch = transport;
+    other.close(); await h.close();
+  }
 });
