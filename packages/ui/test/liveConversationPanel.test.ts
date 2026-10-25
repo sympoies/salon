@@ -2,6 +2,7 @@ import { sharedAdmissionFixture } from "./support/sharedAdmissionFixture.ts";
 import { strict as assert } from "node:assert";
 import { afterEach, test } from "node:test";
 import { Window } from "happy-dom";
+import { IDBFactory } from "fake-indexeddb";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { Plugin } from "vite";
@@ -80,6 +81,176 @@ function historyEntry() {
     resumable: false,
   };
 }
+
+for (const view of ["panel", "tile", "phone"] as const) {
+  test(`${view} discovers the first transcript without remounting or losing the first user row`, async () => {
+    const mounted = installDom();
+    cleanups.push(mounted.cleanup);
+    const globals = new Map(["indexedDB", "navigator"].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+    Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: new IDBFactory() });
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+      locks: { request: async (_name: string, _options: unknown, callback: (lock: object) => unknown) => callback({}) },
+    } });
+    cleanups.push(() => {
+      for (const [key, descriptor] of globals) {
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+        else Reflect.deleteProperty(globalThis, key);
+      }
+    });
+    let tick!: () => void;
+    const schedule = mounted.window.setTimeout.bind(mounted.window);
+    Reflect.set(mounted.window, "setTimeout", (callback: () => void, ms: number) => {
+      if (ms !== 3000) return schedule(callback, ms);
+      tick = callback;
+      return 538;
+    });
+    const ssr = createUiSsrHarness([conversationApiMockPlugin()]);
+    cleanups.push(ssr.close);
+    let available = false;
+    let reply = "first provider reply";
+    const searches: unknown[] = [];
+    const reads: unknown[] = [];
+    globalThis.__agentConsoleConversationApiMock = {
+      listHistorySessions: async (machine, options) => {
+        searches.push({ machine, ...options });
+        return { ok: true, truncated: false, latestMessagePaging: true, sessions: available ? [
+          { ...historyEntry(), id: "near-match", provider_session_id: "provider-70" }, historyEntry(),
+        ] : [] };
+      },
+      listHistoryMessages: async (machine, id, options) => {
+        reads.push({ machine, id, ...options });
+        return { ok: true, messages: [{ id: reply, role: "assistant", text: reply }] };
+      },
+    };
+    // A retained legacy echo is visible without authorizing new delivery.
+    const session = liveSession({ session_incarnation: undefined });
+    const { conversationOutbox } = await ssr.loadModule<typeof import("../src/conversationOutbox.ts")>("/src/conversationOutbox.ts");
+    await conversationOutbox().ready;
+    await conversationOutbox().enqueue(session, "first user request");
+    const initialOutbox = JSON.stringify(conversationOutbox().items(session));
+    const component = view === "panel" ? "LiveConversationPanel" : view === "tile" ? "SessionConversationPane" : "PhoneConversationPane";
+    const module = await ssr.loadModule<Record<string, import("react").ComponentType<any>>>(`/src/${component}.tsx`);
+    const props = { session, machineReachable: true, onClose() {}, swipeEnabled: false, onSwipe() {}, refreshRef: { current: null } };
+    const render = () => act(async () => {
+      mounted.root.render(createElement(module[component]!, props));
+      await flush();
+    });
+    await render();
+    await act(async () => flush());
+    const userRow = mounted.container.querySelector(".history-outgoing-reply");
+    assert.ok(userRow);
+    assert.match(userRow.textContent ?? "", /first user request/);
+    assert.match(mounted.container.textContent ?? "", /No Codex session with ID provider-7/);
+    assert.equal(reads.length, 0);
+    assert.equal(searches.length, 1);
+
+    available = true;
+    await act(async () => { tick(); await flush(); });
+    await act(async () => flush());
+    assert.match(mounted.container.textContent ?? "", /first provider reply/);
+    assert.match(mounted.container.textContent ?? "", /first user request/);
+    assertNoElement(mounted.container, '[role="alert"]', "the initial miss clears after binding");
+    assert.deepEqual(reads, [{ machine: "maple", id: "history-7", direction: "latest" }]);
+    assert.deepEqual(searches, Array(2).fill({ machine: "maple", q: "provider-7", limit: 50 }));
+
+    reply = "later provider reply";
+    await act(async () => { tick(); await flush(); });
+    assert.match(mounted.container.textContent ?? "", /later provider reply/);
+    assert.match(mounted.container.textContent ?? "", /first user request/);
+    assert.equal(searches.length, 2, "bound refreshes read messages without reopening history");
+    assert.equal(JSON.stringify(conversationOutbox().items(session)), initialOutbox, "discovery never rewrites the outgoing row");
+
+    await act(async () => mounted.root.render(null));
+    await render();
+    await act(async () => flush());
+    assert.match(mounted.container.textContent ?? "", /later provider reply/);
+    assert.match(mounted.container.textContent ?? "", /first user request/);
+  });
+}
+
+test("discovery preserves search failures and serializes refreshes until lookup settles", async () => {
+  const mounted = installDom(); cleanups.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([conversationApiMockPlugin()]); cleanups.push(ssr.close);
+  const pending = deferred<HistorySessionsResponse>();
+  let searches = 0;
+  globalThis.__agentConsoleConversationApiMock = {
+    listHistorySessions: async () => {
+      searches++;
+      if (searches === 1) return { ok: false, sessions: [], truncated: false, error: "History search unavailable" };
+      if (searches === 2) return pending.promise;
+      throw new Error("History transport unavailable");
+    },
+    listHistoryMessages: async () => { assert.fail("failed discovery cannot read a conversation"); },
+  };
+  const { LiveConversationPanel } = await loadPanel(ssr);
+  await act(async () => {
+    mounted.root.render(createElement(LiveConversationPanel, { session: liveSession(), onClose() {} }));
+    await flush();
+  });
+  await act(async () => flush());
+  assert.match(mounted.container.textContent ?? "", /History search unavailable/);
+  await act(async () => {
+    mounted.window.dispatchEvent(new mounted.window.Event("focus"));
+    mounted.window.document.dispatchEvent(new mounted.window.Event("visibilitychange"));
+    await flush();
+  });
+  assert.equal(searches, 2, "focus and visibility changes share the pending search");
+  assert.match(mounted.container.textContent ?? "", /History search unavailable/);
+  await act(async () => {
+    pending.resolve({ ok: true, sessions: [], truncated: true });
+    await flush();
+  });
+  assert.match(mounted.container.textContent ?? "", /history scan limit was reached/);
+  await act(async () => { mounted.window.dispatchEvent(new mounted.window.Event("focus")); await flush(); });
+  assert.match(mounted.container.textContent ?? "", /History transport unavailable/);
+  assert.doesNotMatch(mounted.container.textContent ?? "", /No Codex session/);
+});
+
+test("discovery ignores late lookups on identity change and unmount, clearing the previous conversation", async () => {
+  const mounted = installDom(); cleanups.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([conversationApiMockPlugin()]); cleanups.push(ssr.close);
+  const oldLookup = deferred<HistorySessionsResponse>();
+  const unmountedLookup = deferred<HistorySessionsResponse>();
+  const reads: string[] = [];
+  globalThis.__agentConsoleConversationApiMock = {
+    listHistorySessions: async (_machine, options) => {
+      if (options.q === "provider-7") return oldLookup.promise;
+      if (options.q === "provider-9") return unmountedLookup.promise;
+      return { ok: true, sessions: [{ ...historyEntry(), id: "history-8", provider_session_id: "provider-8" }], truncated: false };
+    },
+    listHistoryMessages: async (_machine, id) => {
+      reads.push(id);
+      return { ok: true, messages: [{ id: "a8", role: "assistant", text: "current conversation" }] };
+    },
+  };
+  const { LiveConversationPanel } = await loadPanel(ssr);
+  const render = async (id: string | null) => {
+    await act(async () => {
+      mounted.root.render(createElement(LiveConversationPanel, {
+        session: liveSession({ provider_resume: id ? { provider: "codex", session_id: id } : null }), onClose() {},
+      }));
+      await flush();
+    });
+    await act(async () => flush());
+  };
+  await render("provider-7");
+  await render("provider-8");
+  assert.match(mounted.container.textContent ?? "", /current conversation/);
+  await act(async () => {
+    oldLookup.resolve({ ok: true, sessions: [historyEntry()], truncated: false });
+    await flush();
+  });
+  assert.deepEqual(reads, ["history-8"], "a stale lookup cannot open the previous identity");
+  await render(null);
+  assert.doesNotMatch(mounted.container.textContent ?? "", /current conversation/);
+  await render("provider-9");
+  await act(async () => mounted.root.render(null));
+  await act(async () => {
+    unmountedLookup.resolve({ ok: true, sessions: [{ ...historyEntry(), provider_session_id: "provider-9" }], truncated: false });
+    await flush();
+  });
+  assert.deepEqual(reads, ["history-8"], "unmount cancels discovery before message reads");
+});
 
 test("the live panel finds the session's history entry and opens its latest messages", async () => {
   const mounted = installDom();
