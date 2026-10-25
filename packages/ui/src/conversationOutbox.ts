@@ -339,6 +339,17 @@ export class ConversationOutbox {
       queue.consumedIdle = undefined;
     });
   }
+  /** Remove one uniquely identified definite refusal from this local queue. */
+  async discardRefused(session: Session, id: string, incarnation: string): Promise<boolean> {
+    return this.change(session, queue => {
+      const matches = queue.items.filter(item => item.id === id);
+      if (matches.length !== 1) return false;
+      const [item] = matches;
+      if (item!.incarnation !== incarnation || item!.state !== "refused" || item!.unconfirmed === true) return false;
+      queue.items = queue.items.filter(candidate => candidate !== item);
+      return true;
+    });
+  }
   async deliver(session: Session, reachable: boolean, draftEmpty: () => boolean) {
     const target = this.key(session);
     this.deliveryObservations.set(target, { session, reachable, draftEmpty, generation: nativeConnectionConfigGeneration() });

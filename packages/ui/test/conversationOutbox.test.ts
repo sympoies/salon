@@ -19,6 +19,7 @@ declare global {
   var __outboxHistoryRead: (()=>Promise<HistoryMessagesResponse>)|undefined;
   var __outboxLookup: ((machine:string,id:string,requestId:string,incarnation:string)=>Promise<{ok:boolean;receipt?:PromptReceipt;error?:string}>)|undefined;
   var __outboxInput: ((machine:string,id:string,body:unknown)=>Promise<{ok:boolean;error?:string}>)|undefined;
+  var __outboxSharedItems: unknown[]|undefined;
 }
 
 const heldLocks = new Set<string>();
@@ -43,6 +44,7 @@ const boundary: Plugin = {
         return {...result,receipt:result.receipt===null?undefined:result.receipt??{request_id:body.request_id,session_id:id,session_incarnation:body.expected_session_incarnation,outcome,code:outcome==='submitted'?null:outcome==='unknown'?'structured-prompt-outcome-unknown':result.refusalCode??'provider-refused'}};
       };
       let sharedItems=[];
+      globalThis.__outboxSharedItems=sharedItems;
       export const readSharedOutbox=async()=>({revision:sharedItems.length,items:sharedItems,compose_holds:[]});
       export const admitSharedOutbox=async(target,id,text)=>{
         await globalThis.__outboxSubmit({text,expected_session_incarnation:target.incarnation,request_id:id});
@@ -182,6 +184,28 @@ test("#908 definite delivery refusal keeps the queued item and offers safe retry
     await h.render("idle",2);assert.equal(h.requests.length,1);assert.match(h.queued(),/Delivery refused/);assert.match(h.queued(),/keep this/);
     h.response({ok:true});await h.click("Retry reply");assert.equal(h.requests.length,2);assert.equal(h.queued(),"");
   }finally{await h.close();}
+});
+test("#37 a definitely refused reply from an older incarnation can be discarded locally",async()=>{
+  const factory=new IDBFactory();let h=await mount(factory),other:Awaited<ReturnType<typeof mount>>|undefined;try{
+    h.response({ok:false,error:"Delivery refused"});
+    await h.render("working",1,{session_incarnation:"old-incarnation"});
+    await h.write("legacy refused reply");await h.reply();await h.render("idle",2,{session_incarnation:"old-incarnation"});
+    const old=h.queueModule.conversationOutbox().items(h.session())[0]!;
+    assert.equal(old.state,"refused");assert.equal(h.requests.length,1);
+    const sharedBefore=globalThis.__outboxSharedItems?.slice();
+    await h.render("idle",3,{session_incarnation:"inc-1"});
+    assert.match(h.queued(),/legacy refused reply/);
+    other=await mount(factory);await other.render("idle",1,{session_incarnation:"inc-1"});
+    assert.match(other.queued(),/legacy refused reply/,"another window sees the persisted legacy row");
+    await h.click("Discard refused reply");
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()),[]);
+    await act(async()=>{await (other!.queueModule.conversationOutbox() as unknown as {refresh():Promise<void>}).refresh();});await other.settle();
+    assert.equal(other.queued(),"","another outbox instance sees the persisted local change");
+    assert.deepEqual(globalThis.__outboxSharedItems,sharedBefore,"discard leaves shared outbox rows untouched");
+    assert.equal(h.requests.length,1,"discard does not submit again");
+    await other.close();other=undefined;await h.close();h=await mount(factory);await h.render("idle",1,{session_incarnation:"inc-1"});
+    assert.equal(h.queued(),"","discard persists across remount");assert.equal(h.requests.length,0);
+  }finally{await other?.close();await h.close();}
 });
 test("#908 concurrent durable claims across clients dispatch only once",async()=>{
   const h=await mount();try{
@@ -794,6 +818,11 @@ test("#994 an uncertain reply to a session that stays idle becomes Not confirmed
     assert.equal(h.status("left in the input"),"refused");
     assert.match(h.container.textContent??"",/Not confirmed in the conversation/);
     assert.equal(Boolean(h.button("Retry reply")),true,"Retry is offered");
+    const uncertain=h.queueModule.conversationOutbox().items(h.session())[0]!;
+    assert.equal(Boolean(h.button("Discard refused reply")),false,"an unconfirmed refusal has no Discard action");
+    assert.equal(await h.queueModule.conversationOutbox().discardRefused(h.session(),uncertain.id,uncertain.incarnation),false,
+      "storage also rejects stale Discard attempts for an unconfirmed reply");
+    assert.equal(h.status("left in the input"),"refused");
     await h.render("idle",1,claude);await clock.advance(wait,h.settle);
     assert.equal(h.requests.length,1,"never resent");
     await act(async()=>h.queueModule.conversationOutbox().confirmFromTranscript(h.session(),[userTurn("late","left in the input",Date.now())]));await h.settle();
