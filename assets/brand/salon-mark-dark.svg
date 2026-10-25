@@ -1,7 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="salon-dark-title">
-  <title id="salon-dark-title">Salon folded conversation ribbon</title>
-  <path fill="none" stroke="#a1f5d6" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" d="M14 27c-2 3 0 6 5 8l22 7c4 1 4 4 0 6L28 52"/>
-  <path fill="#38c9a5" d="M22 49 40 40c4-2 8-1 10 3 2 4 0 8-4 10l-17 9c-4 2-8 1-10-3-2-3-1-7 3-10z"/>
-  <path fill="#38c9a5" d="M13 24c-2-4 0-8 4-10L37 6c5-2 9 0 10 4l1 4c1 4-1 7-5 9l-19 9c-5 2-9 0-11-4z"/>
-  <path fill="#59dcb5" opacity=".42" d="m16 25 25-12c2-1 4-1 6 0 0 3-2 5-5 6L21 31c-2 1-4 0-5-2z"/>
+  <title id="salon-dark-title">Salon continuous jade ribbon</title>
+  <defs>
+    <linearGradient id="salon-dark-flow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#189b7d"/>
+      <stop offset=".27" stop-color="#36be97"/>
+      <stop offset=".49" stop-color="#95ebc6"/>
+      <stop offset=".7" stop-color="#41c69b"/>
+      <stop offset="1" stop-color="#11846f"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(3 1) scale(.9)">
+    <path d="M43 12 20 22C12 25 12 30 21 33L43 40C51 43 51 47 43 51L25 59" fill="none" stroke="url(#salon-dark-flow)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
 </svg>
