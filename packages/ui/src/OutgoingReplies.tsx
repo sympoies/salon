@@ -27,7 +27,7 @@ export function OutgoingReplies({ session, messages }: {
   if (items.length === 0) return null;
   return <section ref={section} className="history-outgoing" aria-label="Your replies">
     {error ? <p className="history-error" role="alert">{error}</p> : null}
-    {items.map(item => <article key={item.id} aria-label="You" data-status={item.state === "dispatching" || item.state === "unknown" ? "sent" : item.state}
+    {items.map((item, index) => <article key={`${item.id}:${item.incarnation}:${index}`} aria-label="You" data-status={item.state === "dispatching" || item.state === "unknown" ? "sent" : item.state}
       className="history-message is-user history-outgoing-reply">
       {item.queuedAt === undefined ? null : <time>{timeLabel(item.queuedAt)}</time>}
       <div className="history-outgoing-body"><div className="history-bubble history-outgoing-bubble">
@@ -36,6 +36,10 @@ export function OutgoingReplies({ session, messages }: {
         {item.state === "refused" ? <p className="history-outgoing-note" role="alert">{item.error ?? "This message was not sent."}{" "}
           {item.incarnation === session.session_incarnation ? <button type="button" className="btn ghost" aria-label="Retry reply"
             onClick={() => { void outbox.retry(session, item.id).catch(cause => setError(String(cause))); }}>Retry</button> : null}
+          {item.unconfirmed !== true ? <button type="button" className="btn ghost" aria-label="Discard refused reply"
+            onClick={() => { void outbox.discardRefused(session, item.id, item.incarnation).then(discarded => {
+              if (!discarded) setError("This reply changed in another window and was kept.");
+            }).catch(cause => setError(String(cause))); }}>Discard</button> : null}
         </p> : null}
         {item.incarnation !== session.session_incarnation ? <p className="history-outgoing-note" role="alert">This session restarted. This reply will not be sent to the new session.</p> : null}
       </div>
