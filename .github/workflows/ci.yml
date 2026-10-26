@@ -22,7 +22,7 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository)
     # Private-phase repository-scoped runner; switch to GitHub-hosted before public launch.
     runs-on: [self-hosted, sympoies, salon, ci, ephemeral]
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
