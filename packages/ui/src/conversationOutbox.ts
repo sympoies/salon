@@ -5,6 +5,7 @@ import { apiBase, nativeConnectionConfigGeneration, nativePrincipalIsActive } fr
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { parseTurnStateV1 } from "./sessionActivity.ts";
 import { sessionKey } from "./layout.ts";
+import { providerImageLabelPattern } from "./providerImageLabels.ts";
 import { unwrapPastedContent } from "./pastedContent.ts";
 import { isActivityTurnWaitingPhase } from "@agent-console/shared/activity";
 import type { HistoryMessage, Session } from "./types.ts";
@@ -152,8 +153,7 @@ function replyPart(rest: string, text: string, hasImages = false): string | unde
   const paths = reply.match(IMAGE_PATH)!.map(unquotePath);
   const sourceNeeded = !hasImages && parts.every(part => !part.trim());
   const pattern = parts.map(part => escapeRegExp(part.trim())).reduce((joined, part, index) => {
-    const source = `\\s*\\[Image: source: ${escapeRegExp(paths[index - 1]!)}\\]`;
-    return `${joined}\\s*\\[Image #\\d+\\](?:${source})${sourceNeeded ? "" : "?"}\\s*${part}`;
+    return `${joined}\\s*${providerImageLabelPattern(escapeRegExp(paths[index - 1]!), sourceNeeded)}\\s*${part}`;
   });
   return new RegExp(`^${pattern}`).exec(rest)?.[0].trim();
 }
