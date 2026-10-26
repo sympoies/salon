@@ -574,3 +574,20 @@ test("public last_message uses prompt hygiene, bounded metadata and exact roles"
   assert.deepEqual(normalizeAgentSessionCapabilities({last_message: true}), {last_message: true});
   assert.deepEqual(normalizeAgentSessionCapabilities({last_message: "true"}), {});
 });
+
+test("notice previews strip only strict v1 headers in both public text fields", () => {
+  const header = "<!-- agent-notice:v1 kind=mailbox source=fixture -->";
+  for (const field of ["last_prompt", "last_message"]) {
+    const preview = (text: string) => (projectPublicAgentSession({
+      [field]: { role: "user", text, truncated: false },
+    })[field] as { text: string } | undefined)?.text;
+    assert.equal(preview(`${header}\n\nSynthetic update\nSecond line`), "Notice: Synthetic update");
+    assert.equal(preview(`${header}\r\n\r\nSynthetic update\r\nSecond line`), "Notice: Synthetic update");
+    for (const raw of [header + "\nBody", header.replace(":v1", ":v2") + "\n\nBody", "Ordinary\nmessage"]) {
+      assert.equal(preview(raw), raw.replace(/\s+/g, " ").trim());
+    }
+    assert.equal(preview(`${header}\n\n<system-reminder>hidden</system-reminder>Update\nIgnored`), "Notice: Update");
+    assert.equal(preview(`${header}\n\nBad\u0000body`), undefined);
+    assert.equal(preview(`${header}\n\n${"x".repeat(3000)}`)?.length, 2048);
+  }
+});

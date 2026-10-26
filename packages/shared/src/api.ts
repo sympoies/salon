@@ -1,3 +1,4 @@
+import { parseSessionNotice } from "./parseSessionNotice.ts";
 import { normalizeSessionModelSettings } from "./sessionModel.ts";
 import { normalizeActivityTurnState } from "./activity.ts";
 import {
@@ -351,8 +352,8 @@ const HARNESS_WRAPPER_PATTERN = new RegExp(
 
 /**
  * Public projection of the daemon `last_prompt` preview. Harness wrapper blocks
- * are dropped, then the remainder is flattened to a single line (newlines/tabs
- * collapse to spaces) for a one-line card preview, control chars rejected,
+ * are dropped. Strict v1 notices use a marked first body line; other text is
+ * flattened to a single line (newlines/tabs collapse to spaces) for a one-line card preview, control chars rejected,
  * unknown members dropped, and text length re-capped. Returns `undefined` for
  * anything empty or malformed — including a prompt that was nothing but
  * scaffolding — so the field is simply omitted.
@@ -361,8 +362,11 @@ function normalizePublicLastPrompt(value: unknown): Record<string, unknown> | un
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const raw = value as Record<string, unknown>;
   if (typeof raw.text !== "string") return undefined;
-  const text = raw.text.replace(HARNESS_WRAPPER_PATTERN, " ").replace(/\s+/g, " ").trim();
-  if (text.length === 0 || /\p{Cc}/u.test(text)) return undefined;
+  const notice = parseSessionNotice(raw.text);
+  const body = notice ? notice.body.split(/\r?\n/, 1)[0]! : raw.text;
+  const cleaned = body.replace(HARNESS_WRAPPER_PATTERN, " ").replace(/\s+/g, " ").trim();
+  if (cleaned.length === 0 || /\p{Cc}/u.test(cleaned)) return undefined;
+  const text = notice ? `Notice: ${cleaned}` : cleaned;
   const submittedAt = publicSessionString(raw.submitted_at, 64);
   return {
     text: text.length > MAX_PUBLIC_LAST_PROMPT ? text.slice(0, MAX_PUBLIC_LAST_PROMPT) : text,

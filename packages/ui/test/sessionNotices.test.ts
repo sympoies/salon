@@ -3,7 +3,7 @@ import { afterEach, test } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { parseSessionNotice } from "../src/parseSessionNotice.ts";
+import { parseSessionNotice } from "@agent-console/shared";
 import { ordinaryMessages, validNotices, header } from "./support/sessionNoticeFixtures.ts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createUiSsrHarness } from "./support/ssr.ts";
