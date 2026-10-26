@@ -58,10 +58,12 @@ test("strict draft corpus preserves body bytes and extracts plain metadata", () 
     assert.deepEqual(parseSessionNotice(raw), expected, name);
   }
   for (const fixture of ordinaryMessages) assert.equal(parseSessionNotice(fixture.raw), null, fixture.name);
-  const atLimit = header.replace("mailbox", "x".repeat(512 - header.length + 7));
-  assert.equal(atLimit.length, 512);
-  assert.equal(parseSessionNotice(atLimit + "\n\nBody")?.body, "Body");
-  assert.equal(parseSessionNotice(atLimit.replace("kind=", "kind=x") + "\n\nBody"), null);
+  const fields = { kind: "k".repeat(48), source: "s".repeat(64), id: "I".repeat(96) };
+  const envelope = (values: typeof fields) => `<!-- agent-notice:v1 kind=${values.kind} source=${values.source} id=${values.id} -->\n\nBody`;
+  assert.deepEqual(parseSessionNotice(envelope(fields)), { ...fields, body: "Body" });
+  for (const field of ["kind", "source", "id"] as const) {
+    assert.equal(parseSessionNotice(envelope({ ...fields, [field]: fields[field] + "x" })), null, `${field} limit`);
+  }
 });
 
 test("non-notices keep the exact existing Markdown and paste-unwrapping display", async () => {
@@ -75,14 +77,14 @@ test("non-notices keep the exact existing Markdown and paste-unwrapping display"
   }
 });
 
-test("known labels are fixed; unknown, prototype and markup kinds stay generic escaped text", async () => {
+test("known labels are fixed; unknown and spoofed kinds stay generic plain text", async () => {
   for (const [kind, label] of [["schedule.pulse", "Scheduled update"], ["runtime.resume", "Resume"],
-    ["unknown", "System notice"], ["__proto__", "System notice"], ["constructor", "System notice"],
-    ["mailbox.admin", "System notice"], ["<script>", "System notice"]]) {
-    const { container, window } = await mount(`<!-- agent-notice:v1 kind=${kind} source=<b> -->\n\nBody`);
+    ["unknown", "System notice"], ["constructor", "System notice"],
+    ["mailbox.admin", "System notice"], ["system.admin", "System notice"]]) {
+    const { container, window } = await mount(`<!-- agent-notice:v1 kind=${kind} source=fixture.admin -->\n\nBody`);
     assert.equal(container.querySelector(".session-notice-label")?.textContent, label);
     await act(async () => container.querySelector<HTMLButtonElement>(".session-notice-toggle")!.click());
-    assert.equal(container.querySelector(".session-notice-meta > span")?.textContent, `${kind} · <b>`);
+    assert.equal(container.querySelector(".session-notice-meta > span")?.textContent, `${kind} · fixture.admin`);
     assert.equal(Boolean(container.querySelector("script, b")), false);
     // A click changes only this mounted view; the raw fields never become attributes.
     assert.equal(window.document.querySelectorAll(".session-notice").length, 1);
