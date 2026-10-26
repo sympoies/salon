@@ -37,7 +37,10 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
           const messages=[
             {id:'landscape',role:'user',text:'',images:[image(0)]},
             {id:'portrait',role:'user',text:'',images:[image(1)]},
-            {id:'mixed',role:'user',text:'Synthetic caption',images:[image(0)]},
+            {id:'labels',role:'user',text:'[Image #1]',images:[image(0)]},
+            {id:'source',role:'user',text:'[Image #1]\\n[Image: source: /fixtures/sample.png]',images:[image(1)]},
+            {id:'mixed',role:'user',text:'[Image #1] [Image: source: /fixtures/sample.png] Synthetic caption',images:[image(0)]},
+            {id:'plain',role:'user',text:'[Image #1]',images:[]},
           ].map(m=>({...m,timestamp:'2026-01-01T12:00:00'}));
           createRoot(document.querySelector('#root')).render(React.createElement(HistoryConversationView,{
             conversation:{session:{machine:'fixture',id:'sample'},messages,latestMessagePaging:true,
@@ -46,18 +49,19 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
             else if(--attempts)setTimeout(check,10);else reject(Error('fixture did not settle'));}check()});
           const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}};
           void (async()=>{try {
-            await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===3 &&
+            await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===5 &&
               [...document.images].every(img=>img.complete && img.naturalWidth));
             await new Promise(resolve=>setTimeout(resolve,50));
             const boxes=[...document.querySelectorAll('article')].map(article=>{
               const bubble=article.querySelector('.history-bubble');
               const image=bubble.querySelector('img');const time=article.querySelector('time');
               const style=getComputedStyle(bubble),metadata=getComputedStyle(time);
-              return {bubble:rect(bubble),image:rect(image),time:rect(time),
+              return {bubble:rect(bubble),image:image ? rect(image) : null,time:rect(time),
                 text:rect(bubble.querySelector('.message-markdown')),
                 textBackground:getComputedStyle(bubble.querySelector('.message-markdown')).backgroundColor,
                 background:style.backgroundColor,border:style.borderWidth,radius:style.borderRadius,
-                imageRadius:getComputedStyle(image.parentElement).borderRadius,
+                imageRadius:image ? getComputedStyle(image.parentElement).borderRadius : null,
+                caption:bubble.querySelector('.message-markdown').textContent,
                 metadataColor:metadata.color,metadataBackground:metadata.backgroundColor};
             });
             document.querySelector('#measurement').textContent=JSON.stringify({boxes,
@@ -100,7 +104,7 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
         assert.equal(measured.error,undefined);
         assert.equal(measured.viewportWidth,width);
         assert.equal(measured.overflow,false,"attachments never overflow the column");
-        for (const box of measured.boxes.slice(0,2)) {
+        for (const box of measured.boxes.slice(0,4)) {
           assert.ok(Math.abs(box.bubble.w-box.image.w)<1,"image-only bubble width equals image");
           assert.ok(Math.abs(box.bubble.h-box.image.h)<1,"image-only bubble height equals image");
           assert.equal(box.background,"rgba(0, 0, 0, 0)","no colored bubble frame");
@@ -112,7 +116,10 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
           assert.equal(box.metadataColor,"rgb(255, 255, 255)");
           assert.equal(box.metadataBackground,"rgba(0, 0, 0, 0.75)","contrast on light and dark pixels");
         }
-        const mixed=measured.boxes[2];
+        for (const box of measured.boxes.slice(0,4)) assert.equal(box.caption,"","provider labels do not render as captions");
+        assert.equal(measured.boxes[5].caption,"[Image #1]","text without images is unchanged");
+        const mixed=measured.boxes[4];
+        assert.equal(mixed.caption,"Synthetic caption","only user words remain in the caption");
         assert.equal(mixed.background,"rgba(0, 0, 0, 0)","mixed image has no colored surrounding frame");
         assert.equal(mixed.border,"0px");
         assert.equal(mixed.textBackground,"rgb(42, 84, 140)","caption keeps its normal user bubble color");
