@@ -893,6 +893,37 @@ test("#1004 image paths in a reply match [Image #N] in the proving turn",async()
     assert.equal(proven("what is on this screen","[Image #1] what is on this screen"),false,"an image the reply did not carry");
   }finally{await h.close();}
 });
+test("#54 image-bearing turns confirm only a unique matching attachment reply",async()=>{
+  const h=await mount();try{
+    const {transcriptProof}=h.queueModule,at=Date.now();
+    const reply=(id:string,text:string)=>({id,text,requestId:id,incarnation:"inc-1",state:"delivered" as const,attemptedAt:at});
+    const imageTurn={...userTurn("image-turn","[Image #1]",at+1000),images:[{id:"synthetic-image"}]};
+    const path=reply("image","'/attachments/example.png'\n");
+    const proof=transcriptProof([path],[imageTurn]);
+    assert.deepEqual([...proof.keys()],["image"],"image metadata confirms a path-only reply");
+    assert.deepEqual([...transcriptProof([reply("caption",path.text+"Describe this")],
+      [{...imageTurn,text:"[Image #1] Describe this"}]).keys()],["caption"],"caption and image");
+    assert.equal(transcriptProof([reply("other","a different reply")],[imageTurn]).size,0,"unrelated image cannot clear text");
+    assert.equal(transcriptProof([reply("other",path.text+"Different caption")],
+      [{...imageTurn,text:"[Image #1] Describe this"}]).size,0,"unrelated caption cannot clear an attachment reply");
+    assert.equal(transcriptProof([path],[{...imageTurn,timestamp:new Date(at-1).toISOString()}]).size,0,"earlier turn");
+    assert.equal(transcriptProof([path,reply("other","'/attachments/other.png'")],[imageTurn]).size,0,"ambiguous attachments");
+    assert.equal(transcriptProof([path,reply("duplicate",path.text)],[imageTurn]).size,0,"identical pending attachments are ambiguous");
+    assert.equal(transcriptProof([path],[{...imageTurn,images:[]}]).size,0,"a label alone is not image evidence");
+    assert.equal(transcriptProof([path],[{...imageTurn,images:[...imageTurn.images,...imageTurn.images]}]).size,0,"image count must match");
+    assert.equal(transcriptProof([path],[{...imageTurn,text:"[Image #1] [Image: source: /attachments/other.png]"}]).size,0,"a different named source");
+    const codex={...imageTurn,text:""};
+    assert.deepEqual([...transcriptProof([path],[codex]).keys()],["image"],"Codex omits image paths from text");
+    assert.deepEqual([...transcriptProof([reply("caption",path.text+"Describe this")],
+      [{...codex,text:"Describe this"}]).keys()],["caption"],"Codex preserves the caption");
+    assert.equal(transcriptProof([reply("other",path.text+"Different caption")],
+      [{...codex,text:"Describe this"}]).size,0,"Codex unrelated caption");
+    const later=reply("later-text","Next reply");
+    assert.deepEqual([...transcriptProof([path,later],[imageTurn,userTurn("later-turn",later.text,at+2000)]).keys()],
+      ["image","later-text"],"image echo clears before later confirmed text");
+    assert.equal(transcriptProof([reply("later",path.text)],[imageTurn],[...proof.values()]).size,0,"the turn is spent");
+  }finally{await h.close();}
+});
 // #1005 review F1: of two pending screenshot replies, the turn naming one
 // source proves only that one.
 test("#1004 a turn naming one image's source proves only that reply",async()=>{

@@ -109,7 +109,20 @@ export function transcriptProof(items: readonly QueuedReply[], messages: readonl
     const parts = spent.get(message.id) ?? [];
     if (message.role !== "user" || !Number.isFinite(at) || parts.includes("")) continue;
     const candidates = pending.filter(item => !matched.has(item.id) && attemptTime(item) <= at);
-    const used = candidates.length > 0 ? coverTurn(transcriptText(unwrapPastedContent(message.text)), candidates, parts) : undefined;
+    const text = transcriptText(unwrapPastedContent(message.text));
+    const used = candidates.length > 0 ? coverTurn(text, candidates, parts) : undefined;
+    if (!used && parts.length === 0 && message.images?.length) {
+      // Providers may replace paths with labels (Claude) or omit them (Codex).
+      // Require one complete, unambiguous reply and matching image count. Spend
+      // the whole turn so it cannot later confirm another pending reply.
+      const images = candidates.filter(item => {
+        const paths = imagePaths(item.text);
+        if (paths.length !== message.images!.length) return false;
+        return replyPart(text, item.text, true) === text
+          || transcriptText(item.text.replace(IMAGE_PATH, "")) === text;
+      });
+      if (images.length === 1) matched.set(images[0]!.id, message.id);
+    }
     // Spend the transcript text a reply used, which may show its images as
     // "[Image #N]", so the turn can still cover it as it grows (#1005 F2).
     for (const {item, part} of used ?? []) matched.set(item.id, provenKey(message.id, part));
@@ -128,16 +141,16 @@ const unquotePath = (path: string) => path.startsWith("'") ? path.slice(1, -1).r
 /**
  * The start of the turn that is this reply, literally or with its images shown
  * as "[Image #N]". A named source must be that image, in order. A reply with
- * no text of its own is tied to a turn only by its images' sources (#1005 F1).
+ * no text of its own needs named sources unless the turn carries images.
  */
-function replyPart(rest: string, text: string): string | undefined {
+function replyPart(rest: string, text: string, hasImages = false): string | undefined {
   const reply = transcriptText(text);
   if (!reply) return undefined;
   if (rest.startsWith(reply)) return reply;
   const parts = reply.split(IMAGE_PATH);
   if (parts.length === 1) return undefined;
   const paths = reply.match(IMAGE_PATH)!.map(unquotePath);
-  const sourceNeeded = parts.every(part => !part.trim());
+  const sourceNeeded = !hasImages && parts.every(part => !part.trim());
   const pattern = parts.map(part => escapeRegExp(part.trim())).reduce((joined, part, index) => {
     const source = `\\s*\\[Image: source: ${escapeRegExp(paths[index - 1]!)}\\]`;
     return `${joined}\\s*\\[Image #\\d+\\](?:${source})${sourceNeeded ? "" : "?"}\\s*${part}`;

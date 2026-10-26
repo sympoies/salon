@@ -351,6 +351,40 @@ for (const provider of ["codex", "claude"] as const) test(`a submitted ${provide
   } finally { await h.close(); }
 });
 
+for (const provider of ["claude", "codex"] as const) test(`#54 submitted ${provider} image replies hand over durably without clearing unrelated replies`, async () => {
+  const factory = new IDBFactory();
+  let h = await fixture(factory, false);
+  try {
+    const id = crypto.randomUUID(), other = crypto.randomUUID();
+    const item = (id: string, text: string): SharedOutboxItem => ({
+      id, text, state: "submitted", revision: 3, session_incarnation: "inc-1",
+      created_at: 1, updated_at: 2, request_id: id, edit_hold: null, error_code: null,
+      receipt: { request_id: id, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null },
+    });
+    const path = "'/attachments/example.png'";
+    await h.ownServer({ revision: 3, compose_holds: [], items: [item(id, path), item(other, "Keep this reply")] });
+    await h.client.sync(h.target);
+    const active = { ...session, agent: provider, provider_resume: { provider, session_id: "fixture-thread" } };
+    await h.showReplies(active, []);
+    assert.ok(h.container.textContent?.includes(path), "receipt alone keeps the echo");
+    const turn: HistoryMessage = { id: "image-turn", role: "user", text: provider === "claude" ? "[Image #1]" : "",
+      images: [{ id: "synthetic-image" }], timestamp: new Date(3).toISOString() };
+    await h.showReplies(active, [turn]);
+    assert.ok(!h.container.textContent?.includes(path), "image turn takes over the echo");
+    assert.ok(h.container.textContent?.includes("Keep this reply"), "unrelated submitted reply remains visible");
+    await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
+    await h.showReplies(active, []);
+    assert.ok(!h.container.textContent?.includes(path), "handover survives restart and unloaded history");
+    assert.ok(h.container.textContent?.includes("Keep this reply"));
+    const second = crypto.randomUUID();
+    await h.ownServer({ revision: 4, compose_holds: [], items: [item(id, path), item(second, path)] });
+    h.online(true); await h.client.sync(h.target); await h.showReplies(active, [turn]);
+    assert.equal(h.client.state(h.target).snapshot.items[1]?.id, second);
+    assert.ok(h.container.textContent?.includes(path), "the duplicate stays visible");
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 1, "spent image turn cannot confirm another identical reply");
+  } finally { await h.close(); }
+});
+
 test("a settled transcript part cannot hide another identical submitted reply", async () => {
   const h = await fixture(new IDBFactory(), false);
   try {
