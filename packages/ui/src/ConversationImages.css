@@ -2,7 +2,7 @@
 .history-message:has(.conversation-images) { container-type:inline-size; --preview-width:66cqw; }
 .history-bubble:has(> .conversation-images) { width:fit-content; max-width:min(100%,var(--preview-width)); padding:0; }
 .history-bubble:has(> .conversation-images) > .message-markdown:not(:empty) { padding:8px 12px; }
-.history-bubble.is-image-only { position:relative; border:0; border-radius:10px; background:transparent; }
+.history-message > .history-bubble.is-image-only { position:relative; border:0; border-radius:10px; background:transparent; }
 .history-bubble.is-image-only > .message-markdown:empty { display:none; }
 .history-bubble.is-image-only > .conversation-images { margin-top:0; }
 .history-bubble.is-image-only > time { position:absolute; right:4px; bottom:4px; padding:2px 5px; border-radius:4px; color:#fff; background:rgba(0,0,0,.75); font-size:var(--text-2xs); font-variant-numeric:tabular-nums; pointer-events:none; }

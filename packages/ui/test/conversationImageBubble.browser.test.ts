@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -21,6 +21,7 @@ test("image-only messages shrink to previews and contain readable metadata", asy
         return `import React from 'react';
           import {createRoot} from 'react-dom/client';
           import {HistoryConversationView} from '/src/HistoryConversation.tsx';
+          import '/src/styles.css';
           const sizes=[[1600,600],[600,1000],[32,24]];
           const blobs=sizes.map(([w,h],i)=>{
             const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
@@ -69,7 +70,8 @@ test("image-only messages shrink to previews and contain readable metadata", asy
   const output = Array.isArray(bundled) ? bundled[0] : bundled;
   assert.ok(output && "output" in output);
   const code = output.output.filter(item=>item.type === "chunk").map(item=>item.code).join("\n");
-  const css = ["styles.css","ConversationImages.css"].map(name=>readFileSync(new URL(`../src/${name}`,import.meta.url),"utf8")).join("\n");
+  // Use Vite's emitted CSS order, matching the application entrypoint.
+  const css = output.output.filter(item=>item.type === "asset" && item.fileName.endsWith(".css")).map(item=>String(item.source)).join("\n");
   const temp = mkdtempSync(join(tmpdir(),"conversation-image-sizing-"));
   const evidence = process.env.AGENT_CONSOLE_UI_SCREENSHOT_DIR;
   try {
