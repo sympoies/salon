@@ -7,5 +7,5 @@ export function providerImageLabelPattern(source = "[^\\]\\r\\n]+", sourceRequir
 export function imageCaption(text: string, imageCount: number): string {
   if (!imageCount) return text;
   let remaining = imageCount;
-  return text.replace(new RegExp(providerImageLabelPattern(), "g"), label => remaining-- > 0 ? "" : label).trim();
+  return text.replace(new RegExp(providerImageLabelPattern(), "g"), label => remaining-- > 0 ? "" : label);
 }
