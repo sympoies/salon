@@ -71,7 +71,7 @@ const MESSAGE_MARKDOWN_OPTIONS: MarkdownToJSX.Options = {
 };
 
 /** Text the parser could not render still reads as the original message. */
-class MessageMarkdownBoundary extends Component<{ readonly text: string; readonly children: ReactNode }, { readonly failed: boolean }> {
+export class MessageMarkdownBoundary extends Component<{ readonly text: string; readonly children: ReactNode }, { readonly failed: boolean }> {
   override state = { failed: false };
 
   static getDerivedStateFromError() {
