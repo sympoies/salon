@@ -4,7 +4,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import type { Plugin } from "vite";
 import { makeSession } from "./fixtures.ts";
-import { createUiSsrHarness } from "./ssr.ts";
+import { createUiSsrHarness, renderComponent } from "./ssr.ts";
 
 export type NoticeSurface = "dashboard" | "shell";
 const machine = "very-long-production-machine-name";
@@ -13,9 +13,12 @@ const machine = "very-long-production-machine-name";
 export async function renderNoticeSurface(surface: NoticeSurface, width: number, connection?: {
   readonly restore: boolean;
   readonly focused?: boolean;
+  readonly phoneFocusCounts?: boolean;
+  readonly macTitleBar?: boolean;
+  readonly inspectClear?: (container: HTMLElement, phase: "initial" | "dismissed") => void;
   readonly inspect?: (container: HTMLElement, phase: "unreachable" | "restored") => void;
 }): Promise<string> {
-  const window = new Window({ url: "http://localhost", width, height: 800 });
+  const window = new Window({ url: connection?.macTitleBar ? "http://tauri.localhost" : "http://localhost", width, height: 800 });
   const globals = { window, document: window.document, Element: window.Element, HTMLElement: window.HTMLElement,
     HTMLInputElement: window.HTMLInputElement, HTMLSelectElement: window.HTMLSelectElement,
     __agentConsoleNoticePoll: undefined, __agentConsoleNoticeOutage: false, localStorage: window.localStorage, navigator: window.navigator, IS_REACT_ACT_ENVIRONMENT: true };
@@ -64,9 +67,14 @@ export async function renderNoticeSurface(surface: NoticeSurface, width: number,
       await act(async () => root.render(createElement(ShellPage, { machines: [machine], onExit() {} })));
       await act(async () => [...container.querySelectorAll("button")].find(button => button.textContent === "Reconnect")!.click());
     } else {
+      if (connection?.macTitleBar) {
+        const { MacTitleBar } = await harness.loadModule<typeof import("../../src/MacTitleBar.tsx")>("/src/MacTitleBar.tsx");
+        window.document.documentElement.dataset.macTitlebar = "true";
+        container.insertAdjacentHTML("beforebegin", renderComponent(MacTitleBar, {}));
+      }
       const { Dashboard } = await harness.loadModule<typeof import("../../src/Dashboard.tsx")>("/src/Dashboard.tsx");
       await act(async () => root.render(createElement(Dashboard, { active: true, machines: [machine], enabledMachines: [machine], machineColors: {},
-        defaultAutoResume: false, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true, onDebug() {}, onUsage() {}, onSettings() {} })));
+        phoneFocusCounts: connection?.phoneFocusCounts, defaultAutoResume: false, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true, onDebug() {}, onUsage() {}, onSettings() {} })));
       const tick = { signal: new AbortController().signal, isCurrent: () => true };
       const poll = () => (globalThis as unknown as { __agentConsoleNoticePoll: (tick: object) => Promise<void> }).__agentConsoleNoticePoll(tick);
       if (connection?.focused) {
@@ -77,18 +85,24 @@ export async function renderNoticeSurface(surface: NoticeSurface, width: number,
         await act(async () => open.click());
         assert.ok(container.querySelector(".terminal-slot.is-focused"), "card opens the actual focused session");
       }
+      connection?.inspectClear?.(window.document.body as unknown as HTMLElement, "initial");
       if (connection) (globalThis as unknown as { __agentConsoleNoticeOutage: boolean }).__agentConsoleNoticeOutage = true;
       await act(poll);
       await act(poll);
-      connection?.inspect?.(container as unknown as HTMLElement, "unreachable");
+      connection?.inspect?.(window.document.body as unknown as HTMLElement, "unreachable");
       if (connection?.restore) {
         (globalThis as unknown as { __agentConsoleNoticeOutage: boolean }).__agentConsoleNoticeOutage = false;
         await act(poll);
-        connection.inspect?.(container as unknown as HTMLElement, "restored");
+        connection.inspect?.(window.document.body as unknown as HTMLElement, "restored");
       }
     }
-    assert.ok(container.querySelector(".connection-notice"), `${surface} transport failure renders its notice`);
-    return container.innerHTML;
+    assert.ok(window.document.querySelector(".connection-notice"), `${surface} transport failure renders its notice`);
+    const markup = window.document.body.innerHTML;
+    if (connection?.inspectClear) {
+      await act(async () => window.document.querySelector<HTMLElement>('[aria-label="Dismiss status notice"]')!.click());
+      connection.inspectClear(window.document.body as unknown as HTMLElement, "dismissed");
+    }
+    return markup;
   } finally {
     await act(async () => root.unmount());
     await harness.close();
