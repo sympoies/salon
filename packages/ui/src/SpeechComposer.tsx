@@ -223,8 +223,13 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
       setPhase("sending");
       setError("");
       try {
-        await onSendTranscript(`${VOICE_PROMPT_TAG}${edited}`);
-        if (generation.current === currentGeneration) close();
+        const sent = await onSendTranscript(`${VOICE_PROMPT_TAG}${edited}`);
+        if (generation.current !== currentGeneration) return;
+        if (sent) close();
+        else {
+          setPhase("review");
+          setError("Reply was not sent. The transcript remains in your reply draft.");
+        }
       } catch (cause) {
         if (generation.current !== currentGeneration) return;
         setPhase("review");

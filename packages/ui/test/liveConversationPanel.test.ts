@@ -862,7 +862,10 @@ test('a failed voice reply keeps the tagged transcript in the reply composer for
   assert.equal(panel.textarea().value, "'report.txt'\n[語音] reviewed voice reply");
   assert.match(panel.container.textContent ?? '', /Local storage unavailable/);
   assert.deepEqual(requests[0], ['maple', 'hs-7', { text: "'report.txt'\n[語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
-  assertNoElement(panel.window.document, '[role="dialog"][aria-label="Voice prompt"]');
+  const dialog = panel.window.document.querySelector('[role="dialog"][aria-label="Voice prompt"]');
+  assert.ok(dialog, 'failed admission keeps the review dialog open');
+  assert.match(dialog.textContent ?? '', /not sent.*remains in your reply draft/i);
+  await act(async () => { findButton(dialog, 'Cancel').click(); await flush(); });
   await panel.send();
   assert.equal(panel.textarea().value, '');
   assert.equal(attempts, 2);
