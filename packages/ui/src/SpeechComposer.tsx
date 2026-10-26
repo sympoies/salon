@@ -21,7 +21,7 @@ function recordingMimeType(): string | undefined {
     .find((type) => MediaRecorder.isTypeSupported(type));
 }
 
-export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, openRequestToken = 0, showTrigger = true, targetLabel, onTranscript, onOpenChange }: {
+export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, openRequestToken = 0, showTrigger = true, targetLabel, onTranscript, onSendTranscript, onOpenChange }: {
   readonly machine: string;
   readonly id: string;
   readonly sessionIncarnation: string;
@@ -29,8 +29,10 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   readonly openRequestToken?: number;
   readonly showTrigger?: boolean;
   readonly targetLabel?: string;
-  /** Fill a caller-owned draft instead of submitting directly to the agent. */
+  /** Fill a caller-owned draft for editing instead of sending it. */
   readonly onTranscript?: (text: string) => void;
+  /** Send through a caller-owned reply path that also retains failed drafts. */
+  readonly onSendTranscript?: (text: string, expectedSessionIncarnation: string) => Promise<boolean>;
   readonly onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -40,6 +42,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   const [phase, setPhase] = useState<Phase>("ready");
   const [seconds, setSeconds] = useState(0);
   const [text, setText] = useState("");
+  const [replyRetained, setReplyRetained] = useState(false);
   const [language, setLanguage] = useState<string | null>(null);
   const [error, setError] = useState("");
   const active = useRef<ActiveRecording | null>(null);
@@ -71,6 +74,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     setOpen(false);
     setPhase("ready");
     setText("");
+    setReplyRetained(false);
     setError("");
   };
 
@@ -91,6 +95,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     openRef.current = true;
     setOpen(true);
     setError("");
+    setReplyRetained(false);
     setLoadingProviders(true);
     void getSpeechProviders().then((items) => {
       if (generation.current !== currentGeneration) return;
@@ -216,7 +221,26 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   const send = async () => {
     const currentGeneration = generation.current;
     const edited = text.trim();
-    if (!edited) return;
+    if (!edited || replyRetained) return;
+    if (onSendTranscript) {
+      setPhase("sending");
+      setError("");
+      try {
+        const sent = await onSendTranscript(`${VOICE_PROMPT_TAG}${edited}`, draftIncarnation.current);
+        if (generation.current !== currentGeneration) return;
+        if (sent) close();
+        else {
+          setReplyRetained(true);
+          setPhase("review");
+          setError("Reply was not sent. The transcript remains in your reply draft.");
+        }
+      } catch (cause) {
+        if (generation.current !== currentGeneration) return;
+        setPhase("review");
+        setError(cause instanceof Error ? cause.message : "The reply could not be sent.");
+      }
+      return;
+    }
     if (onTranscript) {
       onTranscript(`${VOICE_PROMPT_TAG}${edited}`);
       close();
@@ -248,6 +272,13 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     }
   };
 
+  const insert = () => {
+    const edited = text.trim();
+    if (!edited || !onTranscript) return;
+    onTranscript(`${VOICE_PROMPT_TAG}${edited}`);
+    close();
+  };
+
   const onDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.nativeEvent.isComposing) return;
     const target = event.target as HTMLElement;
@@ -272,8 +303,8 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
       {open ? createPortal(
         <Modal androidBackEntry={`voice-prompt-${machine}-${id}`} onClose={close} busy={phase === "sending"} className="speech-modal" ariaLabel="Voice prompt" onDialogKeyDown={onDialogKeyDown}>
           <h2>Voice prompt</h2>
-          <p>Record up to {providers.find((item) => item.id === providerId)?.max_duration_seconds ?? 90} seconds. Review the transcript before {onTranscript ? "adding it to your reply" : `sending it to ${targetLabel ?? machine}`}.</p>
-          <p className="speech-hint">Press Enter to start or stop recording, then Enter to {onTranscript ? "use" : "send"} the reviewed transcript. Escape closes this dialog.</p>
+          <p>Record up to {providers.find((item) => item.id === providerId)?.max_duration_seconds ?? 90} seconds. Review the transcript before {onSendTranscript ? "sending your reply" : onTranscript ? "adding it to your reply" : `sending it to ${targetLabel ?? machine}`}.</p>
+          <p className="speech-hint">Press Enter to start or stop recording, then Enter to {onTranscript && !onSendTranscript ? "use" : "send"} the reviewed transcript. Escape closes this dialog.</p>
           {providers.length > 1 ? (
             <label>Speech service
               <select value={providerId} disabled={phase === "recording" || phase === "transcribing" || phase === "sending"} onChange={(event) => setProviderId(event.target.value)}>
@@ -288,16 +319,17 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
           {phase === "transcribing" ? <p role="status">Transcribing…</p> : null}
           {phase === "review" ? (
             <label htmlFor="speech-transcript">Transcript {language ? `· ${language}` : ""}
-              <textarea id="speech-transcript" value={text} onChange={(event) => setText(event.target.value)} rows={7} maxLength={12000} />
+              <textarea id="speech-transcript" value={text} onChange={(event) => setText(event.target.value)} rows={7} maxLength={12000} disabled={replyRetained} />
             </label>
           ) : null}
           {phase === "review" ? <p className="speech-hint">Check negation, commands, filenames, and paths before sending. A voice-input tag is added so the agent knows this came from speech.</p> : null}
           {error ? <p className="speech-error" role="alert">{error}</p> : null}
           <div className="modal-actions">
-            <button type="button" className="btn ghost" onClick={close} disabled={phase === "sending"}>Cancel</button>
+            <button type="button" className="btn ghost" onClick={close} disabled={phase === "sending"}>{replyRetained ? "Return to draft" : "Cancel"}</button>
             {phase === "recording" ? <button type="button" className="btn" onClick={stopTracks}>Stop recording</button> : null}
-            {phase === "ready" || phase === "review" ? <button type="button" className="btn" onClick={() => void start()} disabled={!providerId}>Record{phase === "review" ? " again" : ""}</button> : null}
-            {phase === "review" ? <button type="button" className="btn primary" onClick={() => void send()} disabled={!text.trim()}>{onTranscript ? "Use transcript" : "Send to agent"}</button> : null}
+            {phase === "ready" || (phase === "review" && !replyRetained) ? <button type="button" className="btn" onClick={() => void start()} disabled={!providerId}>Record{phase === "review" ? " again" : ""}</button> : null}
+            {phase === "review" && !replyRetained && onTranscript ? <button type="button" className="btn" onClick={insert} disabled={!text.trim()}>Insert to edit</button> : null}
+            {phase === "review" && !replyRetained ? <button type="button" className="btn primary" onClick={() => void send()} disabled={!text.trim()}>{onTranscript && !onSendTranscript ? "Use transcript" : "Send"}</button> : null}
           </div>
         </Modal>, document.body,
       ) : null}

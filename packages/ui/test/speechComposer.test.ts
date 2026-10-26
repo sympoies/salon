@@ -134,11 +134,11 @@ test("voice prompt records, exposes an editable transcript, and sends only on co
     await click("Record");
     await act(async () => resolveCapture?.({ getTracks: () => [{ stop: () => {} }] } as MediaStream));
     await click("Stop recording");
-    await click("Send to agent");
+    await click("Send");
     assert.match(window.document.querySelector('[role="alert"]')?.textContent ?? "", /may have been sent.*queued message/);
     assert.equal((window.document.querySelector("#speech-transcript") as HTMLTextAreaElement | null)?.value, "busy session prompt");
     promptAnswer = "queued";
-    await click("Send to agent");
+    await click("Send");
     assertNoElement(window.document, '[role="dialog"][aria-label="Voice prompt"]');
 
     let pendingSignal: AbortSignal | undefined;
@@ -163,6 +163,7 @@ test("voice prompt records, exposes an editable transcript, and sends only on co
     assert.equal(requests.filter((request) => request.url.includes("/prompt")).length, 1);
 
     const drafts: string[] = [];
+    const sent: string[] = [];
     setFetchMock(async (url) => {
       if (url === "/api/speech/providers") return jsonResponse({ ok: true, data: { providers: [{ id: "summit", label: "Speech", max_duration_seconds: 90, max_bytes: 8388608 }] } });
       assert.equal(url, "/api/speech/summit/transcriptions", "draft mode never calls the prompt API");
@@ -171,14 +172,49 @@ test("voice prompt records, exposes an editable transcript, and sends only on co
     await act(async () => root.render(createElement(SpeechComposer, {
       machine: "mesa", id: "session-1", sessionIncarnation: "inc-2", onBeforeOpen: () => {},
       onTranscript: (text) => drafts.push(text),
+      onSendTranscript: async (text) => { sent.push(text); return true; },
     })));
     await click("Voice");
     await click("Record");
     await act(async () => resolveCapture?.({ getTracks: () => [{ stop: () => {} }] } as MediaStream));
     await click("Stop recording");
     assert.deepEqual(drafts, []);
-    await click("Use transcript");
+    await pressEnter();
+    assert.deepEqual(sent, ["[語音] reviewed voice reply"], "Enter sends the reviewed transcript through the reply path");
+    assert.deepEqual(drafts, [], "sending does not insert a duplicate draft");
+    assertNoElement(window.document, '[role="dialog"][aria-label="Voice prompt"]');
+
+    await click("Voice");
+    await click("Record");
+    await act(async () => resolveCapture?.({ getTracks: () => [{ stop: () => {} }] } as MediaStream));
+    await click("Stop recording");
+    await click("Insert to edit");
     assert.deepEqual(drafts, ["[語音] reviewed voice reply"]);
+    assert.deepEqual(sent, ["[語音] reviewed voice reply"], "the secondary action does not send");
+    assertNoElement(window.document, '[role="dialog"][aria-label="Voice prompt"]');
+
+    let replyDraft = "'report.txt'\n";
+    await act(async () => root.render(createElement(SpeechComposer, {
+      machine: "mesa", id: "session-1", sessionIncarnation: "inc-2", onBeforeOpen: () => {},
+      onTranscript: (text) => { replyDraft = `${replyDraft}${text}`; },
+      onSendTranscript: async (text) => {
+        replyDraft = `${replyDraft}${text}`;
+        return false;
+      },
+    })));
+    await click("Voice");
+    await click("Record");
+    await act(async () => resolveCapture?.({ getTracks: () => [{ stop: () => {} }] } as MediaStream));
+    await click("Stop recording");
+    await pressEnter();
+    assert.equal(replyDraft, "'report.txt'\n[語音] reviewed voice reply", "a failed send leaves the tagged transcript beside existing composer attachments");
+    assert.ok(window.document.querySelector('[role="dialog"][aria-label="Voice prompt"]'), "a refused send keeps the reviewed transcript available");
+    assert.match(window.document.querySelector('[role="alert"]')?.textContent ?? "", /not sent.*remains in your reply draft/i);
+    assert.equal([...window.document.querySelectorAll('[role="dialog"] button')].some(button => button.textContent?.trim() === "Send"), false);
+    assert.equal([...window.document.querySelectorAll('[role="dialog"] button')].some(button => button.textContent?.trim() === "Insert to edit"), false);
+    await pressEnter();
+    assert.equal(replyDraft, "'report.txt'\n[語音] reviewed voice reply", "a retained transcript cannot be appended again from the dialog");
+    await click("Return to draft");
     assertNoElement(window.document, '[role="dialog"][aria-label="Voice prompt"]');
 
     Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });

@@ -19,6 +19,8 @@ import { createUiSsrHarness } from "./support/ssr.ts";
 
 interface ConversationApiMock {
   submitSessionPrompt?: (...args: unknown[]) => Promise<{ ok: boolean; error?: string; outcomeUnknown?: boolean }>;
+  speechProviders?: readonly { id: string; label: string; max_duration_seconds: number; max_bytes: number }[];
+  speechText?: string;
   listHistorySessions(
     machine: string,
     options: { readonly q?: string; readonly cursor?: string; readonly limit?: number },
@@ -645,8 +647,8 @@ function conversationApiMockPlugin(): Plugin {
         export const listHistorySessions = (...args) => mock().listHistorySessions(...args);
         export const listHistoryMessages = (...args) => mock().listHistoryMessages(...args);
         export const submitSessionPrompt = (...args) => mock().submitSessionPrompt(...args);
-        export const getSpeechProviders = async () => [];
-        export const transcribeSpeechAudio = async () => ({ text: "" });
+        export const getSpeechProviders = async () => mock().speechProviders ?? [];
+        export const transcribeSpeechAudio = async () => ({ text: mock().speechText ?? "" });
       `;
     },
   };
@@ -809,6 +811,114 @@ test('a local admission failure keeps the draft and permits retry after storage 
   assert.match(panel.container.textContent ?? '', /Local storage unavailable/);
   await panel.send(); assert.equal(panel.textarea().value, '');
   assert.equal(admissions, 2);
+});
+
+test('a failed voice reply keeps the tagged transcript in the reply composer for retry', async () => {
+  let attempts = 0;
+  const requests: unknown[][] = [];
+  const panel = await replyPanel(async (...args) => {
+    requests.push(args);
+    return ++attempts === 1 ? { ok: false, error: 'Local storage unavailable' } : { ok: true };
+  });
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const previousRecorder = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
+  cleanups.push(() => {
+    if (previousNavigator) Object.defineProperty(globalThis, 'navigator', previousNavigator);
+    else Reflect.deleteProperty(globalThis, 'navigator');
+    if (previousRecorder) Object.defineProperty(globalThis, 'MediaRecorder', previousRecorder);
+    else Reflect.deleteProperty(globalThis, 'MediaRecorder');
+  });
+  globalThis.__agentConsoleConversationApiMock!.speechProviders = [
+    { id: 'fixture', label: 'Fixture', max_duration_seconds: 90, max_bytes: 1024 },
+  ];
+  globalThis.__agentConsoleConversationApiMock!.speechText = 'reviewed voice reply';
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: panel.window.navigator });
+  Object.defineProperty(panel.window.navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+  });
+  class FixtureRecorder {
+    static isTypeSupported() { return true; }
+    state = 'inactive';
+    mimeType = 'audio/webm';
+    ondataavailable: ((event: { data: Blob }) => void) | null = null;
+    onstop: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    start() { this.state = 'recording'; }
+    stop() {
+      this.state = 'inactive';
+      this.ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) });
+      this.onstop?.();
+    }
+  }
+  Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: FixtureRecorder });
+  await act(async () => { findButton(panel.container, 'Voice').click(); await flush(); });
+  await panel.write("'report.txt'\n");
+  await act(async () => { findButton(panel.window.document, 'Record').click(); await flush(); });
+  await act(async () => flush());
+  await act(async () => { findButton(panel.window.document, 'Stop recording').click(); await flush(); });
+  await act(async () => flush());
+  await act(async () => { findButton(panel.window.document, 'Send').click(); await flush(); });
+  assert.equal(panel.textarea().value, "'report.txt'\n[語音] reviewed voice reply");
+  assert.match(panel.container.textContent ?? '', /Local storage unavailable/);
+  assert.deepEqual(requests[0], ['maple', 'hs-7', { text: "'report.txt'\n[語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
+  const dialog = panel.window.document.querySelector('[role="dialog"][aria-label="Voice prompt"]');
+  assert.ok(dialog, 'failed admission keeps the review dialog open');
+  assert.match(dialog.textContent ?? '', /not sent.*remains in your reply draft/i);
+  assert.equal([...dialog.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Send'), false);
+  assert.equal([...dialog.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Insert to edit'), false);
+  await act(async () => { findButton(dialog, 'Return to draft').click(); await flush(); });
+  await panel.send();
+  assert.equal(panel.textarea().value, '');
+  assert.equal(attempts, 2);
+  assert.deepEqual(requests[1], ['maple', 'hs-7', { text: "'report.txt'\n[語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
+});
+
+test('a voice reply stays fenced to the session incarnation where its dialog opened', async () => {
+  const requests: unknown[][] = [];
+  const panel = await replyPanel(async (...args) => { requests.push(args); return { ok: true }; });
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const previousRecorder = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
+  cleanups.push(() => {
+    if (previousNavigator) Object.defineProperty(globalThis, 'navigator', previousNavigator);
+    else Reflect.deleteProperty(globalThis, 'navigator');
+    if (previousRecorder) Object.defineProperty(globalThis, 'MediaRecorder', previousRecorder);
+    else Reflect.deleteProperty(globalThis, 'MediaRecorder');
+  });
+  globalThis.__agentConsoleConversationApiMock!.speechProviders = [
+    { id: 'fixture', label: 'Fixture', max_duration_seconds: 90, max_bytes: 1024 },
+  ];
+  globalThis.__agentConsoleConversationApiMock!.speechText = 'reviewed voice reply';
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: panel.window.navigator });
+  Object.defineProperty(panel.window.navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+  });
+  class FixtureRecorder {
+    static isTypeSupported() { return true; }
+    state = 'inactive';
+    mimeType = 'audio/webm';
+    ondataavailable: ((event: { data: Blob }) => void) | null = null;
+    onstop: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    start() { this.state = 'recording'; }
+    stop() {
+      this.state = 'inactive';
+      this.ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) });
+      this.onstop?.();
+    }
+  }
+  Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: FixtureRecorder });
+  await act(async () => { findButton(panel.container, 'Voice').click(); await flush(); });
+  await panel.render({ session_incarnation: 'inc-2' });
+  await act(async () => { findButton(panel.window.document, 'Record').click(); await flush(); });
+  await act(async () => flush());
+  await act(async () => { findButton(panel.window.document, 'Stop recording').click(); await flush(); });
+  await act(async () => flush());
+  await act(async () => { findButton(panel.window.document, 'Send').click(); await flush(); });
+  assert.deepEqual(requests, [], 'a reviewed voice command is not admitted to the replacement session');
+  assert.equal(panel.textarea().value, '[語音] reviewed voice reply');
+  assert.match(panel.container.textContent ?? '', /session restarted/i);
 });
 test('restarting the session fences an existing reply draft until it is explicitly discarded', async () => {
   let sends = 0;
