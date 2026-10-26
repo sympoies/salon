@@ -9,7 +9,7 @@ import react from "@vitejs/plugin-react";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
 // Real component and CSS; raster bytes are generated locally, with no live data.
-test("image-only messages shrink to previews and contain readable metadata", async t => {
+test("image thumbnails have no frame and image-only metadata stays inside previews", async t => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
   const bundled = await build({
     resolve:{conditions:["source"]}, configFile:false, logLevel:"silent", define:{"process.env.NODE_ENV":JSON.stringify("production")},
@@ -22,7 +22,7 @@ test("image-only messages shrink to previews and contain readable metadata", asy
           import {createRoot} from 'react-dom/client';
           import {HistoryConversationView} from '/src/HistoryConversation.tsx';
           import '/src/styles.css';
-          const sizes=[[1600,600],[600,1000],[32,24]];
+          const sizes=[[1600,600],[240,400],[32,24]];
           const blobs=sizes.map(([w,h],i)=>{
             const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
             const c=canvas.getContext('2d');c.fillStyle=['#f8fafc','#172554','#166534'][i];c.fillRect(0,0,w,h);
@@ -37,7 +37,7 @@ test("image-only messages shrink to previews and contain readable metadata", asy
           const messages=[
             {id:'landscape',role:'user',text:'',images:[image(0)]},
             {id:'portrait',role:'user',text:'',images:[image(1)]},
-            {id:'mixed',role:'user',text:'Synthetic caption wider than a tiny image',images:[image(2)]},
+            {id:'mixed',role:'user',text:'Synthetic caption',images:[image(0)]},
           ].map(m=>({...m,timestamp:'2026-01-01T12:00:00'}));
           createRoot(document.querySelector('#root')).render(React.createElement(HistoryConversationView,{
             conversation:{session:{machine:'fixture',id:'sample'},messages,latestMessagePaging:true,
@@ -55,6 +55,7 @@ test("image-only messages shrink to previews and contain readable metadata", asy
               const style=getComputedStyle(bubble),metadata=getComputedStyle(time);
               return {bubble:rect(bubble),image:rect(image),time:rect(time),
                 text:rect(bubble.querySelector('.message-markdown')),
+                textBackground:getComputedStyle(bubble.querySelector('.message-markdown')).backgroundColor,
                 background:style.backgroundColor,border:style.borderWidth,radius:style.borderRadius,
                 imageRadius:getComputedStyle(image.parentElement).borderRadius,
                 metadataColor:metadata.color,metadataBackground:metadata.backgroundColor};
@@ -112,8 +113,11 @@ test("image-only messages shrink to previews and contain readable metadata", asy
           assert.equal(box.metadataBackground,"rgba(0, 0, 0, 0.75)","contrast on light and dark pixels");
         }
         const mixed=measured.boxes[2];
-        assert.ok(Math.abs(mixed.bubble.w-Math.max(mixed.text.w,mixed.image.w))<1,"mixed bubble fits wider child");
-        assert.ok(mixed.text.w>mixed.image.w,"caption is wider than tiny preview");
+        assert.equal(mixed.background,"rgba(0, 0, 0, 0)","mixed image has no colored surrounding frame");
+        assert.equal(mixed.border,"0px");
+        assert.equal(mixed.textBackground,"rgb(42, 84, 140)","caption keeps its normal user bubble color");
+        assert.ok(mixed.text.w<mixed.image.w,"caption bubble fits text independently of wider image");
+        assert.ok(mixed.text.y+mixed.text.h<=mixed.image.y,"image is below the colored text bubble");
 
       });
     }
