@@ -1160,7 +1160,8 @@ test("root recovery leaves a reused runtime's stale owner grant untouched", asyn
     const response = await fetch(`${base}/api/sessions/hub/owner-session/resume`, {
       method: "POST", headers: { authorization: "Bearer root-token" },
     });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 502);
+    assert.match((await response.json()).error.message, /ownership/);
     const after = new AccessStore(statePath);
     try {
       assert.equal(after.sessionGrant("hub", "owner-session")?.incarnation, "stale-inc");
