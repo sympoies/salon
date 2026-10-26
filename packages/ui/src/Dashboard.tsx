@@ -2733,8 +2733,23 @@ export function Dashboard({
     counts={sessionStatusCountValues(statusCountRecords, sessionFilters, countsAvailable, scopes)}
     activeGroup={sessionFilters.statusGroup} offlineCountMachines={headerCounts.offlineMachines}
     onToggle={group => changeSessionFilters({ ...sessionFilters, statusGroup: sessionFilters.statusGroup === group ? null : group })} />;
-  const focusedCountStrip = focusedStatusCounts && !nativeCountsTarget && (!viewport.mobile || phoneFocusCounts)
-    ? <>{viewport.mobile ? null : <BrandMark />}{focusedStatusCounts}</> : null;
+  const nativeNoticeTarget = typeof document !== "undefined" && isMacTauri()
+    ? document.getElementById("mac-titlebar-notice") : null;
+  useEffect(() => {
+    if (!nativeNoticeTarget) return;
+    nativeNoticeTarget.toggleAttribute("inert", !active);
+    nativeNoticeTarget.setAttribute("aria-hidden", String(!active));
+    return () => {
+      nativeNoticeTarget.removeAttribute("inert");
+      nativeNoticeTarget.removeAttribute("aria-hidden");
+    };
+  }, [nativeNoticeTarget, active]);
+  const phoneConnectionNotice = viewport.mobile && connectionNotice ? statusNoticeElement : null;
+  const focusedCountStrip = focusedStatusCounts && !nativeCountsTarget
+    && (!viewport.mobile || phoneFocusCounts || phoneConnectionNotice)
+    ? <>{viewport.mobile ? null : <BrandMark />}
+      {!viewport.mobile || phoneFocusCounts ? focusedStatusCounts : null}
+      {phoneConnectionNotice}</> : null;
   useEffect(() => {
     const header = document.querySelector<HTMLElement>(".workspace-head");
     if (!header) return;
@@ -2789,7 +2804,7 @@ export function Dashboard({
               harnesses={overviewHarnesses}
               scopes={scopes}
               notice={scopeNotice}
-              statusNotice={connectionNotice || statusNotice?.kind === "host-offline" ? statusNoticeElement : null}
+              statusNotice={(connectionNotice && !nativeNoticeTarget) || statusNotice?.kind === "host-offline" ? statusNoticeElement : null}
               noticeInField={statusNotice?.kind === "host-offline"}
               migrationNotice={hostMigrationNotice}
               onDismissMigration={onDismissHostMigration}
@@ -2813,6 +2828,7 @@ export function Dashboard({
             />
           ) : null}
           {focusedStatusCounts && nativeCountsTarget ? createPortal(focusedStatusCounts, nativeCountsTarget) : null}
+          {connectionNotice && nativeNoticeTarget ? createPortal(statusNoticeElement, nativeNoticeTarget) : null}
         </div>
         {operatorCapabilities.usage ? <HeaderUsage onOpen={onUsage} /> : null}
         <div className="dash-actions">
@@ -3102,7 +3118,7 @@ export function Dashboard({
                   phoneConversation: Boolean(focused && viewport.mobile && phoneConversationMode && s
                     && historyMachineNames.has(s.machine)),
                   conversationReplyDrafts: conversationReplyDrafts.current,
-                  connectionStatusNotice: focused && connectionNotice ? statusNoticeElement : null,
+                  connectionStatusNotice: focused && connectionNotice && !viewport.mobile && !nativeNoticeTarget ? statusNoticeElement : null,
                   focusCountStrip: focused ? focusedCountStrip : null,
                   gridFocusTarget,
                   machineReachable: s ? reachableMachineNames.has(s.machine) : true,

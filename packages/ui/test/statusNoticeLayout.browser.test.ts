@@ -58,7 +58,7 @@ function measure(markup: string, surface: NoticeSurface, width: number): Measure
         return clickable;
       });
       const dismiss=pill.querySelector('button');const d=dismiss.getBoundingClientRect();const hit=document.elementFromPoint(d.x+d.width/2,d.y+d.height/2);
-      const row=layer.closest('.session-filter-trigger-row, .slot-connection-row');
+      const row=layer.closest('.session-filter-trigger-row, .slot-connection-row, .slot-focus-strip');
       const slot=row;
       const p=pill.getBoundingClientRect(),r=slot?.getBoundingClientRect();
       const result={withNotice,withoutNotice,controlsBottom,controlsClickable,blocker,

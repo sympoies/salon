@@ -11,5 +11,6 @@ export function MacTitleBar() {
     <span data-tauri-drag-region="">Agent Console</span>
     <div id="mac-titlebar-counts" />
     <div className="mac-titlebar-space" data-tauri-drag-region="" />
+    <div id="mac-titlebar-notice" />
   </div>;
 }
