@@ -155,11 +155,11 @@ function ImageViewer({machine,history,images,initial,onClose}: {
     }}>
     <div className="conversation-image-toolbar">
       <span aria-live="polite">{index + 1} / {images.length}</span>
-      <IconButton aria-label="Zoom out" title="Zoom out" disabled={scale <= 1} onClick={() => setScale(value => clampZoom(value / 1.5))}><ZoomOutIcon /></IconButton>
-      <IconButton aria-label="Fit image" title="Fit image" onClick={fit}><FitImageIcon /></IconButton>
-      <IconButton aria-label="Zoom in" title="Zoom in" disabled={scale >= 6} onClick={() => setScale(value => clampZoom(value * 1.5))}><ZoomInIcon /></IconButton>
-      <IconButton aria-label="Download image" title="Download image" disabled={data.state !== "ready" || saving} aria-busy={saving} onClick={() => void download()}><DownloadIcon /></IconButton>
-      <IconButton aria-label="Close image viewer" title="Close image viewer" onClick={onClose}><CloseIcon /></IconButton>
+      <IconButton className="btn" aria-label="Zoom out" title="Zoom out" disabled={scale <= 1} onClick={() => setScale(value => clampZoom(value / 1.5))}><ZoomOutIcon /></IconButton>
+      <IconButton className="btn" aria-label="Fit image" title="Fit image" onClick={fit}><FitImageIcon /></IconButton>
+      <IconButton className="btn" aria-label="Zoom in" title="Zoom in" disabled={scale >= 6} onClick={() => setScale(value => clampZoom(value * 1.5))}><ZoomInIcon /></IconButton>
+      <IconButton className="btn" aria-label="Download image" title="Download image" disabled={data.state !== "ready" || saving} aria-busy={saving} onClick={() => void download()}><DownloadIcon /></IconButton>
+      <IconButton className="btn" aria-label="Close image viewer" title="Close image viewer" onClick={onClose}><CloseIcon /></IconButton>
     </div>
     {saveError ? <div className="conversation-image-save-error" role="status">Image could not be saved</div> : null}
     <div ref={stage} className="conversation-image-stage" onPointerDown={down} onPointerMove={drag} onPointerUp={event => up(event)} onPointerCancel={event => up(event,true)}
@@ -171,8 +171,8 @@ function ImageViewer({machine,history,images,initial,onClose}: {
       </div>
     </div>
     {images.length > 1 ? <div className="conversation-image-navigation">
-      <IconButton aria-label="Previous image" title="Previous image" disabled={index === 0} onClick={() => move(-1)}><ChevronLeftIcon /></IconButton>
-      <IconButton aria-label="Next image" title="Next image" disabled={index === images.length - 1} onClick={() => move(1)}><ChevronRightIcon /></IconButton>
+      <IconButton className="btn" aria-label="Previous image" title="Previous image" disabled={index === 0} onClick={() => move(-1)}><ChevronLeftIcon /></IconButton>
+      <IconButton className="btn" aria-label="Next image" title="Next image" disabled={index === images.length - 1} onClick={() => move(1)}><ChevronRightIcon /></IconButton>
     </div> : null}
   </Modal>,document.body);
 }
