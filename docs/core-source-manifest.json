@@ -22,7 +22,7 @@
   },
   "excludedFiles": {},
   "localAdaptations": [
-    "Set the three SDK package versions to 0.1.8 and retain MIT license metadata.",
+    "Set the three SDK package versions to 0.1.9 and retain MIT license metadata.",
     "Point the two extension-contract comments to the local package boundary document.",
     "Preserve font bytes and include full upstream font licensing notices.",
     "Remove one redundant EOF blank line in each explicitly listed file; no behavior change.",
@@ -646,7 +646,7 @@
   "adaptedFiles": {
     "packages/edge/package.json": {
       "upstreamSha256": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
-      "importedSha256": "25039572257f86bc604234ee8d67369fda87e41dcafa92c7ca1ecb47f4110733"
+      "importedSha256": "0ac2b676c490e92d9524e6ac3fdaeabd4cd185871fe1c8d177528b891a87007e"
     },
     "packages/edge/scripts/test-credential.ts": {
       "upstreamSha256": "6aa6702c19b3dcb2a3ade9d639c7606a6cf4f2b29e9106df1c2af706826347f4",
@@ -670,7 +670,7 @@
     },
     "packages/shared/package.json": {
       "upstreamSha256": "cc30b019d2887dddab4ada98dda0ac791444f55f81fb7dde56d469d897191b61",
-      "importedSha256": "98c56845c7da8cd228efc1ab32a0c1040866862ceefa810f5039af467e7880e1"
+      "importedSha256": "db998b910c451705ecf4dce7c29b0babe00241daf3d3f9cfb0255dcbe5928b1b"
     },
     "packages/shared/src/sse.ts": {
       "upstreamSha256": "f9076276454f584749e895df9049cd1d24e181bec46c9bda2a2b4d851f9752ac",
@@ -678,7 +678,7 @@
     },
     "packages/ui/package.json": {
       "upstreamSha256": "879df3dda266feb2d41574e164b7846c5c44e2d4e5ac5f452925af6f3978538a",
-      "importedSha256": "f0025c1354bb3a5bc8a59b71c98c3d6efb156e73fd4524edb6161a33b88fbe87"
+      "importedSha256": "04e257d1f5220e2c50b60102162f02dd590024405a1bf1e52ccee3fe7a1cacbe"
     },
     "packages/ui/src/extensions.tsx": {
       "upstreamSha256": "d74f36fb4a5dff7fd66f7f0c3a1ce739403fd36af2ab9a41ac9fc29ed193c1b1",
