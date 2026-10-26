@@ -5,7 +5,7 @@ import { normalizeActivityTurnState } from "@agent-console/shared/activity";
 import { listHistoryMessages } from "./api.ts";
 import { AgentBadge } from "./AgentBadge.tsx";
 import { SessionNotice } from "./SessionNotice.tsx";
-import { parseSessionNotice } from "./sessionNotice.ts";
+import { parseSessionNotice } from "./parseSessionNotice.ts";
 import { MessageMarkdown } from "./MessageMarkdown.tsx";
 import { unwrapPastedContent } from "./pastedContent.ts";
 import type { HistoryMessage, HistoryMessagesResponse, HistorySession } from "./types.ts";

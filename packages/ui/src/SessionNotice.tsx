@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { MessageMarkdown, MessageMarkdownBoundary } from "./MessageMarkdown.tsx";
 import { writeTerminalClipboardText } from "./terminalClipboard.ts";
-import type { SessionNotice as ParsedNotice } from "./sessionNotice.ts";
+import type { SessionNotice as ParsedNotice } from "./parseSessionNotice.ts";
 
 const KIND_LABELS = new Map([
   ["mailbox", "Mailbox"],
