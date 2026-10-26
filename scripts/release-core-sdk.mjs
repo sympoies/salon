@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const repository = "sympoies/salon";
-const version = "0.1.9";
+const version = "0.1.10";
 const tag = `v${version}`;
 const names = ["shared", "edge", "ui"];
 const assets = [...names.map(name => `${name}.tgz`), "manifest.json"];

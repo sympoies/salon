@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.9 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.10 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -135,10 +135,11 @@ views. Real provider/native acceptance remains with its owning milestone.
 ## Private SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The proposed SDK patch release is `v0.1.9`, a private GitHub prerelease with
-`latest=false`; root and package versions are `0.1.9`. It carries the merged
-voice transcript sending and connection notices in the status-count and title-bar rows.
-Existing `v0.1.0` through `v0.1.8` tags and assets stay immutable. This metadata preparation does not establish version-merge or
+merge. The proposed SDK patch release is `v0.1.10`, a private GitHub prerelease with
+`latest=false`; root and package versions are `0.1.10`. It carries the merged
+versioned session notices as neutral rows, provider image labels as attachment captions,
+and ownership-grant reconciliation after a proven-continuity native resume.
+Existing `v0.1.0` through `v0.1.9` tags and assets stay immutable. This metadata preparation does not establish version-merge or
 publication GO. Source preparation does not authorize publication. The
 authorized publisher uploads only
 `shared.tgz`, `edge.tgz`, `ui.tgz` and `manifest.json`. The existing manifest is
