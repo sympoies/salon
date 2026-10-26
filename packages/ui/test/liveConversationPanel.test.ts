@@ -865,10 +865,13 @@ test('a failed voice reply keeps the tagged transcript in the reply composer for
   const dialog = panel.window.document.querySelector('[role="dialog"][aria-label="Voice prompt"]');
   assert.ok(dialog, 'failed admission keeps the review dialog open');
   assert.match(dialog.textContent ?? '', /not sent.*remains in your reply draft/i);
-  await act(async () => { findButton(dialog, 'Cancel').click(); await flush(); });
+  assert.equal([...dialog.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Send'), false);
+  assert.equal([...dialog.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Insert to edit'), false);
+  await act(async () => { findButton(dialog, 'Return to draft').click(); await flush(); });
   await panel.send();
   assert.equal(panel.textarea().value, '');
   assert.equal(attempts, 2);
+  assert.deepEqual(requests[1], ['maple', 'hs-7', { text: "'report.txt'\n[語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
 });
 test('restarting the session fences an existing reply draft until it is explicitly discarded', async () => {
   let sends = 0;

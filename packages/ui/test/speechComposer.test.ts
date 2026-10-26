@@ -210,7 +210,11 @@ test("voice prompt records, exposes an editable transcript, and sends only on co
     assert.equal(replyDraft, "'report.txt'\n[語音] reviewed voice reply", "a failed send leaves the tagged transcript beside existing composer attachments");
     assert.ok(window.document.querySelector('[role="dialog"][aria-label="Voice prompt"]'), "a refused send keeps the reviewed transcript available");
     assert.match(window.document.querySelector('[role="alert"]')?.textContent ?? "", /not sent.*remains in your reply draft/i);
-    await click("Cancel");
+    assert.equal([...window.document.querySelectorAll('[role="dialog"] button')].some(button => button.textContent?.trim() === "Send"), false);
+    assert.equal([...window.document.querySelectorAll('[role="dialog"] button')].some(button => button.textContent?.trim() === "Insert to edit"), false);
+    await pressEnter();
+    assert.equal(replyDraft, "'report.txt'\n[語音] reviewed voice reply", "a retained transcript cannot be appended again from the dialog");
+    await click("Return to draft");
     assertNoElement(window.document, '[role="dialog"][aria-label="Voice prompt"]');
 
     Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
