@@ -873,6 +873,53 @@ test('a failed voice reply keeps the tagged transcript in the reply composer for
   assert.equal(attempts, 2);
   assert.deepEqual(requests[1], ['maple', 'hs-7', { text: "'report.txt'\n[語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
 });
+
+test('a voice reply stays fenced to the session incarnation where its dialog opened', async () => {
+  const requests: unknown[][] = [];
+  const panel = await replyPanel(async (...args) => { requests.push(args); return { ok: true }; });
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const previousRecorder = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
+  cleanups.push(() => {
+    if (previousNavigator) Object.defineProperty(globalThis, 'navigator', previousNavigator);
+    else Reflect.deleteProperty(globalThis, 'navigator');
+    if (previousRecorder) Object.defineProperty(globalThis, 'MediaRecorder', previousRecorder);
+    else Reflect.deleteProperty(globalThis, 'MediaRecorder');
+  });
+  globalThis.__agentConsoleConversationApiMock!.speechProviders = [
+    { id: 'fixture', label: 'Fixture', max_duration_seconds: 90, max_bytes: 1024 },
+  ];
+  globalThis.__agentConsoleConversationApiMock!.speechText = 'reviewed voice reply';
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: panel.window.navigator });
+  Object.defineProperty(panel.window.navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+  });
+  class FixtureRecorder {
+    static isTypeSupported() { return true; }
+    state = 'inactive';
+    mimeType = 'audio/webm';
+    ondataavailable: ((event: { data: Blob }) => void) | null = null;
+    onstop: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    start() { this.state = 'recording'; }
+    stop() {
+      this.state = 'inactive';
+      this.ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) });
+      this.onstop?.();
+    }
+  }
+  Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: FixtureRecorder });
+  await act(async () => { findButton(panel.container, 'Voice').click(); await flush(); });
+  await panel.render({ session_incarnation: 'inc-2' });
+  await act(async () => { findButton(panel.window.document, 'Record').click(); await flush(); });
+  await act(async () => flush());
+  await act(async () => { findButton(panel.window.document, 'Stop recording').click(); await flush(); });
+  await act(async () => flush());
+  await act(async () => { findButton(panel.window.document, 'Send').click(); await flush(); });
+  assert.deepEqual(requests, [], 'a reviewed voice command is not admitted to the replacement session');
+  assert.equal(panel.textarea().value, '[語音] reviewed voice reply');
+  assert.match(panel.container.textContent ?? '', /session restarted/i);
+});
 test('restarting the session fences an existing reply draft until it is explicitly discarded', async () => {
   let sends = 0;
   const panel = await replyPanel(async () => { sends += 1; return { ok: true }; });

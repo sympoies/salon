@@ -32,7 +32,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   /** Fill a caller-owned draft for editing instead of sending it. */
   readonly onTranscript?: (text: string) => void;
   /** Send through a caller-owned reply path that also retains failed drafts. */
-  readonly onSendTranscript?: (text: string) => Promise<boolean>;
+  readonly onSendTranscript?: (text: string, expectedSessionIncarnation: string) => Promise<boolean>;
   readonly onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -226,7 +226,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
       setPhase("sending");
       setError("");
       try {
-        const sent = await onSendTranscript(`${VOICE_PROMPT_TAG}${edited}`);
+        const sent = await onSendTranscript(`${VOICE_PROMPT_TAG}${edited}`, draftIncarnation.current);
         if (generation.current !== currentGeneration) return;
         if (sent) close();
         else {

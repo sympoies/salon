@@ -256,10 +256,12 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     event.preventDefault();
     if (!attachBlocked) void attach(files);
   };
-  const send = async (replyText?: string): Promise<boolean> => {
+  const send = async (replyText?: string, expectedIncarnation?: string): Promise<boolean> => {
     const currentDraft = readDraft();
     const content = replyText ?? currentDraft.text;
-    const allowed = (!hint || hint === BUSY_REPLY_HINT) && !sending && !uploading && !outcomeUnknown
+    const allowed = (!hint || hint === BUSY_REPLY_HINT)
+      && (expectedIncarnation === undefined || expectedIncarnation === session.session_incarnation)
+      && !sending && !uploading && !outcomeUnknown
       && !currentDraft.sending && !currentDraft.outcomeUnknown && Boolean(content.trim());
     if (!allowed) return false;
     const incarnation = currentDraft.incarnation;
@@ -349,12 +351,12 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
           const separator = current.text && !current.text.endsWith("\n") ? "\n" : "";
           updateReply({ text: `${current.text}${separator}${text}`, error: current.outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
         }}
-        onSendTranscript={(text) => {
+        onSendTranscript={(text, expectedIncarnation) => {
           const current = readDraft();
           const separator = current.text && !current.text.endsWith("\n") ? "\n" : "";
           const content = `${current.text}${separator}${text}`;
-          updateReply({ text: content, incarnation: current.text ? current.incarnation : session.session_incarnation, error: current.outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
-          return send(content);
+          updateReply({ text: content, incarnation: expectedIncarnation, error: current.outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
+          return send(content, expectedIncarnation);
         }} />
     </footer>
   );
