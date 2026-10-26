@@ -367,6 +367,7 @@ export function HistoryConversationView({
           const sentAt = messageTimeLabel(date);
           const user = message.role === "user";
           const showAvatar = !user && (newDay || previous?.role !== message.role);
+          const imageOnly = Boolean(session && message.images?.length && !message.text.trim() && message.role !== "goal");
           const time = sentAt ? <time dateTime={message.timestamp}>{sentAt}</time> : null;
           return (
             <Fragment key={message.id}>
@@ -375,9 +376,9 @@ export function HistoryConversationView({
                 aria-label={user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
                 className={`history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
-                {user ? time : null}
-                <div className="history-bubble">{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(message.text) : message.text} suppressImages={Boolean(message.images?.length)} />{message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}</div>
-                {user ? null : time}
+                {user && !imageOnly ? time : null}
+                <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(message.text) : message.text} suppressImages={Boolean(message.images?.length)} />{message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}{imageOnly ? time : null}</div>
+                {!user && !imageOnly ? time : null}
               </article>
             </Fragment>
           );
