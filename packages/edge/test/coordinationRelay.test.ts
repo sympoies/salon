@@ -14,12 +14,12 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
   const destinationName = machineNames.destination;
   const dir = mkdtempSync(join(tmpdir(), "relay-test-"));
   const db = join(dir, "access.sqlite");
-  const state = { writes: 0, loseResponse: false, badReceipt: false, destinationMode: "advisory", destinationAvailable: true as boolean | undefined, destinationSupported: true, destinationStatus: "running" as unknown, destinationStartup: undefined as unknown, destinationError: "", destinationErrorStatus: 409, destinationErrorDetails: undefined as unknown, destinationIncarnation: "dest-inc", sourceIncarnation: "src-inc", seen: {} as Record<string, unknown> };
+  const state = { writes: 0, loseResponse: false, badReceipt: false, destinationMode: "advisory", destinationAvailable: true as boolean | undefined, destinationSupported: true, destinationStatus: "running" as unknown, destinationStartup: undefined as unknown, destinationError: "", destinationErrorStatus: 409, destinationErrorDetails: undefined as unknown, destinationIncarnation: "dest-inc", sourceIncarnation: "src-inc", sourceResume: { provider: "codex", session_id: "source-provider" }, destinationResume: { provider: "codex", session_id: "destination-provider" }, seen: {} as Record<string, unknown> };
   const source = createServer((req, res) => {
     assert.equal(req.headers.authorization, "Bearer source-operator");
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify({ ok: true, data: { coordination: { remote_messaging_supported: true }, sessions: [
-      { id: "source", session_incarnation: state.sourceIncarnation, status: "running", coordination_mode: "advisory", coordination_available: true },
+      { id: "source", provider_resume: state.sourceResume, session_incarnation: state.sourceIncarnation, status: "running", coordination_mode: "advisory", coordination_available: true },
       { id: "unowned", session_incarnation: "unknown-inc", coordination_mode: "advisory", coordination_available: true },
     ] } }));
   });
@@ -28,7 +28,7 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
     res.setHeader("content-type", "application/json");
     if (req.url === "/sessions") {
       res.end(JSON.stringify({ ok: true, data: { coordination: { remote_messaging_supported: state.destinationSupported }, sessions: [
-        { id: "destination", session_incarnation: state.destinationIncarnation, status: state.destinationStatus, startup: state.destinationStartup, coordination_mode: state.destinationMode, coordination_available: state.destinationAvailable },
+        { id: "destination", provider_resume: state.destinationResume, session_incarnation: state.destinationIncarnation, status: state.destinationStatus, startup: state.destinationStartup, coordination_mode: state.destinationMode, coordination_available: state.destinationAvailable },
         { id: "other-user", session_incarnation: "other-inc", coordination_mode: "advisory", coordination_available: true },
       ] } }));
       return;
@@ -50,8 +50,8 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
   const srcAddr = await listenOnLoopback(source);
   const dstAddr = await listenOnLoopback(dest);
   const access = new AccessStore(db);
-  access.claimSession({ principalId: "tess", machine: sourceName, sessionId: "source", incarnation: "src-inc" });
-  access.claimSession({ principalId: "tess", machine: destinationName, sessionId: "destination", incarnation: "dest-inc" });
+  access.claimSession({ principalId: "tess", machine: sourceName, sessionId: "source", incarnation: "src-inc", provider: "codex", providerSessionId: "source-provider", consoleRole: "coordinator", treeDepth: 0 });
+  access.claimSession({ principalId: "tess", machine: destinationName, sessionId: "destination", incarnation: "dest-inc", provider: "codex", providerSessionId: "destination-provider", dispatcher: { machine: sourceName, sessionId: "source" }, treeDepth: 1 });
   access.claimSession({ principalId: "dana", machine: destinationName, sessionId: "other-user", incarnation: "other-inc" });
   access.close();
   const edge = createEdgeServer(makeEdgeConfig({
@@ -72,7 +72,7 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
     body: "private-message-sentinel", body_sha256: createHash("sha256").update("private-message-sentinel").digest("hex"),
     created_at_epoch: now, expires_at_epoch: now + 3600, reply_depth: 0,
   };
-  return { state, base, envelope, cleanup: async () => {
+  return { state, base, envelope, db, cleanup: async () => {
     await Promise.all([edge, source, dest].map(server => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); })));
     rmSync(dir, { recursive: true, force: true });
   } };
@@ -91,6 +91,84 @@ test("daemon relay accepts native flat coordination availability with separate i
     assert.equal(JSON.stringify(result.body).includes("private-response-sentinel"), false);
     assert.deepEqual(f.state.seen, f.envelope);
     assert.equal(f.state.writes, 1);
+  } finally { await f.cleanup(); }
+});
+
+function readGrant(db: string, machine: string, sessionId: string) {
+  const access = new AccessStore(db);
+  try { return access.sessionGrant(machine, sessionId); }
+  finally { access.close(); }
+}
+async function discover(f: Awaited<ReturnType<typeof fixture>>) {
+  return fetch(`${f.base}/api/coordination/peers/v1?source_session_id=source&source_incarnation=${f.envelope.from.session_incarnation}`,
+    { headers: { authorization: "Bearer source-relay" } });
+}
+
+for (const via of ["relay", "discovery"] as const) {
+  for (const side of ["source", "destination"] as const) {
+    test(`native resume reconciles ${side} ownership during ${via}`, async () => {
+      const f = await fixture();
+      try {
+        const target = side === "source" ? f.envelope.from : f.envelope.to;
+        const before = readGrant(f.db, target.machine, target.session_id)!;
+        // A native resume changes only the daemon's incarnation; the edge has
+        // received no maintenance action or browser session-list request.
+        if (side === "source") f.state.sourceIncarnation = "native-next";
+        else f.state.destinationIncarnation = "native-next";
+        target.session_incarnation = "native-next";
+        if (via === "relay") {
+          assert.equal((await send(f.base, f.envelope)).status, 200);
+          assert.equal(f.state.writes, 1);
+        } else {
+          const response = await discover(f);
+          assert.equal(response.status, 200);
+          const body = await response.json() as { peers: unknown[] };
+          assert.ok(body.peers.some(peer => (peer as Record<string, unknown>).session_id === target.session_id
+            && (peer as Record<string, unknown>).session_incarnation === "native-next"));
+        }
+        assert.deepEqual(readGrant(f.db, target.machine, target.session_id), { ...before, incarnation: "native-next" });
+      } finally { await f.cleanup(); }
+    });
+  }
+}
+
+for (const reason of ["provider-session", "provider", "not-live", "unbound"] as const) {
+  test(`native resume refuses unproven continuity: ${reason}`, async () => {
+    const f = await fixture();
+    try {
+      const before = readGrant(f.db, "cedar", "destination")!;
+      f.envelope.to.session_incarnation = "native-next";
+      f.state.destinationIncarnation = "native-next";
+      if (reason === "provider-session") f.state.destinationResume.session_id = "other-provider-session";
+      if (reason === "provider") f.state.destinationResume.provider = "claude";
+      if (reason === "not-live") f.state.destinationStatus = "stopped";
+      if (reason === "unbound") f.state.destinationResume.session_id = "";
+      const result = await send(f.base, f.envelope);
+      assert.equal(result.status, 409);
+      assert.equal((result.body.error as Record<string, unknown>).code, "session-incarnation-conflict");
+      assert.match(String((result.body.error as Record<string, unknown>).message), /recover.*ownership.*import-owner --repair-session/i);
+      assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+      assert.equal(f.state.writes, 0);
+      const discovery = await discover(f);
+      assert.equal(discovery.status, 200);
+      const body = await discovery.json() as { peers: Array<{ session_id: string }> };
+      assert.equal(body.peers.some(peer => peer.session_id === "destination"), false);
+    } finally { await f.cleanup(); }
+  });
+}
+
+test("native resume cannot carry a grant from a different machine", async () => {
+  const f = await fixture();
+  try {
+    const before = readGrant(f.db, "cedar", "destination");
+    f.envelope.to = { machine: "summit", session_id: "destination", session_incarnation: "native-next" };
+    const result = await send(f.base, f.envelope);
+    assert.equal(result.status, 403);
+    assert.equal((result.body.error as Record<string, unknown>).code, "ownership-unknown");
+    assert.match(String((result.body.error as Record<string, unknown>).message), /recover.*ownership.*import-owner --repair-session/i);
+    assert.equal(readGrant(f.db, "summit", "destination"), undefined);
+    assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+    assert.equal(f.state.writes, 0);
   } finally { await f.cleanup(); }
 });
 

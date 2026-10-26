@@ -225,10 +225,23 @@ function peerDiagnostics(snapshot: Snapshot, session: Record<string, unknown>) {
   return { runtime_status, messaging_supported: reason === null, messaging_unavailable_reason: reason,
     ...(code ? { startup_failure_code: code } : {}) };
 }
-function grant(store: AccessStore, target: Identity): string {
+const OWNERSHIP_RECOVERY = "refresh sessions; if the conflict persists, ask the maintainer to recover session ownership with scoped import-owner --repair-session";
+function grant(store: AccessStore, target: Identity, state?: Snapshot): string {
   const grant = store.sessionGrant(target.machine, target.session_id);
-  if (!grant) return fail(403, "ownership-unknown", "session ownership is unknown");
-  if (grant.incarnation !== target.session_incarnation) return fail(409, "session-incarnation-conflict", "session incarnation changed");
+  if (!grant) return fail(403, "ownership-unknown", `session ownership is unknown; ${OWNERSHIP_RECOVERY}`);
+  if (grant.incarnation !== target.session_incarnation) {
+    const session = state?.sessions.find(s => s.id === target.session_id);
+    const resume = object(session?.provider_resume);
+    // Only the configured machine's live snapshot can prove a native resume.
+    // Advance the existing owner's exact grant; never claim or rebind identity.
+    if (!session || session.status !== "running" || session.session_incarnation !== target.session_incarnation
+      || !grant.provider || !grant.providerSessionId
+      || resume?.provider !== grant.provider || resume.session_id !== grant.providerSessionId
+      || !store.advanceSessionIncarnation(grant.principalId, target.machine, target.session_id,
+        grant.incarnation, target.session_incarnation)) {
+      return fail(409, "session-incarnation-conflict", `session continuity is unproven; ${OWNERSHIP_RECOVERY}`);
+    }
+  }
   return grant.principalId;
 }
 function current(snapshot: Snapshot, target: Identity): Record<string, unknown> {
@@ -238,11 +251,20 @@ function current(snapshot: Snapshot, target: Identity): Record<string, unknown> 
   if (!supports(snapshot, session)) return fail(422, "remote-messaging-unsupported", "remote messaging is unsupported");
   return session;
 }
-function principalFor(config: EdgeConfig, store: AccessStore, target: Identity): PrincipalConfig {
-  const id = grant(store, target);
+function principalFor(config: EdgeConfig, store: AccessStore, target: Identity, state?: Snapshot): PrincipalConfig {
+  const id = grant(store, target, state);
   const principal = config.principals.find(p => p.id === id);
   if (!principal || !principal.machines.includes(target.machine)) return fail(403, "machine-forbidden", "machine is not permitted");
   return principal;
+}
+
+async function ownedSnapshot(config: EdgeConfig, store: AccessStore, target: Identity, machine: MachineConfig): Promise<Snapshot> {
+  const owner = store.sessionGrant(target.machine, target.session_id);
+  if (!owner) return fail(403, "ownership-unknown", `session ownership is unknown; ${OWNERSHIP_RECOVERY}`);
+  if (!config.principals.some(p => p.id === owner.principalId && p.machines.includes(machine.name))) {
+    return fail(403, "machine-forbidden", "machine is not permitted");
+  }
+  return snapshot(machine);
 }
 
 // This policy belongs only to mailbox discovery/delivery. Never use it for
@@ -365,8 +387,8 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
       if ([...url.searchParams.keys()].some(key => !["source_session_id", "source_incarnation"].includes(key))) return fail(400, "invalid-request", "invalid peer query");
       const from = identity({ machine: relay.machine, session_id: url.searchParams.get("source_session_id"), session_incarnation: url.searchParams.get("source_incarnation") });
       if (!from) return fail(400, "invalid-request", "source identity required");
-      const principal = principalFor(config, store, from);
-      const sourceSnapshot = await snapshot(source);
+      const sourceSnapshot = await ownedSnapshot(config, store, from, source);
+      const principal = principalFor(config, store, from, sourceSnapshot);
       const sourceSession = current(sourceSnapshot, from);
       const recipientOwners = new Set([principal.id, ...rulesForSender(config, store, principal, from, sourceSession).map(r => r.to)]);
       const candidates = config.machines.filter(m => config.principals.some(p => recipientOwners.has(p.id) && p.machines.includes(m.name))
@@ -377,7 +399,10 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
         catch { return []; }
         return state.sessions.flatMap(session => {
           const target = identity({ machine: machine.name, session_id: session.id, session_incarnation: session.session_incarnation });
-          if (!target || !mayMessage(config, store, principal, from, sourceSession, target, session)) return [];
+          if (!target || !recipientOwners.has(store.sessionGrant(target.machine, target.session_id)?.principalId ?? "")) return [];
+          try { grant(store, target, state); }
+          catch (error) { if (error instanceof RelayError) return []; throw error; }
+          if (!mayMessage(config, store, principal, from, sourceSession, target, session)) return [];
           return [{ ...target, ...peerDiagnostics(state, session) }];
         });
       }))).flat();
@@ -459,11 +484,11 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
     if (!payload) return fail(400, "remote-message-invalid", "invalid remote message envelope");
     if (payload.from.machine !== relay.machine) return fail(403, "origin-forbidden", "source machine does not match relay identity");
     if (payload.expires_at_epoch <= Math.floor(Date.now() / 1000)) return fail(410, "message-expired", "remote message expired");
-    const principal = principalFor(config, store, payload.from);
+    const sourceState = await ownedSnapshot(config, store, payload.from, source);
+    const principal = principalFor(config, store, payload.from, sourceState);
     const destination = config.machines.find(m => m.name === payload.to.machine);
     const ingress = config.coordinationRelays?.find(r => r.machine === payload.to.machine);
     if (!destination || !ingress) return fail(403, "machine-forbidden", "destination machine is not permitted");
-    const sourceState = await snapshot(source);
     const sourceSession = current(sourceState, payload.from);
     const recipientOwners = new Set([principal.id, ...rulesForSender(config, store, principal, payload.from, sourceSession).map(r => r.to)]);
     // Admit the sender before foreign incarnation diagnostics or destination
@@ -473,8 +498,8 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
       : !config.principals.some(p => recipientOwners.has(p.id) && p.machines.includes(payload.to.machine))) {
       return fail(403, "principal-forbidden", "recipient is not permitted");
     }
-    const recipientPrincipal = principalFor(config, store, payload.to);
     const destinationState = destination.name === source.name ? sourceState : await snapshot(destination);
+    const recipientPrincipal = principalFor(config, store, payload.to, destinationState);
     // Admit the recipient selector before exposing any foreign lifecycle
     // diagnostics. An unselected repository stays hidden even when unavailable.
     const candidate = destinationState.sessions.find(s => s.id === payload.to.session_id) ?? {};
