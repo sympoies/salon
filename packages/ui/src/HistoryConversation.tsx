@@ -5,6 +5,8 @@ import type { ConversationSnapshot } from "@agent-console/shared/resources";
 import { normalizeActivityTurnState } from "@agent-console/shared/activity";
 import { listHistoryMessages } from "./api.ts";
 import { AgentBadge } from "./AgentBadge.tsx";
+import { SessionNotice } from "./SessionNotice.tsx";
+import { parseSessionNotice } from "./parseSessionNotice.ts";
 import { MessageMarkdown } from "./MessageMarkdown.tsx";
 import { unwrapPastedContent } from "./pastedContent.ts";
 import type { HistoryMessage, HistoryMessagesResponse, HistorySession } from "./types.ts";
@@ -361,6 +363,7 @@ export function HistoryConversationView({
           </button>
         ) : null}
         {messages.map((message, index) => {
+          const notice = parseSessionNotice(message.text);
           const date = messageDate(message.timestamp);
           const previous = messages[index - 1];
           const previousDate = messageDate(previous?.timestamp);
@@ -375,12 +378,16 @@ export function HistoryConversationView({
             <Fragment key={message.id}>
               {newDay && date ? <div className="history-day-separator"><span>{messageDayLabel(date)}</span></div> : null}
               <article data-history-message-id={message.id}
-                aria-label={user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
-                className={`history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
+                aria-label={notice ? "System notice" : user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
+                className={notice ? "history-message is-notice" : `history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
+                {notice ? <SessionNotice notice={notice} raw={message.text} time={time} suppressImages={Boolean(message.images?.length)}>
+                  {message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}
+                </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
                 {user && !imageOnly ? time : null}
                 <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} />{message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}{imageOnly ? time : null}</div>
                 {!user && !imageOnly ? time : null}
+                </>}
               </article>
             </Fragment>
           );
