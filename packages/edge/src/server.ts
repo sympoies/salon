@@ -3034,7 +3034,7 @@ function advanceResumedSessionOwnership(
 ): boolean {
   const grant = store.sessionGrant(machine, sessionId);
   if (isRootPrincipal(principal) && (!grant || grant.incarnation !== previousIncarnation)) {
-    return typeof previousIncarnation === "string" && typeof nextIncarnation === "string" && nextIncarnation.length > 0;
+    return false;
   }
   return typeof previousIncarnation === "string"
     && typeof nextIncarnation === "string"
