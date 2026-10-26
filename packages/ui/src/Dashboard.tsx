@@ -2735,6 +2735,15 @@ export function Dashboard({
     onToggle={group => changeSessionFilters({ ...sessionFilters, statusGroup: sessionFilters.statusGroup === group ? null : group })} />;
   const nativeNoticeTarget = typeof document !== "undefined" && isMacTauri()
     ? document.getElementById("mac-titlebar-notice") : null;
+  useEffect(() => {
+    if (!nativeNoticeTarget) return;
+    nativeNoticeTarget.toggleAttribute("inert", !active);
+    nativeNoticeTarget.setAttribute("aria-hidden", String(!active));
+    return () => {
+      nativeNoticeTarget.removeAttribute("inert");
+      nativeNoticeTarget.removeAttribute("aria-hidden");
+    };
+  }, [nativeNoticeTarget, active]);
   const phoneConnectionNotice = viewport.mobile && connectionNotice ? statusNoticeElement : null;
   const focusedCountStrip = focusedStatusCounts && !nativeCountsTarget
     && (!viewport.mobile || phoneFocusCounts || phoneConnectionNotice)

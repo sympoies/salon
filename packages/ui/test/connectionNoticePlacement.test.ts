@@ -50,3 +50,23 @@ for (const focused of [true, false]) {
     });
   });
 }
+
+test("mac title-bar notice preserves background Dashboard isolation and restores dismissal", async () => {
+  const states: boolean[] = [];
+  await renderNoticeSurface("dashboard", 1280, {
+    focused: true, restore: true, macTitleBar: true,
+    inspectActive(container, active) {
+      states.push(active);
+      const target = container.querySelector("#mac-titlebar-notice");
+      assert.ok(target);
+      assert.equal(target.hasAttribute("inert"), !active, "background notice is inert like Dashboard");
+      assert.equal(target.getAttribute("aria-hidden"), String(!active), "background live region is hidden from accessibility");
+      assert.equal(target.querySelector(".connection-notice")?.getAttribute("role"), "status", "notice state remains mounted");
+      assert.ok(target.querySelector('[aria-label="Dismiss status notice"]'));
+    },
+    inspectClear(container) {
+      assertNoElement(container, ".connection-notice", "dismissal works after Dashboard is reactivated");
+    },
+  });
+  assert.deepEqual(states, [false, true]);
+});

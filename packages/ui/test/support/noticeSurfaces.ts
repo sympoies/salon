@@ -15,6 +15,7 @@ export async function renderNoticeSurface(surface: NoticeSurface, width: number,
   readonly focused?: boolean;
   readonly phoneFocusCounts?: boolean;
   readonly macTitleBar?: boolean;
+  readonly inspectActive?: (container: HTMLElement, active: boolean) => void;
   readonly inspectClear?: (container: HTMLElement, phase: "initial" | "dismissed") => void;
   readonly inspect?: (container: HTMLElement, phase: "unreachable" | "restored") => void;
 }): Promise<string> {
@@ -73,8 +74,9 @@ export async function renderNoticeSurface(surface: NoticeSurface, width: number,
         container.insertAdjacentHTML("beforebegin", renderComponent(MacTitleBar, {}));
       }
       const { Dashboard } = await harness.loadModule<typeof import("../../src/Dashboard.tsx")>("/src/Dashboard.tsx");
-      await act(async () => root.render(createElement(Dashboard, { active: true, machines: [machine], enabledMachines: [machine], machineColors: {},
-        phoneFocusCounts: connection?.phoneFocusCounts, defaultAutoResume: false, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true, onDebug() {}, onUsage() {}, onSettings() {} })));
+      const renderDashboard = (active: boolean) => root.render(createElement(Dashboard, { active, machines: [machine], enabledMachines: [machine], machineColors: {},
+        phoneFocusCounts: connection?.phoneFocusCounts, defaultAutoResume: false, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true, onDebug() {}, onUsage() {}, onSettings() {} }));
+      await act(async () => renderDashboard(true));
       const tick = { signal: new AbortController().signal, isCurrent: () => true };
       const poll = () => (globalThis as unknown as { __agentConsoleNoticePoll: (tick: object) => Promise<void> }).__agentConsoleNoticePoll(tick);
       if (connection?.focused) {
@@ -94,6 +96,12 @@ export async function renderNoticeSurface(surface: NoticeSurface, width: number,
         (globalThis as unknown as { __agentConsoleNoticeOutage: boolean }).__agentConsoleNoticeOutage = false;
         await act(poll);
         connection.inspect?.(window.document.body as unknown as HTMLElement, "restored");
+      }
+      if (connection?.inspectActive) {
+        for (const active of [false, true]) {
+          await act(async () => renderDashboard(active));
+          connection.inspectActive(window.document.body as unknown as HTMLElement, active);
+        }
       }
     }
     assert.ok(window.document.querySelector(".connection-notice"), `${surface} transport failure renders its notice`);
