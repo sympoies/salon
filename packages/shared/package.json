@@ -1,6 +1,6 @@
 {
   "name": "@agent-console/shared",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "description": "Shared agent-console protocol contracts and title helpers used by edge and UI.",
   "type": "module",
