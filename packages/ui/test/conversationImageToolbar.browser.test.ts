@@ -44,7 +44,7 @@ test("viewer clears title chrome and uses shared themed icon controls", async t 
               top:fit.getBoundingClientRect().top,titleHeight:document.querySelector('.mac-titlebar')?.getBoundingClientRect().height??0,
               counterTop:counter.getBoundingClientRect().top,counterColor:cs.color,counterFont:cs.fontSize,
               expectedFont:getComputedStyle(textReference).fontSize,
-              scrim:getComputedStyle(toolbar).backgroundImage,viewportWidth:innerWidth,overflow:viewer.scrollWidth>innerWidth});
+              scrim:getComputedStyle(toolbar).backgroundImage,backdrop:getComputedStyle(document.querySelector('.conversation-image-backdrop')).backgroundColor,viewportWidth:innerWidth,overflow:viewer.scrollWidth>innerWidth});
           }catch(error){document.querySelector('#measurement').textContent=JSON.stringify({error:String(error)})}})();`;
       },
     }],build:{write:false,minify:false,target:"esnext",lib:{entry:"viewer-toolbar-fixture",name:"ViewerFixture",formats:["iife"]}}});
@@ -54,20 +54,20 @@ test("viewer clears title chrome and uses shared themed icon controls", async t 
   const css=["styles.css","ConversationImages.css"].map(name=>readFileSync(new URL(`../src/${name}`,import.meta.url),"utf8")).join("\n");
   const temp=mkdtempSync(join(tmpdir(),"viewer-toolbar-")),evidence=process.env.AGENT_CONSOLE_UI_SCREENSHOT_DIR;
   try{
-    for(const [width,mac] of [[1440,true],[360,false],[760,false],[761,false]] as const){
-      const frame=`<!doctype html><html ${mac?'data-mac-titlebar="true"':''}><style>${css}html,body{margin:0}#measurement{display:none}</style>
+    for(const [width,mac,theme] of [[1440,true,"dark"],[360,false,"dark"],[760,false,"dark"],[761,false,"dark"],[1440,true,"light"],[360,false,"light"]] as const){
+      const frame=`<!doctype html><html data-theme="${theme}" ${mac?'data-mac-titlebar="true"':''}><style>${css}html,body{margin:0}#measurement{display:none}</style>
         ${mac?'<div class="mac-titlebar">Synthetic title bar</div>':''}<div id="root"></div><pre id="measurement"></pre><script>${code}</script></html>`;
-      const file=join(temp,`viewer-${width}.html`);
+      const file=join(temp,`viewer-${width}-${theme}.html`);
       writeFileSync(file,`<!doctype html><style>body{margin:0}iframe{border:0;display:block}</style><iframe width="${width}" height="900"></iframe><pre id="result" style="display:none"></pre>
         <script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<","\\u003c")};setInterval(()=>{document.querySelector('#result').textContent=document.querySelector('iframe').contentDocument.querySelector('#measurement')?.textContent||''},50)</script>`);
       if(evidence)mkdirSync(evidence,{recursive:true});
       const browser=spawnSync(process.env.CHROME_BIN??"google-chrome",["--headless","--disable-gpu","--no-sandbox","--hide-scrollbars","--allow-file-access-from-files",
-        `--window-size=${Math.max(width,800)},1000`,"--virtual-time-budget=5000",...(evidence?[`--screenshot=${join(evidence,`viewer-${width}.png`)}`]:[]),"--dump-dom",`file://${file}`],{encoding:"utf8",timeout:20000});
+        `--window-size=${Math.max(width,800)},1000`,"--virtual-time-budget=5000",...(evidence?[`--screenshot=${join(evidence,`viewer-${width}-${theme}.png`)}`]:[]),"--dump-dom",`file://${file}`],{encoding:"utf8",timeout:20000});
       assert.equal(browser.status,0,browser.stderr);
       const json=browser.stdout.match(/<pre id="result"[^>]*>(.+?)<\/pre>/s)?.[1];assert.ok(json,"real viewer returns measurements");
       const m=JSON.parse(json.replaceAll("&quot;",'"').replaceAll("&amp;","&").replaceAll("&lt;","<").replaceAll("&gt;",">"));
-      if(evidence)writeFileSync(join(evidence,`viewer-${width}.json`),JSON.stringify(m,null,2));
-      await t.test(`${width}px ${mac?"macOS title layout":"web layout"}`,async t=>{
+      if(evidence)writeFileSync(join(evidence,`viewer-${width}-${theme}.json`),JSON.stringify(m,null,2));
+      await t.test(`${theme} ${width}px ${mac?"macOS title layout":"web layout"}`,async t=>{
         assert.equal(m.error,undefined);assert.equal(m.viewportWidth,width);assert.equal(m.overflow,false);
         await t.test("toolbar clears title area",()=>{
           assert.ok(m.top>=m.titleHeight+8,`control top ${m.top} clears title height ${m.titleHeight}`);
@@ -79,6 +79,15 @@ test("viewer clears title chrome and uses shared themed icon controls", async t 
           assert.deepEqual(m.viewerFocus,m.focus,"shared keyboard focus styling");
           assert.equal(m.counterColor,m.normal.color,"theme foreground");assert.equal(m.counterFont,m.expectedFont,"small text token");
           assert.notEqual(m.scrim,"none","scrim protects toolbar over images");
+          const rgb=(value:string)=>value.match(/[\d.]+/g)!.map(Number);
+          const luminance=(color:number[])=>color.slice(0,3).map(v=>v/255).map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4).reduce((sum,v,i)=>sum+v*[0.2126,0.7152,0.0722][i]!,0);
+          const fg=luminance(rgb(m.counterColor)),backdrop=rgb(m.backdrop);
+          // The near-opaque backdrop covers arbitrary images. White beneath it
+          // gives the brightest possible background at the transparent end;
+          // check the opaque scrim end too, bounding every gradient position.
+          const backgrounds=[backdrop.slice(0,3).map((v,i)=>v*backdrop[3]!+255*(1-backdrop[3]!)),rgb(m.scrim.match(/rgba?\([^)]+\)/)![0])];
+          const contrast=Math.min(...backgrounds.map(bg=>{const l=luminance(bg);return (Math.max(fg,l)+0.05)/(Math.min(fg,l)+0.05)}));
+          assert.ok(contrast>=4.5,`counter contrast lower bound ${contrast.toFixed(2)}:1`);
         });
       });
     }
