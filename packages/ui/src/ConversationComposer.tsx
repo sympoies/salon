@@ -256,16 +256,21 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     event.preventDefault();
     if (!attachBlocked) void attach(files);
   };
-  const send = async () => {
+  const send = async (replyText?: string): Promise<boolean> => {
     const currentDraft = readDraft();
-    if (!canSend || currentDraft.sending || currentDraft.outcomeUnknown) return;
+    const content = replyText ?? currentDraft.text;
+    const allowed = (!hint || hint === BUSY_REPLY_HINT) && !sending && !uploading && !outcomeUnknown
+      && !currentDraft.sending && !currentDraft.outcomeUnknown && Boolean(content.trim());
+    if (!allowed) return false;
     const incarnation = currentDraft.incarnation;
     updateReply({ sending: true, error: "" });
     try {
-      await shared.enqueue(session, currentDraft.text.trim());
+      await shared.enqueue(session, content.trim());
       if (currentIncarnation.current === incarnation) updateReply({ text: "", error: "", outcomeUnknown: false });
+      return true;
     } catch (cause) {
       updateReply({ error: cause instanceof Error ? cause.message : "Could not save the reply. Your draft has been kept." });
+      return false;
     } finally {
       updateReply({ sending: false });
     }
@@ -341,7 +346,15 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
         onBeforeOpen={() => {}} onOpenChange={onVoiceOpenChange}
         onTranscript={(text) => {
           const current = readDraft();
-          updateReply({ text: current.text ? `${current.text}\n${text}` : text, error: current.outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
+          const separator = current.text && !current.text.endsWith("\n") ? "\n" : "";
+          updateReply({ text: `${current.text}${separator}${text}`, error: current.outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
+        }}
+        onSendTranscript={(text) => {
+          const current = readDraft();
+          const separator = current.text && !current.text.endsWith("\n") ? "\n" : "";
+          const content = `${current.text}${separator}${text}`;
+          updateReply({ text: content, incarnation: current.text ? current.incarnation : session.session_incarnation, error: current.outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
+          return send(content);
         }} />
     </footer>
   );
