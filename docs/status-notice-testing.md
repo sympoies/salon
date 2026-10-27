@@ -36,22 +36,20 @@ produces the cooling-down reason without requiring a real host to be stopped.
 
 ## Attention
 
-1. Use a disposable session and machine belonging to the test principal. Make
-   sure the test principal's retitle provider is not configured (or use a
-   test-only daemon configured to return `retitle-provider-not-configured`).
-   Do not change provider configuration for another principal.
+1. Use a disposable session on a test-only machine whose daemon does not expose
+   title revision support. Keep other machines and sessions unchanged.
 2. In the installed client, edit that session's title and save a non-empty
-   title. The UI sends a valid manual retitle request to the edge, which
-   forwards it to the test machine. With no provider configured, the edge
-   returns `The retitle provider is not configured.` and the client surfaces
-   that error as an `attention` status notice. Confirm it appears in the
-   status-count row on phone and at the title-bar end on desktop/native macOS.
+   title. The existing title update flow refuses to send a write without title
+   revision support and reports `session daemon does not expose title revision
+   support`. The client surfaces the error as an `attention` status notice.
+   Confirm it appears in the status-count row on phone and at the title-bar end
+   on desktop/native macOS.
 3. Attention notices do not auto-dismiss and are not subject to the host-offline
    120-second repeat suppression. Close the notice to clear it. Repeat the
    request to show it again, then remove the disposable session if desired.
 
-Only use the test principal's own disposable session and test-only provider
-configuration. This request does not alter the session title when rejected.
+Only use the test principal's own disposable session and test-only machine. The
+failed title update leaves the session title unchanged.
 
 ## Phone history unavailable
 
@@ -75,6 +73,7 @@ This fallback is phone-only; it does not appear on desktop or native macOS.
 The edge machine probe reports a cooling-down error after a failed probe;
 `useStatusNotice` recognizes errors for configured machine names and applies
 the 8-second expiry, 120-second repeat window, and 5-second startup grace.
-The edge validates retitle requests before forwarding them. The phone fallback
-is selected when a session's machine is not in `historyMachineNames`. All three
-notices flow through the existing header placement.
+The title controller reports an attention error when the daemon lacks title
+revision support. The phone fallback is selected when a session's machine is
+not in `historyMachineNames`. All three notices flow through the existing
+header placement.
