@@ -1884,3 +1884,26 @@ test("#86 a fresh Retry or dispatch ends untimed legacy recovery semantics", asy
     assert.equal(h.queueModule.transcriptProof([dispatched], older).size, 0, "older history cannot prove a real new attempt");
   } finally { await h.close(); }
 });
+
+
+test("#86 Retry of a timed refused image keeps its new intention past already-loaded history", async () => {
+  const h = await mount();
+  try {
+    await h.render("idle", 1, {}, false, false);
+    const outbox = h.queueModule.conversationOutbox();
+    const text = "'/attachments/timed-retry.png'", old = Date.now() - 2 * 86_400_000;
+    await seedLegacyEchoes(h, [{ id: "timed-refusal", requestId: "old-attempt", text, incarnation: h.session().session_incarnation!,
+      state: "refused", queuedAt: old, attemptedAt: old }]);
+    const history = [{ ...userTurn("before-retry", "[Image #1]", old + 1000), images: [{ id: "timed-retry-image" }] }];
+    await h.transcript(history);
+    await h.render("idle", 1, {}, false, false);
+    assert.equal(outbox.items(h.session())[0]?.state, "refused", "a definite refusal is not proven by history");
+    const retryAt = Date.now();
+    await h.click("Retry reply");
+    const retried = outbox.items(h.session())[0];
+    assert.equal(retried?.state, "queued", "the unclaimed new request survives older matching history");
+    assert.notEqual(retried!.requestId, "old-attempt");
+    assert.ok(retried!.attemptedAt! >= retryAt, "Retry starts a fresh proof-time boundary");
+    assert.equal(h.requests.length, 0, "dispatch remains unavailable during this actual Retry action");
+  } finally { await h.close(); }
+});

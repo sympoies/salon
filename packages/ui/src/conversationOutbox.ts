@@ -363,7 +363,7 @@ export class ConversationOutbox {
       // input, so the Retry keeps the idle guard (#994).
       queue.items = queue.items.map(item => item.id === id && item.state === "refused"
         ? { ...item, requestId: crypto.randomUUID(), state: "queued", error: undefined, unconfirmed: undefined,
-          ...(untimed(item) ? { legacyUntimed: undefined, attemptedAt: Date.now() } : {}),
+          legacyUntimed: undefined, attemptedAt: Date.now(),
           ...(mayHoldIdlePaste(item, session) ? { direct: undefined } : {}) } : item);
       queue.consumedIdle = undefined;
     });
