@@ -1,3 +1,4 @@
+import type { QueuedReply } from "../src/conversationOutbox.ts";
 import type {PromptReceipt} from "@agent-console/shared/prompt-receipt";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
@@ -1724,4 +1725,101 @@ test("#1043 a sent message and its paste-wrapped transcript turn show one bubble
     assert.doesNotMatch(h.container.textContent??"",/pasted_content/,"no wrapper tags");
     assert.equal(h.requests.length,1,"nothing is sent again");
   }finally{delete globalThis.__outboxTranscript;await h.close();clock.restore();}
+});
+
+
+async function seedLegacyEchoes(h: Awaited<ReturnType<typeof mount>>, items: readonly QueuedReply[]) {
+  const outbox = h.queueModule.conversationOutbox();
+  await act(async () => (outbox as unknown as {
+    change(session: Session, edit: (queue: { items: QueuedReply[] }) => void): Promise<void>;
+  }).change(h.session(), queue => { queue.items.push(...items); }));
+  await h.settle();
+}
+
+test("#86 stored legacy image echoes reconcile on load and history refresh without sends", async () => {
+  const factory = new IDBFactory(); let h = await mount(factory);
+  const at = Date.now() - 2 * 86_400_000;
+  const states = ["queued", "dispatching", "unknown", "delivered"] as const;
+  const rows = states.map((state, index) => ({ id: state, requestId: state, state,
+    text: `'/attachments/example-${index}.png'`, incarnation: "older-incarnation",
+    // A missing queuedAt explains the absent timestamp in older clients.
+    ...(state === "queued" ? { queuedAt: at } : { attemptedAt: at + 2000 }) }));
+  const history = rows.map((row, index) => ({ ...userTurn(`image-${index}`, `[Image #${index + 1}] [Image: source: /attachments/example-${index}.png]`, at + 3000 + index),
+    images: [{ id: `synthetic-${index}` }] }));
+  try {
+    await h.render("idle"); await seedLegacyEchoes(h, rows);
+    await h.close(); h = await mount(factory);
+    // A single source-less label is unambiguous when only its candidate is old enough.
+    globalThis.__outboxTranscript = [{ ...history[0]!, text: "[Image #1]", timestamp: new Date(at + 1000).toISOString() }];
+    await h.render("idle"); await h.renderLivePanel();
+    assert.equal(h.queueModule.conversationOutbox().items(h.session()).some(row => row.id === "queued"), false,
+      "persisted queued image echo is reconciled on initial history load");
+    globalThis.__outboxTranscript = history;
+    await h.refreshLiveHistory();
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), [], "history refresh clears stored attempted echoes too");
+    assert.equal(h.requests.length, 0);
+    globalThis.__outboxTranscript = [...history, { ...userTurn("late-image", "[Image #5] [Image: source: /attachments/late.png]", at + 5000), images: [{ id: "late-image" }] }];
+    await h.refreshLiveHistory();
+    // Storage can finish loading after history, with no further history change.
+    await seedLegacyEchoes(h, [{ ...rows[0]!, id: "late-storage", requestId: "late-storage", text: "'/attachments/late.png'" }]);
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), [], "storage changes reconcile against already loaded history");
+    await h.close(); h = await mount(factory); await h.render("idle");
+    assert.equal(h.queueModule.conversationOutbox().items(h.session()).some(row => row.id === "queued"), false, "reconciliation persists across reload");
+  } finally { delete globalThis.__outboxTranscript; await h.close(); }
+});
+
+test("#86 Dismiss removes only an old uncertain local echo with zero sends", async () => {
+  const factory = new IDBFactory(); let h = await mount(factory);
+  const at = Date.now() - 2 * 86_400_000;
+  try {
+    await h.render("idle");
+    await seedLegacyEchoes(h, [
+      { id: "old", requestId: "old", text: "'/attachments/unmatched.png'", incarnation: "older-incarnation", state: "unknown", attemptedAt: at },
+      { id: "keep", requestId: "keep", text: "fresh echo", incarnation: "older-incarnation", state: "queued", queuedAt: Date.now() },
+    ]);
+    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1);
+    const sharedBefore = globalThis.__outboxSharedItems?.slice();
+    await h.click("Dismiss reply");
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()).map(row => row.id), ["keep"]);
+    assert.deepEqual(globalThis.__outboxSharedItems, sharedBefore);
+    assert.equal(h.requests.length, 0); assert.equal(h.inputs.length, 0);
+    await h.close(); h = await mount(factory); await h.render("idle");
+    assert.equal(h.status("'/attachments/unmatched.png'"), undefined, "dismissal persists");
+    assert.equal(h.requests.length, 0);
+  } finally { await h.close(); }
+});
+
+
+test("#86 dismissal waits a day, preserves definite outcomes and guards a live attempt across windows", async () => {
+  const clock = graceClock(); const h = await mount(); let finish: (value: TestResult) => void = () => {};
+  try {
+    await h.render("idle");
+    await seedLegacyEchoes(h, [
+      { id: "untimed", requestId: "untimed", text: "older unknown echo", incarnation: "older-incarnation", state: "unknown" },
+      { id: "refused", requestId: "refused", text: "definitely refused", incarnation: "older-incarnation", state: "refused", attemptedAt: Date.now() - 2 * 86_400_000 },
+      { id: "delivered", requestId: "delivered", text: "definitely delivered", incarnation: "older-incarnation", state: "delivered", attemptedAt: Date.now() - 2 * 86_400_000 },
+    ]);
+    const outbox = h.queueModule.conversationOutbox();
+    assert.equal(Boolean(h.button("Dismiss reply")), false, "missing time starts a bounded observation period");
+    await clock.advance(h.queueModule.STALE_LOCAL_ECHO_MS - 1, h.settle);
+    assert.equal(Boolean(h.button("Dismiss reply")), false);
+    await clock.advance(1, h.settle);
+    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1, "only uncertain row ages into Dismiss");
+    assert.equal(await outbox.dismiss(h.session(), "refused", "older-incarnation", []), false);
+    assert.equal(await outbox.dismiss(h.session(), "delivered", "older-incarnation", []), false);
+    await h.click("Dismiss reply");
+    await h.click("Discard refused reply");
+    // A real pending submit holds the existing cross-window delivery lock.
+    h.submit(() => new Promise(resolve => { finish = resolve; }));
+    await act(async () => outbox.enqueue(h.session(), "live attempt")); await h.settle();
+    assert.equal(h.requests.length, 1);
+    await clock.advance(h.queueModule.STALE_LOCAL_ECHO_MS, h.settle);
+    const live = outbox.items(h.session()).find(row => row.text === "live attempt")!;
+    assert.equal(outbox.canDismiss(live), false);
+    const other = new h.queueModule.ConversationOutbox(outbox.namespace); await other.ready;
+    assert.equal(await other.dismiss(h.session(), live.id, live.incarnation, []), false, "another window cannot remove a live claim");
+    assert.equal(other.items(h.session()).some(row => row.id === live.id), true);
+    await act(async () => finish({ ok: true })); await h.settle();
+    assert.equal(h.requests.length, 1, "dismiss never sends or replays");
+  } finally { finish({ ok: true }); await h.close(); clock.restore(); }
 });

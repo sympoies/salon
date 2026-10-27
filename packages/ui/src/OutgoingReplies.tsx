@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef, useState } from "react";
-import { transcriptProof, useConversationOutbox } from "./conversationOutbox.ts";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { STALE_LOCAL_ECHO_MS, transcriptProof, useConversationOutbox } from "./conversationOutbox.ts";
 import type { HistoryMessage, Session } from "./types.ts";
 
 function timeLabel(at: number | undefined): string | undefined {
@@ -14,6 +14,12 @@ export function OutgoingReplies({ session, messages }: {
   readonly messages: readonly HistoryMessage[];
 }) {
   const outbox = useConversationOutbox();
+  const version = outbox.snapshot();
+  useEffect(() => {
+    if (messages.length || outbox.items(session).some(item => item.state !== "refused" && item.queuedAt === undefined && item.attemptedAt === undefined)) {
+      void outbox.confirmFromTranscript(session, messages).catch(() => {});
+    }
+  }, [outbox, version, session, messages]);
   const proven = transcriptProof(outbox.items(session), messages, outbox.provenTurnIds(session));
   const items = outbox.items(session).filter(item => !proven.has(item.id));
   const section = useRef<HTMLElement>(null);
@@ -24,6 +30,14 @@ export function OutgoingReplies({ session, messages }: {
     if (viewport && items.length > shown.current) viewport.scrollTop = viewport.scrollHeight;
     shown.current = items.length;
   }, [items.length]);
+  useEffect(() => {
+    const waits = items.filter(item => item.state !== "delivered" && (item.state !== "refused" || item.unconfirmed))
+      .map(item => (item.attemptedAt ?? item.queuedAt ?? 0) + STALE_LOCAL_ECHO_MS - Date.now())
+      .filter(ms => ms > 0 && ms <= STALE_LOCAL_ECHO_MS);
+    if (!waits.length) return;
+    const timer = setTimeout(() => outbox.wake(), Math.min(...waits));
+    return () => clearTimeout(timer);
+  }, [outbox, version, items]);
   if (items.length === 0) return null;
   return <section ref={section} className="history-outgoing" aria-label="Your replies">
     {error ? <p className="history-error" role="alert">{error}</p> : null}
@@ -41,6 +55,10 @@ export function OutgoingReplies({ session, messages }: {
               if (!discarded) setError("This reply changed in another window and was kept.");
             }).catch(cause => setError(String(cause))); }}>Discard</button> : null}
         </p> : null}
+        {outbox.canDismiss(item) ? <button type="button" className="btn ghost" aria-label="Dismiss reply"
+          onClick={() => { void outbox.dismiss(session, item.id, item.incarnation, messages).then(dismissed => {
+            if (!dismissed) setError("This reply changed or has an active attempt and was kept.");
+          }).catch(cause => setError(String(cause))); }}>Dismiss</button> : null}
         {item.incarnation !== session.session_incarnation ? <p className="history-outgoing-note" role="alert">This session restarted. This reply will not be sent to the new session.</p> : null}
       </div>
     </article>)}

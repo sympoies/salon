@@ -61,6 +61,8 @@ const QUEUED_REPLY_BUSY_RETRY_MS = 5000;
  * long did not start a turn, so it is shown as not confirmed (#994).
  */
 export const UNCERTAIN_IDLE_REPLY_MS = 30_000;
+/** An unmatched local echo may be explicitly dismissed after one day. */
+export const STALE_LOCAL_ECHO_MS = 24 * 60 * 60 * 1000;
 /** How many proving transcript turns a queue remembers (#969). */
 const PROVEN_TURNS_KEPT = 200;
 const transcriptText = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -76,7 +78,8 @@ const TERMINAL_DRAFT_ERRORS: Readonly<Record<string, string>> = {
   "composer-unobservable": "Console cannot read the terminal input, so this reply was not sent. Check the terminal, then Retry.",
 };
 const provable = (item: QueuedReply) => item.state === "unknown" || item.state === "dispatching" || item.state === "delivered"
-  || (item.state === "refused" && item.unconfirmed === true);
+  || (item.state === "refused" && item.unconfirmed === true)
+  || (item.state === "queued" && imagePaths(item.text).length > 0 && !transcriptText(item.text.replace(IMAGE_PATH, "")));
 
 /** A proven part of a transcript turn: the turn and the reply text it held. */
 const provenKey = (turnId: string, text: string) => `${turnId}\u0000${text}`;
@@ -109,7 +112,7 @@ export function transcriptProof(items: readonly QueuedReply[], messages: readonl
     const at = Date.parse(message.timestamp ?? "");
     const parts = spent.get(message.id) ?? [];
     if (message.role !== "user" || !Number.isFinite(at) || parts.includes("")) continue;
-    const candidates = pending.filter(item => !matched.has(item.id) && attemptTime(item) <= at);
+    const candidates = pending.filter(item => !matched.has(item.id) && attemptTime(item) > 0 && attemptTime(item) <= at);
     const text = transcriptText(unwrapPastedContent(message.text));
     const used = candidates.length > 0 ? coverTurn(text, candidates, parts) : undefined;
     if (!used && parts.length === 0 && message.images?.length) {
@@ -362,6 +365,25 @@ export class ConversationOutbox {
       queue.items = queue.items.filter(candidate => candidate !== item);
       return true;
     });
+  }
+  /** Age alone never proves delivery or refusal and never triggers a send. */
+  canDismiss(item: QueuedReply): boolean {
+    const at = attemptTime(item);
+    return item.state !== "delivered" && (item.state !== "refused" || item.unconfirmed === true)
+      && Number.isFinite(at) && at > 0 && Date.now() - at >= STALE_LOCAL_ECHO_MS
+      && !this.sending.has(item.id) && !this.checking.has(item.id);
+  }
+  /** Remove only this local echo, under the same cross-window lock as delivery. */
+  async dismiss(session: Session, id: string, incarnation: string, messages: readonly HistoryMessage[]): Promise<boolean> {
+    return await this.exclusively(session, () => this.change(session, queue => {
+      const matches = queue.items.filter(item => item.id === id);
+      if (matches.length !== 1) return false;
+      const item = matches[0]!;
+      if (item.incarnation !== incarnation || !this.canDismiss(item)
+        || transcriptProof(queue.items, messages, queue.provenTurns).has(id)) return false;
+      queue.items = queue.items.filter(candidate => candidate !== item);
+      return true;
+    })) ?? false;
   }
   async deliver(session: Session, reachable: boolean, draftEmpty: () => boolean) {
     const target = this.key(session);

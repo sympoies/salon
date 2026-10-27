@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { listHistorySessions } from "./api.ts";
 import { findHistoryEntry } from "./historyResumeById.ts";
 import { useHistoryConversation } from "./HistoryConversation.tsx";
-import { conversationOutbox } from "./conversationOutbox.ts";
 import { createAsyncPoller } from "./useAsyncPoll.ts";
 import { useResourceEvents } from "./useResourceEvents.ts";
 import { RESOURCE_RECONCILE_MS } from "./resourceEvents.ts";
@@ -67,12 +66,6 @@ export function useLiveConversation(session: Session, {
       resetConversation();
     };
   }, [label, openConversation, resetConversation, providerSessionId, session.machine]);
-
-  // A reply this browser sent is delivered once the transcript shows it (#969).
-  const messages = conversation.messages;
-  useEffect(() => {
-    if (messages.length > 0) void conversationOutbox().confirmFromTranscript(session, messages).catch(() => {});
-  }, [messages, session]);
 
   // Turn completion refreshes immediately; periodic reads also pick up input
   // sent through the independently usable terminal.
