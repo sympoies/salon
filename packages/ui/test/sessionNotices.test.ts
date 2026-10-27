@@ -12,17 +12,14 @@ const raw = '<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 
-async function mount(text: string, latestMessagePaging = true, failMarkdown = false) {
+async function mount(text: string, latestMessagePaging = true) {
   const window = new Window({ url: "http://localhost" });
   const previous = { window: globalThis.window, document: globalThis.document, IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT };
   Object.assign(globalThis, { window, document: window.document, IS_REACT_ACT_ENVIRONMENT: true });
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
-  const ssr = createUiSsrHarness({ ssr: { noExternal: ["markdown-to-jsx"] }, plugins: failMarkdown ? [{ name: "failing-markdown", enforce: "pre",
-    resolveId(id) { if (id === "markdown-to-jsx/react") return "\0failing-markdown"; },
-    load(id) { if (id === "\0failing-markdown") return 'export default function Markdown(){throw Error("Synthetic rendering failure")}'; },
-  }] : [] });
+  const ssr = createUiSsrHarness({ ssr: { noExternal: ["markdown-to-jsx"] } });
   cleanups.push(async () => { await act(async () => root.unmount()); await ssr.close(); Object.assign(globalThis, previous); window.close(); });
   const { HistoryConversationView } = await ssr.loadModule<typeof import("../src/HistoryConversation.tsx")>("/src/HistoryConversation.tsx");
   const conversation = {
@@ -31,24 +28,21 @@ async function mount(text: string, latestMessagePaging = true, failMarkdown = fa
     latestMessagePaging, loading: false, viewportRef: { current: null }, messagePage: 0, messagePageCursors: [],
   } as unknown as import("../src/HistoryConversation.tsx").HistoryConversation;
   await act(async () => root.render(createElement(HistoryConversationView, { conversation, onJumpToLatest() {} })));
-  return { container: container as unknown as HTMLElement, window, ssr };
+  return { container: container as unknown as HTMLElement, window, ssr, root };
 }
 
-test("notice header is hidden and body preview is readable in live and history", async () => {
+test("notice header is hidden and full plain-text body is visible in live and history", async () => {
   const live = await mount(raw);
   const history = await mount(raw, false);
   for (const { container } of [live, history]) {
     assert.doesNotMatch(container.textContent ?? "", /<!-- agent-notice:/, "the envelope must not appear as visible text");
-    assert.match(container.textContent ?? "", /Mailbox.*Synthetic update.*12:00/);
-    assert.equal(container.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded"), "false");
+    assert.match(container.textContent ?? "", /Mailbox.*12:00.*Synthetic update/s);
+    assert.equal(Boolean(container.querySelector("button[aria-expanded]")), false);
+    assert.equal(container.querySelector(".session-notice-body")?.textContent, parseSessionNotice(raw)?.body);
     assert.equal(Boolean(container.querySelector(".history-bubble")), false);
   }
   assert.equal(live.container.querySelector("article")?.outerHTML, history.container.querySelector("article")?.outerHTML);
-  await act(async () => live.container.querySelector<HTMLButtonElement>(".session-notice-toggle")!.click());
-  assert.equal(history.container.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded"), "false", "expansion belongs to each view");
-  await act(async () => history.container.querySelector<HTMLButtonElement>(".session-notice-toggle")!.click());
-  assert.equal(live.container.querySelector("article")?.outerHTML, history.container.querySelector("article")?.outerHTML);
-  assert.equal(live.container.querySelector("strong")?.textContent, "Full body");
+  assert.equal(Boolean(live.container.querySelector("strong")), false, "Markdown stays literal");
 });
 
 
@@ -83,20 +77,24 @@ test("known labels are fixed; unknown and spoofed kinds stay generic plain text"
     ["mailbox.admin", "System notice"], ["system.admin", "System notice"]]) {
     const { container, window } = await mount(`<!-- agent-notice:v1 kind=${kind} source=fixture.admin -->\n\nBody`);
     assert.equal(container.querySelector(".session-notice-label")?.textContent, label);
-    await act(async () => container.querySelector<HTMLButtonElement>(".session-notice-toggle")!.click());
     assert.equal(container.querySelector(".session-notice-meta > span")?.textContent, `${kind} · fixture.admin`);
     assert.equal(Boolean(container.querySelector("script, b")), false);
-    // A click changes only this mounted view; the raw fields never become attributes.
+    // The raw fields remain plain text in this mounted view.
     assert.equal(window.document.querySelectorAll(".session-notice").length, 1);
   }
 });
 
-test("failed Markdown renders the parsed body without exposing the envelope", async () => {
+test("failed notice child renders the parsed body without exposing the envelope", async () => {
   const previous = console.error;
   console.error = () => {};
   try {
-    const { container } = await mount(raw, true, true);
-    await act(async () => container.querySelector<HTMLButtonElement>(".session-notice-toggle")!.click());
+    const { container, ssr, root } = await mount(raw);
+    const { SessionNotice } = await ssr.loadModule<typeof import("../src/SessionNotice.tsx")>("/src/SessionNotice.tsx");
+    function FailedAttachment(): never { throw Error("Synthetic rendering failure"); }
+    await act(async () => root.render(createElement(SessionNotice, {
+      notice: parseSessionNotice(raw)!, raw, time: "12:00", suppressImages: false,
+      children: createElement(FailedAttachment),
+    })));
     assert.match(container.textContent ?? "", /Synthetic update/);
     assert.match(container.textContent ?? "", /\*\*Full body\*\*/);
     assert.doesNotMatch(container.textContent ?? "", /agent-notice:v1/);
@@ -104,7 +102,7 @@ test("failed Markdown renders the parsed body without exposing the envelope", as
 });
 
 
-test("preview takes the first non-empty body line", async () => {
+test("body preserves blank lines and whitespace", async () => {
   const { container } = await mount(`${header}\n\n\n   \nFirst readable line\nSecond line`);
-  assert.equal(container.querySelector(".session-notice-preview")?.textContent, "First readable line");
+  assert.equal(container.querySelector(".session-notice-body")?.textContent, "\n   \nFirst readable line\nSecond line");
 });

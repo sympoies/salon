@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { MessageMarkdown, MessageMarkdownBoundary } from "./MessageMarkdown.tsx";
+import { MessageMarkdownBoundary } from "./MessageMarkdown.tsx";
 import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 import type { SessionNotice as ParsedNotice } from "@agent-console/shared";
 
@@ -9,16 +9,14 @@ const KIND_LABELS = new Map([
   ["runtime.resume", "Resume"],
 ]);
 
-function NoticeContent({ notice, raw, time, suppressImages, children }: {
+function NoticeContent({ notice, raw, time, children }: {
   readonly notice: ParsedNotice;
   readonly raw: string;
   readonly time: ReactNode;
   readonly suppressImages: boolean;
   readonly children?: ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const [copyState, setCopyState] = useState("Copy");
-  const preview = notice.body.split(/\r?\n/).find(line => line.trim()) ?? "";
+  const [copyState, setCopyState] = useState("Copy raw");
   const copy = async () => {
     try {
       await writeTerminalClipboardText(raw);
@@ -28,20 +26,16 @@ function NoticeContent({ notice, raw, time, suppressImages, children }: {
     }
   };
   return <div className="session-notice">
-    <button type="button" className="session-notice-toggle" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
-      <span aria-hidden="true">ⓘ</span>
+    <h3 className="session-notice-title">
       <span className="session-notice-label">{KIND_LABELS.get(notice.kind) ?? "System notice"}</span>
-      <span className="session-notice-preview">{preview}</span>
       {time}
-    </button>
-    {expanded ? <div className="session-notice-body">
-      <MessageMarkdown text={notice.body} suppressImages={suppressImages} />
-      {children}
-      <div className="session-notice-meta">
-        <span>{notice.kind} · {notice.source}</span>
-        <button type="button" className="btn ghost session-notice-copy" aria-label="Copy raw notice" onClick={() => void copy()}>{copyState}</button>
-      </div>
-    </div> : null}
+    </h3>
+    <div className="session-notice-body">{notice.body}</div>
+    {children}
+    <div className="session-notice-meta">
+      <span>{notice.kind} · {notice.source}</span>
+      <button type="button" className="btn ghost session-notice-copy" aria-label="Copy raw notice" onClick={() => void copy()}>{copyState}</button>
+    </div>
   </div>;
 }
 
