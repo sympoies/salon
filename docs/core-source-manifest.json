@@ -670,7 +670,7 @@
     },
     "packages/shared/package.json": {
       "upstreamSha256": "cc30b019d2887dddab4ada98dda0ac791444f55f81fb7dde56d469d897191b61",
-      "importedSha256": "591c7d1de799f0f06e7cc0e5ce9e5c2973a244ceefa9b1cf37b87a4ba878e71d"
+      "importedSha256": "91a4ee4759520630b4ac607a092f0688eee95fdafbb30c8542eddc2a71e4954d"
     },
     "packages/shared/src/sse.ts": {
       "upstreamSha256": "f9076276454f584749e895df9049cd1d24e181bec46c9bda2a2b4d851f9752ac",

@@ -591,3 +591,17 @@ test("notice previews strip only strict v1 headers in both public text fields", 
     assert.equal(preview(`${header}\n\n${"x".repeat(3000)}`)?.length, 2048);
   }
 });
+
+test("last-prompt previews unwrap one paste wrapper before detecting notices", () => {
+  const preview = (text: string) => projectPublicAgentSession({
+    last_prompt: { text },
+  }).last_prompt as { text: string } | undefined;
+  const notice = "<!-- agent-notice:v1 kind=mailbox source=fixture -->\n\nFirst body line\nSecond body line";
+
+  assert.equal(preview(`<pasted_content id="x">\n${notice}\n</pasted_content id="x">`)?.text, "Notice: First body line");
+  assert.equal(preview('<pasted_content id="x">\nPlain text\n</pasted_content id="x">')?.text, "Plain text");
+  assert.equal(preview('<pasted_content id="x">\nPlain text\n</pasted_content id="y">')?.text,
+    '<pasted_content id="x"> Plain text </pasted_content id="y">');
+  assert.equal(preview('<pasted_content id="x">\n\n</pasted_content id="x">')?.text,
+    '<pasted_content id="x"> </pasted_content id="x">');
+});
