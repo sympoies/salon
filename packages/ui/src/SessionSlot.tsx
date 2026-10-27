@@ -1016,7 +1016,7 @@ export function SessionSlot({
             </>
           )}
         </div>
-        {focused && connectionStatusNotice ? <div className="slot-connection-row">{connectionStatusNotice}</div> : null}
+        {focused ? connectionStatusNotice : null}
       </div>
 
 

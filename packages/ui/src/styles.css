@@ -7202,12 +7202,9 @@ textarea {
 }
 
 .connection-notice-message-compact { display: none; }
-/* Console-server connection states share the header slot; other notices keep their surfaces. */
+/* Dashboard status notices share the existing count/title row. */
 .connection-notice-layer.is-inline { position: relative; top: auto; left: auto; right: auto; }
 .session-filter-trigger-row > .connection-notice-layer.is-inline { min-width: 96px; justify-content: flex-end; }
-.session-workspace.desktop .slot-head:has(> .slot-connection-row) { flex-wrap: wrap; }
-.slot-connection-row { flex: none; width: 100%; display: flex; justify-content: flex-end; min-width: 0; }
-.slot-connection-row > .connection-notice-layer.is-inline { width: 100%; padding: 0; justify-content: flex-end; }
 /* Share the existing count/title row without adding height below the session header. */
 #mac-titlebar-counts { flex: none; }
 #mac-titlebar-notice { min-width: 0; max-width: 100%; }
@@ -7221,8 +7218,24 @@ textarea {
 #mac-titlebar-notice .connection-notice-message { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .slot-focus-strip .connection-notice-dismiss,
 #mac-titlebar-notice .connection-notice-dismiss { flex: none; width: 24px; height: 24px; min-height: 24px; }
-@media (max-width: 600px) {
-  .slot-focus-strip:has(> .connection-notice-layer) .session-status-counts { display: none; }
+/* The notice overlays persistent phone counts instead of reflowing or hiding them. */
+@media (max-width: 760px), (pointer: coarse) and (max-width: 1024px) {
+  .slot-focus-strip { position: relative; }
+  .slot-focus-strip > .connection-notice-layer.is-inline {
+    position: absolute; right: calc(var(--space-sm) + var(--ac-safe-area-right));
+    top: var(--ac-safe-area-top); bottom: 0; max-width: calc(100% - 2 * var(--space-sm)); z-index: 1;
+  }
+  :where(:root:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-status-row {
+    display: flex; position: relative; grid-area: status;
+  }
+  .session-filter-status-row > .connection-notice-layer.is-inline {
+    position: absolute; inset: 0; justify-content: flex-end; padding: 0; min-width: 0; z-index: 1;
+  }
+  .session-filter-status-row .connection-notice {
+    box-sizing: border-box; min-width: 0; max-width: 100%; height: 28px; padding-block: 0;
+  }
+  .session-filter-status-row .connection-notice-message { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .session-filter-status-row .connection-notice-dismiss { flex: none; width: 24px; height: 24px; min-height: 24px; }
 }
 
 @media (max-width: 760px), (pointer: coarse) and (max-width: 1024px) {
@@ -7371,3 +7384,9 @@ textarea {
 .repair-toast-actions { --control-action-height: var(--control-toast-action-height); --control-action-pad-block: var(--space-2xs); --control-action-pad-inline: var(--space-sm); }
 
 .session-role-chip { font-size: var(--text-xs); color: var(--fg-2); }
+
+/* Focused desktop notices use the title bar end without adding a header row. */
+.session-workspace.desktop .slot-head > .connection-notice-layer.is-inline { margin-left: auto; min-width: 0; max-width: 40%; padding: 0; }
+.session-workspace.desktop .slot-head > .connection-notice-layer.is-inline .connection-notice { box-sizing: border-box; min-width: 0; height: 28px; padding-block: 0; }
+.session-workspace.desktop .slot-head > .connection-notice-layer.is-inline .connection-notice-message { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.session-workspace.desktop .slot-head > .connection-notice-layer.is-inline .connection-notice-dismiss { flex: none; width: 24px; height: 24px; min-height: 24px; }

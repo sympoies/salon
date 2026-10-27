@@ -49,7 +49,8 @@ for (const [width, macTitleBar] of [[360, false], [412, false], [600, false], [6
         assert.ok(m.notice.width > 60 && Math.abs(m.notice.right - m.row.right) <= 12, JSON.stringify(m));
         assert.equal(m.dismissClickable, true);
         assert.equal(m.overflow, false);
-        if (m.countsVisible) assert.ok(m.countsRight <= m.notice.left, "counts do not overlap the notice");
+        if (m.countsVisible && macTitleBar) assert.ok(m.countsRight <= m.notice.left, "title bar counts do not overlap the notice");
+        if (!macTitleBar) assert.equal(m.countsVisible, phoneFocusCounts, "enabled phone counts remain visible");
         if (macTitleBar) {
           assert.ok(m.notice.left >= 80, "traffic-light area remains clear");
           assert.equal(m.dragClickable, true, "spacer stays available for native dragging");

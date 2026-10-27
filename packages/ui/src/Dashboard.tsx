@@ -612,9 +612,6 @@ export function Dashboard({
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { notice: statusNotice, dismiss: dismissStatusNotice } = useStatusNotice(error, undefined, { loaded: sessionsLoaded, machines });
-  // Connection status and host warnings use the overview row; focused connection status belongs to the visible slot header.
-  const connectionNotice = statusNotice?.kind === "unreachable" || statusNotice?.kind === "restored";
-  const statusNoticeElement = statusNotice ? <StatusNotice notice={statusNotice} onDismiss={dismissStatusNotice} surface="dashboard" inline={connectionNotice} /> : null;
   const [showCreate, setShowCreate] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [conversationKey, setConversationKey] = useState<string | null>(null);
@@ -1046,6 +1043,12 @@ export function Dashboard({
     setConversationKey(sessionKey(session));
   }, [conversationBusy, enterSession, viewport.mobile]);
   const [phoneConversationNotice, setPhoneConversationNotice] = useState<string>();
+  // Hook notices have higher severity than the phone history fallback (info).
+  const visibleStatusNotice = statusNotice ?? (viewport.mobile && phoneConversationNotice
+    ? { kind: "info" as const, message: phoneConversationNotice } : null);
+  const connectionNotice = visibleStatusNotice !== null;
+  const statusNoticeElement = visibleStatusNotice ? <StatusNotice notice={visibleStatusNotice}
+    onDismiss={statusNotice ? dismissStatusNotice : () => setPhoneConversationNotice(undefined)} surface="dashboard" inline /> : null;
   const openPhoneTerminal = useCallback((session: Session, unavailable = false) => {
     if (conversationBusy) return;
     setConversationKey(null);
@@ -2804,8 +2807,7 @@ export function Dashboard({
               harnesses={overviewHarnesses}
               scopes={scopes}
               notice={scopeNotice}
-              statusNotice={(connectionNotice && !nativeNoticeTarget) || statusNotice?.kind === "host-offline" ? statusNoticeElement : null}
-              noticeInField={statusNotice?.kind === "host-offline"}
+              statusNotice={connectionNotice && !nativeNoticeTarget ? statusNoticeElement : null}
               migrationNotice={hostMigrationNotice}
               onDismissMigration={onDismissHostMigration}
               resultCount={overviewFilteredSessions.length}
@@ -2919,8 +2921,6 @@ export function Dashboard({
             </div>
           </div>
         ) : null}
-        {!connectionNotice && (focusedKey !== null || statusNotice?.kind !== "host-offline") ? statusNoticeElement : null}
-        {viewport.mobile && phoneConversationNotice ? <p role="status">{phoneConversationNotice}</p> : null}
         {viewport.mobile && focusedKey && sessionsByKey.has(focusedKey) && historyMachineNames.has(sessionsByKey.get(focusedKey)!.machine) ? (
           phoneConversationMode ? (
             <button type="button" className="btn" aria-label="Switch to terminal"

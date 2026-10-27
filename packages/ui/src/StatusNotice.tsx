@@ -9,15 +9,18 @@ export function StatusNotice({ notice, onDismiss, surface = "dashboard", inline 
   readonly surface?: "dashboard" | "shell";
 }) {
   const restored = notice.kind === "restored";
+  const polite = restored || notice.kind === "info";
+  const compactLabel = notice.kind === "host-offline" ? `! ${notice.message.split(":")[0]}`
+    : restored ? "Restored" : notice.kind === "attention" ? "Attention" : notice.kind === "info" ? "Opened terminal" : "Offline";
   const unreachable = notice.kind === "unreachable";
   return (
     <div className={`connection-notice-layer is-${surface}${inline ? " is-inline" : ""}`}>
-      <div className={`connection-notice is-${notice.kind}`} role={restored ? "status" : "alert"} aria-live={restored ? "polite" : "assertive"} aria-atomic="true">
+      <div className={`connection-notice is-${notice.kind}`} role={polite ? "status" : "alert"} aria-live={polite ? "polite" : "assertive"} aria-atomic="true">
         <span className="connection-notice-icon" aria-hidden="true">{restored ? "✓" : "!"}</span>
         {notice.kind === "host-offline" || inline ? (
           <span className="connection-notice-message" title={notice.message}>
             <span className="connection-notice-message-full">{notice.message}</span>
-            <span className="connection-notice-message-compact" aria-hidden="true">{inline ? restored ? "Restored" : "Offline" : `! ${notice.message.split(":")[0]}`}</span>
+            <span className="connection-notice-message-compact" aria-hidden="true">{compactLabel}</span>
           </span>
         ) : <span className="connection-notice-message">{notice.message}</span>}
         {unreachable ? <><span className="connection-notice-retrying">Reconnecting</span><span className="connection-notice-spinner" aria-hidden="true" /></> : null}

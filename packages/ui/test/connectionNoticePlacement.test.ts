@@ -70,3 +70,37 @@ test("mac title-bar notice preserves background Dashboard isolation and restores
   });
   assert.deepEqual(states, [false, true]);
 });
+
+for (const [kind, error] of [
+  ["unreachable", "Console server is unreachable"],
+  ["attention", "Session update needs attention"],
+  ["host-offline", "very-long-production-machine-name: offline"],
+] as const) {
+  test(`${kind} takes priority over the phone history fallback and dismissal reveals info`, async () => {
+    await renderNoticeSurface("dashboard", 360, {
+      focused: true, restore: kind === "unreachable", conversationUnavailable: true, error,
+      inspectClear(container) {
+        assert.equal(container.querySelectorAll(".connection-notice").length, 1);
+        assert.ok(container.querySelector('.slot-focus-strip .connection-notice.is-info[role="status"][aria-live="polite"]'));
+      },
+      inspect(container, phase) {
+        assert.equal(container.querySelectorAll(".connection-notice").length, 1);
+        assert.ok(container.querySelector(`.slot-focus-strip .connection-notice.is-${phase === "restored" ? "restored" : kind}`));
+        assertNoElement(container, ".connection-notice.is-info");
+      },
+    });
+  });
+}
+
+test("phone history fallback dismisses from the transient count row", async () => {
+  await renderNoticeSurface("dashboard", 360, {
+    focused: true, restore: false, conversationUnavailable: true, phoneFocusCounts: false,
+    inspectClear(container, phase) {
+      if (phase === "initial") assert.ok(container.querySelector('.slot-focus-strip .connection-notice.is-info'));
+      else {
+        assertNoElement(container, ".connection-notice");
+        assertNoElement(container, ".slot-focus-strip");
+      }
+    },
+  });
+});

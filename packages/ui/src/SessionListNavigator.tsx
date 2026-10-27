@@ -7,7 +7,7 @@ export interface SessionListNavigatorProps extends SessionFiltersBarProps {
   readonly page: number;
   readonly pageCount: number;
   readonly onPageChange: (page: number) => void;
-  /** The host-offline toast is centred on this pager and filter row. */
+  /** Status notice for the count row on phones and the header end on desktop. */
   readonly statusNotice?: import("react").ReactNode;
 }
 export function SessionListNavigator({ page: requestedPage, pageCount: rawPageCount, onPageChange, statusNotice, ...filters }: SessionListNavigatorProps) {

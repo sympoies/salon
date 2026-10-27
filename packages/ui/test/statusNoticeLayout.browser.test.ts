@@ -53,12 +53,15 @@ function measure(markup: string, surface: NoticeSurface, width: number): Measure
           const style=getComputedStyle(parent),p=parent.getBoundingClientRect();
           if(/auto|scroll|hidden|clip/.test(style.overflowY)&&(y<p.top||y>p.bottom))return true;
         }
-        const hit=document.elementFromPoint(x,y);const clickable=el===hit||el.contains(hit);
+        const hit=document.elementFromPoint(x,y);
+        // Phone notices intentionally overlay persistent counts at the row end.
+        if(el.matches('.session-status-count')&&hit?.closest('.connection-notice')&&el.closest('.session-filter-status-row, .slot-focus-strip'))return true;
+        const clickable=el===hit||el.contains(hit);
         if(!clickable)blocker=(el.getAttribute('aria-label')||el.textContent)+' blocked by '+hit?.className;
         return clickable;
       });
       const dismiss=pill.querySelector('button');const d=dismiss.getBoundingClientRect();const hit=document.elementFromPoint(d.x+d.width/2,d.y+d.height/2);
-      const row=layer.closest('.session-filter-trigger-row, .slot-connection-row, .slot-focus-strip');
+      const row=layer.closest('.session-filter-trigger-row, .session-filter-status-row, .slot-head, .slot-focus-strip');
       const slot=row;
       const p=pill.getBoundingClientRect(),r=slot?.getBoundingClientRect();
       const result={withNotice,withoutNotice,controlsBottom,controlsClickable,blocker,
