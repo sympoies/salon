@@ -216,8 +216,13 @@ test("the phone single-session view shows the counts in a third row without the 
   assertNoElement(strip()!, "img.brand-title-icon");
 });
 
-test("a phone that hides the single-session count row keeps the two-row header (#938)", async () => {
+test("a phone with counts off collapses the transient history notice row after dismissal (#938)", async () => {
   const { mounted, strip } = await mountFocusedCountsDashboard(390, { phoneFocusCounts: false });
+  assert.ok(strip()?.querySelector('.connection-notice.is-info'), "history fallback temporarily uses the count row");
+  assertNoElement(mounted.container, ".terminal-slot.is-focused .session-status-counts");
+  const dismiss = strip()!.querySelector<HTMLButtonElement>('[aria-label="Dismiss status notice"]');
+  assert.ok(dismiss);
+  await act(async () => dismiss.click());
   assertNoElement(mounted.container, ".terminal-slot.is-focused > .slot-focus-strip");
   assertNoElement(mounted.container, ".terminal-slot.is-focused .session-status-counts");
 });

@@ -150,7 +150,7 @@ test("non-host failures keep the persistent attention notice", async () => {
   assert.equal(liveTimers(scheduler, 8_000).length, 0, "other attention notices are not auto-dismissed");
 });
 
-test("the host-offline toast uses only the trigger row's free space: the bar keeps its box, the row stays on one line, and a compact label or no toast covers nothing", () => {
+test("legacy non-inline notice slots preserve compact accessible text and decorative dot behavior", () => {
   const css = uiStyles();
   const rule = makeCssRuleLookup(css);
   assert.match(rule(".session-filter-trigger-row.has-row-notice"), /flex-wrap:\s*nowrap/, "the row stays on one line while a toast shows");
@@ -178,7 +178,7 @@ test("the host-offline toast uses only the trigger row's free space: the bar kee
   assert.doesNotMatch(layer, /top:\s*calc\(100% \+ 4px\)/, "the toast never drops over the card area");
 });
 
-test("the navigator renders the toast after the collapsed phone and desktop filter control", async () => {
+test("the navigator uses the phone count row and desktop filter-row end for status notices", async () => {
   const { SessionListNavigator } = await ssr.loadModule<typeof import("../src/SessionListNavigator.tsx")>("/src/SessionListNavigator.tsx");
   for (const mobile of [false, true]) {
     const html = renderComponent(SessionListNavigator, {
@@ -186,15 +186,17 @@ test("the navigator renders the toast after the collapsed phone and desktop filt
       page: 1, pageCount: 1, onPageChange() {}, onChange() {},
       statusNotice: createElement("div", { className: "connection-notice-layer" }, "host-a: offline"),
     } as never);
-    const row = html.indexOf('class="session-filter-trigger-row');
-    const controls = html.indexOf("session-filter-searchbar");
-    const toast = html.indexOf("connection-notice-layer");
-    assert.notEqual(row, -1, "the filter row renders");
-    assert.ok(controls > row && toast > controls, "the notice follows the visible filter controls");
+    const window = new Window();
+    try {
+      window.document.body.innerHTML = html;
+      const notice = window.document.querySelector(".connection-notice-layer");
+      assert.ok(notice?.closest(mobile ? ".session-filter-status-row" : ".session-filter-trigger-row"), "notice occupies the intended row");
+      assert.equal(Boolean(notice?.closest(".session-filter-searchbar")), false, "notice stays outside the search field");
+    } finally { await window.happyDOM.close(); }
   }
 });
 
-test("on desktop the host-offline notice sits inside the filter field, taking only its free space; a phone and a connection notice keep the row slot (#761)", async () => {
+test("the optional desktop field notice keeps its contract while phone notices use the count row (#761)", async () => {
   const { SessionListNavigator } = await ssr.loadModule<typeof import("../src/SessionListNavigator.tsx")>("/src/SessionListNavigator.tsx");
   const render = (mobile: boolean, noticeInField: boolean) => renderComponent(SessionListNavigator, {
     filters: CLEAR_SESSION_FILTERS, machines: ["host-a"], harnesses: [], resultCount: 1, mobile, noticeInField,
@@ -206,9 +208,14 @@ test("on desktop the host-offline notice sits inside the filter field, taking on
   assert.ok(field.indexOf("session-filter-field-notice") > bar && field.indexOf("session-filter-field-notice") < field.indexOf("</div>", field.indexOf("connection-notice-layer")),
     "the desktop notice renders inside the search bar");
   assert.doesNotMatch(field, /has-row-notice/, "the row keeps its normal layout when the notice lives in the field");
-  for (const html of [render(true, true), render(false, false)]) {
-    assert.doesNotMatch(html, /session-filter-field-notice/, "phones and connection notices keep the row slot");
-    assert.match(html, /has-row-notice/);
+  for (const mobile of [true, false]) {
+    const html = render(mobile, mobile);
+    assert.doesNotMatch(html, /session-filter-field-notice/, "only an explicitly requested desktop field notice occupies the search field");
+    const window = new Window();
+    try {
+      window.document.body.innerHTML = html;
+      assert.ok(window.document.querySelector(".connection-notice-layer")?.closest(mobile ? ".session-filter-status-row" : ".session-filter-trigger-row"));
+    } finally { await window.happyDOM.close(); }
   }
   const rule = makeCssRuleLookup(uiStyles());
   const slot = rule(".session-filter-field-notice");

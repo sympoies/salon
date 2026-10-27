@@ -36,8 +36,7 @@ export async function headerFixture() {
         statusCounts, countsAvailable: true,
         mobile: width <= 760 || (coarse && width <= 1024), page: 1, pageCount: 5, open: false,
         onPageChange() {}, onChange() {}, onOpenChange() {},
-        noticeInField: Boolean(hostOffline),
-        statusNotice: hostOffline ? createElement(StatusNotice, { notice: hostOfflineNotice(hostOffline), onDismiss() {}, surface: "dashboard" }) : undefined,
+        statusNotice: hostOffline ? createElement(StatusNotice, { notice: hostOfflineNotice(hostOffline), onDismiss() {}, surface: "dashboard", inline: true }) : undefined,
       });
       const machine = focused ? '<label class="machine-filter"><select class="machine-filter-select" aria-label="Filter sessions by machine"><option>All machines</option></select></label>' : "";
       return `<main class="dash workspace-shell"><header class="dash-head workspace-head"><div class="workspace-head-start">${brand}${nav}</div>${usage}<div class="dash-actions"><div class="dash-group">${machine}${layouts}</div><div class="dash-group dash-create-actions">${menu}${newButton}</div></div></header></main>`;

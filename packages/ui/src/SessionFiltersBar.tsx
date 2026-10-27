@@ -255,10 +255,10 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
               {fieldNotice ? <div className="session-filter-field-notice" onClick={event => event.stopPropagation()}>{statusNotice}</div> : null}
             </div>
             {expandedPanel}
-            {fieldNotice ? null : statusNotice}
+            {fieldNotice || mobile ? null : statusNotice}
           </div>
         </div>
-        <div className="session-filter-status-row">{statusCountsTarget ? createPortal(statusCountsElement, statusCountsTarget) : statusCountsElement}</div>
+        <div className="session-filter-status-row">{statusCountsTarget ? createPortal(statusCountsElement, statusCountsTarget) : statusCountsElement}{mobile ? statusNotice : null}</div>
       </> : <div className={`session-filter-trigger-row ${mobile ? "is-mobile" : ""}`}><button ref={element => { triggerRef.current = element; }} className="btn session-filters-trigger" type="button" aria-label={`Filters. ${summary}. ${resultCount} matching ${resultCount === 1 ? "session" : "sessions"}.${noticeCue ? ` Notice: ${noticeCue}.` : ""}`}
           aria-haspopup="dialog" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
           <svg className="session-filters-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8v5l-4 2v-7z" /></svg>
