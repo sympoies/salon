@@ -384,6 +384,7 @@
 }
 
 .session-notice-body {
+  padding-inline: var(--space-md);
   white-space: pre-wrap;
   text-align: left;
   line-height: 1.4;
@@ -392,6 +393,7 @@
 }
 
 .session-notice-meta {
+  padding-inline: var(--space-md);
   display: flex;
   align-items: center;
   justify-content: space-between;

@@ -90,6 +90,7 @@ test("session notices show a centered heading and three plain-text lines with ke
         const notice=row.querySelector('.session-notice'),title=row.querySelector('.session-notice-title');
         const body=row.querySelector('.session-notice-body'),time=row.querySelector('time').getBoundingClientRect();
         const r=row.getBoundingClientRect(),style=title&&getComputedStyle(title),bodyStyle=body&&getComputedStyle(body);
+        const br=body?.getBoundingClientRect(),footer=row.querySelector('.session-notice-meta'),fr=footer?.getBoundingClientRect(),fs=footer&&getComputedStyle(footer);
         const lines=[];
         if(body?.firstChild?.nodeType===Node.TEXT_NODE){
           let start=0;for(const line of body.firstChild.textContent.split('\\n')){
@@ -101,6 +102,10 @@ test("session notices show a centered heading and three plain-text lines with ke
           centered:style?.textAlign==='center'||(style?.display==='flex'&&style?.justifyContent==='center'),
           weight:Number(style?.fontWeight),body:body?.textContent,bodyAlign:bodyStyle?.textAlign,lines,
           lineHeight:parseFloat(bodyStyle?.lineHeight),
+          rowLeft:r.left,rowRight:r.right,
+          bodyLeft:br&&br.left+parseFloat(bodyStyle.paddingLeft),bodyRight:br&&br.right-parseFloat(bodyStyle.paddingRight),
+          footerLeft:fr&&fr.left+parseFloat(fs.paddingLeft),footerRight:fr&&fr.right-parseFloat(fs.paddingRight),
+          copyRight:row.querySelector('.session-notice-copy')?.getBoundingClientRect().right,
           bubble:!!row.querySelector('.history-bubble'),background:getComputedStyle(notice).backgroundColor,
           timeVisible:time.x>=r.x&&time.right<=r.right,overflow:document.documentElement.scrollWidth>innerWidth||row.scrollWidth>row.clientWidth,
           footer:row.querySelector('.session-notice-meta > span')?.textContent};})()`);
@@ -131,8 +136,15 @@ test("session notices show a centered heading and three plain-text lines with ke
       assert.ok(measured.weight>=600,'title has heading weight');
       assert.equal(measured.body,body,'full body is always visible without Markdown reflow');
       assert.equal(measured.bodyAlign,'left');
+      assert.ok(measured.bodyLeft>measured.rowLeft,'body content is inset from the left edge');
+      assert.ok(measured.bodyRight<measured.rowRight,'body content is inset from the right edge');
+      assert.ok(Math.abs((measured.bodyLeft-measured.rowLeft)-(measured.rowRight-measured.bodyRight))<1,'body inset is symmetric');
+      assert.ok(Math.abs(measured.footerLeft-measured.bodyLeft)<1,'footer shares the body left inset');
+      assert.ok(Math.abs(measured.footerRight-measured.bodyRight)<1,'footer shares the body right inset');
+      assert.ok(Math.abs(measured.copyRight-measured.bodyRight)<1,'Copy raw stays inside the right inset');
       assert.equal(measured.lines.length,3,'three source lines');
       for(const line of measured.lines)assert.equal(line.length,1,'each source line occupies one visual line');
+      assert.ok(Math.abs(measured.lines[0][0].x-measured.bodyLeft)<1,'text starts at the inset content edge');
       for(let i=1;i<3;i++){
         assert.ok(Math.abs(measured.lines[i][0].y-measured.lines[i-1][0].y-measured.lineHeight)<1,'line breaks advance exactly one line');
         assert.ok(Math.abs(measured.lines[i][0].x-measured.lines[0][0].x)<1,'lines share the left edge');
