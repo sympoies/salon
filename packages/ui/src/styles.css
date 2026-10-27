@@ -7164,6 +7164,8 @@ textarea {
   :where(:root:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-searchbar { height: var(--session-nav-row-height); min-height: var(--session-nav-row-height); font-size: var(--text-md); }
   :where(:root:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-search-open { height: 100%; min-height: 0; }
   :where(:root:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-searchbar .session-filter-chip { display: inline-flex; align-items: center; }
+  :where(:root:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :where(:root:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip > span:last-child { flex: none; }
   :where(:root:not([data-mac-titlebar="true"])) .workspace-head .layout-picker { display: none; }
 }
 @media (max-width:760px),(pointer:coarse) and (max-width:1024px) {
