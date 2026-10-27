@@ -7,12 +7,12 @@ import { makeSession } from "./fixtures.ts";
 import { createUiSsrHarness, renderComponent } from "./ssr.ts";
 
 export type NoticeSurface = "dashboard" | "shell";
-const machine = "very-long-production-machine-name";
 
 /** Mount production surfaces, mocking only transport and the terminal renderer. */
 export async function renderNoticeSurface(surface: NoticeSurface, width: number, connection?: {
   readonly restore: boolean;
   readonly error?: string;
+  readonly machine?: string;
   readonly conversationUnavailable?: boolean;
   readonly focusedConversation?: boolean;
   readonly focused?: boolean;
@@ -22,6 +22,7 @@ export async function renderNoticeSurface(surface: NoticeSurface, width: number,
   readonly inspectClear?: (container: HTMLElement, phase: "initial" | "dismissed") => void;
   readonly inspect?: (container: HTMLElement, phase: "unreachable" | "restored") => void;
 }): Promise<string> {
+  const machine = connection?.machine ?? "very-long-production-machine-name";
   const window = new Window({ url: connection?.macTitleBar ? "http://tauri.localhost" : "http://localhost", width, height: 800 });
   const globals = { window, document: window.document, Element: window.Element, HTMLElement: window.HTMLElement,
     HTMLInputElement: window.HTMLInputElement, HTMLSelectElement: window.HTMLSelectElement,

@@ -7409,10 +7409,3 @@ textarea {
 .session-workspace.desktop .slot-head > .connection-notice-layer.is-inline .connection-notice { box-sizing: border-box; min-width: 0; height: 28px; padding-block: 0; }
 .session-workspace.desktop .slot-head > .connection-notice-layer.is-inline .connection-notice-message { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .session-workspace.desktop .slot-head > .connection-notice-layer.is-inline .connection-notice-dismiss { flex: none; width: 24px; height: 24px; min-height: 24px; }
-
-@media (max-width: 600px) {
-  :is(.slot-focus-strip, .session-filter-status-row) .connection-notice-message-full {
-    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
-  }
-  :is(.slot-focus-strip, .session-filter-status-row) .connection-notice-message-compact { display: block; }
-}

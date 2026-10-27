@@ -38,6 +38,7 @@ for (const kind of ["host-offline", "attention", "info"] as const) {
           assert.equal(m.atEnd, true, "notice stays at the row's right end");
           assert.equal(m.dismissClickable, true, "dismiss button is reachable");
           assert.equal(m.overflow, false);
+          if (width <= 760) assert.equal(m.fullVisible, true, "phone shows the full status message");
           assert.equal(m.role, kind === "info" ? "status" : "alert");
           assert.equal(m.rowHeight, m.clearRowHeight, "notice does not grow its row");
           if (width <= 760 && focused) {
@@ -50,9 +51,12 @@ for (const kind of ["host-offline", "attention", "info"] as const) {
   }
 }
 
-test("short restored notice leaves enabled phone counts beside it without reflow", async () => {
-  const markup = await renderNoticeSurface("dashboard", 360, { restore: true, focused: true });
-  const m = measure(markup, 360, false, "restored-short");
+test("short phone host notice shows its full message beside enabled counts without reflow", async () => {
+  const markup = await renderNoticeSurface("dashboard", 360, { restore: false, focused: true,
+    machine: "fixture", error: "fixture: offline" });
+  const m = measure(markup, 360, false, "host-short");
+  assert.equal(m.fullVisible, true, "phone shows the full status message");
+  assert.equal(m.fullMessage, "fixture: offline");
   assert.equal(m.countsVisible, true);
   assert.equal(m.overlap, false);
   assert.equal(m.rowHeight, m.clearRowHeight);
@@ -70,7 +74,8 @@ function measure(markup: string, width: number, native: boolean, name: string) {
       const dismiss=pill?.querySelector('button'),d=dismiss?.getBoundingClientRect(),hit=d&&document.elementFromPoint(d.x+d.width/2,d.y+d.height/2);
       const rowHeight=r?.height; if(layer)layer.style.display='none';
       const clearRowHeight=row?.getBoundingClientRect().height; if(layer)layer.style.display='';
-      const result={notices:document.querySelectorAll('.connection-notice').length,
+      const full=pill?.querySelector('.connection-notice-message-full'),fullStyle=full&&getComputedStyle(full);
+      const result={fullVisible:!!fullStyle&&fullStyle.display!=='none'&&fullStyle.clipPath==='none'&&full.getBoundingClientRect().width>1,fullMessage:full?.textContent,notices:document.querySelectorAll('.connection-notice').length,
         extraRows:document.querySelectorAll('.slot-connection-row, .dash > p[role="status"]').length,
         inRow:!!r&&p.top>=r.top&&p.bottom<=r.bottom,
         floating:!row||getComputedStyle(layer).position==='fixed',
