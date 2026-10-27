@@ -602,4 +602,6 @@ test("last-prompt previews unwrap one paste wrapper before detecting notices", (
   assert.equal(preview('<pasted_content id="x">\nPlain text\n</pasted_content id="x">')?.text, "Plain text");
   assert.equal(preview('<pasted_content id="x">\nPlain text\n</pasted_content id="y">')?.text,
     '<pasted_content id="x"> Plain text </pasted_content id="y">');
+  assert.equal(preview('<pasted_content id="x">\n\n</pasted_content id="x">')?.text,
+    '<pasted_content id="x"> </pasted_content id="x">');
 });
