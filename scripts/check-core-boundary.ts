@@ -9,9 +9,10 @@
 //   4. Non-core packages reach core only through exported subpaths.
 //   5. Core manifests list no overlay or distribution package.
 //
-// Usage: node scripts/check-core-boundary.mjs [--root <repo>]
+// Usage: node scripts/check-core-boundary.ts [--root <repo>]
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { createRequire } from "node:module";
+import { parseSync } from "oxc-parser";
+import type { Node } from "oxc-parser";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,9 +23,12 @@ const SKIPPED_DIRS = new Set(["node_modules", "dist", "target", "gen", ".vite", 
 const MANIFEST_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
 const CSS_IMPORT = /@import\s+(?:url\(\s*)?["']([^"']+)["']/g;
 
-const { parseSync } = createRequire(import.meta.url)("oxc-parser");
+type Manifest = { name: string; exports?: string | unknown[] | Record<string, unknown>; [field: string]: unknown };
+type WorkspacePackage = { dir: string; name: string; manifest: Manifest };
+type BoundaryConfig = { core: Record<string, string[]>; exceptions?: { file: string; specifier: string; reason: string }[] };
+type ModuleReference = { specifier: string; dynamic?: false; line: number } | { dynamic: true; line: number };
 
-function parseArgs(argv) {
+function parseArgs(argv: string[]) {
   let root = fileURLToPath(new URL("..", import.meta.url));
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--root" && argv[i + 1]) root = argv[++i];
@@ -33,26 +37,26 @@ function parseArgs(argv) {
   return resolve(root);
 }
 
-function toPosix(path) {
+function toPosix(path: string) {
   return path.split(sep).join("/");
 }
 
-function readJson(path) {
-  return JSON.parse(readFileSync(path, "utf8"));
+function readJson<T>(path: string): T {
+  return JSON.parse(readFileSync(path, "utf8")) as T;
 }
 
-function workspacePackages(root) {
+function workspacePackages(root: string): WorkspacePackage[] {
   const packagesDir = join(root, "packages");
   return readdirSync(packagesDir)
     .map((name) => `packages/${name}`)
     .filter((dir) => existsSync(join(root, dir, "package.json")))
     .map((dir) => {
-      const manifest = readJson(join(root, dir, "package.json"));
+      const manifest = readJson<Manifest>(join(root, dir, "package.json"));
       return { dir, name: manifest.name, manifest };
     });
 }
 
-function* walk(root, dir) {
+function* walk(root: string, dir: string): Generator<string> {
   for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
     const path = `${dir}/${entry.name}`;
     if (entry.isDirectory()) {
@@ -63,32 +67,33 @@ function* walk(root, dir) {
   }
 }
 
-function lineOf(text, offset) {
+function lineOf(text: string, offset: number) {
   let line = 1;
   for (let i = 0; i < offset && i < text.length; i += 1) if (text.charCodeAt(i) === 10) line += 1;
   return line;
 }
 
-function literalValue(node) {
+function literalValue(node: Node | null | undefined): string | null {
   if (node?.type === "Literal" && typeof node.value === "string") return node.value;
   if (node?.type === "TemplateLiteral" && node.expressions.length === 0) return node.quasis[0]?.value?.cooked ?? null;
   return null;
 }
 
-function visit(node, onNode) {
+function visit(node: unknown, onNode: (node: Node) => void): void {
   if (Array.isArray(node)) {
     for (const child of node) visit(child, onNode);
     return;
   }
   if (!node || typeof node !== "object") return;
-  if (typeof node.type === "string") onNode(node);
+  const record = node as Record<string, unknown>;
+  if (typeof record.type === "string") onNode(node as Node);
   for (const key of Object.keys(node)) {
-    if (key !== "parent") visit(node[key], onNode);
+    if (key !== "parent") visit(record[key], onNode);
   }
 }
 
 // Every module reference in a file: { specifier, line } or { dynamic: true, line }.
-function moduleReferences(root, file) {
+function moduleReferences(root: string, file: string): ModuleReference[] {
   const text = readFileSync(join(root, file), "utf8");
   if (STYLE_FILE.test(file)) {
     return [...text.matchAll(CSS_IMPORT)].map((match) => ({ specifier: match[1], line: lineOf(text, match.index) }));
@@ -97,8 +102,8 @@ function moduleReferences(root, file) {
   if (result.errors.length > 0) {
     throw new Error(`${file}: cannot parse: ${result.errors[0].message}`);
   }
-  const references = [];
-  const add = (source, at) => {
+  const references: ModuleReference[] = [];
+  const add = (source: Node | null, at: number) => {
     const specifier = literalValue(source);
     references.push(specifier === null ? { dynamic: true, line: lineOf(text, at) } : { specifier, line: lineOf(text, at) });
   };
@@ -127,7 +132,7 @@ function moduleReferences(root, file) {
   return references;
 }
 
-function splitPackageSpecifier(specifier) {
+function splitPackageSpecifier(specifier: string) {
   const parts = specifier.split("/");
   const nameLength = specifier.startsWith("@") ? 2 : 1;
   const name = parts.slice(0, nameLength).join("/");
@@ -135,7 +140,7 @@ function splitPackageSpecifier(specifier) {
   return { name, subpath: rest ? `./${rest}` : "." };
 }
 
-function exportsSubpath(manifest, subpath) {
+function exportsSubpath(manifest: Manifest, subpath: string) {
   const exportsField = manifest.exports;
   if (exportsField === undefined) return subpath === ".";
   if (typeof exportsField === "string" || Array.isArray(exportsField)) return subpath === ".";
@@ -148,19 +153,19 @@ function exportsSubpath(manifest, subpath) {
   });
 }
 
-function packageOf(packages, file) {
+function packageOf(packages: WorkspacePackage[], file: string) {
   return packages.find((pkg) => file === pkg.dir || file.startsWith(`${pkg.dir}/`));
 }
 
-export function checkCoreBoundary(root) {
-  const config = readJson(join(root, "scripts", "core-boundary.config.json"));
+export function checkCoreBoundary(root: string) {
+  const config = readJson<BoundaryConfig>(join(root, "scripts", "core-boundary.config.json"));
   const packages = workspacePackages(root);
   const core = new Map(Object.entries(config.core));
   const byName = new Map(packages.map((pkg) => [pkg.name, pkg]));
   const exceptions = (config.exceptions ?? []).map((exception) => ({ ...exception, used: false }));
   const violations = [];
 
-  const report = (file, line, specifier, rule, message) => {
+  const report = (file: string, line: number, specifier: string, rule: number, message: string) => {
     const exception = exceptions.find((entry) => entry.file === file && entry.specifier === specifier);
     if (exception) {
       exception.used = true;
@@ -189,7 +194,7 @@ export function checkCoreBoundary(root) {
       try {
         references = moduleReferences(root, file);
       } catch (error) {
-        violations.push(error.message);
+        violations.push((error as Error).message);
         continue;
       }
       for (const reference of references) {

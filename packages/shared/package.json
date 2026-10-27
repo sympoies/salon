@@ -90,7 +90,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "pnpm run build:package",
     "test": "NODE_OPTIONS=--conditions=source node --test test/*.test.ts",
-    "build:package": "node ../../scripts/build-core-package.mjs shared"
+    "build:package": "node ../../scripts/build-core-package.ts shared"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",

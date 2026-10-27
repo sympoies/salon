@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
-const checker = join(repoRoot, "scripts", "check-core-boundary.mjs");
+const checker = join(repoRoot, "scripts", "check-core-boundary.ts");
 
 const CONFIG = {
   core: {
@@ -18,7 +18,7 @@ const CONFIG = {
   exceptions: [],
 };
 
-function manifest(name, extra = {}) {
+function manifest(name: string, extra: Record<string, unknown> = {}) {
   return JSON.stringify({ name, type: "module", ...extra });
 }
 
@@ -54,7 +54,7 @@ function baseFiles() {
   };
 }
 
-function workspace(overrides = {}) {
+function workspace(overrides: Record<string, string | null> = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-boundary-"));
   for (const [path, body] of Object.entries({ ...baseFiles(), ...overrides })) {
     if (body === null) continue;
@@ -64,12 +64,12 @@ function workspace(overrides = {}) {
   return root;
 }
 
-function check(root) {
+function check(root: string) {
   const result = spawnSync(process.execPath, [checker, "--root", root], { encoding: "utf8" });
   return { status: result.status, out: `${result.stdout}${result.stderr}` };
 }
 
-function expectViolation(overrides, ...patterns) {
+function expectViolation(overrides: Record<string, string | null>, ...patterns: RegExp[]) {
   const root = workspace(overrides);
   try {
     const result = check(root);
@@ -191,7 +191,7 @@ test("core manifests must not depend on overlay or distribution packages", () =>
 
 test("a listed exception passes while it matches and fails once stale", () => {
   const extra = `import { App } from "@ac/overlay";\nvoid App;\n`;
-  const config = (exceptions) => JSON.stringify({ ...CONFIG, exceptions });
+  const config = (exceptions: { file: string; specifier: string; reason: string }[]) => JSON.stringify({ ...CONFIG, exceptions });
   const exception = { file: "packages/edge/src/extra.ts", specifier: "@ac/overlay", reason: "tracked migration" };
   let root = workspace({ "packages/edge/src/extra.ts": extra, "scripts/core-boundary.config.json": config([exception]) });
   try {

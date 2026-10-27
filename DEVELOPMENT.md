@@ -49,8 +49,8 @@ systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 bash .agents/scrip
 With Node 24 and pnpm on PATH, the gate checks Markdown links, its validation
 contract, shell lint, devlog structure and Git whitespace across both the
 committed change and working tree. It runs frozen install, core compilation,
-typechecking, package tests, boundary/privacy checks and isolated packed-package
-consumption. The browser checks are headless fixtures; native/device and real
+typechecking (including `pnpm typecheck:scripts` for native Node tooling),
+package tests, boundary/privacy checks and isolated packed-package consumption. The browser checks are headless fixtures; native/device and real
 provider acceptance remain separate.
 It removes any stale success marker before checking and writes
 `.cache/agent-validation/project-dev.ok` only after every check passes.

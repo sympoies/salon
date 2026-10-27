@@ -150,7 +150,10 @@ pnpm 11.9.0, installed frozen dependencies, `agent-run`, `forge-cli`, `gh` and
 `tar`. Retain the exact source's gate, CI and designated review. Prepare notes
 outside the checkout naming that full SHA, approved PR/CI, package versions and
 compiled SDK scope; application/provider/container acceptance remains separate.
-Run the entrypoint through the repository environment:
+The entrypoint invokes `node scripts/release-core-sdk.ts` directly using Node 24
+type stripping, with no tooling build step. The title summarizer adapter runs as
+`.ts` in the checkout and ships as compiled `.js` through the existing edge
+package build. Run the release entrypoint through the repository environment:
 
 ```bash
 systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 \

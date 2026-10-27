@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const skipped = new Set(["node_modules", "dist", "target", ".vite", ".cache"]);
-const patterns = [
+const patterns: [string, RegExp][] = [
   ["credential", /gh[opsu]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}/u],
   ["credential", /(?<![A-Za-z0-9_-])sk-(?:ant-|proj-|svcacct-)?[A-Za-z0-9_-]{32,}/u],
   ["credential", /tskey-(?:auth|api|client)-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}/u],
@@ -16,7 +16,7 @@ const patterns = [
   ["email", /[A-Za-z0-9._%+-]+@(?!example\.(?:com|org|net)\b|users\.noreply\.github\.com\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/u],
 ];
 
-function* walk(root, dir) {
+function* walk(root: string, dir: string): Generator<string> {
   for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
     const path = `${dir}/${entry.name}`;
     if (entry.isDirectory() && !skipped.has(entry.name)) yield* walk(root, path);
@@ -27,7 +27,7 @@ function* walk(root, dir) {
 
 let root = fileURLToPath(new URL("../", import.meta.url));
 if (process.argv.length > 2) {
-  if (process.argv.length !== 4 || process.argv[2] !== "--root") throw new Error("Usage: privacy-scan.mjs [--root <repo>]");
+  if (process.argv.length !== 4 || process.argv[2] !== "--root") throw new Error("Usage: privacy-scan.ts [--root <repo>]");
   root = resolve(process.argv[3]);
 }
 const files = [...walk(root, "packages")];

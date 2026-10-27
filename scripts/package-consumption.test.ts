@@ -7,24 +7,27 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const readJson = path => JSON.parse(readFileSync(path, "utf8"));
+type PackageManifest = { packageManager: string; dependencies: Record<string, string>; devDependencies: Record<string, string> };
+type Provenance = { sourceCommit: string; packages: { asset: string; bytes: number; sha256: string }[] };
+type CommandError = Error & { status: number; stdout: string; stderr: string };
+const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8")) as T;
 
 test("installed compiled core starts an authenticated edge and composes a generic UI", { timeout: 180_000 }, () => {
   const temporary = mkdtempSync("/tmp/core-package-consumer-");
   const consumer = join(temporary, "consumer");
-  const env = { ...process.env, TMPDIR: "/tmp" };
+  const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: "/tmp" };
   delete env.NODE_OPTIONS;
   delete env.NODE_PATH;
   for (const key of Object.keys(env)) if (key.startsWith("AGENT_CONSOLE_")) delete env[key];
-  const run = (command, args, cwd = consumer) => execFileSync(command, args, {
+  const run = (command: string, args: string[], cwd = consumer) => execFileSync(command, args, {
     cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000,
   });
-  const expectHarmlessOwnerCommandProbe = (name, expectedError) => {
-    let failure;
+  const expectHarmlessOwnerCommandProbe = (name: string, expectedError: RegExp) => {
+    let failure: CommandError | undefined;
     try {
       run(join(consumer, "node_modules/.bin", name), []);
     } catch (error) {
-      failure = error;
+      failure = error as CommandError;
     }
     assert.ok(failure, `${name} should reject an empty invocation`);
     assert.equal(
@@ -38,8 +41,8 @@ test("installed compiled core starts an authenticated edge and composes a generi
   try {
     mkdirSync(consumer);
     const packs = join(temporary, "packs");
-    run(process.execPath, [join(root, "scripts/pack-core.mjs"), packs], root);
-    const provenance = readJson(join(packs, "manifest.json"));
+    run(process.execPath, [join(root, "scripts/pack-core.ts"), packs], root);
+    const provenance = readJson<Provenance>(join(packs, "manifest.json"));
     assert.equal(provenance.sourceCommit, run("git", ["rev-parse", "HEAD"], root).trim());
     assert.equal(provenance.packages.length, 3);
     for (const pkg of provenance.packages) {
@@ -48,12 +51,12 @@ test("installed compiled core starts an authenticated edge and composes a generi
       assert.equal(pkg.sha256, createHash("sha256").update(bytes).digest("hex"));
       console.log(`${pkg.asset} sha256 ${pkg.sha256}`);
     }
-    const ui = readJson(join(root, "packages/ui/package.json"));
+    const ui = readJson<PackageManifest>(join(root, "packages/ui/package.json"));
     const dependencies = Object.fromEntries(["shared", "edge", "ui"].map(name => [`@agent-console/${name}`, `file:../packs/${name}.tgz`]));
     const devDependencies = Object.fromEntries(["typescript", "vite", "@types/node", "@types/react", "@types/react-dom"].map(name => [name, ui.devDependencies[name]]));
     writeFileSync(join(consumer, "package.json"), JSON.stringify({
       name: "generic-package-consumer", version: "0.0.0", private: true, type: "module",
-      packageManager: readJson(join(root, "package.json")).packageManager,
+      packageManager: readJson<PackageManifest>(join(root, "package.json")).packageManager,
       dependencies: { ...dependencies, react: ui.dependencies.react, "react-dom": ui.dependencies["react-dom"] },
       devDependencies,
     }, null, 2));
@@ -72,7 +75,7 @@ test("installed compiled core starts an authenticated edge and composes a generi
     for (const name of ["shared", "edge", "ui"]) {
       const installed = realpathSync(join(consumer, "node_modules/@agent-console", name));
       assert.ok(installed.startsWith(`${consumer}/`), `${name} escaped the isolated consumer`);
-      const payload = readdirSync(installed, { recursive: true });
+      const payload = readdirSync(installed, { recursive: true, encoding: "utf8" });
       assert.ok(payload.some(path => path.endsWith(".d.ts")), `${name} has no declarations`);
       assert.ok(!payload.some(path => /\.tsx?$/.test(path) && !path.endsWith(".d.ts")), `${name} ships TypeScript source`);
       assert.ok(payload.includes("dist-package/LICENSE"), `${name} omits the root license`);
@@ -93,7 +96,8 @@ test("installed compiled core starts an authenticated edge and composes a generi
     assert.match(evidence, /packed public UI: PASS/);
     console.log(evidence.trim());
   } catch (error) {
-    error.message += `\n${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+    const failure = error as CommandError;
+    failure.message += `\n${failure.stdout ?? ""}\n${failure.stderr ?? ""}`;
     throw error;
   } finally {
     rmSync(temporary, { recursive: true, force: true });

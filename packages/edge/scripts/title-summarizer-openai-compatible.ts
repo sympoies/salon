@@ -5,7 +5,7 @@ const DEFAULT_MAX_TOKENS = 96;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_INSTRUCTION = "Return strict JSON with exactly topic_action (keep, set, or clear), topic (string or null), and activity (string or null). Keep a user-owned topic. Set or revise an automatic topic only after the session has a clear durable subject; leave the topic unset while discussion is exploratory. Activity is the concise current action. For an exploratory turn with no stable topic or useful status, return activity null so the title remains unset. Never invent issue or pull-request references, repeat the topic, include secrets, Markdown, or commentary.";
 
-function requiredEnv(name) {
+function requiredEnv(name: string) {
   const value = process.env[name]?.trim();
   if (!value) {
     throw new Error(`${name} is required`);
@@ -13,7 +13,7 @@ function requiredEnv(name) {
   return value;
 }
 
-function optionalPositiveNumber(name, fallback) {
+function optionalPositiveNumber(name: string, fallback: number) {
   const raw = process.env[name]?.trim();
   if (!raw) {
     return fallback;
@@ -25,7 +25,7 @@ function optionalPositiveNumber(name, fallback) {
   return value;
 }
 
-function optionalNonNegativeInteger(name) {
+function optionalNonNegativeInteger(name: string) {
   const raw = process.env[name]?.trim();
   if (!raw) {
     return null;
@@ -37,7 +37,7 @@ function optionalNonNegativeInteger(name) {
   return value;
 }
 
-async function readStdinJson() {
+async function readStdinJson(): Promise<Record<string, unknown>> {
   let raw = "";
   for await (const chunk of process.stdin) {
     raw += chunk.toString("utf8");
@@ -45,11 +45,11 @@ async function readStdinJson() {
   try {
     return JSON.parse(raw);
   } catch (err) {
-    throw new Error(`stdin must be JSON: ${err.message}`);
+    throw new Error(`stdin must be JSON: ${(err as Error).message}`);
   }
 }
 
-function firstLine(value) {
+function firstLine(value: unknown) {
   if (typeof value !== "string") {
     return null;
   }
@@ -60,7 +60,7 @@ function firstLine(value) {
   return line ? line.replace(/\s+/g, " ") : null;
 }
 
-function normalizeModelOutput(value) {
+function normalizeModelOutput(value: unknown) {
   if (typeof value !== "string") {
     return null;
   }
@@ -73,11 +73,11 @@ function normalizeModelOutput(value) {
     return null;
   }
   try {
-    const parsed = JSON.parse(unfenced);
+    const parsed = JSON.parse(unfenced) as Record<string, unknown> | null;
     if (
       parsed
       && typeof parsed === "object"
-      && ["keep", "set", "clear"].includes(parsed.topic_action)
+      && ["keep", "set", "clear"].includes(parsed.topic_action as string)
       && (typeof parsed.topic === "string" || parsed.topic === null)
       && (typeof parsed.activity === "string" || parsed.activity === null)
     ) {
@@ -114,7 +114,9 @@ function normalizeModelOutput(value) {
     .trim();
 }
 
-function extractContent(payload) {
+type CompletionPayload = { choices?: { message?: { content?: unknown }; text?: unknown }[] };
+
+function extractContent(payload: CompletionPayload | null | undefined) {
   const choice = payload?.choices?.[0];
   if (typeof choice?.message?.content === "string") {
     return choice.message.content;
@@ -149,7 +151,7 @@ async function main() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const modelInput = {
+    const modelInput: Record<string, unknown> = {
       base_title: typeof input.base_title === "string" ? input.base_title : null,
       prompt,
       max_chars: typeof input.max_chars === "number" ? input.max_chars : 120,
@@ -197,7 +199,7 @@ async function main() {
     if (!response.ok) {
       throw new Error(`title model request failed: HTTP ${response.status}`);
     }
-    const payload = await response.json();
+    const payload = await response.json() as CompletionPayload;
     const title = normalizeModelOutput(extractContent(payload));
     if (!title) {
       throw new Error("title model returned an empty title");

@@ -66,7 +66,7 @@
     "test": "NODE_OPTIONS=--conditions=source node --test test/*.test.ts",
     "dev": "node --conditions=source --watch src/index.ts",
     "start": "node --conditions=source src/index.ts",
-    "build:package": "node ../../scripts/build-core-package.mjs edge"
+    "build:package": "node ../../scripts/build-core-package.ts edge"
   },
   "dependencies": {
     "@agent-console/shared": "workspace:*"

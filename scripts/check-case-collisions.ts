@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export function assertCaseDistinctPaths(paths, context) {
-  const seen = new Map();
+export function assertCaseDistinctPaths(paths: Iterable<string>, context: string) {
+  const seen = new Map<string, string>();
   const collisions = [];
   for (const path of paths) {
     const key = path.toLowerCase();
