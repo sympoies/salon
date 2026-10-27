@@ -47,7 +47,7 @@ test("openai-compatible title summarizer script preserves legacy plain output", 
   const { base } = await listenOnLoopback(server);
 
   try {
-    const result = await runScript("scripts/title-summarizer-openai-compatible.mjs", {
+    const result = await runScript("scripts/title-summarizer-openai-compatible.ts", {
       AGENT_CONSOLE_TITLE_SUMMARIZER_BASE_URL: `${base}/v1`,
       AGENT_CONSOLE_TITLE_SUMMARIZER_MODEL: "tiny-title-model",
       AGENT_CONSOLE_TITLE_SUMMARIZER_API_KEY: "local-key",
@@ -109,7 +109,7 @@ test("openai-compatible title summarizer strips a model-generated leading bullet
   const { base } = await listenOnLoopback(server);
 
   try {
-    const result = await runScript("scripts/title-summarizer-openai-compatible.mjs", {
+    const result = await runScript("scripts/title-summarizer-openai-compatible.ts", {
       AGENT_CONSOLE_TITLE_SUMMARIZER_BASE_URL: `${base}/v1`,
       AGENT_CONSOLE_TITLE_SUMMARIZER_MODEL: "tiny-title-model",
     }, { prompt: "verify deterministic Retitle routing" });
@@ -134,7 +134,7 @@ test("openai-compatible title summarizer strips a leading bullet from JSON title
   const { base } = await listenOnLoopback(server);
 
   try {
-    const result = await runScript("scripts/title-summarizer-openai-compatible.mjs", {
+    const result = await runScript("scripts/title-summarizer-openai-compatible.ts", {
       AGENT_CONSOLE_TITLE_SUMMARIZER_BASE_URL: `${base}/v1`,
       AGENT_CONSOLE_TITLE_SUMMARIZER_MODEL: "tiny-title-model",
     }, { prompt: "verify JSON title normalization" });
@@ -163,7 +163,7 @@ test("openai-compatible title summarizer parses pretty-printed structured decisi
   const { base } = await listenOnLoopback(server);
 
   try {
-    const result = await runScript("scripts/title-summarizer-openai-compatible.mjs", {
+    const result = await runScript("scripts/title-summarizer-openai-compatible.ts", {
       AGENT_CONSOLE_TITLE_SUMMARIZER_BASE_URL: `${base}/v1`,
       AGENT_CONSOLE_TITLE_SUMMARIZER_MODEL: "tiny-title-model",
     }, { prompt: "implement structured retitle" });
@@ -180,7 +180,7 @@ test("openai-compatible title summarizer parses pretty-printed structured decisi
 });
 
 test("openai-compatible title summarizer script requires endpoint and model env", async () => {
-  const result = await runScript("scripts/title-summarizer-openai-compatible.mjs", {
+  const result = await runScript("scripts/title-summarizer-openai-compatible.ts", {
     AGENT_CONSOLE_TITLE_SUMMARIZER_BASE_URL: "",
     AGENT_CONSOLE_TITLE_SUMMARIZER_MODEL: "",
   }, { prompt: "fix title" });
@@ -205,7 +205,7 @@ test("openai-compatible title summarizer script omits id_slot when unconfigured"
   const { base } = await listenOnLoopback(server);
 
   try {
-    const result = await runScript("scripts/title-summarizer-openai-compatible.mjs", {
+    const result = await runScript("scripts/title-summarizer-openai-compatible.ts", {
       AGENT_CONSOLE_TITLE_SUMMARIZER_BASE_URL: `${base}/v1`,
       AGENT_CONSOLE_TITLE_SUMMARIZER_MODEL: "tiny-title-model",
       AGENT_CONSOLE_TITLE_SUMMARIZER_SLOT_ID: "",
@@ -220,7 +220,7 @@ test("openai-compatible title summarizer script omits id_slot when unconfigured"
 });
 
 test("openai-compatible title summarizer script rejects an invalid slot id", async () => {
-  const result = await runScript("scripts/title-summarizer-openai-compatible.mjs", {
+  const result = await runScript("scripts/title-summarizer-openai-compatible.ts", {
     AGENT_CONSOLE_TITLE_SUMMARIZER_BASE_URL: "http://127.0.0.1:1234/v1",
     AGENT_CONSOLE_TITLE_SUMMARIZER_MODEL: "tiny-title-model",
     AGENT_CONSOLE_TITLE_SUMMARIZER_SLOT_ID: "slot-one",

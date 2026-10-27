@@ -21,6 +21,7 @@ export TMPDIR=/tmp
 pnpm install --frozen-lockfile
 pnpm run build:packages
 pnpm run typecheck
+pnpm run typecheck:scripts
 pnpm -r --workspace-concurrency=1 run test
 pnpm run check:core
-node --test scripts/package-consumption.test.mjs
+node --test scripts/package-consumption.test.ts

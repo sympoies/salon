@@ -8,9 +8,15 @@ importers:
 
   .:
     devDependencies:
+      '@types/node':
+        specifier: ^24.13.2
+        version: 24.13.2
       oxc-parser:
         specifier: 0.137.0
         version: 0.137.0
+      typescript:
+        specifier: ^7.0.0
+        version: 7.0.2
 
   apps/workspace:
     dependencies:

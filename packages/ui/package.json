@@ -87,7 +87,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "NODE_OPTIONS=--conditions=source node --test test/domAssertSafety.test.ts && NODE_OPTIONS=--conditions=source node --test --test-reporter=tap --test-concurrency=3 test/*.test.ts",
     "preview": "vite preview",
-    "build:package": "node ../../scripts/build-core-package.mjs ui"
+    "build:package": "node ../../scripts/build-core-package.ts ui"
   },
   "dependencies": {
     "@agent-console/shared": "workspace:*",

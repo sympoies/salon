@@ -8,13 +8,13 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const destination = resolve(process.argv[2] ?? "dist-packages");
 mkdirSync(destination, { recursive: true });
-const git = args => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+const git = (args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 const sourceCommit = git(["rev-parse", "HEAD"]);
 const dirty = git(["status", "--porcelain", "--untracked-files=normal"]) !== "";
 const packages = [];
 for (const name of ["shared", "edge", "ui"]) {
   const packageRoot = resolve(root, "packages", name);
-  const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8")) as { name: string; version: string };
   const asset = `${name}.tgz`;
   execFileSync("pnpm", ["pack", "--out", resolve(destination, asset)], { cwd: packageRoot, stdio: "inherit" });
   const bytes = readFileSync(resolve(destination, asset));

@@ -5,9 +5,9 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const scanner = fileURLToPath(new URL("../privacy-scan.mjs", import.meta.url));
+const scanner = fileURLToPath(new URL("../privacy-scan.ts", import.meta.url));
 
-function scan(files) {
+function scan(files: Record<string, string | Buffer>) {
   const root = mkdtempSync("/tmp/core-privacy-");
   try {
     for (const [path, body] of Object.entries(files)) {

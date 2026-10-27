@@ -121,7 +121,7 @@ jobs:
           tar -xzf "$archive" -C "$install_dir" --strip-components=2 --wildcards '*/bin/devlog'
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
-      - name: Validate core packages
+      - name: Validate core packages and TypeScript tooling
         run: bash .agents/scripts/pre-pr.sh
 
       - name: Record validation result

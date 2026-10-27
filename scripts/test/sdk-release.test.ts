@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const source = "a".repeat(40);
 const assets = ["shared.tgz", "edge.tgz", "ui.tgz", "manifest.json"];
 const repo = fileURLToPath(new URL("../../", import.meta.url));
-const hash = bytes => createHash("sha256").update(bytes).digest("hex");
+const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 
 // Only subprocess transports are replaced. The entrypoint reads real manifests,
 // lists real tarballs and verifies the actual bytes returned by immutable IDs.
@@ -69,7 +69,7 @@ if (command === "git") {
 function fixture(scenario = "valid") {
   const root = mkdtempSync("/tmp/sdk-release-");
   for (const directory of ["bin", "packs", ".agents/scripts", "scripts"]) mkdirSync(join(root, directory), { recursive: true });
-  for (const path of [".agents/scripts/release.sh", "scripts/release-core-sdk.mjs"]) cpSync(join(repo, path), join(root, path));
+  for (const path of [".agents/scripts/release.sh", "scripts/release-core-sdk.ts"]) cpSync(join(repo, path), join(root, path));
     writeFileSync(join(root, "package.json"), JSON.stringify({ name: "salon", version: "0.1.11" }));
   const packages = [];
   for (const name of ["shared", "edge", "ui"]) {
@@ -94,14 +94,14 @@ function fixture(scenario = "valid") {
   writeFileSync(join(root, "notes.md"), `Core SDK at ${source}.\n`);
   writeFileSync(join(root, "state.json"), JSON.stringify({ source, scenario, assets }));
   for (const command of ["git", "pnpm", "gh", "forge-cli"]) writeFileSync(join(root, "bin", command), transport, { mode: 0o755 });
-  const run = (...extra) => spawnSync("bash", [join(root, ".agents/scripts/release.sh"), source, join(root, "notes.md"), ...extra], {
+  const run = (...extra: string[]) => spawnSync("bash", [join(root, ".agents/scripts/release.sh"), source, join(root, "notes.md"), ...extra], {
     cwd: root, encoding: "utf8", env: { ...process.env, PATH: `${join(root, "bin")}:${process.env.PATH}`, SDK_RELEASE_FIXTURE: root },
   });
-  const calls = () => readFileSync(join(root, "calls.jsonl"), "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+  const calls = () => readFileSync(join(root, "calls.jsonl"), "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line) as { command: string; args: string[] });
   return { root, run, calls, close: () => rmSync(root, { recursive: true, force: true }) };
 }
 
-function rejectedBeforePublishing(scenario, pattern) {
+function rejectedBeforePublishing(scenario: string, pattern: RegExp) {
   const setup = fixture(scenario);
   try {
     const result = setup.run();
@@ -134,7 +134,7 @@ test("SDK dry-run validates the fixed private release without a live create", ()
     const creates = setup.calls().filter(call => call.command === "forge-cli");
     assert.equal(creates.length, 1);
     assert.ok(creates[0].args.includes("--dry-run"));
-    assert.equal(JSON.parse(readFileSync(join(setup.root, "state.json"))).published, undefined);
+    assert.equal(JSON.parse(readFileSync(join(setup.root, "state.json"), "utf8")).published, undefined);
   } finally { setup.close(); }
 });
 
@@ -146,7 +146,7 @@ test("SDK release publishes exactly four assets then verifies tag and actual ass
     const calls = setup.calls();
     const creates = calls.filter(call => call.command === "forge-cli");
     assert.equal(creates.length, 2);
-    const live = creates.find(call => !call.args.includes("--dry-run")).args;
+    const live = creates.find(call => !call.args.includes("--dry-run"))!.args;
     assert.deepEqual(live.slice(3, 7), assets.map(name => `dist-packages/${name}`));
     assert.equal(live[live.indexOf("--target") + 1], source);
     assert.ok(live.includes("--prerelease"));
