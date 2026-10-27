@@ -15,19 +15,24 @@ close button to repeat sooner where noted.
 
 ## Host offline
 
-1. Configure a machine entry owned by the test principal with a unique display
-   name and an unreachable documentation-network address and port. Keep all
-   other configured machines unchanged. The entry must be active and included
-   in that principal's client configuration.
+1. Have Ops provision a test-only endpoint/profile and an active machine entry
+   with a unique display name, visible only to the test principal in its client
+   configuration. Before acceptance, Ops must verify from the edge that the
+   endpoint's probe stalls for more than 1,000 ms before failing. The breaker
+   ignores failures shorter than its default 1,000 ms threshold; an unreachable
+   documentation-network address or immediate connection refusal is not enough.
+   Keep all other configured machines unchanged; do not stop or reconfigure a
+   shared host.
 2. Open or reload the client, allow its initial successful load, then wait for
-   the failed machine probe. The edge classifies a probe timeout as offline;
-   while its probe breaker is cooling down, the notice text is
+   the verified stalled probe to fail and open the breaker. On a subsequent
+   poll while the breaker is cooling down, the notice text is
    `<test-machine>: offline (cooling down after a failed probe)`.
 3. Confirm the placement above. The notice auto-dismisses after 8 seconds.
    While that machine remains down, it is suppressed for 120 seconds from the
-   previous display. The startup grace is 5 seconds after the first successful
-   load; failures before it expires do not display a notice. After 120 seconds,
-   the next polling update can display it again.
+   previous display. Host-offline notices wait for the first successful load
+   or 5 seconds from hook mount, whichever is later; failures before then do
+   not display a notice. After 120 seconds, the next polling update can display
+   it again.
 4. Remove the test machine entry when finished.
 
 The machine name must be one of the configured names: the client only treats
