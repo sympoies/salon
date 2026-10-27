@@ -1790,21 +1790,21 @@ test("#86 Dismiss removes only an old uncertain local echo with zero sends", asy
 });
 
 
-test("#86 dismissal waits a day, preserves definite outcomes and guards a live attempt across windows", async () => {
+test("#86 timed dismissal waits a day, preserves definite outcomes and guards a live attempt across windows", async () => {
   const clock = graceClock(); const h = await mount(); let finish: (value: TestResult) => void = () => {};
   try {
     await h.render("idle");
     await seedLegacyEchoes(h, [
-      { id: "untimed", requestId: "untimed", text: "older unknown echo", incarnation: "older-incarnation", state: "unknown" },
+      { id: "timed", requestId: "timed", text: "recent unknown echo", incarnation: "older-incarnation", state: "unknown", attemptedAt: Date.now() },
       { id: "refused", requestId: "refused", text: "definitely refused", incarnation: "older-incarnation", state: "refused", attemptedAt: Date.now() - 2 * 86_400_000 },
       { id: "delivered", requestId: "delivered", text: "definitely delivered", incarnation: "older-incarnation", state: "delivered", attemptedAt: Date.now() - 2 * 86_400_000 },
     ]);
     const outbox = h.queueModule.conversationOutbox();
-    assert.equal(Boolean(h.button("Dismiss reply")), false, "missing time starts a bounded observation period");
+    assert.equal(Boolean(h.button("Dismiss reply")), false, "a timed echo waits for the bounded age");
     await clock.advance(h.queueModule.STALE_LOCAL_ECHO_MS - 1, h.settle);
     assert.equal(Boolean(h.button("Dismiss reply")), false);
     await clock.advance(1, h.settle);
-    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1, "only uncertain row ages into Dismiss");
+    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1, "only the uncertain timed row ages into Dismiss");
     assert.equal(await outbox.dismiss(h.session(), "refused", "older-incarnation", []), false);
     assert.equal(await outbox.dismiss(h.session(), "delivered", "older-incarnation", []), false);
     await h.click("Dismiss reply");
@@ -1822,4 +1822,65 @@ test("#86 dismissal waits a day, preserves definite outcomes and guards a live a
     await act(async () => finish({ ok: true })); await h.settle();
     assert.equal(h.requests.length, 1, "dismiss never sends or replays");
   } finally { finish({ ok: true }); await h.close(); clock.restore(); }
+});
+
+
+test("#86 untimed legacy image echoes reconcile older labelled image turns in stored order", async () => {
+  const factory = new IDBFactory(); let h = await mount(factory);
+  try {
+    await h.render("idle");
+    await seedLegacyEchoes(h, ["first", "second"].map(id => ({ id, requestId: id, text: `'/attachments/${id}.png'`,
+      incarnation: "older-incarnation", state: "queued" as const })));
+    await h.close(); h = await mount(factory);
+    globalThis.__outboxTranscript = [{ ...userTurn("older-image-1", "[Image #1]", Date.now() - 2 * 86_400_000), images: [{ id: "first-image" }] }];
+    await h.render("idle"); await h.renderLivePanel();
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()).map(row => row.id), ["second"],
+      "one older image turn clears only the first untimed image echo");
+    globalThis.__outboxTranscript = [...globalThis.__outboxTranscript, { ...userTurn("older-image-2", "[Image #2]", Date.now() - 86_400_000), images: [{ id: "second-image" }] }];
+    await h.refreshLiveHistory();
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), []);
+    assert.equal(h.requests.length, 0);
+  } finally { delete globalThis.__outboxTranscript; await h.close(); }
+});
+
+test("#86 an unmatched untimed legacy echo is immediately dismissible without sending", async () => {
+  const h = await mount();
+  try {
+    await h.render("idle");
+    await seedLegacyEchoes(h, [{ id: "untimed-image", requestId: "untimed-image", text: "'/attachments/unmatched-legacy.png'",
+      incarnation: "older-incarnation", state: "unknown" }]);
+    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1);
+    await h.click("Dismiss reply");
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), []);
+    assert.equal(h.requests.length, 0); assert.equal(h.inputs.length, 0);
+  } finally { await h.close(); }
+});
+
+
+test("#86 a fresh Retry or dispatch ends untimed legacy recovery semantics", async () => {
+  const h = await mount();
+  try {
+    h.response({ ok: false, outcomeUnknown: true });
+    await h.render("idle", 1, {}, false, false);
+    const outbox = h.queueModule.conversationOutbox();
+    const text = "'/attachments/recovery.png'";
+    const older = [{ ...userTurn("older-recovery", "[Image #1]", Date.now() - 86_400_000), images: [{ id: "recovery-image" }] }];
+    await seedLegacyEchoes(h, [{ id: "retry-legacy", requestId: "retry-legacy", text, incarnation: "older-incarnation",
+      state: "refused", attemptedAt: Date.now(), legacyUntimed: true }]);
+    await act(async () => outbox.retry(h.session(), "retry-legacy")); await h.settle();
+    const retried = outbox.items(h.session())[0]!;
+    assert.equal(outbox.canDismiss(retried), false, "Retry creates a timed intention");
+    assert.equal(h.queueModule.transcriptProof([retried], older).size, 0, "older history cannot prove a fresh Retry");
+    // Use another session target so the retained Retry cannot hold its dispatch.
+    const target = { ...h.session(), id: "recovery-target" };
+    await act(async () => (outbox as unknown as {
+      change(session: Session, edit: (queue: { items: QueuedReply[] }) => void): Promise<void>;
+    }).change(target, queue => { queue.items.push({ id: "dispatch-legacy", requestId: "dispatch-legacy", text,
+      incarnation: target.session_incarnation!, state: "queued", attemptedAt: Date.now() - 2 * 86_400_000, legacyUntimed: true }); }));
+    await act(async () => outbox.deliver(target, true, () => true)); await h.settle();
+    assert.equal(h.requests.length, 1);
+    const dispatched = outbox.items(target)[0]!;
+    assert.equal(outbox.canDismiss(dispatched), false, "a real dispatch uses the timed age bound");
+    assert.equal(h.queueModule.transcriptProof([dispatched], older).size, 0, "older history cannot prove a real new attempt");
+  } finally { await h.close(); }
 });
