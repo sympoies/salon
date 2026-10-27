@@ -15,6 +15,11 @@
       "types": "./dist-package/promptReceipt.d.ts",
       "default": "./dist-package/promptReceipt.js"
     },
+    "./pasted-content": {
+      "source": "./src/pastedContent.ts",
+      "types": "./dist-package/pastedContent.d.ts",
+      "default": "./dist-package/pastedContent.js"
+    },
     "./activity": {
       "source": "./src/activity.ts",
       "types": "./dist-package/activity.d.ts",
