@@ -1,3 +1,4 @@
+import type { QueuedReply } from "../src/conversationOutbox.ts";
 import type {PromptReceipt} from "@agent-console/shared/prompt-receipt";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
@@ -1724,4 +1725,185 @@ test("#1043 a sent message and its paste-wrapped transcript turn show one bubble
     assert.doesNotMatch(h.container.textContent??"",/pasted_content/,"no wrapper tags");
     assert.equal(h.requests.length,1,"nothing is sent again");
   }finally{delete globalThis.__outboxTranscript;await h.close();clock.restore();}
+});
+
+
+async function seedLegacyEchoes(h: Awaited<ReturnType<typeof mount>>, items: readonly QueuedReply[]) {
+  const outbox = h.queueModule.conversationOutbox();
+  await act(async () => (outbox as unknown as {
+    change(session: Session, edit: (queue: { items: QueuedReply[] }) => void): Promise<void>;
+  }).change(h.session(), queue => { queue.items.push(...items); }));
+  await h.settle();
+}
+
+test("#86 stored legacy image echoes reconcile on load and history refresh without sends", async () => {
+  const factory = new IDBFactory(); let h = await mount(factory);
+  const at = Date.now() - 2 * 86_400_000;
+  const states = ["queued", "dispatching", "unknown", "delivered"] as const;
+  const rows = states.map((state, index) => ({ id: state, requestId: state, state,
+    text: `'/attachments/example-${index}.png'`, incarnation: "older-incarnation",
+    // A missing queuedAt explains the absent timestamp in older clients.
+    ...(state === "queued" ? { queuedAt: at } : { attemptedAt: at + 2000 }) }));
+  const history = rows.map((row, index) => ({ ...userTurn(`image-${index}`, `[Image #${index + 1}] [Image: source: /attachments/example-${index}.png]`, at + 3000 + index),
+    images: [{ id: `synthetic-${index}` }] }));
+  try {
+    await h.render("idle"); await seedLegacyEchoes(h, rows);
+    await h.close(); h = await mount(factory);
+    // A single source-less label is unambiguous when only its candidate is old enough.
+    globalThis.__outboxTranscript = [{ ...history[0]!, text: "[Image #1]", timestamp: new Date(at + 1000).toISOString() }];
+    await h.render("idle"); await h.renderLivePanel();
+    assert.equal(h.queueModule.conversationOutbox().items(h.session()).some(row => row.id === "queued"), false,
+      "persisted queued image echo is reconciled on initial history load");
+    globalThis.__outboxTranscript = history;
+    await h.refreshLiveHistory();
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), [], "history refresh clears stored attempted echoes too");
+    assert.equal(h.requests.length, 0);
+    globalThis.__outboxTranscript = [...history, { ...userTurn("late-image", "[Image #5] [Image: source: /attachments/late.png]", at + 5000), images: [{ id: "late-image" }] }];
+    await h.refreshLiveHistory();
+    // Storage can finish loading after history, with no further history change.
+    await seedLegacyEchoes(h, [{ ...rows[0]!, id: "late-storage", requestId: "late-storage", text: "'/attachments/late.png'" }]);
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), [], "storage changes reconcile against already loaded history");
+    await h.close(); h = await mount(factory); await h.render("idle");
+    assert.equal(h.queueModule.conversationOutbox().items(h.session()).some(row => row.id === "queued"), false, "reconciliation persists across reload");
+  } finally { delete globalThis.__outboxTranscript; await h.close(); }
+});
+
+test("#86 Dismiss removes only an old uncertain local echo with zero sends", async () => {
+  const factory = new IDBFactory(); let h = await mount(factory);
+  const at = Date.now() - 2 * 86_400_000;
+  try {
+    await h.render("idle");
+    await seedLegacyEchoes(h, [
+      { id: "old", requestId: "old", text: "'/attachments/unmatched.png'", incarnation: "older-incarnation", state: "unknown", attemptedAt: at },
+      { id: "keep", requestId: "keep", text: "fresh echo", incarnation: "older-incarnation", state: "queued", queuedAt: Date.now() },
+    ]);
+    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1);
+    const sharedBefore = globalThis.__outboxSharedItems?.slice();
+    await h.click("Dismiss reply");
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()).map(row => row.id), ["keep"]);
+    assert.deepEqual(globalThis.__outboxSharedItems, sharedBefore);
+    assert.equal(h.requests.length, 0); assert.equal(h.inputs.length, 0);
+    await h.close(); h = await mount(factory); await h.render("idle");
+    assert.equal(h.status("'/attachments/unmatched.png'"), undefined, "dismissal persists");
+    assert.equal(h.requests.length, 0);
+  } finally { await h.close(); }
+});
+
+
+test("#86 timed dismissal waits a day, preserves definite outcomes and guards a live attempt across windows", async () => {
+  const clock = graceClock(); const h = await mount(); let finish: (value: TestResult) => void = () => {};
+  try {
+    await h.render("idle");
+    await seedLegacyEchoes(h, [
+      { id: "timed", requestId: "timed", text: "recent unknown echo", incarnation: "older-incarnation", state: "unknown", attemptedAt: Date.now() },
+      { id: "refused", requestId: "refused", text: "definitely refused", incarnation: "older-incarnation", state: "refused", attemptedAt: Date.now() - 2 * 86_400_000 },
+      { id: "delivered", requestId: "delivered", text: "definitely delivered", incarnation: "older-incarnation", state: "delivered", attemptedAt: Date.now() - 2 * 86_400_000 },
+    ]);
+    const outbox = h.queueModule.conversationOutbox();
+    assert.equal(Boolean(h.button("Dismiss reply")), false, "a timed echo waits for the bounded age");
+    await clock.advance(h.queueModule.STALE_LOCAL_ECHO_MS - 1, h.settle);
+    assert.equal(Boolean(h.button("Dismiss reply")), false);
+    await clock.advance(1, h.settle);
+    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1, "only the uncertain timed row ages into Dismiss");
+    assert.equal(await outbox.dismiss(h.session(), "refused", "older-incarnation", []), false);
+    assert.equal(await outbox.dismiss(h.session(), "delivered", "older-incarnation", []), false);
+    await h.click("Dismiss reply");
+    await h.click("Discard refused reply");
+    // A real pending submit holds the existing cross-window delivery lock.
+    h.submit(() => new Promise(resolve => { finish = resolve; }));
+    await act(async () => outbox.enqueue(h.session(), "live attempt")); await h.settle();
+    assert.equal(h.requests.length, 1);
+    await clock.advance(h.queueModule.STALE_LOCAL_ECHO_MS, h.settle);
+    const live = outbox.items(h.session()).find(row => row.text === "live attempt")!;
+    assert.equal(outbox.canDismiss(live), false);
+    const other = new h.queueModule.ConversationOutbox(outbox.namespace); await other.ready;
+    assert.equal(await other.dismiss(h.session(), live.id, live.incarnation, []), false, "another window cannot remove a live claim");
+    assert.equal(other.items(h.session()).some(row => row.id === live.id), true);
+    await act(async () => finish({ ok: true })); await h.settle();
+    assert.equal(h.requests.length, 1, "dismiss never sends or replays");
+  } finally { finish({ ok: true }); await h.close(); clock.restore(); }
+});
+
+
+test("#86 untimed legacy image echoes reconcile older labelled image turns in stored order", async () => {
+  const factory = new IDBFactory(); let h = await mount(factory);
+  try {
+    await h.render("idle");
+    await seedLegacyEchoes(h, ["first", "second"].map(id => ({ id, requestId: id, text: `'/attachments/${id}.png'`,
+      incarnation: "older-incarnation", state: "queued" as const })));
+    await h.close(); h = await mount(factory);
+    globalThis.__outboxTranscript = [{ ...userTurn("older-image-1", "[Image #1]", Date.now() - 2 * 86_400_000), images: [{ id: "first-image" }] }];
+    await h.render("idle"); await h.renderLivePanel();
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()).map(row => row.id), ["second"],
+      "one older image turn clears only the first untimed image echo");
+    globalThis.__outboxTranscript = [...globalThis.__outboxTranscript, { ...userTurn("older-image-2", "[Image #2]", Date.now() - 86_400_000), images: [{ id: "second-image" }] }];
+    await h.refreshLiveHistory();
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), []);
+    assert.equal(h.requests.length, 0);
+  } finally { delete globalThis.__outboxTranscript; await h.close(); }
+});
+
+test("#86 an unmatched untimed legacy echo is immediately dismissible without sending", async () => {
+  const h = await mount();
+  try {
+    await h.render("idle");
+    await seedLegacyEchoes(h, [{ id: "untimed-image", requestId: "untimed-image", text: "'/attachments/unmatched-legacy.png'",
+      incarnation: "older-incarnation", state: "unknown" }]);
+    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1);
+    await h.click("Dismiss reply");
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), []);
+    assert.equal(h.requests.length, 0); assert.equal(h.inputs.length, 0);
+  } finally { await h.close(); }
+});
+
+
+test("#86 a fresh Retry or dispatch ends untimed legacy recovery semantics", async () => {
+  const h = await mount();
+  try {
+    h.response({ ok: false, outcomeUnknown: true });
+    await h.render("idle", 1, {}, false, false);
+    const outbox = h.queueModule.conversationOutbox();
+    const text = "'/attachments/recovery.png'";
+    const older = [{ ...userTurn("older-recovery", "[Image #1]", Date.now() - 86_400_000), images: [{ id: "recovery-image" }] }];
+    await seedLegacyEchoes(h, [{ id: "retry-legacy", requestId: "retry-legacy", text, incarnation: "older-incarnation",
+      state: "refused", attemptedAt: Date.now(), legacyUntimed: true }]);
+    await act(async () => outbox.retry(h.session(), "retry-legacy")); await h.settle();
+    const retried = outbox.items(h.session())[0]!;
+    assert.equal(outbox.canDismiss(retried), false, "Retry creates a timed intention");
+    assert.equal(h.queueModule.transcriptProof([retried], older).size, 0, "older history cannot prove a fresh Retry");
+    // Use another session target so the retained Retry cannot hold its dispatch.
+    const target = { ...h.session(), id: "recovery-target" };
+    await act(async () => (outbox as unknown as {
+      change(session: Session, edit: (queue: { items: QueuedReply[] }) => void): Promise<void>;
+    }).change(target, queue => { queue.items.push({ id: "dispatch-legacy", requestId: "dispatch-legacy", text,
+      incarnation: target.session_incarnation!, state: "queued", attemptedAt: Date.now() - 2 * 86_400_000, legacyUntimed: true }); }));
+    await act(async () => outbox.deliver(target, true, () => true)); await h.settle();
+    assert.equal(h.requests.length, 1);
+    const dispatched = outbox.items(target)[0]!;
+    assert.equal(outbox.canDismiss(dispatched), false, "a real dispatch uses the timed age bound");
+    assert.equal(h.queueModule.transcriptProof([dispatched], older).size, 0, "older history cannot prove a real new attempt");
+  } finally { await h.close(); }
+});
+
+
+test("#86 Retry of a timed refused image keeps its new intention past already-loaded history", async () => {
+  const h = await mount();
+  try {
+    await h.render("idle", 1, {}, false, false);
+    const outbox = h.queueModule.conversationOutbox();
+    const text = "'/attachments/timed-retry.png'", old = Date.now() - 2 * 86_400_000;
+    await seedLegacyEchoes(h, [{ id: "timed-refusal", requestId: "old-attempt", text, incarnation: h.session().session_incarnation!,
+      state: "refused", queuedAt: old, attemptedAt: old }]);
+    const history = [{ ...userTurn("before-retry", "[Image #1]", old + 1000), images: [{ id: "timed-retry-image" }] }];
+    await h.transcript(history);
+    await h.render("idle", 1, {}, false, false);
+    assert.equal(outbox.items(h.session())[0]?.state, "refused", "a definite refusal is not proven by history");
+    const retryAt = Date.now();
+    await h.click("Retry reply");
+    const retried = outbox.items(h.session())[0];
+    assert.equal(retried?.state, "queued", "the unclaimed new request survives older matching history");
+    assert.notEqual(retried!.requestId, "old-attempt");
+    assert.ok(retried!.attemptedAt! >= retryAt, "Retry starts a fresh proof-time boundary");
+    assert.equal(h.requests.length, 0, "dispatch remains unavailable during this actual Retry action");
+  } finally { await h.close(); }
 });

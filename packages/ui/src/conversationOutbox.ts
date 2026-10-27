@@ -34,6 +34,8 @@ export interface QueuedReply {
   readonly unconfirmed?: boolean;
   /** When the latest attempt was claimed; only a later transcript turn proves it (#969). */
   readonly attemptedAt?: number;
+  /** Stored before attempt/enqueue timestamps; preserve that provenance after observation. */
+  readonly legacyUntimed?: boolean;
   /** The idle phase (phase_changed_at) the attempt was made in; its paste may sit in the input while it lasts (#994). */
   readonly idlePhaseAt?: string;
 }
@@ -61,6 +63,8 @@ const QUEUED_REPLY_BUSY_RETRY_MS = 5000;
  * long did not start a turn, so it is shown as not confirmed (#994).
  */
 export const UNCERTAIN_IDLE_REPLY_MS = 30_000;
+/** An unmatched local echo may be explicitly dismissed after one day. */
+export const STALE_LOCAL_ECHO_MS = 24 * 60 * 60 * 1000;
 /** How many proving transcript turns a queue remembers (#969). */
 const PROVEN_TURNS_KEPT = 200;
 const transcriptText = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -76,7 +80,8 @@ const TERMINAL_DRAFT_ERRORS: Readonly<Record<string, string>> = {
   "composer-unobservable": "Console cannot read the terminal input, so this reply was not sent. Check the terminal, then Retry.",
 };
 const provable = (item: QueuedReply) => item.state === "unknown" || item.state === "dispatching" || item.state === "delivered"
-  || (item.state === "refused" && item.unconfirmed === true);
+  || (item.state === "refused" && item.unconfirmed === true)
+  || (item.state === "queued" && imageOnly(item.text));
 
 /** A proven part of a transcript turn: the turn and the reply text it held. */
 const provenKey = (turnId: string, text: string) => `${turnId}\u0000${text}`;
@@ -109,9 +114,11 @@ export function transcriptProof(items: readonly QueuedReply[], messages: readonl
     const at = Date.parse(message.timestamp ?? "");
     const parts = spent.get(message.id) ?? [];
     if (message.role !== "user" || !Number.isFinite(at) || parts.includes("")) continue;
-    const candidates = pending.filter(item => !matched.has(item.id) && attemptTime(item) <= at);
+    const candidates = pending.filter(item => !matched.has(item.id) && (untimedImage(item)
+      ? Boolean(message.images?.length) : attemptTime(item) > 0 && attemptTime(item) <= at));
     const text = transcriptText(unwrapPastedContent(message.text));
-    const used = candidates.length > 0 ? coverTurn(text, candidates, parts) : undefined;
+    // Untimed image-only echoes use whole image turns below, one row per turn.
+    const used = candidates.length > 0 ? coverTurn(text, candidates.filter(item => !untimedImage(item)), parts) : undefined;
     if (!used && parts.length === 0 && message.images?.length) {
       // Providers may replace paths with labels (Claude) or omit them (Codex).
       // Require one complete, unambiguous reply and matching image count. Spend
@@ -122,7 +129,11 @@ export function transcriptProof(items: readonly QueuedReply[], messages: readonl
         return replyPart(text, item.text, true) === text
           || transcriptText(item.text.replace(IMAGE_PATH, "")) === text;
       });
-      if (images.length === 1) matched.set(images[0]!.id, message.id);
+      // Untimed rows predate timestamped storage. Match them in stored order;
+      // timed attempts retain the existing ambiguity guard (#54).
+      if (images.length === 1 || (images.length > 1 && images.every(untimedImage))) {
+        matched.set(images[0]!.id, message.id);
+      }
     }
     // Spend the transcript text a reply used, which may show its images as
     // "[Image #N]", so the turn can still cover it as it grows (#1005 F2).
@@ -160,6 +171,10 @@ function replyPart(rest: string, text: string, hasImages = false): string | unde
 
 /** The upload paths a reply carries, in order. */
 const imagePaths = (text: string) => (transcriptText(text).match(IMAGE_PATH) ?? []).map(unquotePath);
+const imageOnly = (text: string) => imagePaths(text).length > 0 && !transcriptText(text.replace(IMAGE_PATH, ""));
+const untimed = (item: QueuedReply) => item.legacyUntimed === true || (item.queuedAt === undefined && item.attemptedAt === undefined);
+const untimedImage = (item: QueuedReply) => untimed(item) && imageOnly(item.text);
+
 
 /** The replies, with the transcript text each used, that with spent parts and nudges make up the whole turn. */
 function coverTurn(text: string, candidates: readonly QueuedReply[], spentParts: readonly string[]): { item: QueuedReply; part: string }[] | undefined {
@@ -348,6 +363,7 @@ export class ConversationOutbox {
       // input, so the Retry keeps the idle guard (#994).
       queue.items = queue.items.map(item => item.id === id && item.state === "refused"
         ? { ...item, requestId: crypto.randomUUID(), state: "queued", error: undefined, unconfirmed: undefined,
+          legacyUntimed: undefined, attemptedAt: Date.now(),
           ...(mayHoldIdlePaste(item, session) ? { direct: undefined } : {}) } : item);
       queue.consumedIdle = undefined;
     });
@@ -362,6 +378,25 @@ export class ConversationOutbox {
       queue.items = queue.items.filter(candidate => candidate !== item);
       return true;
     });
+  }
+  /** Age alone never proves delivery or refusal and never triggers a send. */
+  canDismiss(item: QueuedReply): boolean {
+    const at = attemptTime(item);
+    return item.state !== "delivered" && (item.state !== "refused" || item.unconfirmed === true)
+      && (untimed(item) || (Number.isFinite(at) && at > 0 && Date.now() - at >= STALE_LOCAL_ECHO_MS))
+      && !this.sending.has(item.id) && !this.checking.has(item.id);
+  }
+  /** Remove only this local echo, under the same cross-window lock as delivery. */
+  async dismiss(session: Session, id: string, incarnation: string, messages: readonly HistoryMessage[]): Promise<boolean> {
+    return await this.exclusively(session, () => this.change(session, queue => {
+      const matches = queue.items.filter(item => item.id === id);
+      if (matches.length !== 1) return false;
+      const item = matches[0]!;
+      if (item.incarnation !== incarnation || !this.canDismiss(item)
+        || transcriptProof(queue.items, messages, queue.provenTurns).has(id)) return false;
+      queue.items = queue.items.filter(candidate => candidate !== item);
+      return true;
+    })) ?? false;
   }
   async deliver(session: Session, reachable: boolean, draftEmpty: () => boolean) {
     const target = this.key(session);
@@ -441,7 +476,7 @@ export class ConversationOutbox {
           graceLeft = head.queuedAt + QUEUED_REPLY_HANDOFF_GRACE_MS - Date.now();
           if (graceLeft > 0) return null;
         }
-        const claimed: QueuedReply = { ...head, state: "dispatching", handoff: idleGuard ? undefined : true, attemptedAt: Date.now(),
+        const claimed: QueuedReply = { ...head, state: "dispatching", handoff: idleGuard ? undefined : true, attemptedAt: Date.now(), legacyUntimed: undefined,
           idlePhaseAt: waiting ? state.phase_changed_at : undefined, busyRetryAt: undefined, busyRetryPhaseAt: undefined,
           ...(head.newAttempt ? {requestId:crypto.randomUUID(),newAttempt:false} : {}) };
         queue.items[index] = claimed; queue.consumedIdle = idle;
@@ -526,11 +561,11 @@ export class ConversationOutbox {
     const settled = await this.change(session, queue => {
       // A list, not a set: a turn that proved two identical replies keeps both parts (#973).
       const proven = queue.provenTurns ?? [];
-      // A row stored without any time is stamped when first seen, so an older
-      // identical turn can never prove it (#973 review N3).
+      // Preserve untimed provenance: image-only legacy rows can use older
+      // image turns; other text still needs a turn after first observation (#973 N3).
       const now = Date.now();
       queue.items = queue.items.map(item => attempted(item) && item.attemptedAt === undefined && item.queuedAt === undefined
-        ? { ...item, attemptedAt: now } : item);
+        ? { ...item, attemptedAt: now, legacyUntimed: true } : item);
       const delivered = transcriptProof(queue.items.filter(attempted), messages, proven);
       queue.items = queue.items.filter(item => !delivered.has(item.id)).map(item => covered && item.state === "unknown"
         && !this.sending.has(item.id) && attemptTime(item) <= started
