@@ -25,6 +25,15 @@ def select_scope(paths):
     return next(iter(packages)) if len(packages) == 1 else "full" if packages else "docs"
 
 
+def selected_suites(scope):
+    return {
+        "docs": [],
+        "edge": ["core", "edge"],
+        "ui": ["core", "ui-unit", "ui-browser"],
+        "full": ["core", "edge", "ui-unit", "ui-browser"],
+    }[scope]
+
+
 def changed_scope(base, head="HEAD"):
     # --no-renames includes both sides of cross-package moves and deletions.
     merge_base = subprocess.check_output(["git", "merge-base", base, head], text=True).strip()
@@ -90,7 +99,8 @@ def main():
         reused = duplicate_run(tree)
     else:
         raise SystemExit("Unsupported CI event")
-    outputs = {"scope": scope, "tree": tree, "reused_run": reused}
+    outputs = {"scope": scope, "tree": tree, "reused_run": reused,
+               "suites": json.dumps([] if reused else selected_suites(scope), separators=(",", ":"))}
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
         for key, value in outputs.items():
             print(f"{key}={value}", file=output)

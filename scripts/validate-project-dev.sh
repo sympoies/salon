@@ -7,13 +7,22 @@ marker=".cache/agent-validation/project-dev.ok"
 rm -f "$marker"
 
 scope=full
+suite=""
 case "${1:-}" in
   "") ;;
+  --suite) suite="${2:?Expected suite}"; shift 2 ;;
   --scope) scope="${2:?Expected scope}"; shift 2 ;;
   --base) scope="$(python3 scripts/validation/ci_scope.py --base "${2:?Expected base ref}")"; shift 2 ;;
   *) printf 'Usage: %s [--base <ref> | --scope docs|edge|ui|full]\n' "$0" >&2; exit 2 ;;
 esac
 [[ $# == 0 ]] || exit 2
+if [[ -n "$suite" ]]; then
+  case "$suite" in
+    cheap) scope=docs ;;
+    core|edge|ui-unit|ui-browser) exec bash scripts/validate-core-packages.sh --suite "$suite" ;;
+    *) exit 2 ;;
+  esac
+fi
 case "$scope" in docs|edge|ui|full) ;; *) exit 2 ;; esac
 printf 'Validation scope: %s\n' "$scope"
 

@@ -77,7 +77,12 @@ Main pushes run the full suite unless the identical tree already passed a full
 PR run, including the exact tested-tree witness in its successful required job.
 API errors or missing evidence fall back to full validation. Release validation
 continues to use the full default gate. Results appear in job logs and the
-workflow summary.
+workflow summary. The required check remains `Core package validation` and
+fails if planning or any selected job fails, is cancelled, or is unexpectedly
+skipped. Core checks, edge tests, UI unit tests and UI browser fixtures run in
+parallel when runners are available; only the browser job installs Chrome.
+The UI partitions retain the assertion safety preflight and three-file worker
+limit. The full local gate continues to run all tests in sequence.
 
 For documentation and build scaffolding without a practical failing behavior
 test, explain the test-first waiver in the PR's `Test changes` section and list

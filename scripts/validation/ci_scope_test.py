@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from ci_scope import select_scope, reusable_run
+from ci_scope import select_scope, selected_suites, reusable_run
 
 
 class ScopeTest(unittest.TestCase):
@@ -29,6 +29,12 @@ class ScopeTest(unittest.TestCase):
                      "Dockerfile", "packages/new/src/index.ts"]:
             with self.subTest(path=path):
                 self.assertEqual(select_scope([path, "docs/guide.md"]), "full")
+
+    def test_selected_suites_follow_dependency_graph(self):
+        self.assertEqual(selected_suites("docs"), [])
+        self.assertEqual(selected_suites("edge"), ["core", "edge"])
+        self.assertEqual(selected_suites("ui"), ["core", "ui-unit", "ui-browser"])
+        self.assertEqual(selected_suites("full"), ["core", "edge", "ui-unit", "ui-browser"])
 
     def test_only_matching_successful_full_run_is_reused(self):
         tree = "a" * 40

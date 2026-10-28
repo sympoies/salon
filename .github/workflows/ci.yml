@@ -15,14 +15,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: Core package validation
+  plan:
+    name: Plan and cheap checks
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, sympoies, salon, ci, ephemeral]
-    timeout-minutes: 45
+    timeout-minutes: 10
+    outputs:
+      scope: ${{ steps.plan.outputs.scope }}
+      tree: ${{ steps.plan.outputs.tree }}
+      suites: ${{ steps.plan.outputs.suites }}
+      reused_run: ${{ steps.plan.outputs.reused_run }}
     defaults:
       run:
         shell: bash
@@ -34,26 +39,78 @@ jobs:
           fetch-depth: 0
 
       - name: Plan validation
-        id: scope
+        id: plan
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/validation/ci_scope.py --github
 
+      - name: Install pinned devlog
+        if: steps.plan.outputs.reused_run == ''
+        timeout-minutes: 3
+        env:
+          DEVLOG_ARCHIVE_URL: https://github.com/sympoies/nils-cli/releases/download/v1.31.16/nils-cli-v1.31.16-x86_64-unknown-linux-gnu.tar.gz
+          DEVLOG_ARCHIVE_SHA256: 366b9a33448ce025355802368deffbfde820ea7606b1ede88ff88c9eecd235e7
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/devlog-release.tar.gz"
+          install_dir="$(mktemp -d "$RUNNER_TEMP/devlog.XXXXXX")"
+          curl --fail --location --silent --show-error --connect-timeout 15 --max-time 120 \
+            "$DEVLOG_ARCHIVE_URL" --output "$archive"
+          printf '%s  %s\n' "$DEVLOG_ARCHIVE_SHA256" "$archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$install_dir" --strip-components=2 --wildcards '*/bin/devlog'
+          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+
+      - name: Run cheap checks
+        if: steps.plan.outputs.reused_run == ''
+        run: bash .agents/scripts/pre-pr.sh --suite cheap
+
+  suites:
+    name: Validate ${{ matrix.suite }}
+    needs: plan
+    if: needs.plan.outputs.suites != '[]'
+    runs-on: [self-hosted, sympoies, salon, ci, ephemeral]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.plan.outputs.suites) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       - name: Select Node 24
-        if: steps.scope.outputs.reused_run == '' && steps.scope.outputs.scope != 'docs'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version-file: .node-version
           package-manager-cache: false
 
       - name: Install pinned pnpm
-        if: steps.scope.outputs.reused_run == '' && steps.scope.outputs.scope != 'docs'
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           cache: false
 
+      - name: Probe preinstalled Chrome
+        id: chrome
+        if: matrix.suite == 'ui-browser'
+        run: |
+          set -euo pipefail
+          if command -v google-chrome >/dev/null &&
+             timeout 20 google-chrome --headless --no-sandbox --disable-gpu \
+               --user-data-dir="$RUNNER_TEMP/chrome-image-probe" --dump-dom about:blank \
+               > "$RUNNER_TEMP/chrome-image-probe.html"; then
+            printf 'ready=true\n' >> "$GITHUB_OUTPUT"
+            printf 'CHROME_BIN=%s\n' "$(command -v google-chrome)" >> "$GITHUB_ENV"
+            google-chrome --version >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Install headless Chrome runtime libraries
-        if: steps.scope.outputs.reused_run == '' && (steps.scope.outputs.scope == 'full' || steps.scope.outputs.scope == 'ui')
+        if: matrix.suite == 'ui-browser' && steps.chrome.outputs.ready != 'true'
         timeout-minutes: 5
         run: |
           set -euo pipefail
@@ -78,7 +135,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Select and probe headless Chrome
-        if: steps.scope.outputs.reused_run == '' && (steps.scope.outputs.scope == 'full' || steps.scope.outputs.scope == 'ui')
+        if: matrix.suite == 'ui-browser' && steps.chrome.outputs.ready != 'true'
         env:
           CHROME_DEB_URL: https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_156.0.8078.47-1_amd64.deb
           CHROME_DEB_SHA256: 6c92cd22e90c6e3e255d782991543fa2091db8614e8536a971a7433a5c4d7ac8
@@ -116,44 +173,39 @@ jobs:
           printf 'CHROME_BIN=%s\n' "$chrome_bin" >> "$GITHUB_ENV"
           printf 'Headless Chrome startup probe passed.\n' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Install pinned devlog
-        if: steps.scope.outputs.reused_run == ''
-        timeout-minutes: 3
+      - name: Run validation suite
         env:
-          DEVLOG_ARCHIVE_URL: https://github.com/sympoies/nils-cli/releases/download/v1.31.16/nils-cli-v1.31.16-x86_64-unknown-linux-gnu.tar.gz
-          DEVLOG_ARCHIVE_SHA256: 366b9a33448ce025355802368deffbfde820ea7606b1ede88ff88c9eecd235e7
-        run: |
-          set -euo pipefail
-          archive="$RUNNER_TEMP/devlog-release.tar.gz"
-          install_dir="$(mktemp -d "$RUNNER_TEMP/devlog.XXXXXX")"
-          curl --fail --location --silent --show-error --connect-timeout 15 --max-time 120 \
-            "$DEVLOG_ARCHIVE_URL" --output "$archive"
-          printf '%s  %s\n' "$DEVLOG_ARCHIVE_SHA256" "$archive" | sha256sum --check --status
-          tar -xzf "$archive" -C "$install_dir" --strip-components=2 --wildcards '*/bin/devlog'
-          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+          VALIDATION_SUITE: ${{ matrix.suite }}
+        run: bash .agents/scripts/pre-pr.sh --suite "$VALIDATION_SUITE"
 
-      - name: Validate core packages and TypeScript tooling
-        if: steps.scope.outputs.reused_run == ''
+  validate:
+    name: Core package validation
+    needs: [plan, suites]
+    if: >-
+      always() &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: [self-hosted, sympoies, salon, ci, ephemeral]
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Require all selected checks
         env:
-          VALIDATION_SCOPE: ${{ steps.scope.outputs.scope }}
-        run: bash .agents/scripts/pre-pr.sh --scope "$VALIDATION_SCOPE"
+          PLAN_RESULT: ${{ needs.plan.result }}
+          SUITES_RESULT: ${{ needs.suites.result }}
+          SELECTED_SUITES: ${{ needs.plan.outputs.suites }}
+          REUSED_RUN: ${{ needs.plan.outputs.reused_run }}
+          VALIDATION_SCOPE: ${{ needs.plan.outputs.scope }}
+        run: python3 scripts/validation/ci_result.py
 
-      - name: "Full suite passed: ${{ steps.scope.outputs.tree }}"
-        if: steps.scope.outputs.scope == 'full' && steps.scope.outputs.reused_run == ''
+      - name: "Full suite passed: ${{ needs.plan.outputs.tree }}"
+        if: needs.plan.outputs.scope == 'full' && needs.plan.outputs.reused_run == ''
         run: echo 'All validation suites passed.'
-
-      - name: Record reused full validation
-        if: steps.scope.outputs.reused_run != ''
-        env:
-          REUSED_RUN: ${{ steps.scope.outputs.reused_run }}
-        run: printf 'Reused identical full PR validation from run %s.\n' "$REUSED_RUN" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Record validation result
-        if: always()
-        env:
-          VALIDATION_RESULT: ${{ job.status }}
-          VALIDATED_COMMIT: ${{ github.sha }}
-        run: |
-          printf 'Core package validation: %s\nCommit: %s\n' "$VALIDATION_RESULT" "$VALIDATED_COMMIT"
-          printf 'Core package validation: **%s**\n\nCommit: %s\n' \
-            "$VALIDATION_RESULT" "$VALIDATED_COMMIT" >> "$GITHUB_STEP_SUMMARY"
