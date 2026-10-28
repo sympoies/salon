@@ -6793,21 +6793,85 @@ textarea {
 }
 
 .shell-page { height: 100%; min-height: 0; display: flex; flex-direction: column; background: var(--bg, #011627); }
+/* Same page-header language as Settings and History: a title row, then grouped
+   controls. Narrow screens stack the groups; the machine selector takes the
+   free width and the action buttons keep their natural width on one line. */
 .shell-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: calc(var(--space-md) + var(--ac-safe-area-top)) calc(var(--space-md) + var(--ac-safe-area-right))
+    var(--space-sm) calc(var(--space-md) + var(--ac-safe-area-left));
+}
+.shell-page-title-row { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
+.shell-page-title-row h1 { margin: 0; font-size: var(--text-xl); }
+.shell-page-controls { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
+.shell-page-machine {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.shell-page-machine > span { flex: none; }
+/* The select keeps its aria-label; phones give its width to the machine name. */
+@media (max-width: 479px) { .shell-page-machine > span { display: none; } }
+.shell-page-machine select {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  padding-inline: var(--space-sm) calc(var(--space-xl) + var(--space-sm));
+  background-position: right 0.5rem center;
+  text-overflow: ellipsis;
+}
+.shell-page-actions { display: flex; flex: none; gap: var(--space-sm); }
+.shell-page-actions .btn { white-space: nowrap; }
+.shell-page-status {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: calc(12px + var(--ac-safe-area-top)) calc(12px + var(--ac-safe-area-right))
-    12px calc(12px + var(--ac-safe-area-left));
+  gap: var(--space-2xs) var(--space-md);
+  padding: 0 calc(var(--space-md) + var(--ac-safe-area-right)) var(--space-sm) calc(var(--space-md) + var(--ac-safe-area-left));
+  font-size: var(--text-xs);
+  color: var(--fg-2);
 }
-.shell-page-header h1 { margin: 0 auto 0 0; font-size: var(--text-xl); }
-.shell-page-header label { display: flex; align-items: center; gap: 6px; }
-.shell-page-header select { max-width: 160px; }
-.shell-page-status { position: relative; display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 10px; font-size: var(--text-xs); color: #aabac8; }
-.shell-page-status > span { margin-left: auto; }
+.shell-page-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  max-width: 100%;
+  padding: var(--space-3xs) var(--space-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-full);
+  background: var(--surface-toolbar);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.shell-page-chip::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.shell-page-chip[data-state="open"]::before { background: var(--ok); }
+.shell-page-chip[data-state="connecting"]::before { background: var(--warn); }
+.shell-page-chip[data-state="closed"]::before { background: var(--err); }
+.shell-page-hint { flex: 1 1 14rem; min-width: 0; text-wrap: balance; }
+@media (min-width: 640px) {
+  .shell-page-header { flex-direction: row; align-items: center; justify-content: space-between; }
+  .shell-page-controls { flex: 0 1 28rem; }
+  .shell-page-hint { text-align: right; }
+}
+@media (max-height: 480px) {
+  .shell-page-header { padding-top: calc(var(--space-sm) + var(--ac-safe-area-top)); }
+}
 .shell-page .terminal-pane { flex: 1; min-height: 0; }
-.shell-page-empty { margin: auto; padding: 24px; text-align: center; color: #aabac8; }
+/* Equal side inset inside the safe area. A margin, not padding: FitAddon reads
+   the host's computed width, which excludes margins, so columns are fitted to
+   the inset width (see the no-padding note on .term-host). */
+.shell-page .term-host {
+  margin-inline: calc(var(--space-sm) + var(--ac-safe-area-left)) calc(var(--space-sm) + var(--ac-safe-area-right));
+}
+.shell-page-empty { margin: auto; padding: 24px; text-align: center; color: var(--fg-2); }
 
 
 
