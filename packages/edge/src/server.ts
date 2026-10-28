@@ -117,6 +117,7 @@ import {
 import { handleCoordinationRelay, isCoordinationRoute } from "./coordinationRelay.ts";
 import { BoardQueryError } from "./board/query.ts";
 import { boardViewForRequest } from "./board/routes.ts";
+import { sessionViewerAccess } from "./crossOwnerSessionAccess.ts";
 import { openBoardService, type BoardServiceOptions } from "./board/service.ts";
 import { normalizeActivityTurnState } from "@agent-console/shared/activity";
 import { MAX_SPEECH_BYTES, MAX_SPEECH_DURATION_SECONDS, readSpeechAudio, SpeechRequestError, transcribeSpeech } from "./speech.ts";
@@ -318,6 +319,23 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     machines: allMachineNames,
     permissions: allPermissions,
   };
+  // A cross-owner viewer acts with the rule owner's rights on the selected
+  // sessions. Every ownership write is made for that owner, so the viewer never
+  // becomes an owner and the owner keeps full access.
+  const viewerAccessFor = (principal: PrincipalConfig) =>
+    isRootPrincipal(principal) ? null : sessionViewerAccess(config.crossOwnerSessionAccess, accessStore, principal.id);
+  // The principal whose grant authorizes this principal on the session.
+  const actingOwnerOf = (principal: PrincipalConfig, machine: string, sessionId: string): string | undefined => {
+    if (!accessStore) return undefined;
+    if (accessStore.ownsSession(principal.id, machine, sessionId)) return principal.id;
+    return viewerAccessFor(principal)?.(machine, sessionId) ? accessStore.sessionGrant(machine, sessionId)?.principalId : undefined;
+  };
+  const actsForAnotherOwner = (principal: PrincipalConfig, machine: string, sessionId: string) =>
+    isRootPrincipal(principal) || actingOwnerOf(principal, machine, sessionId) !== principal.id;
+  const principalMayUseSession = (principal: PrincipalConfig, machine: string, sessionId: string, incarnation?: string) => {
+    const owner = actingOwnerOf(principal, machine, sessionId);
+    return owner !== undefined && Boolean(accessStore?.ownsSession(owner, machine, sessionId, incarnation));
+  };
   const outboxAccess = (target: OutboxTarget) => {
     const principal = config.openAccess ? (target.principalId === openPrincipal.id ? openPrincipal : undefined)
       : config.multiUser ? principalById(target.principalId)
@@ -327,7 +345,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       || !principalCanAccessMachine(principal, target.machine)
       || machinePreferences?.disabled(principal.id).has(target.machine)
       || (config.multiUser && !isRootPrincipal(principal)
-        && !accessStore?.ownsSession(principal.id, target.machine, target.sessionId, target.incarnation))) return null;
+        && !principalMayUseSession(principal, target.machine, target.sessionId, target.incarnation))) return null;
     return { principal, machine };
   };
   const outboxDispatcher = outboxStore ? new SharedOutboxDispatcher({
@@ -348,8 +366,26 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
 
   // Root lists every session, so it reads every owner's history too (#935).
   // History writes (star, resume) stay with the owner.
+  // A viewer reaches a history through the provider session of a selected session.
+  const viewerHistoryOwner = (principal: PrincipalConfig, machine: string, provider: string, providerSessionId: string) => {
+    const access = viewerAccessFor(principal);
+    return access ? accessStore?.providerSessions(machine, provider, providerSessionId)
+      .find(row => access(machine, row.sessionId)) : undefined;
+  };
+  // Whose provider claim covers a history entry for this principal, or undefined.
+  const historyClaimant = (principal: PrincipalConfig, machine: string, provider: string, providerSessionId: string) => {
+    if (accessStore?.ownsProvider(principal.id, machine, provider, providerSessionId)) return principal.id;
+    const owner = viewerHistoryOwner(principal, machine, provider, providerSessionId)?.principalId;
+    return owner !== undefined && accessStore?.ownsProvider(owner, machine, provider, providerSessionId) ? owner : undefined;
+  };
+  const historyActor = (principal: PrincipalConfig, machine: string, historyId: string): string | undefined => {
+    if (accessStore?.ownsHistory(principal.id, machine, historyId)) return principal.id;
+    const grant = accessStore?.historyGrant(machine, historyId);
+    return grant && viewerHistoryOwner(principal, machine, grant.provider, grant.providerSessionId)?.principalId === grant.principalId
+      ? grant.principalId : undefined;
+  };
   const canReadHistory = (principal: PrincipalConfig, machine: string, historyId: string) =>
-    isRootPrincipal(principal) || Boolean(accessStore?.ownsHistory(principal.id, machine, historyId));
+    isRootPrincipal(principal) || historyActor(principal, machine, historyId) !== undefined;
 
   const decorationContext = (principal: PrincipalConfig) => ({
     principal: { id: config.multiUser ? principal.id : "operator", permissions: principal.permissions },
@@ -364,7 +400,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   };
 
   const decoratedSessionsForReader = (principal: PrincipalConfig, sessions: Array<Record<string, unknown>>) => {
-    const scoped = config.multiUser ? visibleSessions(principal, sessions, accessStore) : sessions;
+    const scoped = config.multiUser ? visibleSessions(principal, sessions, accessStore, viewerAccessFor(principal)) : sessions;
     const metadata = Object.assign({}, ...extensions.extensions.map(extension => extension.decorateSessions?.(decorationContext(principal), scoped)));
     return { sessions: scoped, metadata };
   };
@@ -732,7 +768,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       if (isRootPrincipal(_principal)) {
         rootSessionIncarnation = await currentSessionIncarnation(_principal, machine, sessionId, requestId);
       }
-      if (isRootPrincipal(_principal) ? !rootSessionIncarnation : !await ownsCurrentSession(_principal, machine, sessionId, requestId)) {
+      if (isRootPrincipal(_principal) ? !rootSessionIncarnation
+        : !await ownsCurrentSession(_principal, machine, sessionId, requestId)) {
         sendJson(res, 404, { ok: false, error: { message: "session not found" } });
         return;
       }
@@ -741,7 +778,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       const machine = routeParam(route, "machine");
       const historyId = routeParam(route, "id");
       if (["history-messages", "history-image"].includes(route.id) ? !canReadHistory(_principal, machine, historyId)
-        : !accessStore?.ownsHistory(_principal.id, machine, historyId)) {
+        : historyActor(_principal, machine, historyId) === undefined) {
         sendJson(res, 404, { ok: false, error: { message: "history session not found" } });
         return;
       }
@@ -1190,7 +1227,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         try {
-          sendJson(res, 200, { ok: true, data: { board: decorateBoard(_principal, boardViewForRequest(board, config, accessStore, config.multiUser ? _principal : null, url.searchParams, [], true, machinePreferences?.disabled(_principal.id) ?? new Set())) } });
+          sendJson(res, 200, { ok: true, data: { board: decorateBoard(_principal, boardViewForRequest(board, config, accessStore, config.multiUser ? _principal : null, url.searchParams, [], true, machinePreferences?.disabled(_principal.id) ?? new Set(), viewerAccessFor(_principal))) } });
         } catch (error) {
           if (!(error instanceof BoardQueryError)) throw error;
           sendJson(res, error.status, { ok: false, error: { code: error.code, message: error.message } });
@@ -1230,11 +1267,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                   ) return false;
                   if (accessStore.ownsHistory(_principal.id, machine.name, historyId)) return true;
                   // Claim before root's read-only access, so root still owns its own history (#936 F1).
-                  if (!accessStore.ownsProvider(_principal.id, machine.name, provider, providerSessionId)) {
+                  const claimant = historyClaimant(_principal, machine.name, provider, providerSessionId);
+                  if (claimant === undefined) {
                     return isRootPrincipal(_principal);
                   }
                   accessStore.claimHistory(
-                    _principal.id,
+                    claimant,
                     machine.name,
                     historyId,
                     provider,
@@ -1248,10 +1286,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                   const provider = session.provider;
                   const providerSessionId = session.provider_session_id;
                   if (typeof provider !== "string" || typeof providerSessionId !== "string") return undefined;
+                  const claimant = historyClaimant(_principal, machine.name, provider, providerSessionId) ?? _principal.id;
                   const dispatchedBy = publicDispatchedBy(
-                    accessStore.providerDispatcher(_principal.id, machine.name, provider, providerSessionId),
+                    accessStore.providerDispatcher(claimant, machine.name, provider, providerSessionId),
                   );
-                  const liveSession = accessStore.providerSession(_principal.id, machine.name, provider, providerSessionId);
+                  const liveSession = accessStore.providerSession(claimant, machine.name, provider, providerSessionId);
                   const marks = {
                     ...(dispatchedBy ? { dispatched_by: dispatchedBy } : {}),
                     ...publicCoordinatorTree(liveSession === null ? null : accessStore.coordinatorTreeDepth(
@@ -1330,7 +1369,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             debug: daemonDebug(requestId),
           });
           if (config.multiUser && accessStore && daemonSucceeded(daemonResult)) {
-            if (!claimCreatedDaemonSession(accessStore, _principal.id, machine.name, daemonResult)) {
+            // A viewer resumes through the owner's history; the new session stays with
+            // the owner and descends from the selected session so the viewer keeps it.
+            const actor = historyActor(_principal, machine.name, historyId) ?? _principal.id;
+            const grant = actor === _principal.id ? undefined : accessStore.historyGrant(machine.name, historyId);
+            const source = grant && viewerHistoryOwner(_principal, machine.name, grant.provider, grant.providerSessionId)?.sessionId;
+            if (!claimCreatedDaemonSession(accessStore, actor, machine.name, daemonResult, undefined, undefined,
+              source ? { treeDepth: OUTSIDE_COORDINATOR_TREE, launcher: { machine: machine.name, sessionId: source } } : undefined)) {
               sendJson(res, 502, { ok: false, error: { message: "history resume did not confirm an owned session" } });
               return;
             }
@@ -1477,7 +1522,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 // change while this subscriber's initial projection is pending.
                 const aggregate = await aggregateSessions(sessionMachinesForReader(_principal, [machine]),
                   machineHealth, daemonDebug(requestId), stream.controller.signal);
-                const sessions = config.multiUser ? visibleSessions(_principal, aggregate.sessions, accessStore) : aggregate.sessions;
+                const sessions = config.multiUser ? visibleSessions(_principal, aggregate.sessions, accessStore, viewerAccessFor(_principal)) : aggregate.sessions;
                 return { schema_version: "agent-session.activity-stream.event.v1", type: "snapshot",
                   stream_id: `edge-initial-${randomUUID()}`, sequence: 0, machine: machine.name,
                   observed_at: new Date().toISOString(), sessions: sessions.flatMap(session => typeof session.id !== "string" ? [] : [{
@@ -1712,7 +1757,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         const sessionId = routeParam(route, "id");
         await withMachine(res, machineName, async () => {
           const incarnation = config.multiUser
-            ? rootSessionIncarnation ?? accessStore?.sessionIncarnation(_principal.id, machineName, sessionId)
+            ? rootSessionIncarnation ?? accessStore?.sessionIncarnation(actingOwnerOf(_principal, machineName, sessionId) ?? _principal.id, machineName, sessionId)
             : undefined;
           if (config.multiUser && !incarnation) {
             sendJson(res, 404, { ok: false, error: { message: "session not found" } });
@@ -1850,7 +1895,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                   { sessionId, operation: "resume", action: "retry_resume", schemaVersion: MAINTENANCE_SCHEMA_VERSION },
                 );
                 if (actionResult?.outcome !== "resumed" || !advanceResumedSessionOwnership(
-                  accessStore, _principal, machine.name, sessionId,
+                  accessStore, _principal, actsForAnotherOwner(_principal, machine.name, sessionId), machine.name, sessionId,
                   previousIncarnation, actionResult.session_incarnation,
                 )) {
                   sendJson(res, 502, { ok: false, error: { message: "resume did not confirm current ownership" } });
@@ -1902,7 +1947,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         await withMachine(res, routeParam(route, "machine"), async (machine) => {
           await serializeSessionMutation(`${machine.name}\u0000${sessionId}`, async () => {
             const archiveGrant = accessStore?.sessionGrant(machine.name, sessionId);
-            const archiveOwner = isRootPrincipal(_principal)
+            const archiveOwner = actsForAnotherOwner(_principal, machine.name, sessionId)
               ? archiveGrant?.incarnation === expected ? archiveGrant.principalId : undefined
               : _principal.id;
             const daemonResult = await protectOutboxLifecycle(machine.name, sessionId, () => daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}/archive`, {
@@ -2061,7 +2106,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 );
                 if (actionResult?.outcome === "resumed") {
                   if (!advanceResumedSessionOwnership(
-                    accessStore, _principal, machine.name, sessionId,
+                    accessStore, _principal, actsForAnotherOwner(_principal, machine.name, sessionId), machine.name, sessionId,
                     previousIncarnation, actionResult.session_incarnation,
                   )) {
                     sendJson(res, 502, { ok: false, error: { message: "recovery did not confirm current ownership" } });
@@ -2583,7 +2628,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       machineHealth,
       requestId ? daemonDebug(requestId) : undefined,
     );
-    return visibleSessions(principal, aggregate.sessions, accessStore);
+    return visibleSessions(principal, aggregate.sessions, accessStore, viewerAccessFor(principal));
   }
 
   async function confirmedResumedSession(
@@ -2620,7 +2665,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   async function currentSessionIncarnation(
     principal: PrincipalConfig, machine: string, sessionId: string, requestId?: string,
   ): Promise<string | undefined> {
-    if (!isRootPrincipal(principal)) return accessStore?.sessionIncarnation(principal.id, machine, sessionId);
+    if (!isRootPrincipal(principal)) {
+      const owner = actingOwnerOf(principal, machine, sessionId);
+      return owner === undefined ? undefined : accessStore?.sessionIncarnation(owner, machine, sessionId);
+    }
     const target = byName.get(machine);
     if (!target) return undefined;
     // One authoritative daemon snapshot is enough to authorize a root session
@@ -2637,7 +2685,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     sessionId: string,
     requestId?: string,
   ): Promise<boolean> {
-    if (!isRootPrincipal(principal) && !accessStore?.ownsSession(principal.id, machineName, sessionId)) return false;
+    if (!isRootPrincipal(principal) && actingOwnerOf(principal, machineName, sessionId) === undefined) return false;
     return (await currentOwnedSessionIds(principal, machineName, requestId)).has(sessionId);
   }
 
@@ -2894,7 +2942,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           ownsCurrent = incarnation !== undefined;
         } else {
           ticketIncarnationMatches = !ticket || ticket.incarnation !== undefined
-            && accessStore?.sessionIncarnation(requestPrincipal.id, m.machine, m.id) === ticket.incarnation;
+            && accessStore?.sessionIncarnation(actingOwnerOf(requestPrincipal, m.machine, m.id) ?? requestPrincipal.id, m.machine, m.id) === ticket.incarnation;
           if (ticketIncarnationMatches) ownsCurrent = await ownsCurrentSession(requestPrincipal, m.machine, m.id);
         }
       }
@@ -2919,6 +2967,7 @@ function visibleSessions(
   principal: PrincipalConfig,
   sessions: Array<Record<string, unknown>>,
   store: AccessStore | null,
+  viewerAccess: ((machine: string, sessionId: string) => boolean) | null = null,
 ): Array<Record<string, unknown>> {
   if (!store) return [];
   if (isRootPrincipal(principal)) {
@@ -2945,6 +2994,9 @@ function visibleSessions(
   const dispatchers = new Map<number, SessionDispatchedBy>();
   const launchers = new Map<number, SessionDispatchedBy>();
   const treeDepths = new Map<number, number>();
+  // The principal each visible session is claimed for: the caller, or the rule
+  // owner for a selected session, so ownership stays with the owner.
+  const claimants = new Map<number, string>();
   const claimDirect = (session: Record<string, unknown>, index: number): boolean => {
     const machine = session.machine;
     const id = session.id;
@@ -2956,19 +3008,23 @@ function visibleSessions(
       || typeof incarnation !== "string"
     ) return false;
     const grant = store.sessionGrant(machine, id);
-    if (grant?.principalId !== principalId) return false;
+    if (!grant) return false;
+    const claimant = grant.principalId === principalId ? principalId
+      : viewerAccess?.(machine, id) ? grant.principalId : undefined;
+    if (claimant === undefined) return false;
     if (grant.incarnation !== incarnation) {
       if (
         session.status !== "running"
         || typeof resume?.provider !== "string"
         || typeof resume.session_id !== "string"
         || !store.repairSessionIncarnation(
-          principalId, machine, id, grant.incarnation, incarnation, resume.provider, resume.session_id,
+          claimant, machine, id, grant.incarnation, incarnation, resume.provider, resume.session_id,
           false, false, typeof session.runtime_started_at === "string" ? session.runtime_started_at : undefined,
-        ) && !store.ownsSession(principalId, machine, id, incarnation)
+        ) && !store.ownsSession(claimant, machine, id, incarnation)
       ) return false;
     }
     visible.add(index);
+    claimants.set(index, claimant);
     const dispatchedBy = publicDispatchedBy(grant.dispatcher);
     if (dispatchedBy) dispatchers.set(index, dispatchedBy);
     const launchedBy = publicDispatchedBy(grant.launcher);
@@ -2996,14 +3052,15 @@ function visibleSessions(
       && typeof resume.session_id === "string"
     ) {
       try {
-        store.claimProvider(principalId, session.machine, resume.provider, resume.session_id);
+        const claimant = claimants.get(index) ?? principalId;
+        store.claimProvider(claimant, session.machine, resume.provider, resume.session_id);
         if (
           needsBinding.has(index)
           && typeof session.id === "string"
           && typeof session.session_incarnation === "string"
         ) {
           store.bindSessionProvider(
-            principalId, session.machine, session.id, session.session_incarnation,
+            claimant, session.machine, session.id, session.session_incarnation,
             resume.provider, resume.session_id,
             typeof session.runtime_started_at === "string" ? session.runtime_started_at : undefined,
           );
@@ -3027,19 +3084,20 @@ function visibleSessions(
 function advanceResumedSessionOwnership(
   store: AccessStore,
   principal: PrincipalConfig,
+  actsForOwner: boolean,
   machine: string,
   sessionId: string,
   previousIncarnation: string | undefined,
   nextIncarnation: unknown,
 ): boolean {
   const grant = store.sessionGrant(machine, sessionId);
-  if (isRootPrincipal(principal) && (!grant || grant.incarnation !== previousIncarnation)) {
+  if (actsForOwner && (!grant || grant.incarnation !== previousIncarnation)) {
     return false;
   }
   return typeof previousIncarnation === "string"
     && typeof nextIncarnation === "string"
     && store.advanceSessionIncarnation(
-      isRootPrincipal(principal) ? grant!.principalId : principal.id, machine, sessionId,
+      actsForOwner ? grant!.principalId : principal.id, machine, sessionId,
       previousIncarnation, nextIncarnation,
     );
 }

@@ -23,7 +23,7 @@ before(async () => {
 
 // Real Dashboard state and placement sites; transport, terminal and startup clock are synthetic.
 for (const kind of ["host-offline", "attention", "info"] as const) {
-  for (const [width, native] of (kind === "info" ? [[360, false]] : [[360, false], [760, false], [761, false], [1280, true]]) as [number, boolean][]) {
+  for (const [width, native] of (kind === "info" ? [[360, false]] : [[360, false], [412, false], [760, false], [761, false], [1280, true]]) as [number, boolean][]) {
     for (const focused of kind === "info" ? [true] : [false, true]) {
       for (const counts of width <= 760 && focused ? [true, false] : [true]) {
         test(`${kind} ${width}px ${native ? "native" : "web"} ${focused ? "focused" : "overview"} counts ${counts}`, async () => {
@@ -31,6 +31,12 @@ for (const kind of ["host-offline", "attention", "info"] as const) {
             conversationUnavailable: kind === "info", focusedConversation: kind !== "info" && focused && width <= 760,
             error: kind === "host-offline" ? "very-long-production-machine-name: offline (cooling down after a failed probe)" : kind === "attention" ? "Session update needs attention" : undefined });
           const m = measure(markup, width, native, `${kind}-${width}-${native}-${focused}-${counts}`);
+          if (width <= 760) {
+            assert.ok(Math.abs(m.noticeHeight - m.rowHeight) <= 1, `notice height matches count row: ${JSON.stringify(m)}`);
+            assert.ok(Math.abs(m.noticeCenter - m.rowCenter) <= 1, `notice is vertically centered: ${JSON.stringify(m)}`);
+            assert.ok(m.dismissHeight >= 24 && m.dismissWidth >= 24, "preserve the existing 24px dismissal hit area");
+            assert.equal(m.dismissEdgesClickable, true, "dismissal hit area remains reachable above and below its center");
+          }
           assert.equal(m.notices, 1, "one notice at a time");
           assert.equal(m.extraRows, 0, "no extra row or conversation paragraph");
           assert.equal(m.inRow, true, "notice occupies the status-count row or title-bar end");
@@ -82,6 +88,9 @@ function measure(markup: string, width: number, native: boolean, name: string) {
         atEnd:!!r&&Math.abs(p.right-r.right)<=12,
         countsVisible:!!c?.width&&getComputedStyle(counts).display!=='none',
         overlap:!!c?.width&&p.left<c.right,rowHeight,clearRowHeight,
+        noticeHeight:p?.height,noticeCenter:p&&(p.top+p.bottom)/2,rowCenter:r&&(r.top+r.bottom)/2,
+        dismissHeight:d?.height,dismissWidth:d?.width,
+        dismissEdgesClickable:!!d&&[d.top+1,d.bottom-1].every(y=>{const h=document.elementFromPoint(d.x+d.width/2,y);return h===dismiss||dismiss.contains(h);}),
         dismissClickable:!!dismiss&&(hit===dismiss||dismiss.contains(hit)),role:pill?.getAttribute('role'),
         overflow:document.documentElement.scrollWidth>innerWidth};
       parent.document.querySelector('#measurement').textContent=JSON.stringify(result);

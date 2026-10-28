@@ -32,6 +32,18 @@ export interface CrossOwnerMessagingRule {
   readonly senders?: readonly MessagingSelector[];
 }
 
+export interface CrossOwnerSessionSelector {
+  readonly machine: string;
+  readonly session_id: string;
+}
+// Lets `viewer` see and message the `owner`'s selected sessions and every
+// session they dispatched or launched. Ownership never changes.
+export interface CrossOwnerSessionAccessRule {
+  readonly owner: string;
+  readonly viewer: string;
+  readonly sessions: readonly CrossOwnerSessionSelector[];
+}
+
 export interface SpeechProviderConfig {
   readonly id: string;
   readonly label: string;
@@ -95,6 +107,7 @@ export interface EdgeConfig {
   readonly machines: readonly MachineConfig[];
   readonly coordinationRelays?: readonly CoordinationRelayConfig[];
   readonly crossOwnerMessaging?: readonly CrossOwnerMessagingRule[];
+  readonly crossOwnerSessionAccess?: readonly CrossOwnerSessionAccessRule[];
   // Edge-reachable ASR services. Host URLs and bearer tokens never reach the UI.
   readonly speechProviders: readonly SpeechProviderConfig[];
   readonly uiDir: string;
@@ -177,6 +190,42 @@ export function parseCrossOwnerMessaging(raw: string | undefined, principals: re
     const recipients = selectors(v.recipients);
     return { from: v.from, to: v.to, recipients,
       ...("senders" in v ? { senders: selectors(v.senders) } : {}) };
+  });
+}
+
+export function parseCrossOwnerSessionAccess(
+  raw: string | undefined, machines: readonly MachineConfig[], principals: readonly PrincipalConfig[],
+): CrossOwnerSessionAccessRule[] {
+  if (!raw?.trim()) return [];
+  const invalid = (): never => { throw new Error("AGENT_CONSOLE_CROSS_OWNER_SESSION_ACCESS must contain unique configured owner and viewer pairs and explicit unique machine and session selectors"); };
+  let entries: unknown;
+  try { entries = JSON.parse(raw); } catch { return invalid(); }
+  if (!Array.isArray(entries)) return invalid();
+  const owners = new Set(principals.map(p => p.id));
+  const names = new Set(machines.map(m => m.name));
+  const pairs = new Set<string>();
+  return entries.map(entry => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return invalid();
+    const v = entry as Record<string, unknown>;
+    if (Object.keys(v).some(key => !["owner", "viewer", "sessions"].includes(key)) || typeof v.owner !== "string" || typeof v.viewer !== "string"
+      || !owners.has(v.owner) || !owners.has(v.viewer) || v.owner === v.viewer
+      || !Array.isArray(v.sessions) || !v.sessions.length) return invalid();
+    const pair = JSON.stringify([v.owner, v.viewer]);
+    if (pairs.has(pair)) return invalid();
+    pairs.add(pair);
+    const seen = new Set<string>();
+    const sessions = v.sessions.map((value): CrossOwnerSessionSelector => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
+      const selector = value as Record<string, unknown>;
+      if (Object.keys(selector).length !== 2 || typeof selector.machine !== "string" || !names.has(selector.machine)
+        || typeof selector.session_id !== "string" || selector.session_id.trim().length === 0
+        || selector.session_id.length > 256) return invalid();
+      const key = JSON.stringify([selector.machine, selector.session_id]);
+      if (seen.has(key)) return invalid();
+      seen.add(key);
+      return { machine: selector.machine, session_id: selector.session_id };
+    });
+    return { owner: v.owner, viewer: v.viewer, sessions };
   });
 }
 
@@ -497,6 +546,7 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
     machines,
     coordinationRelays: parseCoordinationRelays(env.AGENT_CONSOLE_COORDINATION_RELAYS, machines, principals),
     crossOwnerMessaging: parseCrossOwnerMessaging(env.AGENT_CONSOLE_CROSS_OWNER_MESSAGING, principals),
+    crossOwnerSessionAccess: parseCrossOwnerSessionAccess(env.AGENT_CONSOLE_CROSS_OWNER_SESSION_ACCESS, machines, principals),
     speechProviders: parseSpeechProviders(env.AGENT_CONSOLE_SPEECH_PROVIDERS, machines),
     uiDir: env.AGENT_CONSOLE_UI_DIR ?? defaultUiDir,
     // Fail closed on cookie security: the deploy is HTTPS-only behind
