@@ -64,9 +64,9 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
                 caption:bubble.querySelector('.message-markdown').textContent,
                 metadataColor:metadata.color,metadataBackground:metadata.backgroundColor};
             });
-            document.querySelector('#measurement').textContent=JSON.stringify({boxes,
+            window.publishFixtureResult({boxes,
               overflow:document.documentElement.scrollWidth>innerWidth,viewportWidth:innerWidth});
-          } catch(error){document.querySelector('#measurement').textContent=JSON.stringify({error:String(error)})}})();
+          } catch(error){window.publishFixtureResult({error:String(error)})}})();
         `;
       },
     }],
@@ -82,12 +82,15 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
   try {
     for (const width of [1440,360]) {
       const frame = `<!doctype html><style>${css}html,body{margin:0}#measurement{display:none}</style>
-        <div id="root"></div><pre id="measurement"></pre><script>window.onerror=(message)=>document.querySelector("#measurement").textContent=JSON.stringify({error:String(message)});${code.replaceAll("</script", "<\\/script")}</script>`;
+        <div id="root"></div><pre id="measurement"></pre><script>
+        window.publishFixtureResult=value=>{const json=JSON.stringify(value);document.querySelector('#measurement').textContent=json;parent.postMessage({type:'agent-console-fixture-result',json},'*')};
+        window.onerror=message=>window.publishFixtureResult({error:String(message)});${code.replaceAll("</script", "<\\/script")}</script>`;
       const file = join(temp,`fixture-${width}.html`);
       // An iframe gives narrow tests the exact width (Chrome clamps its window).
       writeFileSync(file,`<!doctype html><style>body{margin:0}iframe{border:0}</style><iframe width="${width}" height="1500"></iframe>
-        <pre id="result" style="display:none"></pre><script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<","\\u003c")};
-        setInterval(()=>{document.querySelector('#result').textContent=document.querySelector('iframe').contentDocument.querySelector('#measurement')?.textContent||''},50)</script>`);
+        <pre id="result" style="display:none"></pre><script>const frame=document.querySelector('iframe'),result=document.querySelector('#result');
+        window.addEventListener('message',event=>{if(event.source===frame.contentWindow&&event.data?.type==='agent-console-fixture-result'&&typeof event.data.json==='string')result.textContent=event.data.json});
+        frame.srcdoc=${JSON.stringify(frame).replaceAll("<","\\u003c")}</script>`);
       if (evidence) mkdirSync(evidence,{recursive:true});
       const browser = spawnSync(process.env.CHROME_BIN ?? "google-chrome",[
         "--headless","--disable-gpu","--no-sandbox","--hide-scrollbars","--allow-file-access-from-files",
@@ -95,9 +98,9 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
         ...(evidence ? [`--screenshot=${join(evidence,`conversation-bubbles-${width}.png`)}`] : []),
         "--dump-dom",`file://${file}`,
       ],{encoding:"utf8",timeout:20000,maxBuffer:16*1024*1024});
-      assert.equal(browser.status,0,browser.stderr);
+      assert.equal(browser.status,0,`Chrome did not finish the image fixture: ${browser.error?.message ?? browser.stderr}`);
       const json=browser.stdout.match(/<pre id="result"[^>]*>(.+?)<\/pre>/s)?.[1];
-      assert.ok(json,"fixture returns rendered measurements");
+      assert.ok(json,"Chrome dumped the DOM before the image fixture published its result marker");
       const measured=JSON.parse(json.replaceAll("&quot;",'"').replaceAll("&amp;","&").replaceAll("&lt;","<").replaceAll("&gt;",">"));
       if (evidence) writeFileSync(join(evidence,`conversation-bubbles-${width}.json`),JSON.stringify(measured,null,2));
       await t.test(`${width}px column`,()=>{
