@@ -50,8 +50,16 @@ jobs:
         env:
           DEVLOG_ARCHIVE_URL: https://github.com/sympoies/nils-cli/releases/download/v1.31.16/nils-cli-v1.31.16-x86_64-unknown-linux-gnu.tar.gz
           DEVLOG_ARCHIVE_SHA256: 366b9a33448ce025355802368deffbfde820ea7606b1ede88ff88c9eecd235e7
+          # bin/devlog extracted only after verifying the archive above.
+          DEVLOG_BINARY_SHA256: 15bf6270984eb7d35a6d9cd9568cc8f667201f72ddb4e5c3868c1e308fc95b73
         run: |
           set -euo pipefail
+          if installed="$(command -v devlog)" &&
+             printf '%s  %s\n' "$DEVLOG_BINARY_SHA256" "$installed" | sha256sum --check --status; then
+            "$installed" --version >> "$GITHUB_STEP_SUMMARY"
+            printf 'Using the verified pinned devlog image binary.\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           archive="$RUNNER_TEMP/devlog-release.tar.gz"
           install_dir="$(mktemp -d "$RUNNER_TEMP/devlog.XXXXXX")"
           curl --fail --location --silent --show-error --connect-timeout 15 --max-time 120 \

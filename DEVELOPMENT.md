@@ -84,6 +84,9 @@ parallel when runners are available. Core packed consumption and UI browser
 fixtures both require Chrome; those two jobs probe or install it.
 The UI partitions retain the assertion safety preflight and three-file worker
 limit. The full local gate continues to run all tests in sequence.
+CI reuses an image-installed devlog only when its binary SHA-256 matches the
+pinned release artifact. Otherwise it downloads and verifies the existing
+pinned archive before extraction; download limits and validation stay the same.
 
 For documentation and build scaffolding without a practical failing behavior
 test, explain the test-first waiver in the PR's `Test changes` section and list
