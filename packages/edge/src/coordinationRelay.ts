@@ -1,3 +1,4 @@
+import { normalizeAccountNickname } from "@agent-console/shared/api";
 import {normalizeSessionRole} from "@agent-console/shared/lineage";
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -168,13 +169,13 @@ function fail(status: number, code: string, message: string, details?: Record<st
 // Dedicated bounded transport: neither request/response content nor raw upstream
 // errors enter the browser debug ring or the process logger. Redirects cannot
 // export the operator/ingress credential to an unconfigured destination.
-async function requestJson(machine: MachineConfig, path: string, body?: Envelope, ingressToken?: string, timeoutMs = 10_000): Promise<{ status: number; body: unknown }> {
+async function requestJson(machine: MachineConfig, path: string, body?: Envelope | Record<string, unknown>, ingressToken?: string, timeoutMs = 10_000): Promise<{ status: number; body: unknown }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${machine.url}${path}`, {
       method: body ? "POST" : "GET", redirect: "error", signal: controller.signal,
-      headers: { authorization: `Bearer ${machine.token}`, ...(body ? { "content-type": "application/json", "x-agent-session-relay-token": ingressToken! } : {}) },
+      headers: { authorization: `Bearer ${machine.token}`, ...(body ? { "content-type": "application/json", ...(ingressToken ? { "x-agent-session-relay-token": ingressToken } : {}) } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const reader = response.body?.getReader();
@@ -187,7 +188,10 @@ async function requestJson(machine: MachineConfig, path: string, body?: Envelope
       if (length > MAX_RESPONSE_BYTES) { await reader.cancel(); throw new Error("response limit"); }
       chunks.push(chunk.value);
     }
-    return { status: response.status, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown };
+    let responseBody: unknown = null;
+    try { responseBody = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown; }
+    catch { /* Empty and non-JSON older endpoints remain unsupported. */ }
+    return { status: response.status, body: responseBody };
   } finally { clearTimeout(timer); }
 }
 interface Snapshot { sessions: Record<string, unknown>[]; supported: boolean }
@@ -374,6 +378,57 @@ function relayedLineage(session: Record<string, unknown>, caller: Identity): Rec
 const CREATE_REQUEST_KEYS = ["source_session_id", "source_incarnation", "machine", "session"];
 const RESUME_OR_IDENTITY_KEYS = ["id", "provider_resume_id", "resume_id"];
 
+const RESUME_SCHEMA = "cli.agent-session.resume-preflight.v1";
+const RESUME_CHECK_KEYS = ["agent", "resume", "cwd", "claude_account", "agent_profile", "agent_args"];
+const RESUME_ERRORS: Readonly<Record<string, string>> = {
+  "resume-history-missing": "the exact provider conversation is unavailable in the selected account history",
+  "resume-account-mismatch": "the requested account does not match the original conversation account",
+  "resume-source-live": "a managed source conversation still has a live or busy writer",
+  "resume-account-transition-pending": "the source account transition requires recovery before resume",
+  "resume-source-unknown": "source account, ownership or stopped-runtime evidence is incomplete",
+  "resume-unsupported": "this resume request is not supported",
+  "resume-preflight-unavailable": "the authenticated read-only resume check is unavailable",
+};
+export function resumeRefusal(value: unknown): Record<string, unknown> | null {
+  const error = object(value);
+  const details = object(error?.details);
+  if (typeof error?.code !== "string" || !Object.hasOwn(RESUME_ERRORS, error.code)
+    || details?.session_created !== false || details.safe_to_retry !== false) return null;
+  return { code: error.code, message: RESUME_ERRORS[error.code], details: { session_created: false, safe_to_retry: false } };
+}
+export function resumeFailure(code: string): Record<string, unknown> {
+  return { code, message: RESUME_ERRORS[code], details: { session_created: false, safe_to_retry: false } };
+}
+async function resumePreflight(machine: MachineConfig, session: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  let result: { status: number; body: unknown };
+  try { result = await requestJson(machine, "/resume-preflight/v1", session); }
+  catch { return { status: 503, body: { schema_version: RESUME_SCHEMA, ok: false, error: resumeFailure("resume-preflight-unavailable") } }; }
+  const body = object(result.body);
+  const refusal = body?.schema_version === RESUME_SCHEMA && body.ok === false ? resumeRefusal(body.error) : null;
+  if (refusal && result.status >= 400 && result.status !== 404 && result.status !== 405) {
+    return { status: result.status, body: { schema_version: RESUME_SCHEMA, ok: false, error: refusal } };
+  }
+  const data = object(body?.data);
+  if (result.status === 200 && body?.schema_version === RESUME_SCHEMA && body.ok === true
+    && data && data.agent === session.agent && data.provider_session_id === session.resume && data.machine === machine.name
+    && normalizeAccountNickname(data.account) !== null && typeof data.account === "string"
+    && (session.claude_account === undefined || session.claude_account === data.account)
+    && (data.history_scope === undefined || data.history_scope === "account" || data.history_scope === "shared")) {
+    return { status: result.status, body: { schema_version: RESUME_SCHEMA, ok: true,
+      data: { agent: data.agent, provider_session_id: data.provider_session_id, machine: data.machine, account: data.account,
+        ...(data.history_scope !== undefined ? { history_scope: data.history_scope } : {}) } } };
+  }
+  return { status: 422, body: { schema_version: RESUME_SCHEMA, ok: false, error: resumeFailure("resume-unsupported") } };
+}
+
+export function assertResumeOwnership(store: AccessStore, principal: PrincipalConfig, machine: MachineConfig, session: Record<string, unknown>): void {
+  if (typeof session.agent !== "string" || typeof session.resume !== "string") return fail(400, "invalid-request", "invalid resume request");
+  if (!store.ownsProvider(principal.id, machine.name, session.agent, session.resume)
+    && (store.hasProviderOwner(machine.name, session.agent, session.resume) || !principal.permissions.includes("provider_import"))) {
+    return fail(404, "provider-session-not-found", "provider session not found");
+  }
+}
+
 export function isCoordinationRoute(path: string): boolean { return path.startsWith("/api/coordination/"); }
 export async function handleCoordinationRelay(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse, url: URL, board: BoardService | null = null, createSession: OwnedSessionCreator | null = null, disabledMachines: (principal: PrincipalConfig) => ReadonlySet<string> = () => new Set(), decorateBoard: (principal: PrincipalConfig, view: import("./board/query.ts").BoardView) => import("./board/query.ts").BoardView = (_principal, view) => view): Promise<void> {
   try {
@@ -424,13 +479,34 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
       sendJson(res, 200, view);
       return;
     }
+    if (req.method === "POST" && url.pathname === "/api/coordination/resume-preflight/v1") {
+      const request = object(await readJsonBody(req).catch(() => null));
+      if (!request || Object.keys(request).some(key => !CREATE_REQUEST_KEYS.includes(key))) return fail(400, "invalid-request", "invalid resume check request");
+      const caller = identity({ machine: relay.machine, session_id: request.source_session_id, session_incarnation: request.source_incarnation });
+      if (!caller) return fail(400, "invalid-request", "source identity required");
+      const session = object(request.session);
+      if (!session || Object.keys(session).some(key => !RESUME_CHECK_KEYS.includes(key))
+        || typeof session.agent !== "string" || !session.agent || typeof session.resume !== "string" || !session.resume
+        || ["cwd", "claude_account", "agent_profile"].some(key => session[key] !== undefined && typeof session[key] !== "string")
+        || (session.agent_args !== undefined && (!Array.isArray(session.agent_args) || !session.agent_args.every(v => typeof v === "string")))
+        || (request.machine !== undefined && (typeof request.machine !== "string" || !request.machine))) return fail(400, "invalid-request", "invalid resume check request");
+      // Check the exact existing caller grant without snapshot-driven incarnation
+      // advancement, start marks, or any ownership claim during a read-only check.
+      const principal = principalFor(config, store, caller);
+      const machine = config.machines.find(m => m.name === (request.machine ?? relay.machine));
+      if (!machine || !principal.machines.includes(machine.name)) return fail(403, "machine-forbidden", "machine is not permitted");
+      assertResumeOwnership(store, principal, machine, session);
+      const result = await resumePreflight(machine, session);
+      sendJson(res, result.status, result.body);
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/api/coordination/sessions/v1") {
       // A managed session starts a child session owned by the principal that
       // owns the caller, as an exact grant for this relay machine, session, and
       // incarnation. The request has no field that names a principal, and a
-      // caller without a grant is refused (ownership-unknown). Only fresh
-      // sessions are created: the edge assigns the id, and provider resume
-      // keeps its own ownership checks on the browser route.
+      // caller without a grant is refused (ownership-unknown). The edge assigns
+      // a new managed id, including when the dedicated resume field selects
+      // guarded provider history admission on the target daemon.
       if (!createSession) return fail(404, "route-not-found", "unknown coordination route");
       const request = object(await readJsonBody(req).catch(() => null));
       if (!request || Object.keys(request).some(key => !CREATE_REQUEST_KEYS.includes(key))) return fail(400, "invalid-request", "invalid session create request");
@@ -531,7 +607,8 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
     return fail(502, "delivery-unknown", "remote delivery result is unknown");
   } catch (error) {
     const failure = error instanceof RelayError ? error : new RelayError(500, "relay-error", "remote messaging service error");
-    sendJson(res, failure.status, { ok: false, error: { code: failure.code, message: failure.message,
-      ...(failure.details ? { details: failure.details } : {}) } });
+    const preflight = url.pathname === "/api/coordination/resume-preflight/v1";
+    sendJson(res, failure.status, { ...(preflight ? { schema_version: RESUME_SCHEMA } : {}), ok: false, error: { code: failure.code, message: failure.message,
+      ...(preflight ? { details: { session_created: false, safe_to_retry: false } } : failure.details ? { details: failure.details } : {}) } });
   }
 }
