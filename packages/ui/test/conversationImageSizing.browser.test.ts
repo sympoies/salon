@@ -55,9 +55,9 @@ test("image previews fit column, natural dimensions and viewport without croppin
             const loading=rect(document.querySelector('.conversation-image-thumbnail'));
             observers.forEach(o=>o.callback([{isIntersecting:true}]));
             await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===7 && [...document.images].every(img=>img.complete));
-            document.querySelector('#measurement').textContent=JSON.stringify({boxes,before,loading,
+            window.publishFixtureResult({boxes,before,loading,
               column:rect(document.querySelector('article')),overflow:document.documentElement.scrollWidth>innerWidth,viewportWidth:innerWidth});
-          } catch(error){document.querySelector('#measurement').textContent=JSON.stringify({error:String(error)})}})();
+          } catch(error){window.publishFixtureResult({error:String(error)})}})();
         `;
       },
     }],
@@ -72,12 +72,15 @@ test("image previews fit column, natural dimensions and viewport without croppin
   try {
     for (const width of [1440,360,600,601]) {
       const frame = `<!doctype html><style>${css}html,body{margin:0}#measurement{display:none}</style>
-        <div id="root"></div><pre id="measurement"></pre><script>${code}</script>`;
+        <div id="root"></div><pre id="measurement"></pre><script>
+        window.publishFixtureResult=value=>{const json=JSON.stringify(value);document.querySelector('#measurement').textContent=json;parent.postMessage({type:'agent-console-fixture-result',json},'*')};
+        window.onerror=message=>window.publishFixtureResult({error:String(message)});${code}</script>`;
       const file = join(temp,`fixture-${width}.html`);
       // An iframe gives narrow tests the exact width (Chrome clamps its window).
       writeFileSync(file,`<!doctype html><style>body{margin:0}iframe{border:0}</style><iframe width="${width}" height="1000"></iframe>
-        <pre id="result" style="display:none"></pre><script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<","\\u003c")};
-        setInterval(()=>{document.querySelector('#result').textContent=document.querySelector('iframe').contentDocument.querySelector('#measurement')?.textContent||''},50)</script>`);
+        <pre id="result" style="display:none"></pre><script>const frame=document.querySelector('iframe'),result=document.querySelector('#result');
+        window.addEventListener('message',event=>{if(event.source===frame.contentWindow&&event.data?.type==='agent-console-fixture-result'&&typeof event.data.json==='string')result.textContent=event.data.json});
+        frame.srcdoc=${JSON.stringify(frame).replaceAll("<","\\u003c")}</script>`);
       if (evidence) mkdirSync(evidence,{recursive:true});
       const browser = spawnSync(process.env.CHROME_BIN ?? "google-chrome",[
         "--headless","--disable-gpu","--no-sandbox","--hide-scrollbars","--allow-file-access-from-files",
@@ -85,9 +88,9 @@ test("image previews fit column, natural dimensions and viewport without croppin
         ...(evidence ? [`--screenshot=${join(evidence,`conversation-images-${width}.png`)}`] : []),
         "--dump-dom",`file://${file}`,
       ],{encoding:"utf8",timeout:20000});
-      assert.equal(browser.status,0,browser.stderr);
+      assert.equal(browser.status,0,`Chrome did not finish the image sizing fixture: ${browser.error?.message ?? browser.stderr}`);
       const json=browser.stdout.match(/<pre id="result"[^>]*>(.+?)<\/pre>/s)?.[1];
-      assert.ok(json,"fixture returns rendered measurements");
+      assert.ok(json,"Chrome dumped the DOM before the image sizing fixture published its result marker");
       const measured=JSON.parse(json.replaceAll("&quot;",'"').replaceAll("&amp;","&").replaceAll("&lt;","<").replaceAll("&gt;",">"));
       if (evidence) writeFileSync(join(evidence,`conversation-images-${width}.json`),JSON.stringify(measured,null,2));
       await t.test(`${width}px column`,()=>{
