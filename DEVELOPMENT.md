@@ -58,8 +58,26 @@ It removes any stale success marker before checking and writes
 [the pre-PR dispatcher](.agents/scripts/pre-pr.sh) invokes that command.
 
 [CI](.github/workflows/ci.yml) invokes the same dispatcher for main-branch
-pushes and pull requests from this repository. Results appear in job logs and
-the workflow summary.
+pushes and pull requests from this repository. PRs use the merge-base path
+selector in `scripts/validation/ci_scope.py`: documentation changes run the
+cheap checks; edge and UI changes run their affected tests. Shared packages,
+root configuration, scripts, lockfiles, CI and unrecognized paths require the
+full suite. A rename checks both its old and new paths. Builds, typechecks,
+boundary/privacy and package consumption remain in every package run.
+
+Local validation defaults to full coverage; use the following command to
+explicitly select a committed change's scope:
+
+```bash
+bash .agents/scripts/pre-pr.sh --base origin/main
+```
+
+Scoped runs remove the stale marker but never write the full validation marker.
+Main pushes run the full suite unless the identical tree already passed a full
+PR run, including the exact tested-tree witness in its successful required job.
+API errors or missing evidence fall back to full validation. Release validation
+continues to use the full default gate. Results appear in job logs and the
+workflow summary.
 
 For documentation and build scaffolding without a practical failing behavior
 test, explain the test-first waiver in the PR's `Test changes` section and list
