@@ -1,4 +1,5 @@
 import { parseSessionNotice } from "./parseSessionNotice.ts";
+import { unwrapPastedContent } from "./pastedContent.ts";
 import { normalizeSessionModelSettings } from "./sessionModel.ts";
 import { normalizeActivityTurnState } from "./activity.ts";
 import {
@@ -362,8 +363,9 @@ function normalizePublicLastPrompt(value: unknown): Record<string, unknown> | un
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const raw = value as Record<string, unknown>;
   if (typeof raw.text !== "string") return undefined;
-  const notice = parseSessionNotice(raw.text);
-  const body = notice ? notice.body.split(/\r?\n/, 1)[0]! : raw.text;
+  const prompt = unwrapPastedContent(raw.text);
+  const notice = parseSessionNotice(prompt);
+  const body = notice ? notice.body.split(/\r?\n/, 1)[0]! : prompt;
   const cleaned = body.replace(HARNESS_WRAPPER_PATTERN, " ").replace(/\s+/g, " ").trim();
   if (cleaned.length === 0 || /\p{Cc}/u.test(cleaned)) return undefined;
   const text = notice ? `Notice: ${cleaned}` : cleaned;

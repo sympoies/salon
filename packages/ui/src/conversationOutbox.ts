@@ -6,7 +6,7 @@ import { getPrincipalStorageNamespace } from "./storage.ts";
 import { parseTurnStateV1 } from "./sessionActivity.ts";
 import { sessionKey } from "./layout.ts";
 import { providerImageLabelPattern } from "./providerImageLabels.ts";
-import { unwrapPastedContent } from "./pastedContent.ts";
+import { stripPasteWrappers } from "./pastedContent.ts";
 import { isActivityTurnWaitingPhase } from "@agent-console/shared/activity";
 import type { HistoryMessage, Session } from "./types.ts";
 import type { ConversationReplyDrafts } from "./ConversationComposer.tsx";
@@ -63,8 +63,14 @@ const QUEUED_REPLY_BUSY_RETRY_MS = 5000;
  * long did not start a turn, so it is shown as not confirmed (#994).
  */
 export const UNCERTAIN_IDLE_REPLY_MS = 30_000;
-/** An unmatched local echo may be explicitly dismissed after one day. */
-export const STALE_LOCAL_ECHO_MS = 24 * 60 * 60 * 1000;
+/**
+ * How far before a text reply's recorded attempt a transcript turn may be
+ * stamped and still be that reply. The provider stamps turns with its own
+ * clock, and Claude Code stamps input sent during a turn when it queues it, so
+ * the turn can precede the sender's clock (#110). Kept well under the gap in
+ * which a person repeats a short answer. Image replies keep the strict bound.
+ */
+export const TRANSCRIPT_CLOCK_SKEW_MS = 10_000;
 /** How many proving transcript turns a queue remembers (#969). */
 const PROVEN_TURNS_KEPT = 200;
 const transcriptText = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -115,8 +121,9 @@ export function transcriptProof(items: readonly QueuedReply[], messages: readonl
     const parts = spent.get(message.id) ?? [];
     if (message.role !== "user" || !Number.isFinite(at) || parts.includes("")) continue;
     const candidates = pending.filter(item => !matched.has(item.id) && (untimedImage(item)
-      ? Boolean(message.images?.length) : attemptTime(item) > 0 && attemptTime(item) <= at));
-    const text = transcriptText(unwrapPastedContent(message.text));
+      ? Boolean(message.images?.length) : attemptTime(item) > 0
+        && attemptTime(item) <= at + (imagePaths(item.text).length === 0 ? TRANSCRIPT_CLOCK_SKEW_MS : 0)));
+    const text = transcriptText(stripPasteWrappers(message.text));
     // Untimed image-only echoes use whole image turns below, one row per turn.
     const used = candidates.length > 0 ? coverTurn(text, candidates.filter(item => !untimedImage(item)), parts) : undefined;
     if (!used && parts.length === 0 && message.images?.length) {
@@ -379,11 +386,13 @@ export class ConversationOutbox {
       return true;
     });
   }
-  /** Age alone never proves delivery or refusal and never triggers a send. */
+  /**
+   * Any echo of a reply that was handed to the session, or may have been, and
+   * that the transcript has not shown. An unsent reply and a definite refusal
+   * have their own actions. Dismissal never proves or refuses delivery.
+   */
   canDismiss(item: QueuedReply): boolean {
-    const at = attemptTime(item);
-    return item.state !== "delivered" && (item.state !== "refused" || item.unconfirmed === true)
-      && (untimed(item) || (Number.isFinite(at) && at > 0 && Date.now() - at >= STALE_LOCAL_ECHO_MS))
+    return item.state !== "queued" && (item.state !== "refused" || item.unconfirmed === true)
       && !this.sending.has(item.id) && !this.checking.has(item.id);
   }
   /** Remove only this local echo, under the same cross-window lock as delivery. */

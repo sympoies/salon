@@ -989,6 +989,35 @@ button.history-outgoing-bubble {
   cursor: pointer;
 }
 
+/* #110: a sent reply opens a one-action menu (right-click, menu key, long press). */
+.history-outgoing-bubble.is-dismissable {
+  -webkit-touch-callout: none;
+}
+
+.history-outgoing-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 140px;
+  padding: var(--space-xs);
+  background: var(--surface-floating);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  box-shadow: 0 12px 40px #0008;
+}
+
+.history-outgoing-menu button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.history-outgoing-menu button:hover,
+.history-outgoing-menu button:focus-visible {
+  background: var(--panel-2);
+}
+
 .history-outgoing-text {
   min-width: 0;
   white-space: pre-wrap;
@@ -7164,6 +7193,8 @@ textarea {
   :where(:root:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-searchbar { height: var(--session-nav-row-height); min-height: var(--session-nav-row-height); font-size: var(--text-md); }
   :where(:root:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-search-open { height: 100%; min-height: 0; }
   :where(:root:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-searchbar .session-filter-chip { display: inline-flex; align-items: center; }
+  :where(:root:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :where(:root:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip > span:last-child { flex: none; }
   :where(:root:not([data-mac-titlebar="true"])) .workspace-head .layout-picker { display: none; }
 }
 @media (max-width:760px),(pointer:coarse) and (max-width:1024px) {

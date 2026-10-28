@@ -187,3 +187,36 @@ test("Hosts and Roles start expanded with compact choices on desktop and phone",
     }
   } finally { await harness.close(); }
 });
+
+
+test("long active workspace chips keep their label inside padding and the remove glyph visible", async t => {
+  if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
+  const harness = createUiSsrHarness();
+  try {
+    const { SessionListNavigator } = await harness.loadModule<typeof import("../src/SessionListNavigator.tsx")>("/src/SessionListNavigator.tsx");
+    for (const [width, height] of [[360, 780], [412, 915], [760, 915], [761, 915], [1500, 982]]) {
+      const navigator = renderComponent(SessionListNavigator, {
+        filters: { ...CLEAR_SESSION_FILTERS, workspaces: ["sample-workspace-alpha", "sample-workspace-beta", null] },
+        machines: [], harnesses: [], resultCount: 4, mobile: width <= 760,
+        page: 1, pageCount: 3, open: false, onPageChange() {}, onChange() {},
+      });
+      const markup = `<main class="dash workspace-shell"><header class="workspace-head"><div class="workspace-head-start"><div class="brand-title"><button class="brand-title-mark"></button><h1>Salon</h1></div>${navigator}</div><div class="dash-actions"><button class="btn dashboard-new-session">+</button></div></header></main>`;
+      const m = measureUiMarkup<{ paddingLeft:number; labelLeft:number; contentLeft:number; labelRight:number; contentRight:number; ellipsis:string; overflow:string; whiteSpace:string; scrollWidth:number; clientWidth:number; removeVisible:boolean; bounded:boolean; chipWidth:number }>(markup, width, `
+        const chip=document.querySelector('[data-filter-chip="workspace"]'),label=chip.querySelector('.session-filter-chip-label'),remove=chip.lastElementChild;
+        const r=chip.getBoundingClientRect(),l=label.getBoundingClientRect(),x=remove.getBoundingClientRect(),s=getComputedStyle(chip),ls=getComputedStyle(label);
+        const bar=document.querySelector('.session-filter-searchbar').getBoundingClientRect(),icon=document.querySelector('.session-filter-search-open').getBoundingClientRect(),clips=document.querySelector('.session-filter-search-chips').getBoundingClientRect();
+        const hit=document.elementFromPoint(x.left+x.width/2,x.top+x.height/2);
+        const result={paddingLeft:parseFloat(s.paddingLeft),labelLeft:l.left,contentLeft:r.left+parseFloat(s.borderLeftWidth)+parseFloat(s.paddingLeft),labelRight:l.right,contentRight:r.right-parseFloat(s.borderRightWidth)-parseFloat(s.paddingRight),
+          ellipsis:ls.textOverflow,overflow:ls.overflow,whiteSpace:ls.whiteSpace,scrollWidth:label.scrollWidth,clientWidth:label.clientWidth,
+          removeVisible:remove.textContent.trim()==='×'&&x.width>0&&x.left>=l.right&&x.right<=r.right&&x.left>=clips.left&&x.right<=clips.right&&(hit===chip||chip.contains(hit)),
+          bounded:r.left>=icon.right&&r.right<=bar.right&&r.left>=0&&r.right<=innerWidth,chipWidth:r.width};
+      `, false, height);
+      const context = `${width}x${height}: ${JSON.stringify(m)}`;
+      assert.ok(m.paddingLeft > 0, `chip has inner padding: ${context}`);
+      assert.ok(m.labelLeft >= m.contentLeft && m.labelRight <= m.contentRight, `label stays inside the chip content box: ${context}`);
+      assert.ok(m.scrollWidth > m.clientWidth && m.clientWidth > 0 && m.ellipsis === "ellipsis" && m.overflow === "hidden" && m.whiteSpace === "nowrap", `long label is ellipsized: ${context}`);
+      assert.ok(m.removeVisible, `remove glyph stays visible: ${context}`);
+      assert.ok(m.bounded && m.chipWidth <= 240, `chip is capped and clears the filter icon: ${context}`);
+    }
+  } finally { await harness.close(); }
+});
