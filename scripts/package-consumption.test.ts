@@ -12,13 +12,28 @@ type Provenance = { sourceCommit: string; packages: { asset: string; bytes: numb
 type CommandError = Error & { status: number; stdout: string; stderr: string };
 const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8")) as T;
 
+function consumerChildEnvironment(inherited: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...inherited, TMPDIR: "/tmp" };
+  delete env.NODE_OPTIONS;
+  delete env.NODE_PATH;
+  delete env.DBUS_SESSION_BUS_ADDRESS;
+  for (const key of Object.keys(env)) if (key.startsWith("AGENT_CONSOLE_")) delete env[key];
+  return env;
+}
+
+test("consumer child environment drops the session bus while preserving unrelated settings", () => {
+  const env = consumerChildEnvironment({
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/tmp/fixture-session-bus",
+    SALON_TEST_UNRELATED: "preserved",
+  });
+  assert.equal(env.DBUS_SESSION_BUS_ADDRESS, undefined);
+  assert.equal(env.SALON_TEST_UNRELATED, "preserved");
+});
+
 test("installed compiled core starts an authenticated edge and composes a generic UI", { timeout: 180_000 }, () => {
   const temporary = mkdtempSync("/tmp/core-package-consumer-");
   const consumer = join(temporary, "consumer");
-  const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: "/tmp" };
-  delete env.NODE_OPTIONS;
-  delete env.NODE_PATH;
-  for (const key of Object.keys(env)) if (key.startsWith("AGENT_CONSOLE_")) delete env[key];
+  const env = consumerChildEnvironment(process.env);
   const run = (command: string, args: string[], cwd = consumer) => execFileSync(command, args, {
     cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000,
   });
