@@ -4,7 +4,7 @@ import { attachTarget, shellAttachTarget, fetchSessionBuffer, sendSessionInput }
 import { recordDebugEvent } from "./debugLog.ts";
 import { createWindowScheduler } from "./scheduler.ts";
 import { installTheme } from "./theme.ts";
-import { terminalThemeFor } from "./terminalTheme.ts";
+import { terminalAppearanceFor } from "./terminalTheme.ts";
 import { createTerminalOutputBatcher } from "./terminalOutputBatcher.ts";
 import {
   recordTerminalPerformanceFrame,
@@ -230,6 +230,7 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       return;
     }
     const themeController = installTheme();
+    const initialAppearance = terminalAppearanceFor(themeController.getState().resolved);
     const term = new Terminal({
       convertEol: false,
       cursorBlink: true,
@@ -239,7 +240,8 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       fontSize: deps.fontSizeRef.current,
       scrollback: deps.scrollback,
       smoothScrollDuration: SMOOTH_SCROLL_DURATION_MS,
-      theme: terminalThemeFor(themeController.getState().resolved),
+      theme: initialAppearance.theme,
+      minimumContrastRatio: initialAppearance.minimumContrastRatio,
       // Let Option-drag force a text selection even when the attached TUI has
       // mouse reporting on. Plain drag still reaches the app for its own UI.
       macOptionClickForcesSelection: true,
@@ -247,7 +249,9 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
     term.parser.registerCsiHandler({ intermediates: " ", final: "q" }, () => true);
     // The open terminal repaints in the new palette when the theme changes.
     const themeSub = themeController.subscribe(() => {
-      term.options.theme = terminalThemeFor(themeController.getState().resolved);
+      const appearance = terminalAppearanceFor(themeController.getState().resolved);
+      term.options.theme = appearance.theme;
+      term.options.minimumContrastRatio = appearance.minimumContrastRatio;
     });
 
     const fit = new FitAddon();

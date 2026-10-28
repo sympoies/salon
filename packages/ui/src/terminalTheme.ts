@@ -58,3 +58,17 @@ const PAPER: ITheme = {
 export function terminalThemeFor(theme: ResolvedTheme): ITheme {
   return theme === "paper" ? PAPER : NIGHT_OWL;
 }
+
+/** The palette plus the renderer's contrast policy for one resolved theme. */
+export interface TerminalAppearance {
+  readonly theme: ITheme;
+  readonly minimumContrastRatio: number;
+}
+
+// Paper's default foreground is ANSI black, so ESC[40m (black background, default
+// foreground) would hide its text. xterm raises the foreground of any cell below
+// this ratio, which keeps programs' background cells readable. Dark keeps xterm's
+// default of 1 (no adjustment), so its rendering is unchanged.
+export function terminalAppearanceFor(theme: ResolvedTheme): TerminalAppearance {
+  return { theme: terminalThemeFor(theme), minimumContrastRatio: theme === "paper" ? 4.5 : 1 };
+}

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { terminalThemeFor } from "../src/terminalTheme.ts";
+import { terminalAppearanceFor, terminalThemeFor } from "../src/terminalTheme.ts";
 import { THEME_META_COLORS } from "../src/theme.ts";
 
 function luminance(hex: string): number {
@@ -40,4 +40,9 @@ test("the Paper terminal text, every ANSI colour and the cursor are readable on 
   assert.ok(ratio(theme.cursor!, theme.background!) >= 3, "cursor");
   assert.ok(ratio(theme.selectionForeground!, theme.selectionBackground!) >= 4.5, "selected text");
   assert.ok(ratio(theme.selectionBackground!, theme.background!) >= 1.3, "selection is distinguishable from the canvas");
+});
+
+test("only Paper adds a renderer contrast floor, so dark rendering stays as it was", () => {
+  assert.deepEqual(terminalAppearanceFor("dark"), { theme: terminalThemeFor("dark"), minimumContrastRatio: 1 });
+  assert.deepEqual(terminalAppearanceFor("paper"), { theme: terminalThemeFor("paper"), minimumContrastRatio: 4.5 });
 });

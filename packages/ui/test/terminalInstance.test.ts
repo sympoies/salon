@@ -826,8 +826,10 @@ test("the terminal canvas follows the resolved theme and switches live with the 
   const terminal = mounted.harness.terminals[0];
   assert.ok(terminal, "terminal was created");
   assert.equal((terminal.options.theme as { background: string }).background, "#f4f3ed", "a light OS under System starts on Paper");
+  assert.equal(terminal.options.minimumContrastRatio, 4.5, "Paper keeps text readable on background-only SGR cells");
   await act(async () => { media.matches = true; for (const listener of [...listeners]) listener({ matches: true }); });
   assert.equal((terminal.options.theme as { background: string }).background, "#011627", "the open terminal switches to the dark palette without a reload");
+  assert.equal(terminal.options.minimumContrastRatio, 1, "dark keeps xterm's unadjusted rendering");
   await mounted.unmount();
   await act(async () => { media.matches = false; for (const listener of [...listeners]) listener({ matches: false }); });
   assert.equal((terminal.options.theme as { background: string }).background, "#011627", "a disposed terminal is no longer retouched");
