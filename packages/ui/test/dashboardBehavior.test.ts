@@ -39,6 +39,7 @@ import type {
   SessionMaintenancePreview,
 } from "@agent-console/shared/maintenance";
 import { makeSession, makeSessionSlotProps } from "./support/fixtures.ts";
+import { sharedAdmissionFixture } from "./support/sharedAdmissionFixture.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 import { createRequestTimeoutMs } from "../src/createLifecycle.ts";
 
@@ -7408,6 +7409,204 @@ test("Dashboard opens a live conversation from the title menu, closes it with Cm
   await poll();
   assert.ok(mounted.container.querySelector('summary[aria-label="Session menu for Live A"]'));
   assertNoElement(mounted.container, ".conversation-modal", "a returning session does not reopen a forgotten panel");
+});
+
+// Component-only seam that holds a reply in flight; the real journal and HTTP
+// admission are covered by sharedOutboxClient.test.ts.
+function sharedReplyAdmissionMockPlugin(): Plugin {
+  const mockId = "\0dashboard-behavior-shared-admission";
+  return {
+    name: "dashboard-behavior-shared-admission",
+    enforce: "pre",
+    resolveId: (source) => (source.endsWith("sharedOutboxClient.ts") ? mockId : null),
+    load: (id) => (id === mockId
+      ? sharedAdmissionFixture("(...args) => globalThis.__agentConsoleDashboardBehaviorApiMock.submitSessionPrompt(...args)")
+      : null),
+  };
+}
+
+// Three sessions on a desktop-width dashboard: two on a history-capable host and
+// one on a host without conversation views.
+async function mountPinnedConversationDashboard(
+  options: { readonly submitSessionPrompt?: DashboardBehaviorApiMock["submitSessionPrompt"] } = {},
+) {
+  const mounted = installDom();
+  Object.defineProperty(mounted.window, "innerWidth", { configurable: true, value: 1440 });
+  cleanupStack.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([dashboardApiMockPlugin(), terminalPaneMockPlugin(), sharedReplyAdmissionMockPlugin()]);
+  cleanupStack.push(ssr.close);
+  const live = [
+    makeSession({ id: "a", machine: "summit", title: "Live A", session_incarnation: "inc-a", provider_resume: { provider: "codex", session_id: "provider-a" } }),
+    makeSession({ id: "b", machine: "summit", title: "Live B", session_incarnation: "inc-b", provider_resume: { provider: "codex", session_id: "provider-b" } }),
+    makeSession({ id: "c", machine: "plain", title: "Live C" }),
+  ];
+  globalThis.__agentConsoleDashboardBehaviorApiMock = {
+    listSessions: async () => ({
+      ok: true,
+      sessions: live,
+      machines: [{ name: "summit", ok: true, capabilities: { history: true } }, { name: "plain", ok: true }],
+    }),
+    listHistorySessions: async (machine) => ({
+      ok: true,
+      truncated: false,
+      latestMessagePaging: true,
+      sessions: ["a", "b"].map((id) => ({
+        id: `history-${id}`,
+        machine,
+        provider: "codex" as const,
+        provider_session_id: `provider-${id}`,
+        cwd: "/work",
+        created_at: "2026-09-26T00:00:00Z",
+        updated_at: "2026-09-26T00:00:00Z",
+        resumable: false,
+      })),
+    }),
+    listHistoryMessages: async (_machine, id) => ({
+      ok: true,
+      messages: [{ id: `message-${id}`, role: "assistant", text: `report ${id.slice(-1).toUpperCase()}` }],
+    }),
+    submitSessionPrompt: options.submitSessionPrompt,
+  };
+  const { Dashboard } = await ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
+  await act(async () => {
+    mounted.root.render(createElement(Dashboard, {
+      active: true,
+      machines: ["summit", "plain"],
+      enabledMachines: ["summit", "plain"],
+      machineColors: {},
+      defaultAutoResume: false,
+      sessionListDisplay: "terminal",
+      terminalRenderMode: "realtime" as const,
+      terminalSelectedPaneRealtime: true,
+      onDebug: () => {},
+      onUsage: () => {},
+      onSettings: () => {},
+    }));
+    await flushPromises();
+  });
+  await waitForCondition(() => mounted.container.querySelectorAll(".terminal-slot .terminal-pane").length === 3, "three terminal tiles");
+  const panelText = () => mounted.container.querySelector(".conversation-dock")?.textContent ?? "";
+  const panelTitle = () => mounted.container.querySelector(".conversation-dock #conversation-title")?.textContent ?? "";
+  const openPanel = async (title: string, report: string) => {
+    await act(async () => {
+      mounted.container.querySelector<HTMLElement>(`summary[aria-label="Session menu for ${title}"]`)?.click();
+      await flushPromises();
+    });
+    await act(async () => {
+      findTextButton(mounted.container, "Conversation").click();
+      await flushPromises();
+    });
+    await waitForCondition(() => panelText().includes(report), `${title} conversation to load`);
+  };
+  const select = async (id: string) => {
+    const wrap = mounted.container.querySelector<HTMLElement>(`.terminal-slot[data-slot-key="${id}"] .slot-terminal-wrap`);
+    assert.ok(wrap, `tile ${id}`);
+    await act(async () => {
+      wrap.dispatchEvent(primaryPointerDown(mounted.window));
+      await flushPromises();
+    });
+  };
+  const togglePin = async (label: "Pin conversation" | "Unpin conversation") => {
+    await act(async () => {
+      findAriaButton(mounted.container.querySelector<HTMLElement>(".conversation-dock")!, label).click();
+      await flushPromises();
+    });
+  };
+  const draftEditor = () => {
+    const node = mounted.container.querySelector<HTMLTextAreaElement>('.conversation-dock textarea[aria-label="Reply to session"]');
+    assert.ok(node, "the docked panel offers a reply editor");
+    return node;
+  };
+  const writeDraft = (text: string) => act(async () => {
+    const node = draftEditor();
+    const key = Object.keys(node).find((item) => item.startsWith("__reactProps$"))!;
+    (node as unknown as Record<string, { onChange(event: { target: { value: string } }): void }>)[key].onChange({ target: { value: text } });
+    await flushPromises();
+  });
+  return { mounted, panelText, panelTitle, openPanel, select, togglePin, draftEditor, writeDraft };
+}
+
+test("an unpinned docked conversation follows the selected session and keeps its session for one without a conversation", async () => {
+  const { mounted, panelText, panelTitle, openPanel, select } = await mountPinnedConversationDashboard();
+  await openPanel("Live A", "report A");
+  assert.ok(mounted.container.querySelector(".conversation-dock"), "the panel is docked at a desktop width");
+  assert.ok(findAriaButton(mounted.container, "Pin conversation"), "the panel opens unpinned");
+
+  await select("summit/b");
+  await waitForCondition(() => panelText().includes("report B"), "the panel to follow the selection");
+  assert.equal(panelTitle(), "Live B");
+  assert.doesNotMatch(panelText(), /report A/, "no content from the previous session remains");
+
+  await select("plain/c");
+  assert.equal(panelTitle(), "Live B", "a session without a conversation view leaves the panel where it is");
+  assert.match(panelText(), /report B/);
+});
+
+test("a pinned docked conversation stays on its session until it is unpinned", async () => {
+  const { panelText, panelTitle, openPanel, select, togglePin, mounted } = await mountPinnedConversationDashboard();
+  await openPanel("Live A", "report A");
+  await togglePin("Pin conversation");
+  assert.ok(findAriaButton(mounted.container, "Unpin conversation"), "the pinned state is announced by the control");
+
+  await select("summit/b");
+  assert.equal(panelTitle(), "Live A");
+  assert.match(panelText(), /report A/);
+  assert.doesNotMatch(panelText(), /report B/);
+});
+
+test("unpinning retargets the docked conversation to the current selection", async () => {
+  const { panelText, panelTitle, openPanel, select, togglePin } = await mountPinnedConversationDashboard();
+  await openPanel("Live A", "report A");
+  await togglePin("Pin conversation");
+  await select("summit/b");
+  assert.equal(panelTitle(), "Live A");
+
+  await togglePin("Unpin conversation");
+  await waitForCondition(() => panelText().includes("report B"), "the panel to move to the current selection");
+  assert.equal(panelTitle(), "Live B");
+  assert.doesNotMatch(panelText(), /report A/);
+});
+
+test("a docked conversation with a reply in flight defers following until it is idle, then applies the latest selection", async () => {
+  const submission = deferred<{ readonly ok: boolean }>();
+  const { mounted, panelText, panelTitle, openPanel, select, writeDraft } = await mountPinnedConversationDashboard({
+    submitSessionPrompt: () => submission.promise,
+  });
+  await openPanel("Live A", "report A");
+  await writeDraft("working on it");
+  await act(async () => {
+    findAriaButton(mounted.container.querySelector<HTMLElement>(".conversation-dock")!, "Send reply").click();
+    await flushPromises();
+  });
+
+  await select("summit/b");
+  assert.equal(panelTitle(), "Live A", "a switch never interrupts a reply in flight");
+  assert.match(panelText(), /report A/);
+
+  await act(async () => {
+    submission.resolve({ ok: true });
+    await flushPromises();
+  });
+  await waitForCondition(() => panelText().includes("report B"), "the deferred selection to apply once idle");
+  assert.equal(panelTitle(), "Live B");
+});
+
+test("each session keeps its own unsent reply draft while the docked conversation follows the selection", async () => {
+  const { panelText, panelTitle, openPanel, select, draftEditor, writeDraft } = await mountPinnedConversationDashboard();
+  await openPanel("Live A", "report A");
+  await writeDraft("draft for A");
+
+  await select("summit/b");
+  await waitForCondition(() => panelText().includes("report B"), "the panel to follow the selection");
+  assert.equal(draftEditor().value, "", "another session's draft is not shown");
+  await writeDraft("draft for B");
+
+  await select("summit/a");
+  await waitForCondition(() => panelTitle() === "Live A" && panelText().includes("report A"), "the panel to return to the first session");
+  assert.equal(draftEditor().value, "draft for A");
+  await select("summit/b");
+  await waitForCondition(() => panelTitle() === "Live B" && panelText().includes("report B"), "the panel to return to the second session");
+  assert.equal(draftEditor().value, "draft for B");
 });
 
 async function mountOverviewShortcutDashboard() {

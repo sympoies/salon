@@ -798,6 +798,7 @@
   gap: var(--space-2xs);
 }
 
+.conversation-pin.is-pinned,
 .conversation-reply-toggle[aria-expanded="true"] {
   border-color: var(--accent);
   color: var(--accent);
