@@ -137,7 +137,10 @@ views. Real provider/native acceptance remains with its owning milestone.
 Publication is reserved for the authorized publisher after designated review and
 merge. The proposed SDK patch release is `v0.1.12`, a private GitHub prerelease with
 `latest=false`; root and package versions are `0.1.12`. It carries the merged
-local image echo reconciliation and the TypeScript conversion of native Node tooling.
+local image echo reconciliation, the TypeScript conversion of native Node tooling,
+ellipsized phone filter chip labels, unwrapped paste wrappers in last-prompt
+previews, and mid-turn reply echo clearing with a local dismiss menu for sent but
+unproven replies.
 Existing `v0.1.0` through `v0.1.11` tags and assets stay immutable. This metadata preparation does not establish version-merge or
 publication GO. Source preparation does not authorize publication. The
 authorized publisher uploads only
