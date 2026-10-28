@@ -40,12 +40,12 @@ test("viewer clears title chrome and uses shared themed icon controls", async t 
             reference.focus();const focus=style(reference);fit.focus();const viewerFocus=style(fit);
             const counter=toolbar.querySelector('[aria-live]'),cs=getComputedStyle(counter);
             const textReference=document.createElement('span');textReference.style.fontSize='var(--text-sm)';document.body.append(textReference);
-            document.querySelector('#measurement').textContent=JSON.stringify({controls,normal,disabled,focus,viewerFocus,
+            window.publishFixtureResult({controls,normal,disabled,focus,viewerFocus,
               top:fit.getBoundingClientRect().top,titleHeight:document.querySelector('.mac-titlebar')?.getBoundingClientRect().height??0,
               counterTop:counter.getBoundingClientRect().top,counterColor:cs.color,counterFont:cs.fontSize,
               expectedFont:getComputedStyle(textReference).fontSize,
               scrim:getComputedStyle(toolbar).backgroundImage,backdrop:getComputedStyle(document.querySelector('.conversation-image-backdrop')).backgroundColor,viewportWidth:innerWidth,overflow:viewer.scrollWidth>innerWidth});
-          }catch(error){document.querySelector('#measurement').textContent=JSON.stringify({error:String(error)})}})();`;
+          }catch(error){window.publishFixtureResult({error:String(error)})}})();`;
       },
     }],build:{write:false,minify:false,target:"esnext",lib:{entry:"viewer-toolbar-fixture",name:"ViewerFixture",formats:["iife"]}}});
   const output=Array.isArray(bundled)?bundled[0]:bundled;
@@ -56,15 +56,19 @@ test("viewer clears title chrome and uses shared themed icon controls", async t 
   try{
     for(const [width,mac,theme] of [[1440,true,"dark"],[360,false,"dark"],[760,false,"dark"],[761,false,"dark"],[1440,true,"light"],[360,false,"light"]] as const){
       const frame=`<!doctype html><html data-theme="${theme}" ${mac?'data-mac-titlebar="true"':''}><style>${css}html,body{margin:0}#measurement{display:none}</style>
-        ${mac?'<div class="mac-titlebar">Synthetic title bar</div>':''}<div id="root"></div><pre id="measurement"></pre><script>${code}</script></html>`;
+        ${mac?'<div class="mac-titlebar">Synthetic title bar</div>':''}<div id="root"></div><pre id="measurement"></pre><script>
+        window.publishFixtureResult=value=>{const json=JSON.stringify(value);document.querySelector('#measurement').textContent=json;parent.postMessage({type:'agent-console-fixture-result',json},'*')};
+        window.onerror=message=>window.publishFixtureResult({error:String(message)});${code}</script></html>`;
       const file=join(temp,`viewer-${width}-${theme}.html`);
       writeFileSync(file,`<!doctype html><style>body{margin:0}iframe{border:0;display:block}</style><iframe width="${width}" height="900"></iframe><pre id="result" style="display:none"></pre>
-        <script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<","\\u003c")};setInterval(()=>{document.querySelector('#result').textContent=document.querySelector('iframe').contentDocument.querySelector('#measurement')?.textContent||''},50)</script>`);
+        <script>const frame=document.querySelector('iframe'),result=document.querySelector('#result');
+        window.addEventListener('message',event=>{if(event.source===frame.contentWindow&&event.data?.type==='agent-console-fixture-result'&&typeof event.data.json==='string')result.textContent=event.data.json});
+        frame.srcdoc=${JSON.stringify(frame).replaceAll("<","\\u003c")}</script>`);
       if(evidence)mkdirSync(evidence,{recursive:true});
       const browser=spawnSync(process.env.CHROME_BIN??"google-chrome",["--headless","--disable-gpu","--no-sandbox","--hide-scrollbars","--allow-file-access-from-files",
         `--window-size=${Math.max(width,800)},1000`,"--virtual-time-budget=5000",...(evidence?[`--screenshot=${join(evidence,`viewer-${width}-${theme}.png`)}`]:[]),"--dump-dom",`file://${file}`],{encoding:"utf8",timeout:20000});
-      assert.equal(browser.status,0,browser.stderr);
-      const json=browser.stdout.match(/<pre id="result"[^>]*>(.+?)<\/pre>/s)?.[1];assert.ok(json,"real viewer returns measurements");
+      assert.equal(browser.status,0,`Chrome did not finish the image toolbar fixture: ${browser.error?.message ?? browser.stderr}`);
+      const json=browser.stdout.match(/<pre id="result"[^>]*>(.+?)<\/pre>/s)?.[1];assert.ok(json,"Chrome dumped the DOM before the image toolbar fixture published its result marker");
       const m=JSON.parse(json.replaceAll("&quot;",'"').replaceAll("&amp;","&").replaceAll("&lt;","<").replaceAll("&gt;",">"));
       if(evidence)writeFileSync(join(evidence,`viewer-${width}-${theme}.json`),JSON.stringify(m,null,2));
       await t.test(`${theme} ${width}px ${mac?"macOS title layout":"web layout"}`,async t=>{
