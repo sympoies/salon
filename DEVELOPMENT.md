@@ -18,6 +18,8 @@ the three libraries; `pnpm pack:core` creates local tarballs with provenance
 and digests. [Package consumption](docs/package-consumption.md) describes the
 outside-workspace consumer and the separately authorized private SDK release
 entrypoint. Application/container acceptance remains a separate milestone.
+[Coordination resume](docs/coordination-resume.md) defines the authenticated
+edge relay contract and its separate deployment acceptance.
 
 ## Before editing
 
