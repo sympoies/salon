@@ -97,7 +97,7 @@ jobs:
 
       - name: Probe preinstalled Chrome
         id: chrome
-        if: matrix.suite == 'ui-browser'
+        if: (matrix.suite == 'ui-browser' || matrix.suite == 'core')
         run: |
           set -euo pipefail
           if command -v google-chrome >/dev/null &&
@@ -110,7 +110,7 @@ jobs:
           fi
 
       - name: Install headless Chrome runtime libraries
-        if: matrix.suite == 'ui-browser' && steps.chrome.outputs.ready != 'true'
+        if: (matrix.suite == 'ui-browser' || matrix.suite == 'core') && steps.chrome.outputs.ready != 'true'
         timeout-minutes: 5
         run: |
           set -euo pipefail
@@ -135,7 +135,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Select and probe headless Chrome
-        if: matrix.suite == 'ui-browser' && steps.chrome.outputs.ready != 'true'
+        if: (matrix.suite == 'ui-browser' || matrix.suite == 'core') && steps.chrome.outputs.ready != 'true'
         env:
           CHROME_DEB_URL: https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_156.0.8078.47-1_amd64.deb
           CHROME_DEB_SHA256: 6c92cd22e90c6e3e255d782991543fa2091db8614e8536a971a7433a5c4d7ac8

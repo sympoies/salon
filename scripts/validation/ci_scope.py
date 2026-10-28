@@ -46,8 +46,8 @@ def changed_scope(base, head="HEAD"):
 def reusable_run(run, jobs, tree, repository):
     return (
         run.get("event") == "pull_request" and run.get("conclusion") == "success"
-        and run.get("head_repository", {}).get("full_name") == repository
-        and run.get("head_commit", {}).get("tree_id") == tree
+        and (run.get("head_repository") or {}).get("full_name") == repository
+        and (run.get("head_commit") or {}).get("tree_id") == tree
         and any(job.get("name") == "Core package validation" and job.get("conclusion") == "success"
                 and any(step.get("name") == f"Full suite passed: {tree}"
                         and step.get("conclusion") == "success" for step in job.get("steps", []))
@@ -70,7 +70,7 @@ def duplicate_run(tree):
     try:
         runs = api("actions/workflows/ci.yml/runs?event=pull_request&status=success&per_page=100")
         for run in runs["workflow_runs"]:
-            if run.get("head_commit", {}).get("tree_id") != tree:
+            if (run.get("head_commit") or {}).get("tree_id") != tree:
                 continue
             jobs = api(f"actions/runs/{run['id']}/jobs?filter=latest&per_page=100")["jobs"]
             if reusable_run(run, jobs, tree, repository):

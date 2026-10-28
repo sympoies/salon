@@ -1,11 +1,14 @@
 """Acceptance fixtures for PR scope and safe reuse of full CI coverage."""
 
+import io
+import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from ci_scope import select_scope, selected_suites, reusable_run
+from unittest import mock
+from ci_scope import select_scope, selected_suites, reusable_run, duplicate_run
 
 
 class ScopeTest(unittest.TestCase):
@@ -54,6 +57,25 @@ class ScopeTest(unittest.TestCase):
                      [job | {"steps": [{"name": f"Full suite passed: {'b' * 40}", "conclusion": "success"}]}]]:
             with self.subTest(jobs=jobs):
                 self.assertFalse(reusable_run(run, jobs, tree, "example/project"))
+
+
+class NullableRunTest(unittest.TestCase):
+    def test_null_run_commit_metadata_falls_back_to_full_validation(self):
+        payload = {"workflow_runs": [{"head_commit": None}]}
+        env = {"GITHUB_REPOSITORY": "example/project", "GITHUB_API_URL": "https://api.example.invalid",
+               "GH_TOKEN": "fixture"}
+        with mock.patch.dict(os.environ, env), mock.patch("ci_scope.urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
+            self.assertEqual(duplicate_run("a" * 40), "")
+
+    def test_null_provenance_is_never_reusable(self):
+        tree = "a" * 40
+        run = {"event": "pull_request", "conclusion": "success", "head_commit": {"tree_id": tree},
+               "head_repository": {"full_name": "example/project"}}
+        jobs = [{"name": "Core package validation", "conclusion": "success", "steps": [
+            {"name": f"Full suite passed: {tree}", "conclusion": "success"}]}]
+        for field in ["head_commit", "head_repository"]:
+            with self.subTest(field=field):
+                self.assertFalse(reusable_run(run | {field: None}, jobs, tree, "example/project"))
 
 
 class MergeBaseTest(unittest.TestCase):

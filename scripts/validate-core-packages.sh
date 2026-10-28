@@ -21,7 +21,7 @@ if [[ "$(pnpm --version)" != "11.9.0" ]]; then
   printf 'Core validation requires pnpm 11.9.0 from packageManager.\n' >&2
   exit 1
 fi
-if [[ "$suite" == ui-browser || ( -z "$suite" && "$scope" != edge ) ]]; then
+if [[ -z "$suite" || "$suite" == core || "$suite" == ui-browser ]]; then
 command -v "${CHROME_BIN:-google-chrome}" >/dev/null || {
   printf 'Core UI fixture tests require headless Chrome (CHROME_BIN).\n' >&2
   exit 1
