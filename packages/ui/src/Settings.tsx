@@ -26,6 +26,7 @@ import type { SessionListDisplay } from "./sessionListDisplay.ts";
 import { browserNotificationPermission } from "./attentionAlerts.ts";
 import { clientVersionInfo, versionCopyText } from "./clientVersion.ts";
 import { writeTerminalClipboardText } from "./terminalClipboard.ts";
+import { THEME_MODES, useTheme, type ThemeMode } from "./theme.ts";
 
 export interface SettingsProps {
   readonly onSaved: () => void;
@@ -98,6 +99,7 @@ export function Settings({
 }: SettingsProps) {
   const { machineColorDefaults } = useUiExtensions();
   const phone = usePhoneLayout();
+  const theme = useTheme();
   const serverInput = useRef<HTMLInputElement>(null);
   const tokenInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -407,6 +409,19 @@ export function Settings({
               {terminalSelectedPaneRealtime ? "on" : "off"}
             </button>
           </div>
+        </section>
+
+        <section className="settings-section">
+          <h2 className="settings-section-title">Appearance</h2>
+          <label className="settings-field">
+            Theme
+            <select value={theme.mode} onChange={(event) => theme.setMode(event.currentTarget.value as ThemeMode)}>
+              {THEME_MODES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
+          <p className="settings-hint">
+            System follows the device appearance. Paper is the light theme. The choice stays on this device.
+          </p>
         </section>
 
         <section className="settings-section">

@@ -177,7 +177,7 @@ test("Dashboard keeps the repo badge visually closer to the session title than t
 test("Dashboard keeps the full-width slot menu hit target stable while pressed", () => {
   const pressedTitleRule = cssRuleFor(".slot-title-menu > summary.slot-title:active");
   assert.match(pressedTitleRule, /transform: none;/);
-  assert.match(pressedTitleRule, /background: rgba\(130, 170, 255, 0\.1\);/);
+  assert.match(pressedTitleRule, /background: rgba\(var\(--accent-rgb\), 0\.1\);/);
 });
 
 test("Dashboard lets the slot dropdown span the full header width", () => {
@@ -414,10 +414,10 @@ test("Dashboard shows pointer drag source and target feedback in the macOS app s
   for (const rule of [draggingHeadRule, dropTargetRule]) {
     assert.match(rule, /outline: 2px solid var\(--accent\);/);
     assert.match(rule, /outline-offset: -2px;/);
-    assert.match(rule, /background: rgba\(130, 170, 255, 0\.12\);/);
-    assert.match(rule, /box-shadow: inset 0 -1px 0 rgba\(130, 170, 255, 0\.38\);/);
+    assert.match(rule, /background: rgba\(var\(--accent-rgb\), 0\.12\);/);
+    assert.match(rule, /box-shadow: inset 0 -1px 0 rgba\(var\(--accent-rgb\), 0\.38\);/);
   }
-  assert.match(dropTargetHeadRule, /background: rgba\(130, 170, 255, 0\.12\);/);
+  assert.match(dropTargetHeadRule, /background: rgba\(var\(--accent-rgb\), 0\.12\);/);
   assert.doesNotMatch(cssRuleFor(".slot-head.is-slot-dragging"), /border:/);
   assert.doesNotMatch(cssRuleFor(".terminal-slot.is-slot-drop-target"), /border:/);
 });
@@ -808,16 +808,16 @@ test("Dashboard modal overlays focused terminal sessions", () => {
 test("Dashboard close confirmation uses the styled danger modal", () => {
   assert.match(css, /\.close-session-modal \{/);
   assert.match(cssRuleFor(".close-session-modal"), /border-radius: var\(--r-md\);/);
-  assert.match(cssRuleFor(".close-session-modal"), /background: #08233a;/);
-  assert.match(cssRuleFor(".close-session-summary"), /background: rgba\(9, 36, 58, 0\.88\);/);
-  assert.match(cssRuleFor(".close-session-summary"), /border: 1px solid rgba\(67, 127, 166, 0\.45\);/);
-  assert.match(cssRuleFor(".close-session-summary"), /border-left: 3px solid rgba\(248, 113, 113, 0\.75\);/);
+  assert.match(cssRuleFor(".close-session-modal"), /background: var\(--surface-dialog\);/);
+  assert.match(cssRuleFor(".close-session-summary"), /background: var\(--dialog-row-bg\);/);
+  assert.match(cssRuleFor(".close-session-summary"), /border: 1px solid var\(--dialog-row-border\);/);
+  assert.match(cssRuleFor(".close-session-summary"), /border-left: 3px solid rgba\(var\(--danger-rgb\), 0\.75\);/);
   assert.match(cssRuleFor(".close-session-delete-option"), /min-height: 48px;/);
   assert.match(
     cssRuleFor(".close-session-delete-option.is-selected"),
-    /border-color: rgba\(248, 113, 113, 0\.72\);/,
+    /border-color: rgba\(var\(--danger-rgb\), 0\.72\);/,
   );
-  assert.match(cssRuleFor(".btn.danger"), /color: #ffb4a8;/);
+  assert.match(cssRuleFor(".btn.danger"), /color: var\(--danger-fg\);/);
 
 });
 
@@ -832,7 +832,7 @@ test("Dashboard slot header uses the accessible semantic activity cluster", () =
     /\.activity-working \.session-activity-glyph,\s*\.activity-working-attention \.session-activity-glyph\s*\{[^}]*background: var\(--ok\)/,
   );
   assert.match(cssRuleFor(".activity-waiting .session-activity-glyph"), /border-color: var\(--accent\)/);
-  assert.match(cssRuleFor(".activity-completed"), /background: rgba\(130, 170, 255, 0\.12\)/);
+  assert.match(cssRuleFor(".activity-completed"), /background: rgba\(var\(--accent-rgb\), 0\.12\)/);
   assert.match(cssRuleFor(".activity-completed"), /font-weight: var\(--weight-bold\)/);
   assert.match(cssRuleFor(".activity-completed .session-activity-glyph"), /background: var\(--accent\)/);
   assert.match(cssRuleFor(".activity-completed .session-activity-glyph::after"), /content: "✓"/);
