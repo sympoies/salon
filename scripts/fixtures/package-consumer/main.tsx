@@ -3,7 +3,14 @@ import type { UiExtension } from "@agent-console/ui/extensions";
 import { createRoot } from "react-dom/client";
 import { LiveConversationPanel } from "@agent-console/ui/live-conversation-panel";
 import { setPrincipalStorageNamespace } from "@agent-console/ui/storage";
+import { useTheme } from "@agent-console/ui/theme";
 import type { HistoryMessage, Session } from "@agent-console/ui/types";
+
+// A consumer overlay reading the resolved theme through the public hook.
+function ThemeProbe() {
+  const { resolved } = useTheme();
+  return <i hidden data-installed-theme={resolved} />;
+}
 
 const extension: UiExtension = {
   id: "fixture",
@@ -59,8 +66,12 @@ if (new URLSearchParams(location.search).has("submitted-fixture")) {
     else { unexpected.push(url.pathname); throw Error("Unexpected fixture read"); }
     return Response.json({ ok: true, data });
   };
-  createRoot(document.getElementById("root")!).render(<LiveConversationPanel session={session} machineReachable
-    onClose={() => {}} docked showComposer replyDrafts={new Map()} />);
+  createRoot(document.getElementById("root")!).render(<><ThemeProbe /><LiveConversationPanel session={session} machineReachable
+    onClose={() => {}} docked showComposer replyDrafts={new Map()} /></>);
+  Object.assign(window, { themeFixture: { inspect: () => ({
+    hook: document.querySelector("[data-installed-theme]")?.getAttribute("data-installed-theme"),
+    attribute: document.documentElement.dataset.theme,
+    meta: document.querySelector('meta[name="theme-color"]')?.getAttribute("content") }) } });
   Object.assign(window, { submittedFixture: {
     async send() {
       const editor = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Reply to session"]')!;
