@@ -95,6 +95,7 @@ import {
   forwardMaintenanceActionDaemon,
   forwardMaintenancePreviewDaemon,
   forwardSessionDeleteDaemon,
+  forwardSessionRefreshDaemon,
   forwardSessionRetitleDaemon,
   forwardSessionRetitleReadinessDaemon,
   forwardSessionRetitleV3Daemon,
@@ -2362,6 +2363,31 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               })),
               sessionId,
             );
+          });
+        });
+        return;
+      }
+
+      case "session-refresh": {
+        if (!csrfExempt(req)) return forbidCrossOrigin(res);
+        const sessionId = routeParam(route, "id");
+        const machineName = routeParam(route, "machine");
+        await withMachine(res, machineName, async (machine) => {
+          await serializeSessionMutation(`${machine.name}\u0000${sessionId}`, async () => {
+            let daemonResult: DaemonResult;
+            try {
+              daemonResult = await daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}/refresh`, {
+                method: "POST",
+                debug: daemonDebug(requestId),
+              });
+            } catch {
+              sendJson(res, 504, {
+                ok: false,
+                error: { code: "session-refresh-unavailable", message: "Session info could not be refreshed. Try again." },
+              });
+              return;
+            }
+            forwardSessionRefreshDaemon(res, daemonResult, machineName, sessionId);
           });
         });
         return;

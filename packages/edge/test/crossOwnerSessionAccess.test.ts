@@ -147,6 +147,11 @@ async function fixture() {
       } } }));
       return;
     }
+    if (req.method === "POST" && req.url?.endsWith("/refresh")) {
+      res.end(JSON.stringify({ ok: true, data: { machine, refresh: { session_id: sessionId, changed: ["model"], unavailable: ["account"],
+        session: { id: sessionId, agent: "codex", model: "model-b" } } } }));
+      return;
+    }
     if (req.method === "POST" && req.url?.endsWith("/resume") && req.url.startsWith("/history/")) {
       res.end(JSON.stringify({ ok: true, data: { session: { id: "history-resumed", session_incarnation: "history-resumed-inc",
         status: "running", agent: "codex", provider_resume: { provider: "codex", session_id: "provider-resident" } } } }));
@@ -261,6 +266,13 @@ test("viewer messages and controls the selected sessions like their owner, and n
     assert.equal((await f.call("viewer-b", "/api/sessions/host-a/resident/attach-ticket", { method: "POST" })).status, 200);
     assert.equal((await f.call("viewer-b", "/api/sessions/host-a/resident", { method: "PATCH", body: JSON.stringify({ title: "renamed" }) })).status, 200);
     assert.ok(f.calls.includes("host-a PATCH /sessions/resident"));
+    // A refresh reads the owner's session record, so it follows the same rule.
+    for (const id of ["resident", "grandchild"]) {
+      const refreshed = await f.call("viewer-b", `/api/sessions/host-a/${id}/refresh`, { method: "POST" });
+      assert.equal(refreshed.status, 200, id);
+      assert.equal((await refreshed.json() as { data: { refresh: { session: { id: string } } } }).data.refresh.session.id, id);
+      assert.ok(f.calls.includes(`host-a POST /sessions/${id}/refresh`));
+    }
     assert.equal((await f.call("viewer-b", "/api/history/sessions/host-a/hist-resident/messages")).status, 200);
     const starred = await f.call("viewer-b", "/api/history/sessions/host-a/hist-resident/star", { method: "POST", body: JSON.stringify({ starred: true }) });
     assert.equal(starred.status, 200);
@@ -270,7 +282,7 @@ test("viewer messages and controls the selected sessions like their owner, and n
     for (const id of ["unselected", "unselected-child", "foreign-child", "resident-2"]) {
       for (const [method, suffix] of [
         ["GET", "glance"], ["GET", "buffer"], ["POST", "send"], ["POST", "prompt"], ["POST", "attach-ticket"],
-        ["POST", "resume"], ["POST", "archive"], ["PATCH", ""], ["DELETE", ""], ["POST", "attachments"],
+        ["POST", "resume"], ["POST", "archive"], ["PATCH", ""], ["DELETE", ""], ["POST", "attachments"], ["POST", "refresh"],
       ] as const) {
         const res = await f.call("viewer-b", `/api/sessions/host-a/${id}${suffix ? `/${suffix}` : ""}`, { method, ...(method === "GET" ? {} : { body: "{}" }) });
         assert.equal(res.status, 404, `${id} ${method} ${suffix}`);
@@ -347,7 +359,7 @@ test("viewer attaches, resumes, archives and deletes the selected sessions for t
       for (const [method, suffix, body] of [
         ["POST", "resume", "{}"], ["POST", "archive", JSON.stringify({ expected_session_incarnation: `${id}-inc` })],
         ["DELETE", "", undefined], ["POST", "attachments?filename=note.txt", "synthetic"], ["POST", "retitle", "{}"],
-        ["POST", "display-metadata", "{}"], ["PUT", "account", "{}"], ["PUT", "auto-resume", "{}"],
+        ["POST", "display-metadata", "{}"], ["PUT", "account", "{}"], ["PUT", "auto-resume", "{}"], ["POST", "refresh", "{}"],
       ] as const) {
         const res = await f.call("viewer-b", `/api/sessions/host-a/${id}${suffix ? `/${suffix}` : ""}`, { method, ...(body ? { body } : {}) });
         assert.equal(res.status, 404, `${id} ${method} ${suffix}`);

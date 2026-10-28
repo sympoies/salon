@@ -27,6 +27,7 @@ import {
   executeSessionMaintenanceAction,
   listHistorySessions,
   listSessions,
+  refreshSessionInfo,
   resetSessionPollRequests,
   resumeHistorySession,
   resumeSession,
@@ -99,6 +100,8 @@ import { BrandMark, BrandTitle } from "./BrandTitle.tsx";
 import { CreateDialog } from "./CreateDialog.tsx";
 import { Modal } from "./Modal.tsx";
 import { DashboardUsageProvider, HeaderUsage } from "./HeaderUsage.tsx";
+import { mergeRefreshedSession } from "./sessionRefresh.ts";
+import { SessionRefreshContext, type SessionRefreshControl } from "./useSessionRefresh.ts";
 import { accountRecoveryPolicy, sessionAccountChoices, sessionAccountProvider } from "./sessionAccounts.ts";
 import { accountMachineKeys, useAccountInventories } from "./useAccountInventories.ts";
 import { SessionSlot } from "./SessionSlot.tsx";
@@ -1592,6 +1595,22 @@ export function Dashboard({
     };
   }, [pollingMachines]);
 
+  // Consumers refresh one session on demand through useSessionRefresh.
+  const sessionRefreshControl = useMemo<SessionRefreshControl>(() => ({
+    async refresh(target) {
+      const result = await refreshSessionInfo(target);
+      if (!result.ok) return { ok: false, message: result.error };
+      if (liveRef.current) {
+        setSessions((current) => {
+          const next = mergeRefreshedSession(current, target.machine, result.session);
+          sessionsRef.current = next as DashboardSession[];
+          return next as DashboardSession[];
+        });
+      }
+      return { ok: true, changed: result.changed };
+    },
+  }), []);
+
   const reportCreatedSessionInitialization = (result: CreatedSessionInitializationResult | null) => {
     const errors = [
       result?.autoResume.status === "failed" || result?.autoResume.status === "unknown"
@@ -2810,6 +2829,7 @@ export function Dashboard({
   }, []);
 
   return (
+    <SessionRefreshContext.Provider value={sessionRefreshControl}>
     <DashboardUsageProvider enabled={operatorCapabilities.usage}>
       <div
         className={`dash workspace-shell ${active ? "" : "is-backgrounded"} ${conversationSession && viewport.width >= 1100 ? "has-conversation-dock" : ""}`}
@@ -3365,5 +3385,6 @@ export function Dashboard({
       ) : null}
       </div>
     </DashboardUsageProvider>
+    </SessionRefreshContext.Provider>
   );
 }

@@ -158,6 +158,12 @@ const API_ROUTES = [
     methods: ["GET"],
     params: ["machine", "id", "operation"],
   },
+  {
+    id: "session-refresh",
+    pattern: "/api/sessions/:machine/:id/refresh",
+    methods: ["POST"],
+    params: ["machine", "id"],
+  },
   { id: "display-metadata", pattern: "/api/sessions/:machine/:id/display-metadata", methods: ["POST"], params: ["machine", "id"] },
   { id: "session-item", pattern: "/api/sessions/:machine/:id", methods: ["PATCH", "DELETE"], params: ["machine", "id"] },
   { id: "create-session", pattern: "/api/sessions/:machine", methods: ["POST"], params: ["machine"] },

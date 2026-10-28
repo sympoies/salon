@@ -541,6 +541,36 @@ export function projectPublicAgentSession(value: unknown): Record<string, unknow
   return out;
 }
 
+/** Facts a refresh re-reads from live session state. Account is never among them. */
+const SESSION_REFRESH_FACTS = ["model", "reasoning_effort", "title"] as const;
+const SESSION_REFRESH_UNAVAILABLE = ["model", "reasoning_effort", "account"] as const;
+
+export interface SessionRefresh {
+  readonly session_id: string;
+  /** Facts whose stored value changed. */
+  readonly changed: readonly (typeof SESSION_REFRESH_FACTS)[number][];
+  /** Facts the host could not re-read; account is always reported here. */
+  readonly unavailable: readonly (typeof SESSION_REFRESH_UNAVAILABLE)[number][];
+  readonly session: Record<string, unknown>;
+}
+
+function knownTokens<T extends string>(value: unknown, known: readonly T[]): T[] | null {
+  if (!Array.isArray(value) || value.length > 16) return null;
+  return known.filter((token) => value.includes(token));
+}
+
+/** Strict public projection of one refreshed session; unknown future tokens are dropped. */
+export function normalizeSessionRefresh(value: unknown, expectedId: string): SessionRefresh | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const changed = knownTokens(raw.changed, SESSION_REFRESH_FACTS);
+  const unavailable = knownTokens(raw.unavailable, SESSION_REFRESH_UNAVAILABLE);
+  const session = projectPublicAgentSession(raw.session);
+  if (raw.session_id !== expectedId || !changed || !unavailable
+    || session.id !== expectedId || typeof session.agent !== "string") return null;
+  return { session_id: expectedId, changed, unavailable, session };
+}
+
 export interface PublicSessionDeleteResult {
   readonly id: string;
   readonly deleted: true;
