@@ -53,6 +53,8 @@ const ownedByA = [
   ["host-a", "selected", undefined, undefined], ["host-a", "unselected", undefined, undefined],
   ["host-a", "unselected-child", "unselected", undefined], ["host-a", "stale", "resident", undefined],
   ["host-b", "resident", undefined, undefined],
+  // Its id starts with a selected id, but it is neither selected nor a descendant.
+  ["host-a", "resident-2", undefined, undefined],
 ] as const;
 
 async function fixture() {
@@ -75,6 +77,10 @@ async function fixture() {
   access.claimSession({ principalId: "other-c", machine: "host-a", sessionId: "foreign-child", incarnation: "foreign-child-inc",
     dispatcher: { machine: "host-a", sessionId: "resident" } });
   access.close();
+  const rawDb = new DatabaseSync(accessPath);
+  rawDb.prepare("INSERT INTO history_ownership (machine, history_id, provider, provider_session_id, principal_id) VALUES (?, ?, ?, ?, ?)")
+    .run("host-a", "hist-foreign", "codex", "provider-resident", "other-c");
+  rawDb.close();
 
   const board = new BoardStore(boardPath);
   const record = (id: string): BoardRecord => ({
@@ -261,7 +267,7 @@ test("viewer messages and controls the selected sessions like their owner, and n
 
     // Unselected, other-owner and out-of-scope sessions stay closed on every route.
     const closed = f.calls.length;
-    for (const id of ["unselected", "unselected-child", "foreign-child"]) {
+    for (const id of ["unselected", "unselected-child", "foreign-child", "resident-2"]) {
       for (const [method, suffix] of [
         ["GET", "glance"], ["GET", "buffer"], ["POST", "send"], ["POST", "prompt"], ["POST", "attach-ticket"],
         ["POST", "resume"], ["POST", "archive"], ["PATCH", ""], ["DELETE", ""], ["POST", "attachments"],
@@ -275,6 +281,8 @@ test("viewer messages and controls the selected sessions like their owner, and n
     }
     assert.equal((await f.call("viewer-b", "/api/sessions/host-b/resident/glance")).status, 404);
     assert.equal((await f.call("viewer-b", "/api/history/sessions/host-a/hist-unselected/messages")).status, 404);
+    // Another principal's history row bound to a selected session's provider session is not the owner's.
+    assert.equal((await f.call("viewer-b", "/api/history/sessions/host-a/hist-foreign/messages")).status, 404);
     assert.equal((await f.call("viewer-b", "/api/history/sessions/host-a/hist-unselected/star", { method: "POST", body: JSON.stringify({ starred: true }) })).status, 404);
     assert.equal(f.calls.length, closed, "no refused request reached a daemon");
 
@@ -333,7 +341,7 @@ test("viewer attaches, resumes, archives and deletes the selected sessions for t
 
     // Unmatched sessions are invisible: no ticket, lifecycle call, attachment or relay reaches a daemon.
     const sent = f.calls.length, relayed = f.upgrades.length;
-    for (const id of ["unselected", "unselected-child", "foreign-child"]) {
+    for (const id of ["unselected", "unselected-child", "foreign-child", "resident-2"]) {
       assert.equal((await ticket(id)).status, 404, id);
       assert.match(await f.upgrade(`/api/sessions/host-a/${id}/attach?ticket=forged`), /40[134]/);
       for (const [method, suffix, body] of [
