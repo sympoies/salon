@@ -38,7 +38,7 @@ if (command === "git") {
     state.packed = true; save();
   }
 } else if (command === "forge-cli") {
-  if (args.slice(0, 3).join(" ") !== "release create v0.1.12") throw new Error("unexpected publisher");
+  if (args.slice(0, 3).join(" ") !== "release create v0.1.13") throw new Error("unexpected publisher");
   if (!args.includes("--dry-run")) { state.published = true; save(); }
   json({ ok: true });
 } else if (command === "gh") {
@@ -56,7 +56,7 @@ if (command === "git") {
       const bytes = readFileSync(join(root, "packs", name));
       return { id: 100 + index, name, size: bytes.length, state: "uploaded", digest: "sha256:" + createHash("sha256").update(bytes).digest("hex") };
     });
-    json({ id: 20, tag_name: "v0.1.12", draft: false, prerelease: true, html_url: "https://example.com/release", assets: metadata });
+    json({ id: 20, tag_name: "v0.1.13", draft: false, prerelease: true, html_url: "https://example.com/release", assets: metadata });
   } else if (path.includes("/releases/assets/")) {
     const index = Number(path.split("/").at(-1)) - 100;
     const bytes = readFileSync(join(root, "packs", state.assets[index]));
@@ -70,10 +70,10 @@ function fixture(scenario = "valid") {
   const root = mkdtempSync("/tmp/sdk-release-");
   for (const directory of ["bin", "packs", ".agents/scripts", "scripts"]) mkdirSync(join(root, directory), { recursive: true });
   for (const path of [".agents/scripts/release.sh", "scripts/release-core-sdk.ts"]) cpSync(join(repo, path), join(root, path));
-    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "salon", version: "0.1.12" }));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "salon", version: "0.1.13" }));
   const packages = [];
   for (const name of ["shared", "edge", "ui"]) {
-      const metadata = { name: `@agent-console/${name}`, version: "0.1.12" };
+      const metadata = { name: `@agent-console/${name}`, version: "0.1.13" };
     const packageRoot = join(root, "packages", name);
     mkdirSync(packageRoot, { recursive: true });
     writeFileSync(join(packageRoot, "package.json"), JSON.stringify(metadata));

@@ -512,6 +512,22 @@ export class AccessStore {
     `).run(machine, historyId, provider, providerSessionId, principalId);
   }
 
+  /** The sessions recorded for a provider session, whoever owns them. */
+  providerSessions(machine: string, provider: string, providerSessionId: string): Array<{ sessionId: string; principalId: string }> {
+    const rows = this.#db.prepare(`
+      SELECT session_id, principal_id FROM session_ownership
+      WHERE machine = ? AND provider = ? AND provider_session_id = ?
+    `).all(machine, provider, providerSessionId) as unknown as Array<{ session_id: string; principal_id: string }>;
+    return rows.map(row => ({ sessionId: row.session_id, principalId: row.principal_id }));
+  }
+
+  historyGrant(machine: string, historyId: string): { principalId: string; provider: string; providerSessionId: string } | undefined {
+    const row = this.#db.prepare(`
+      SELECT principal_id, provider, provider_session_id FROM history_ownership WHERE machine = ? AND history_id = ?
+    `).get(machine, historyId) as unknown as { principal_id: string; provider: string; provider_session_id: string } | undefined;
+    return row ? { principalId: row.principal_id, provider: row.provider, providerSessionId: row.provider_session_id } : undefined;
+  }
+
   ownsHistory(principalId: string, machine: string, historyId: string): boolean {
     const row = this.#db.prepare(`
       SELECT principal_id FROM history_ownership WHERE machine = ? AND history_id = ?
