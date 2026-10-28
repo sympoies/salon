@@ -67,21 +67,30 @@ export function ShellPage({ machines, onExit }: {
     } finally { operation.current = false; setBusy(false); }
   };
 
+  const stateLabel = shell ? shell.status === "running" ? connection : "Stopped" : null;
   return <section className="shell-page" aria-label="Shell">
     <header className="shell-page-header">
-      <button type="button" className="btn ghost" onClick={onExit}>Back</button>
-      <h1>Shell</h1>
-      <label>Machine <select aria-label="Shell machine" value={selectedMachine} disabled={busy} onChange={(event) => setMachine(event.target.value)}>
-        {machines.map((name) => <option key={name} value={name}>{name}</option>)}
-      </select></label>
-      {shell?.status === "running" ? <>
-        <button type="button" className="btn ghost" disabled={busy} onClick={() => void act("GET")}>Reconnect</button>
-        <button type="button" className="btn danger" disabled={busy} onClick={() => void act("DELETE")}>End Shell</button>
-      </> : <button type="button" className="btn" disabled={busy || !selectedMachine || !shell} onClick={() => void act("POST")}>{busy ? "Opening…" : "Open Shell"}</button>}
+      <div className="shell-page-title-row">
+        <button type="button" className="btn ghost" onClick={onExit}>Back</button>
+        <h1>Shell</h1>
+      </div>
+      <div className="shell-page-controls">
+        <label className="shell-page-machine"><span>Machine</span><select aria-label="Shell machine" value={selectedMachine} disabled={busy} onChange={(event) => setMachine(event.target.value)}>
+          {machines.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select></label>
+        <div className="shell-page-actions">
+          {shell?.status === "running" ? <>
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => void act("GET")}>Reconnect</button>
+            <button type="button" className="btn danger" disabled={busy} onClick={() => void act("DELETE")}>End Shell</button>
+          </> : <button type="button" className="btn" disabled={busy || !selectedMachine || !shell} onClick={() => void act("POST")}>{busy ? "Opening…" : "Open Shell"}</button>}
+        </div>
+      </div>
     </header>
     <div className="shell-page-status" aria-live="polite">
-      {shell ? `${shell.owner} · ${selectedMachine} · ${shell.status === "running" ? connection : "Stopped"}` : selectedMachine ? "Checking shell…" : "No machines available"}
-      <span>Closing this page keeps your shell running. ⌘⇧S / Ctrl⇧S opens Shell.</span>
+      <span className="shell-page-chip" data-state={stateLabel ?? "pending"}>
+        {shell ? `${shell.owner} · ${selectedMachine} · ${stateLabel}` : selectedMachine ? "Checking shell…" : "No machines available"}
+      </span>
+      <span className="shell-page-hint">Closing this page keeps your shell running. ⌘⇧S / Ctrl⇧S opens Shell.</span>
       {notice ? <StatusNotice notice={notice} onDismiss={dismiss} surface="shell" /> : null}
     </div>
     {shell?.status === "running" && shell.incarnation

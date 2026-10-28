@@ -27,9 +27,9 @@ const git = (args: string[]) => run("git", args).trim();
 const readJson = (path: string): Manifest => JSON.parse(readFileSync(resolve(root, path), "utf8"));
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const api = <T>(path: string): T => JSON.parse(run("gh", ["api", `repos/${repository}${path ? `/${path}` : ""}`, "--method", "GET"]));
-const assertPrivate = () => {
+const assertPublic = () => {
   const repo = api<Repository>("");
-  requireValue(repo.full_name === repository && repo.private === true && repo.visibility === "private", "SDK release requires the private Salon repository");
+  requireValue(repo.full_name === repository && repo.private === false && repo.visibility === "public", "SDK release requires the public Salon repository");
 };
 const assertSource = () => {
   requireValue(git(["rev-parse", "HEAD"]) === source, "Checkout must match the exact approved source");
@@ -37,7 +37,7 @@ const assertSource = () => {
 };
 
 assertSource();
-assertPrivate();
+assertPublic();
 requireValue(api<{ merge_base_commit?: { sha: string } }>(`compare/${source}...main`).merge_base_commit?.sha === source,
   "Approved source must be merged into main; a later main does not change the release source");
 requireValue(run("pnpm", ["--version"]).trim() === "11.9.0", "SDK release requires pnpm 11.9.0");
@@ -75,17 +75,17 @@ for (const name of names) {
 }
 files.set("manifest.json", readFileSync(resolve(root, "dist-packages/manifest.json")));
 // Repeat the scope check after the potentially long build, immediately before
-// handing any private bytes to the native publisher.
-assertPrivate();
+// handing the verified artifacts to the native publisher.
+assertPublic();
 const create = ["release", "create", tag, ...assets.map(asset => `dist-packages/${asset}`),
   "--repo", repository, "--target", source, "--title", `Salon core SDK ${version}`,
   "--notes-file", notes, "--prerelease", "--latest", "false", "--format", "json"];
 execFileSync("forge-cli", [...create, "--dry-run"], { cwd: root, stdio: "inherit" });
 if (mode === "--dry-run") {
-  console.log("\nPrivate SDK provenance and native release dry-run passed; no publication.");
+  console.log("\nPublic SDK provenance and native release dry-run passed; no publication.");
 } else {
   execFileSync("forge-cli", create, { cwd: root, stdio: "inherit" });
-  assertPrivate();
+  assertPublic();
   const ref = api<TagRef>(`git/ref/tags/${tag}`);
   requireValue(ref.object?.type === "commit" && ref.object.sha === source, "Published tag does not resolve to approved source");
   const release = api<Release>(`releases/tags/${tag}`);
@@ -100,6 +100,6 @@ if (mode === "--dry-run") {
     requireValue(downloaded.equals(bytes), `Downloaded asset-ID bytes differ: ${name}`);
     verified.push({ id: metadata.id, name, bytes: metadata.size, digest: metadata.digest });
   }
-  console.log("\n" + JSON.stringify({ repository, private: true, tag, sourceCommit: source,
+  console.log("\n" + JSON.stringify({ repository, private: false, tag, sourceCommit: source,
     releaseId: release.id, url: release.html_url, prerelease: true, assets: verified }, null, 2));
 }
