@@ -13,3 +13,15 @@ export function unwrapPastedContent(text: string): string {
   const inner = PASTE_WRAPPER.exec(text)?.[2];
   return inner?.trim() ? inner : text;
 }
+
+const EMBEDDED_PASTE_WRAPPER = /<pasted_content id="([^"]*)">\n?((?:(?!<\/pasted_content id="\1">)[\s\S])*?)\n?<\/pasted_content id="\1">/g;
+
+/**
+ * A user turn's text with the tags of every well-formed paste wrapper removed
+ * and the pasted text kept, so a prompt that mixes typed text and a paste reads
+ * as the text that was sent (#110). Unmatched or mismatched tags stay as they
+ * are.
+ */
+export function stripPasteWrappers(text: string): string {
+  return text.replace(EMBEDDED_PASTE_WRAPPER, (_wrapper, _id, inner: string) => inner);
+}

@@ -11,6 +11,7 @@ import type { HistoryMessagesResponse, Session } from "../src/types.ts";
 import type { ConversationReplyDrafts } from "../src/ConversationComposer.tsx";
 import { assertNoElement } from "./support/domAssert.ts";
 import { makeSession } from "./support/fixtures.ts";
+import { longPressReply, openReplyMenu, replyBubble, replyMenuItem } from "./support/replyMenu.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 
 type TestResult={ok:boolean;error?:string;outcomeUnknown?:boolean;queued?:boolean;refusalCode?:string;receipt?:PromptReceipt|null};
@@ -1727,6 +1728,32 @@ test("#1043 a sent message and its paste-wrapped transcript turn show one bubble
   }finally{delete globalThis.__outboxTranscript;await h.close();clock.restore();}
 });
 
+// #110: input sent mid-turn is recorded by Claude Code as a queued_command
+// attachment that the history reader returns as an ordinary user turn. Its
+// timestamp comes from the provider host, so it can precede the sender's clock.
+test("#110 a user turn stamped slightly before the recorded attempt still proves the reply", async () => {
+  const h = await mount();try{
+    const {transcriptProof}=h.queueModule,at=Date.now();
+    const reply=(text:string)=>({id:"r",text,requestId:"r",incarnation:"inc-1",state:"delivered" as const,attemptedAt:at});
+    const proven=(turnAt:number,text="queued reply")=>transcriptProof([reply(text)],[userTurn("t",pasteWrapped(text),turnAt)]).has("r");
+    assert.equal(proven(at-150),true,"stamped just before the attempt");
+    assert.equal(proven(at-h.queueModule.TRANSCRIPT_CLOCK_SKEW_MS),true,"within the skew allowance");
+    assert.equal(proven(at-h.queueModule.TRANSCRIPT_CLOCK_SKEW_MS-1),false,"an older identical turn is a different message");
+    assert.equal(proven(at-150,"line one\nline two\n\nline three"),true,"a multi-line paste");
+  }finally{await h.close();}
+});
+test("#110 typed text and a paste in one reply are proven by the turn that holds both", async () => {
+  const h = await mount();try{
+    const {transcriptProof}=h.queueModule,at=Date.now();
+    const reply=(text:string)=>({id:"r",text,requestId:"r",incarnation:"inc-1",state:"delivered" as const,attemptedAt:at});
+    const proven=(text:string,turn:string)=>transcriptProof([reply(text)],[userTurn("t",turn,at+1000)]).has("r");
+    const paste=`<pasted_content id="a1b2">\npasted one\npasted two\n</pasted_content id="a1b2">`;
+    assert.equal(proven("please check\npasted one\npasted two",`please check\n${paste}`),true,"typed text before the paste");
+    assert.equal(proven("pasted one\npasted two\nthanks",`${paste}\nthanks`),true,"typed text after the paste");
+    assert.equal(proven("please check\npasted one\npasted two",`other words\n${paste}`),false,"other typed text proves nothing");
+    assert.equal(proven("please check\npasted one\npasted two",`please check\n${paste.replace(/(<\/pasted_content id=")a1b2/,"$1ffff")}`),false,"ids that differ are not one wrapper");
+  }finally{await h.close();}
+});
 
 async function seedLegacyEchoes(h: Awaited<ReturnType<typeof mount>>, items: readonly QueuedReply[]) {
   const outbox = h.queueModule.conversationOutbox();
@@ -1768,52 +1795,71 @@ test("#86 stored legacy image echoes reconcile on load and history refresh witho
   } finally { delete globalThis.__outboxTranscript; await h.close(); }
 });
 
-test("#86 Dismiss removes only an old uncertain local echo with zero sends", async () => {
+test("#110 a fresh unproven echo is dismissed from its context menu with zero sends", async () => {
   const factory = new IDBFactory(); let h = await mount(factory);
-  const at = Date.now() - 2 * 86_400_000;
   try {
     await h.render("idle");
     await seedLegacyEchoes(h, [
-      { id: "old", requestId: "old", text: "'/attachments/unmatched.png'", incarnation: "older-incarnation", state: "unknown", attemptedAt: at },
-      { id: "keep", requestId: "keep", text: "fresh echo", incarnation: "older-incarnation", state: "queued", queuedAt: Date.now() },
+      { id: "stuck", requestId: "stuck", text: "stuck echo", incarnation: "older-incarnation", state: "unknown", attemptedAt: Date.now() },
+      { id: "keep", requestId: "keep", text: "unsent echo", incarnation: "older-incarnation", state: "queued", queuedAt: Date.now() },
     ]);
-    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1);
+    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 0, "no standing button");
+    await openReplyMenu(h.container, "unsent echo");
+    assert.equal(replyMenuItem(), undefined, "an unsent reply has no dismiss action");
+    await openReplyMenu(h.container, "stuck echo");
+    assert.equal(replyMenuItem()?.textContent, "Dismiss reply");
     const sharedBefore = globalThis.__outboxSharedItems?.slice();
-    await h.click("Dismiss reply");
+    await act(async () => replyMenuItem()!.click()); await h.settle();
     assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()).map(row => row.id), ["keep"]);
+    assert.equal(replyMenuItem(), undefined, "the menu closes");
     assert.deepEqual(globalThis.__outboxSharedItems, sharedBefore);
     assert.equal(h.requests.length, 0); assert.equal(h.inputs.length, 0);
     await h.close(); h = await mount(factory); await h.render("idle");
-    assert.equal(h.status("'/attachments/unmatched.png'"), undefined, "dismissal persists");
+    assert.equal(h.status("stuck echo"), undefined, "dismissal persists");
     assert.equal(h.requests.length, 0);
   } finally { await h.close(); }
 });
 
+test("#110 the menu opens from the keyboard and a touch long press, and closes without dismissing", async () => {
+  const h = await mount();
+  try {
+    await h.render("idle");
+    await seedLegacyEchoes(h, [{ id: "stuck", requestId: "stuck", text: "stuck echo", incarnation: "older-incarnation", state: "delivered", attemptedAt: Date.now() }]);
+    assert.equal(replyBubble(h.container, "stuck echo").getAttribute("tabindex"), "0", "the bubble is reachable by keyboard");
+    await longPressReply(h.container, "stuck echo", 250);
+    assert.equal(replyMenuItem(), undefined, "a short touch is not a long press");
+    await openReplyMenu(h.container, "stuck echo", "keyboard");
+    assert.equal(replyMenuItem()?.textContent, "Dismiss reply");
+    await act(async () => { document.dispatchEvent(new (document.defaultView as unknown as { KeyboardEvent: typeof KeyboardEvent }).KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    assert.equal(replyMenuItem(), undefined, "Escape closes the menu");
+    assert.equal(h.queueModule.conversationOutbox().items(h.session()).length, 1, "closing dismisses nothing");
+    await longPressReply(h.container, "stuck echo", 700);
+    assert.equal(replyMenuItem()?.textContent, "Dismiss reply", "a long touch opens it");
+    await act(async () => replyMenuItem()!.click()); await h.settle();
+    assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), []);
+    assert.equal(h.requests.length, 0);
+  } finally { await h.close(); }
+});
 
-test("#86 timed dismissal waits a day, preserves definite outcomes and guards a live attempt across windows", async () => {
-  const clock = graceClock(); const h = await mount(); let finish: (value: TestResult) => void = () => {};
+test("#110 dismissal covers every sent-but-unproven state, spares definite outcomes and guards a live attempt across windows", async () => {
+  const h = await mount(); let finish: (value: TestResult) => void = () => {};
   try {
     await h.render("idle");
     await seedLegacyEchoes(h, [
-      { id: "timed", requestId: "timed", text: "recent unknown echo", incarnation: "older-incarnation", state: "unknown", attemptedAt: Date.now() },
-      { id: "refused", requestId: "refused", text: "definitely refused", incarnation: "older-incarnation", state: "refused", attemptedAt: Date.now() - 2 * 86_400_000 },
-      { id: "delivered", requestId: "delivered", text: "definitely delivered", incarnation: "older-incarnation", state: "delivered", attemptedAt: Date.now() - 2 * 86_400_000 },
+      { id: "unknown", requestId: "unknown", text: "uncertain echo", incarnation: "older-incarnation", state: "unknown", attemptedAt: Date.now() },
+      { id: "delivered", requestId: "delivered", text: "acknowledged echo", incarnation: "older-incarnation", state: "delivered", attemptedAt: Date.now() },
+      { id: "unconfirmed", requestId: "unconfirmed", text: "unconfirmed echo", incarnation: "older-incarnation", state: "refused", unconfirmed: true, attemptedAt: Date.now() },
+      { id: "refused", requestId: "refused", text: "definitely refused", incarnation: "older-incarnation", state: "refused", attemptedAt: Date.now() },
     ]);
     const outbox = h.queueModule.conversationOutbox();
-    assert.equal(Boolean(h.button("Dismiss reply")), false, "a timed echo waits for the bounded age");
-    await clock.advance(h.queueModule.STALE_LOCAL_ECHO_MS - 1, h.settle);
-    assert.equal(Boolean(h.button("Dismiss reply")), false);
-    await clock.advance(1, h.settle);
-    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1, "only the uncertain timed row ages into Dismiss");
+    for (const id of ["unknown", "delivered", "unconfirmed"]) assert.equal(outbox.canDismiss(outbox.items(h.session()).find(row => row.id === id)!), true, id);
+    assert.equal(outbox.canDismiss(outbox.items(h.session()).find(row => row.id === "refused")!), false, "a definite refusal keeps Retry and Discard");
     assert.equal(await outbox.dismiss(h.session(), "refused", "older-incarnation", []), false);
-    assert.equal(await outbox.dismiss(h.session(), "delivered", "older-incarnation", []), false);
-    await h.click("Dismiss reply");
     await h.click("Discard refused reply");
     // A real pending submit holds the existing cross-window delivery lock.
     h.submit(() => new Promise(resolve => { finish = resolve; }));
     await act(async () => outbox.enqueue(h.session(), "live attempt")); await h.settle();
     assert.equal(h.requests.length, 1);
-    await clock.advance(h.queueModule.STALE_LOCAL_ECHO_MS, h.settle);
     const live = outbox.items(h.session()).find(row => row.text === "live attempt")!;
     assert.equal(outbox.canDismiss(live), false);
     const other = new h.queueModule.ConversationOutbox(outbox.namespace); await other.ready;
@@ -1821,9 +1867,8 @@ test("#86 timed dismissal waits a day, preserves definite outcomes and guards a 
     assert.equal(other.items(h.session()).some(row => row.id === live.id), true);
     await act(async () => finish({ ok: true })); await h.settle();
     assert.equal(h.requests.length, 1, "dismiss never sends or replays");
-  } finally { finish({ ok: true }); await h.close(); clock.restore(); }
+  } finally { finish({ ok: true }); await h.close(); }
 });
-
 
 test("#86 untimed legacy image echoes reconcile older labelled image turns in stored order", async () => {
   const factory = new IDBFactory(); let h = await mount(factory);
@@ -1843,14 +1888,14 @@ test("#86 untimed legacy image echoes reconcile older labelled image turns in st
   } finally { delete globalThis.__outboxTranscript; await h.close(); }
 });
 
-test("#86 an unmatched untimed legacy echo is immediately dismissible without sending", async () => {
+test("#86 an unmatched untimed legacy echo is dismissible without sending", async () => {
   const h = await mount();
   try {
     await h.render("idle");
     await seedLegacyEchoes(h, [{ id: "untimed-image", requestId: "untimed-image", text: "'/attachments/unmatched-legacy.png'",
       incarnation: "older-incarnation", state: "unknown" }]);
-    assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 1);
-    await h.click("Dismiss reply");
+    await openReplyMenu(h.container, "unmatched-legacy");
+    await act(async () => replyMenuItem()!.click()); await h.settle();
     assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), []);
     assert.equal(h.requests.length, 0); assert.equal(h.inputs.length, 0);
   } finally { await h.close(); }
@@ -1869,7 +1914,7 @@ test("#86 a fresh Retry or dispatch ends untimed legacy recovery semantics", asy
       state: "refused", attemptedAt: Date.now(), legacyUntimed: true }]);
     await act(async () => outbox.retry(h.session(), "retry-legacy")); await h.settle();
     const retried = outbox.items(h.session())[0]!;
-    assert.equal(outbox.canDismiss(retried), false, "Retry creates a timed intention");
+    assert.equal(outbox.canDismiss(retried), false, "a retried reply is unsent");
     assert.equal(h.queueModule.transcriptProof([retried], older).size, 0, "older history cannot prove a fresh Retry");
     // Use another session target so the retained Retry cannot hold its dispatch.
     const target = { ...h.session(), id: "recovery-target" };
@@ -1880,7 +1925,6 @@ test("#86 a fresh Retry or dispatch ends untimed legacy recovery semantics", asy
     await act(async () => outbox.deliver(target, true, () => true)); await h.settle();
     assert.equal(h.requests.length, 1);
     const dispatched = outbox.items(target)[0]!;
-    assert.equal(outbox.canDismiss(dispatched), false, "a real dispatch uses the timed age bound");
     assert.equal(h.queueModule.transcriptProof([dispatched], older).size, 0, "older history cannot prove a real new attempt");
   } finally { await h.close(); }
 });
