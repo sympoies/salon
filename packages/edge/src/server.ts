@@ -117,6 +117,7 @@ import {
 import { handleCoordinationRelay, isCoordinationRoute } from "./coordinationRelay.ts";
 import { BoardQueryError } from "./board/query.ts";
 import { boardViewForRequest } from "./board/routes.ts";
+import { sessionViewerAccess } from "./crossOwnerSessionAccess.ts";
 import { openBoardService, type BoardServiceOptions } from "./board/service.ts";
 import { normalizeActivityTurnState } from "@agent-console/shared/activity";
 import { MAX_SPEECH_BYTES, MAX_SPEECH_DURATION_SECONDS, readSpeechAudio, SpeechRequestError, transcribeSpeech } from "./speech.ts";
@@ -164,6 +165,12 @@ const HISTORY_DAEMON_TIMEOUT_MS = 25_000;
 export const SESSION_RETITLE_PROVIDER_MAX_TIMEOUT_MS = 120_000;
 export const SESSION_RETITLE_TIMEOUT_MS = SESSION_RETITLE_PROVIDER_MAX_TIMEOUT_MS + 5_000;
 export const SESSION_RETITLE_READINESS_TIMEOUT_MS = 15_000;
+// The only session-scoped routes a cross-owner viewer may use: reading the
+// session and submitting messages. Attach, lifecycle and metadata stay with
+// the owner.
+const VIEWER_SESSION_ROUTES: ReadonlySet<string> = new Set([
+  "glance", "buffer", "prompt-receipt", "send", "structured-prompt", "fenced-structured-prompt", "outbox", "outbox-item",
+]);
 const MAX_PROVIDER_PROMPT_BYTES = 16 * 1024;
 const MAX_SESSION_INCARNATION_BYTES = 128;
 
@@ -318,6 +325,14 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     machines: allMachineNames,
     permissions: allPermissions,
   };
+  // A cross-owner viewer is configured per request principal and only grants
+  // what the session-viewer routes below allow; it never grants ownership.
+  const viewerAccessFor = (principal: PrincipalConfig) =>
+    isRootPrincipal(principal) ? null : sessionViewerAccess(config.crossOwnerSessionAccess, accessStore, principal.id);
+  const principalMayUseSession = (principal: PrincipalConfig, machine: string, sessionId: string, incarnation?: string) =>
+    Boolean(accessStore?.ownsSession(principal.id, machine, sessionId, incarnation))
+    || (viewerAccessFor(principal)?.(machine, sessionId) === true
+      && (incarnation === undefined || accessStore?.sessionGrant(machine, sessionId)?.incarnation === incarnation));
   const outboxAccess = (target: OutboxTarget) => {
     const principal = config.openAccess ? (target.principalId === openPrincipal.id ? openPrincipal : undefined)
       : config.multiUser ? principalById(target.principalId)
@@ -327,7 +342,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       || !principalCanAccessMachine(principal, target.machine)
       || machinePreferences?.disabled(principal.id).has(target.machine)
       || (config.multiUser && !isRootPrincipal(principal)
-        && !accessStore?.ownsSession(principal.id, target.machine, target.sessionId, target.incarnation))) return null;
+        && !principalMayUseSession(principal, target.machine, target.sessionId, target.incarnation))) return null;
     return { principal, machine };
   };
   const outboxDispatcher = outboxStore ? new SharedOutboxDispatcher({
@@ -364,7 +379,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   };
 
   const decoratedSessionsForReader = (principal: PrincipalConfig, sessions: Array<Record<string, unknown>>) => {
-    const scoped = config.multiUser ? visibleSessions(principal, sessions, accessStore) : sessions;
+    const scoped = config.multiUser ? visibleSessions(principal, sessions, accessStore, viewerAccessFor(principal)) : sessions;
     const metadata = Object.assign({}, ...extensions.extensions.map(extension => extension.decorateSessions?.(decorationContext(principal), scoped)));
     return { sessions: scoped, metadata };
   };
@@ -732,7 +747,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       if (isRootPrincipal(_principal)) {
         rootSessionIncarnation = await currentSessionIncarnation(_principal, machine, sessionId, requestId);
       }
-      if (isRootPrincipal(_principal) ? !rootSessionIncarnation : !await ownsCurrentSession(_principal, machine, sessionId, requestId)) {
+      if (isRootPrincipal(_principal) ? !rootSessionIncarnation
+        : !await ownsCurrentSession(_principal, machine, sessionId, requestId, VIEWER_SESSION_ROUTES.has(route.id))) {
         sendJson(res, 404, { ok: false, error: { message: "session not found" } });
         return;
       }
@@ -1190,7 +1206,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         try {
-          sendJson(res, 200, { ok: true, data: { board: decorateBoard(_principal, boardViewForRequest(board, config, accessStore, config.multiUser ? _principal : null, url.searchParams, [], true, machinePreferences?.disabled(_principal.id) ?? new Set())) } });
+          sendJson(res, 200, { ok: true, data: { board: decorateBoard(_principal, boardViewForRequest(board, config, accessStore, config.multiUser ? _principal : null, url.searchParams, [], true, machinePreferences?.disabled(_principal.id) ?? new Set(), viewerAccessFor(_principal))) } });
         } catch (error) {
           if (!(error instanceof BoardQueryError)) throw error;
           sendJson(res, error.status, { ok: false, error: { code: error.code, message: error.message } });
@@ -1477,7 +1493,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 // change while this subscriber's initial projection is pending.
                 const aggregate = await aggregateSessions(sessionMachinesForReader(_principal, [machine]),
                   machineHealth, daemonDebug(requestId), stream.controller.signal);
-                const sessions = config.multiUser ? visibleSessions(_principal, aggregate.sessions, accessStore) : aggregate.sessions;
+                const sessions = config.multiUser ? visibleSessions(_principal, aggregate.sessions, accessStore, viewerAccessFor(_principal)) : aggregate.sessions;
                 return { schema_version: "agent-session.activity-stream.event.v1", type: "snapshot",
                   stream_id: `edge-initial-${randomUUID()}`, sequence: 0, machine: machine.name,
                   observed_at: new Date().toISOString(), sessions: sessions.flatMap(session => typeof session.id !== "string" ? [] : [{
@@ -2583,7 +2599,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       machineHealth,
       requestId ? daemonDebug(requestId) : undefined,
     );
-    return visibleSessions(principal, aggregate.sessions, accessStore);
+    return visibleSessions(principal, aggregate.sessions, accessStore, viewerAccessFor(principal));
   }
 
   async function confirmedResumedSession(
@@ -2636,8 +2652,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     machineName: string,
     sessionId: string,
     requestId?: string,
+    allowViewer = false,
   ): Promise<boolean> {
-    if (!isRootPrincipal(principal) && !accessStore?.ownsSession(principal.id, machineName, sessionId)) return false;
+    if (!isRootPrincipal(principal)
+      && !(allowViewer ? principalMayUseSession(principal, machineName, sessionId) : accessStore?.ownsSession(principal.id, machineName, sessionId))) return false;
     return (await currentOwnedSessionIds(principal, machineName, requestId)).has(sessionId);
   }
 
@@ -2919,6 +2937,7 @@ function visibleSessions(
   principal: PrincipalConfig,
   sessions: Array<Record<string, unknown>>,
   store: AccessStore | null,
+  viewerAccess: ((machine: string, sessionId: string) => boolean) | null = null,
 ): Array<Record<string, unknown>> {
   if (!store) return [];
   if (isRootPrincipal(principal)) {
@@ -2986,12 +3005,34 @@ function visibleSessions(
     return true;
   };
   sessions.forEach(claimDirect);
+  // Another owner's selected sessions are visible read-through: no claim,
+  // binding or repair, so a stale incarnation stays hidden until its owner
+  // reconciles it.
+  const viewed = new Set<number>();
+  if (viewerAccess) {
+    sessions.forEach((session, index) => {
+      if (visible.has(index)) return;
+      const { machine, id, session_incarnation: incarnation } = session;
+      if (typeof machine !== "string" || typeof id !== "string" || typeof incarnation !== "string") return;
+      const grant = store.sessionGrant(machine, id);
+      if (!grant || grant.incarnation !== incarnation || !viewerAccess(machine, id)) return;
+      viewed.add(index);
+      visible.add(index);
+      const dispatchedBy = publicDispatchedBy(grant.dispatcher);
+      if (dispatchedBy) dispatchers.set(index, dispatchedBy);
+      const launchedBy = publicDispatchedBy(grant.launcher);
+      if (launchedBy) launchers.set(index, launchedBy);
+      const treeDepth = store.coordinatorTreeDepth(machine, id, typeof session.repo_name === "string" ? session.repo_name : null);
+      if (treeDepth !== null) treeDepths.set(index, treeDepth);
+    });
+  }
 
   return sessions.flatMap((session, index) => {
     if (!visible.has(index)) return [];
     const resume = session.provider_resume as { provider?: unknown; session_id?: unknown } | null | undefined;
     if (
-      typeof session.machine === "string"
+      !viewed.has(index)
+      && typeof session.machine === "string"
       && typeof resume?.provider === "string"
       && typeof resume.session_id === "string"
     ) {
