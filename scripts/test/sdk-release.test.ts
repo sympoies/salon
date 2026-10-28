@@ -45,8 +45,8 @@ if (command === "git") {
   if (args[0] !== "api") throw new Error("only API reads expected");
   const path = args[1];
   if (path === "repos/sympoies/salon") {
-    const privateScope = !(state.scenario === "public" || (state.scenario === "public-after-pack" && state.packed));
-    json({ full_name: "sympoies/salon", private: privateScope, visibility: privateScope ? "private" : "public" });
+    const privateScope = state.scenario === "private" || (state.scenario === "private-after-pack" && state.packed);
+    json({ full_name: state.scenario === "wrong-repository" ? "example/other" : "sympoies/salon", private: privateScope, visibility: privateScope ? "private" : "public" });
   } else if (path.includes("/compare/")) {
     json({ merge_base_commit: { sha: state.scenario === "unapproved" ? "b".repeat(40) : state.source } });
   } else if (path.includes("/git/matching-refs/")) json([]);
@@ -116,9 +116,10 @@ test("SDK publication refuses dirty or unapproved source before publishing", () 
   rejectedBeforePublishing("unapproved", /approved|main/);
 });
 
-test("SDK publication refuses public scope including a change during packing", () => {
-  rejectedBeforePublishing("public", /private/);
-  rejectedBeforePublishing("public-after-pack", /private/);
+test("SDK publication refuses private or wrong repository scope including a change during packing", () => {
+  rejectedBeforePublishing("private", /public/);
+  rejectedBeforePublishing("private-after-pack", /public/);
+  rejectedBeforePublishing("wrong-repository", /public|repository/);
 });
 
 test("SDK publication checks actual packed hashes and implementation TypeScript before publishing", () => {
@@ -126,7 +127,7 @@ test("SDK publication checks actual packed hashes and implementation TypeScript 
   rejectedBeforePublishing("implementation-source", /TypeScript|compiled/);
 });
 
-test("SDK dry-run validates the fixed private release without a live create", () => {
+test("SDK dry-run validates the fixed public prerelease without a live create", () => {
   const setup = fixture();
   try {
     const result = setup.run("--dry-run");
@@ -153,6 +154,7 @@ test("SDK release publishes exactly four assets then verifies tag and actual ass
     assert.equal(live[live.indexOf("--latest") + 1], "false");
     assert.equal(calls.filter(call => call.command === "gh" && call.args[1].includes("/releases/assets/")).length, 4);
     assert.match(result.stdout, /"sourceCommit"/);
+    assert.match(result.stdout, /"private": false/);
   } finally { setup.close(); }
 });
 

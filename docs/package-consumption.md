@@ -1,8 +1,8 @@
 # Compiled package preparation
 
-The preparation commands build local private packages without publishing them,
+The preparation commands build local package archives without publishing them,
 creating a release, changing repository visibility or establishing a downstream
-published-version pin. The private SDK release entrypoint below is a separately
+published-version pin. The public SDK release entrypoint below is a separately
 authorized publisher operation.
 
 The upstream import baseline follows actual merged source commit
@@ -132,10 +132,10 @@ isolated compiled consumer checks the actual image contract declarations and
 authenticated exact byte forwarding; source headless fixtures cover the mounted
 views. Real provider/native acceptance remains with its owning milestone.
 
-## Private SDK release
+## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The proposed SDK patch release is `v0.1.12`, a private GitHub prerelease with
+merge. The proposed SDK patch release is `v0.1.12`, a public GitHub prerelease with
 `latest=false`; root and package versions are `0.1.12`. It carries the merged
 local image echo reconciliation, the TypeScript conversion of native Node tooling,
 ellipsized phone filter chip labels, unwrapped paste wrappers in last-prompt
@@ -164,10 +164,10 @@ systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 \
 ```
 
 The publisher runs the same command without `--dry-run` only under its existing
-release authorization. The script checks private repository scope, clean exact
+release authorization. The script checks public repository identity and visibility, clean exact
 source already merged into main, fixed versions and an unused tag. It runs the
 existing `pack:core`, verifies manifest source/cleanliness/versions plus actual
-archive sizes, hashes and compiled-only payloads, then repeats the private-scope
+archive sizes, hashes and compiled-only payloads, then repeats the public-scope
 check before the native publisher. Main may advance without changing the exact
 approved release source. Dry-run performs the same local checks and the native
 `forge-cli release create --dry-run`; it does not publish.
@@ -176,17 +176,26 @@ After publication the entrypoint checks actual tag resolution, prerelease state,
 four distinct uploaded asset IDs and provider sizes/digests, then downloads each
 asset by ID and compares its bytes, including the manifest itself. Its final
 stdout records those actual identities. A failed readback does not roll back or
-replace a release; stop and hand the observed state to the release owner. Route
-the verified identities through the lead/coordinator for the separate reader-App
-byte/scope probe before downstream acquisition and exact pins.
+replace a release; stop and hand the observed state to the release owner. Public acquisition uses the exact versioned release assets without a reader App
+or acquisition token. Publishing still uses an authorized credential with release
+write access; making assets readable does not authorize a publication.
+
+Consumers select the explicit version and approved full source SHA. Fetch
+`manifest.json`, `shared.tgz`, `edge.tgz` and `ui.tgz` from that tag's public
+release download URLs, using an unauthenticated HTTP client that follows
+redirects. Do not use a latest-release URL: these releases remain prereleases
+with `latest=false`. Before installing, verify the manifest's `sourceCommit`,
+package names and versions, byte sizes and SHA-256 digests against the actual
+archives. Pin the verified version, source and digests in the consuming project.
+Ordinary install, tests and builds require no acquisition credential.
 
 ## Remaining delivery work
 
 After source review and producer validation, the designated steward must review
 the export PR. Release creation and asset upload require their own authorized
-release flow. Downstream acquisition must verify actual private asset bytes,
+release flow. Downstream acquisition must verify actual public asset bytes,
 source commit and digests before pinning those exact artifacts. Its ordinary
-install, tests and container build must run without the acquisition credential.
+install, tests and container build require no acquisition credential.
 Deleting downstream vendored core follows the approved exact-artifact switch.
 The original three packaging/workflow/evidence test files and two native desktop
 configuration cases were transferred to their downstream overlay owner in
