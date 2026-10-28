@@ -7,7 +7,7 @@ import { sessionLabel } from "./format.ts";
 import { conversationTurnWorking, HistoryConversationView } from "./HistoryConversation.tsx";
 import { OutgoingReplies } from "./OutgoingReplies.tsx";
 import { useLiveConversation } from "./useLiveConversation.ts";
-import { CloseIcon, RefreshIcon, ReplyIcon } from "./icons.tsx";
+import { CloseIcon, PinIcon, RefreshIcon, ReplyIcon } from "./icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { ConversationComposer, type ConversationRecovery, type ConversationReplyDrafts } from "./ConversationComposer.tsx";
 import { sessionKey } from "./layout.ts";
@@ -19,7 +19,7 @@ import type { Session } from "./types.ts";
  * The terminal stays the view for following agent actions; this panel is the
  * clean read of what was asked and reported.
  */
-export function LiveConversationPanel({ session, onClose, machineReachable = true, onBusyChange, replyDrafts, recovery, docked = false, showComposer = false, onTerminal }: {
+export function LiveConversationPanel({ session, onClose, machineReachable = true, onBusyChange, replyDrafts, recovery, docked = false, showComposer = false, onTerminal, pinned = false, onTogglePin }: {
   readonly session: Session;
   /** The Dashboard's resume of this session, for a stopped one (#921). */
   readonly recovery?: ConversationRecovery;
@@ -30,6 +30,9 @@ export function LiveConversationPanel({ session, onClose, machineReachable = tru
   readonly docked?: boolean;
   readonly showComposer?: boolean;
   readonly onTerminal?: () => void;
+  /** Docked desktop only: whether the panel stays on its session, and the toggle. */
+  readonly pinned?: boolean;
+  readonly onTogglePin?: () => void;
 }) {
   const [sending, setSending] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -130,6 +133,14 @@ export function LiveConversationPanel({ session, onClose, machineReachable = tru
           <p>{label} conversation on {session.machine}</p>
         </div>
         <div className="conversation-head-actions">
+          {onTogglePin ? (
+            <IconButton type="button" className={pinned ? "btn icon-btn conversation-pin is-pinned" : "btn icon-btn conversation-pin"}
+              aria-label={pinned ? "Unpin conversation" : "Pin conversation"}
+              title={pinned ? "Pinned: stays on this session. Click to follow the selection" : "Pin to this session"}
+              onClick={onTogglePin}>
+              <PinIcon filled={pinned} />
+            </IconButton>
+          ) : null}
           <IconButton type="button" className={refreshing ? "btn icon-btn conversation-refresh is-busy" : "btn icon-btn conversation-refresh"}
             aria-label="Refresh conversation" title="Refresh" aria-busy={refreshing} aria-disabled={refreshing}
             disabled={!historySession} onClick={() => void refreshNow()}>

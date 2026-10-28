@@ -615,6 +615,15 @@ export function Dashboard({
   const [showCreate, setShowCreate] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [conversationKey, setConversationKey] = useState<string | null>(null);
+  // The docked panel follows the user's selection until pinned. Pinning is not
+  // persisted: each opening starts unpinned.
+  const [conversationPinned, setConversationPinned] = useState(false);
+  const [conversationFollowKey, setConversationFollowKey] = useState<string | null>(null);
+  const userSelectedKeyRef = useRef<string | null>(null);
+  const noteUserSelection = useCallback((key: string) => {
+    userSelectedKeyRef.current = key;
+    setConversationFollowKey(key);
+  }, []);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | undefined>(undefined);
   const [unsubmittedCreatePrompts, setUnsubmittedCreatePrompts] = useState<readonly CreatedPromptRecovery[]>([]);
@@ -754,9 +763,10 @@ export function Dashboard({
   }, []);
 
   const requestPromptTargetFocus = useCallback((key: string) => {
+    noteUserSelection(key);
     nextTerminalFocusRequestTokenRef.current += 1;
     setTerminalFocusRequest({ key, token: nextTerminalFocusRequestTokenRef.current });
-  }, []);
+  }, [noteUserSelection]);
 
   const leaveFocusedSession = useCallback(() => {
     cancelPendingCreatedFocus();
@@ -811,11 +821,12 @@ export function Dashboard({
   }, [closeOpenSlotMenus]);
 
   const rememberSessionInteraction = useCallback((key: string) => {
+    noteUserSelection(key);
     const pendingCreatedKey = pendingCreatedFocusKeyRef.current;
     if (pendingCreatedKey && pendingCreatedKey !== key) {
       cancelPendingCreatedFocus();
     }
-  }, [cancelPendingCreatedFocus]);
+  }, [cancelPendingCreatedFocus, noteUserSelection]);
 
   const setFocusedKeyFromUser = useCallback<Dispatch<SetStateAction<string | null>>>((next) => {
     cancelPendingCreatedFocus();
@@ -1020,6 +1031,27 @@ export function Dashboard({
     if (conversationBusy) return false;
     setConversationKey(null);
   }, [conversationBusy]);
+  // An unpinned panel moves to the latest user selection that has a
+  // conversation view, waiting out a reply in flight; any other selection
+  // leaves it on its session. Only the docked panel follows.
+  useEffect(() => {
+    if (conversationFollowKey === null) return;
+    if (conversationPinned || conversationKey === null || viewport.width < 1100) {
+      setConversationFollowKey(null);
+      return;
+    }
+    if (conversationBusy) return;
+    setConversationFollowKey(null);
+    const target = sessions.find((candidate) => sessionKey(candidate) === conversationFollowKey);
+    if (target && conversationFollowKey !== conversationKey && historyMachineNames.has(target.machine)) {
+      setConversationKey(conversationFollowKey);
+    }
+  }, [conversationBusy, conversationFollowKey, conversationKey, conversationPinned, historyMachineNames, sessions, viewport.width]);
+  const toggleConversationPin = useCallback(() => {
+    setConversationPinned((pinned) => !pinned);
+    // Pinning drops any selection still waiting; unpinning applies the current one.
+    setConversationFollowKey(conversationPinned ? userSelectedKeyRef.current : null);
+  }, [conversationPinned]);
   // A session that leaves the list takes its panel with it, so a later session
   // under the same key never reopens a panel the user did not ask for.
   useEffect(() => {
@@ -1041,6 +1073,8 @@ export function Dashboard({
       return;
     }
     setConversationKey(sessionKey(session));
+    setConversationPinned(false);
+    setConversationFollowKey(null);
   }, [conversationBusy, enterSession, viewport.mobile]);
   const [phoneConversationNotice, setPhoneConversationNotice] = useState<string>();
   // Hook notices have higher severity than the phone history fallback (info).
@@ -3281,6 +3315,8 @@ export function Dashboard({
           machineReachable={reachableMachineNames.has(conversationSession.machine)}
           onBusyChange={setConversationBusy}
           onClose={closeConversation}
+          pinned={conversationPinned}
+          onTogglePin={viewport.width >= 1100 ? toggleConversationPin : undefined}
         />
       ) : null}
 
