@@ -114,7 +114,7 @@ import {
   publicDispatchedBy,
   type SessionStartMark,
 } from "./accessStore.ts";
-import { handleCoordinationRelay, isCoordinationRoute } from "./coordinationRelay.ts";
+import { handleCoordinationRelay, isCoordinationRoute, assertResumeOwnership, resumeFailure, resumeRefusal } from "./coordinationRelay.ts";
 import { BoardQueryError } from "./board/query.ts";
 import { boardViewForRequest } from "./board/routes.ts";
 import { sessionViewerAccess } from "./crossOwnerSessionAccess.ts";
@@ -547,10 +547,22 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       await handleCoordinationRelay(config, accessStore, req, res, url, board, async (principal, machine, body, startMark, lineage) => {
         const projectedBody = projectCreateSessionBody(body);
         if (!projectedBody) return false;
+        if (body.resume !== undefined) {
+          if (typeof body.resume !== "string" || !body.resume) return false;
+          projectedBody.resume = body.resume;
+        }
         Object.assign(projectedBody, lineage);
         // The dispatcher lookup runs alongside the create and is awaited only
         // when the grant is recorded; it never rejects.
-        await createClaimedSession(res, principal, machine, projectedBody, undefined, undefined, startMark());
+        const create = async () => {
+          if (typeof projectedBody.resume === "string" && accessStore) assertResumeOwnership(accessStore, principal, machine, projectedBody);
+          await createClaimedSession(res, principal, machine, projectedBody, typeof projectedBody.resume === "string" ? projectedBody.resume : undefined, undefined, startMark());
+        };
+        if (typeof projectedBody.resume === "string") {
+          await serializeSessionMutation(`${machine.name}\u0000provider\u0000${String(projectedBody.agent)}\u0000${projectedBody.resume}`, create);
+        } else {
+          await create();
+        }
         return true;
       }, principal => machinePreferences?.disabled(principal.id) ?? new Set(), decorateBoard);
       return;
@@ -2744,7 +2756,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       : undefined;
     let daemonResult: DaemonResult;
     try {
-      daemonResult = await daemonFetch(machine, "/sessions", {
+      daemonResult = await daemonFetch(machine, typeof requestBody.resume === "string" ? "/sessions/resume/v1" : "/sessions", {
         method: "POST",
         body: requestBody,
         timeoutMs: createSessionTimeoutMs(projectedBody),
@@ -2760,6 +2772,15 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       throw error;
     }
     await startMark;
+    if (typeof requestBody.resume === "string" && !daemonSucceeded(daemonResult)) {
+      const error = resumeRefusal(objectProp(daemonResult.body)?.error);
+      if (daemonResult.status === 404 || daemonResult.status === 405 || error) {
+        const unsupported = daemonResult.status === 404 || daemonResult.status === 405;
+        sendJson(res, unsupported ? 422 : daemonResult.status, { ok: false,
+          error: unsupported ? resumeFailure("resume-unsupported") : error });
+        return;
+      }
+    }
     if (!daemonSucceeded(daemonResult)
       && await claimFailedCreate(
         res, principal, machine, requestBody.id, expectedProvider, false, startMark, debug,
