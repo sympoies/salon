@@ -24,6 +24,8 @@ export interface SharedClientTarget {
   readonly unattributedIntentIds?: readonly string[];
   /** User-turn parts already observed for submitted rows; scoped by this target incarnation. */
   readonly submittedProofs?: Readonly<Record<string, string>>;
+  /** Rows whose local echo the owner dismissed (#110). The server row is untouched. */
+  readonly dismissedIds?: readonly string[];
 }
 const emptySnapshot: SharedOutboxSnapshot = { revision: 0, items: [], compose_holds: [] };
 function ownership(row: SharedClientTarget) {
@@ -111,6 +113,25 @@ export class SharedOutboxClient {
     return row.snapshot.items.filter(item => localIntentIds.includes(item.id)
       || (unattributedIntentIds.includes(item.id) && item.state !== "submitted"));
   }
+  /**
+   * A reply handed to the session, or that may have been, can have its echo
+   * dismissed here. Queued, sending and refused replies have other outcomes.
+   */
+  canDismiss(row: SharedClientTarget, item: SharedOutboxItem): boolean {
+    return (item.state === "submitted" || item.state === "unknown") && !row.dismissedIds?.includes(item.id);
+  }
+  isDismissed(row: SharedClientTarget, item: SharedOutboxItem): boolean { return Boolean(row.dismissedIds?.includes(item.id)); }
+  /** Hide this device's echo of a reply. Never sends, cancels or edits the server row. */
+  async dismiss(target: SharedOutboxTarget, id: string): Promise<boolean> {
+    let dismissed = false;
+    await this.update(target, row => {
+      const item = row.snapshot.items.find(candidate => candidate.id === id);
+      if (!item || !this.canDismiss(row, item)) return row;
+      dismissed = true;
+      return { ...row, dismissedIds: [...(row.dismissedIds ?? []), id] };
+    });
+    return dismissed;
+  }
   submittedProof(row: SharedClientTarget, messages: readonly HistoryMessage[]): Readonly<Record<string, string>> {
     const settled = row.submittedProofs ?? {};
     const matches = transcriptProof(this.outgoingItems(row).filter(item => item.state === "submitted" && !Object.hasOwn(settled, item.id)).map(item => ({
@@ -174,7 +195,8 @@ export class SharedOutboxClient {
       unattributedIntentIds: snapshot.revision > row.snapshot.revision
         ? row.unattributedIntentIds!.filter(id => snapshot.items.some(item => item.id === id)) : row.unattributedIntentIds,
       admissions: row.admissions.filter(admission => !snapshot.items.some(item => item.id === admission.id)),
-      submittedProofs: Object.fromEntries(Object.entries(row.submittedProofs ?? {}).filter(([id]) => snapshot.items.some(item => item.id === id))) });
+      submittedProofs: Object.fromEntries(Object.entries(row.submittedProofs ?? {}).filter(([id]) => snapshot.items.some(item => item.id === id))),
+      dismissedIds: row.dismissedIds?.filter(id => snapshot.items.some(item => item.id === id)) });
   }
   async enqueue(session: Session, text: string): Promise<string> {
     this.requireActive();
