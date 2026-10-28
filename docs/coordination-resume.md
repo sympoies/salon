@@ -56,6 +56,16 @@ account, workspace, authenticated origin, lineage, role, work references, title
 mode, prompt and ordinary provider arguments. The successful response must
 confirm the requested provider conversation before ownership is claimed.
 
+A resumed create may include the optional boolean `session.resume_account_explicit`.
+The origin derives it from the original account request before inserting the
+preflight-resolved account pin. The relay preserves `true` and `false` unchanged;
+it never infers consent from `claude_account`. The target checks the account pin
+separately and uses this flag to distinguish deliberate cancellation consent
+from a resolved execution account when an account transition appears later.
+Omission stays omitted for compatible clients. Non-booleans (including `null`)
+and a present flag without `session.resume` are rejected before target I/O.
+This create-only field is excluded from the read-only preflight contract.
+
 Existing provider ownership rules and provider mutation serialization apply.
 Terminal pre-create refusal codes and their no-create/no-retry details survive
 this hop. Missing or unsupported endpoints refuse without falling back to

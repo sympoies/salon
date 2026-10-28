@@ -124,6 +124,7 @@ test("resume preflight refuses unauthenticated, unowned, stale, forbidden and cr
       [{ ...caller, machine: "forbidden", session }, "source-relay", 403],
       [{ ...caller, machine: "target", session: { ...session, prompt: "never read a prompt" } }, "source-relay", 400],
       [{ ...caller, machine: "target", session: { ...session, resume: "" } }, "source-relay", 400],
+      [{ ...caller, machine: "target", session: { ...session, resume_account_explicit: false } }, "source-relay", 400],
     ] as const) {
       const result = await f.post("resume-preflight/v1", body, token);
       assert.equal(result.status, status);
@@ -179,4 +180,36 @@ test("resume checks and creates preserve provider ownership before target I/O", 
       assert.deepEqual(f.calls, []);
     } finally { await f.cleanup(); }
   }
+});
+
+test("owned resume preserves explicit consent independently of the resolved account pin", async () => {
+  const f = await fixture();
+  try {
+    for (const explicit of [false, true]) {
+      const result = await f.post("sessions/v1", { ...caller, machine: "target",
+        session: { ...session, resume_account_explicit: explicit } });
+      assert.equal(result.status, 201);
+      const call = f.calls.at(-1)!;
+      assert.equal(call.path, "/sessions/resume/v1");
+      assert.equal(call.body.claude_account, "work");
+      assert.equal(call.body.resume_account_explicit, explicit);
+    }
+    assert.equal(f.calls.length, 2);
+  } finally { await f.cleanup(); }
+});
+
+test("resume consent rejects invalid types and consent without resume before target I/O", async () => {
+  const f = await fixture();
+  try {
+    const invalid = [null, "false", "true", 0, 1, {}, []].map(value => ({ ...session, resume_account_explicit: value }));
+    for (const body of [...invalid,
+      { agent: "claude", claude_account: "work", resume_account_explicit: false },
+      { agent: "claude", claude_account: "work", resume_account_explicit: true },
+    ]) {
+      const result = await f.post("sessions/v1", { ...caller, machine: "target", session: body });
+      assert.equal(result.status, 400, JSON.stringify(body));
+      assert.equal(result.body.error.code, "invalid-request");
+    }
+    assert.deepEqual(f.calls, []);
+  } finally { await f.cleanup(); }
 });

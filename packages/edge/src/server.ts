@@ -551,6 +551,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           if (typeof body.resume !== "string" || !body.resume) return false;
           projectedBody.resume = body.resume;
         }
+        if (Object.hasOwn(body, "resume_account_explicit")) {
+          if (typeof body.resume_account_explicit !== "boolean" || typeof projectedBody.resume !== "string") return false;
+          // The resolved account pin is not evidence of explicit cancellation
+          // consent. Carry the origin's original-request decision unchanged.
+          projectedBody.resume_account_explicit = body.resume_account_explicit;
+        }
         Object.assign(projectedBody, lineage);
         // The dispatcher lookup runs alongside the create and is awaited only
         // when the grant is recorded; it never rejects.
