@@ -1,9 +1,11 @@
 # Core package boundary
 
 The reusable core consists of `@agent-console/shared`, `@agent-console/edge` and
-`@agent-console/ui`. Existing names and package version `0.1.3` remain in this
-private preparation phase. This repository does not contain a downstream
-distribution's private composition, configuration or native packaging.
+`@agent-console/ui`. Existing names remain in this private preparation phase;
+the current version is in each package's `package.json` and the
+[package consumption](package-consumption.md) guide, not repeated here. This
+repository does not contain a downstream distribution's private composition,
+configuration or native packaging.
 
 ## Import rules
 
