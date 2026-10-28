@@ -217,6 +217,26 @@ export function RefreshIcon() {
   );
 }
 
+// Pin — keeps the docked conversation on its session; fill conveys the pinned
+// state without relying on color.
+export function PinIcon({ filled = false }: { readonly filled?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="pin-icon"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 4h6l-1 5.2 3 3.3V14H7v-1.5l3-3.3z" />
+      <path d="M12 14v6" />
+    </svg>
+  );
+}
+
 // Reply — a speech bubble with a return arrow; opens the conversation reply
 // editor.
 export function ReplyIcon() {
