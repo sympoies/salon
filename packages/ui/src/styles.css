@@ -989,6 +989,35 @@ button.history-outgoing-bubble {
   cursor: pointer;
 }
 
+/* #110: a sent reply opens a one-action menu (right-click, menu key, long press). */
+.history-outgoing-bubble.is-dismissable {
+  -webkit-touch-callout: none;
+}
+
+.history-outgoing-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 140px;
+  padding: var(--space-xs);
+  background: var(--surface-floating);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  box-shadow: 0 12px 40px #0008;
+}
+
+.history-outgoing-menu button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.history-outgoing-menu button:hover,
+.history-outgoing-menu button:focus-visible {
+  background: var(--panel-2);
+}
+
 .history-outgoing-text {
   min-width: 0;
   white-space: pre-wrap;

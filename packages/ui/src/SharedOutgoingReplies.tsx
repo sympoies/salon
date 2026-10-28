@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { OutgoingBubble } from "./OutgoingBubble.tsx";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import type { HistoryMessage, Session } from "./types.ts";
 
@@ -17,7 +18,7 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
   const visibleRows = rows.map(row => {
     const current = row.target.incarnation === session.session_incarnation;
     const proven = current ? client.submittedProof(row, messages) : {};
-    return { ...row, items: client.outgoingItems(row).filter(item => item.state !== "cancelled"
+    return { ...row, items: client.outgoingItems(row).filter(item => item.state !== "cancelled" && !client.isDismissed(row, item)
       && (item.state !== "submitted" || (current && !Object.hasOwn(proven, item.id)))) };
   });
   useEffect(() => {
@@ -49,9 +50,8 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
       </article>)}
       {row.items.map(item =>
         <article key={item.id} className="history-message is-user history-outgoing-reply" data-status={item.state}>
-          <div className="history-outgoing-body"><div className="history-bubble history-outgoing-bubble">
-            <span className="history-outgoing-text">{item.text}</span>
-          </div>
+          <div className="history-outgoing-body">
+            <OutgoingBubble text={item.text} onDismiss={client.canDismiss(row, item) ? () => { void client.dismiss(row.target, item.id).catch(() => {}); } : undefined} />
             {item.state === "refused" ? <>
               <p role="alert" className="history-outgoing-note">{item.error_code === "composer-not-empty"
                 ? "Terminal has a draft, so this reply was not sent. Clear it in the terminal, then Retry."
