@@ -1,8 +1,10 @@
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal, type IBufferRange, type ITheme } from "@xterm/xterm";
+import { Terminal, type IBufferRange } from "@xterm/xterm";
 import { attachTarget, shellAttachTarget, fetchSessionBuffer, sendSessionInput } from "./api.ts";
 import { recordDebugEvent } from "./debugLog.ts";
 import { createWindowScheduler } from "./scheduler.ts";
+import { installTheme } from "./theme.ts";
+import { terminalThemeFor } from "./terminalTheme.ts";
 import { createTerminalOutputBatcher } from "./terminalOutputBatcher.ts";
 import {
   recordTerminalPerformanceFrame,
@@ -151,31 +153,6 @@ interface TerminalInstanceDeps {
   readonly setSelectionHandles: StateSetter<SelectionEndpoints | null>;
 }
 
-const NIGHT_OWL: ITheme = {
-  background: "#011627",
-  foreground: "#d6deeb",
-  cursor: "#bec5d4",
-  cursorAccent: "#011627",
-  selectionBackground: "#637777",
-  selectionForeground: "#ffffff",
-  black: "#011627",
-  red: "#f78c6c",
-  green: "#addb67",
-  yellow: "#ffcb8b",
-  blue: "#82aaff",
-  magenta: "#c792ea",
-  cyan: "#7fdbca",
-  white: "#bec5d4",
-  brightBlack: "#44596b",
-  brightRed: "#ef5350",
-  brightGreen: "#22da6e",
-  brightYellow: "#ffeb95",
-  brightBlue: "#5ca7e4",
-  brightMagenta: "#7e57c2",
-  brightCyan: "#21c7a8",
-  brightWhite: "#ffffff",
-};
-
 const MONO_FONT =
   '"BlexMono Nerd Font Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 
@@ -252,6 +229,7 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
     if (disposed || deps.hostRef.current !== hostEl) {
       return;
     }
+    const themeController = installTheme();
     const term = new Terminal({
       convertEol: false,
       cursorBlink: true,
@@ -261,12 +239,16 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       fontSize: deps.fontSizeRef.current,
       scrollback: deps.scrollback,
       smoothScrollDuration: SMOOTH_SCROLL_DURATION_MS,
-      theme: NIGHT_OWL,
+      theme: terminalThemeFor(themeController.getState().resolved),
       // Let Option-drag force a text selection even when the attached TUI has
       // mouse reporting on. Plain drag still reaches the app for its own UI.
       macOptionClickForcesSelection: true,
     });
     term.parser.registerCsiHandler({ intermediates: " ", final: "q" }, () => true);
+    // The open terminal repaints in the new palette when the theme changes.
+    const themeSub = themeController.subscribe(() => {
+      term.options.theme = terminalThemeFor(themeController.getState().resolved);
+    });
 
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -1599,6 +1581,7 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       if (deps.transportRef.current === transport) {
         deps.transportRef.current = null;
       }
+      themeSub();
       term.dispose();
       if (deps.termRef.current === term) {
         deps.termRef.current = null;

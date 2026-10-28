@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { uiStyles } from "./support/source.ts";
+import { uiSource, uiStyles } from "./support/source.ts";
 
 const css = uiStyles();
 
@@ -94,4 +94,17 @@ test("session state colours clear 4.5:1 as text and usage meters 3:1 as graphics
     }
   }
   assert.ok([...paper.keys()].some(key => key.startsWith("--status-working")), "session state tokens exist");
+});
+
+test("the solid Claude role marker in history keeps its glyph readable and stays visible against the conversation pane", () => {
+  const marker = paperColor("--badge-claude-solid");
+  assert.ok(ratio([255, 255, 255], marker) >= 4.5, "glyph on marker");
+  assert.ok(ratio(marker, paperColor("--conversation-pane")) >= 3, "marker on pane");
+});
+
+test("popups, menus and viewers take their surfaces from tokens, not dark-only literals", () => {
+  for (const file of ["terminalLinks.ts", "sessionCopyMenu.css", "ConversationImages.css"]) {
+    const source = uiSource(file);
+    assert.doesNotMatch(source.replace(/rgba\(0,\s*0,\s*0,\s*\.75\)/, ""), /#0008|rgba\(1, 22, 39|#d6deeb|rgba\(0,\s*0,\s*0,\s*\.94\)/, `${file} keeps a dark-only colour`);
+  }
 });

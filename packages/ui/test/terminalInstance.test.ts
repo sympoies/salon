@@ -813,6 +813,26 @@ test("TerminalPane lifecycle creates one terminal, routes input/output, resizes,
   assert.equal(terminal.disposed, true);
 });
 
+test("the terminal canvas follows the resolved theme and switches live with the OS", async () => {
+  const listeners = new Set<(event: { matches: boolean }) => void>();
+  const media = {
+    matches: false,
+    addEventListener: (_type: string, listener: (event: { matches: boolean }) => void) => void listeners.add(listener),
+    removeEventListener: (_type: string, listener: (event: { matches: boolean }) => void) => void listeners.delete(listener),
+  };
+  const mounted = await mountTerminalPane({}, window => {
+    (window as unknown as { matchMedia: () => unknown }).matchMedia = () => media;
+  });
+  const terminal = mounted.harness.terminals[0];
+  assert.ok(terminal, "terminal was created");
+  assert.equal((terminal.options.theme as { background: string }).background, "#f4f3ed", "a light OS under System starts on Paper");
+  await act(async () => { media.matches = true; for (const listener of [...listeners]) listener({ matches: true }); });
+  assert.equal((terminal.options.theme as { background: string }).background, "#011627", "the open terminal switches to the dark palette without a reload");
+  await mounted.unmount();
+  await act(async () => { media.matches = false; for (const listener of [...listeners]) listener({ matches: false }); });
+  assert.equal((terminal.options.theme as { background: string }).background, "#011627", "a disposed terminal is no longer retouched");
+});
+
 test("a focused TerminalPane wakes its transport as soon as its machine is reachable again", async () => {
   const mounted = await mountTerminalPane({ machineReachable: true });
   const transport = mounted.harness.transports[0];

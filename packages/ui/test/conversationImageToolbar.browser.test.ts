@@ -54,7 +54,7 @@ test("viewer clears title chrome and uses shared themed icon controls", async t 
   const css=["styles.css","ConversationImages.css"].map(name=>readFileSync(new URL(`../src/${name}`,import.meta.url),"utf8")).join("\n");
   const temp=mkdtempSync(join(tmpdir(),"viewer-toolbar-")),evidence=process.env.AGENT_CONSOLE_UI_SCREENSHOT_DIR;
   try{
-    for(const [width,mac,theme] of [[1440,true,"dark"],[360,false,"dark"],[760,false,"dark"],[761,false,"dark"],[1440,true,"light"],[360,false,"light"]] as const){
+    for(const [width,mac,theme] of [[1440,true,"dark"],[360,false,"dark"],[760,false,"dark"],[761,false,"dark"],[1440,true,"paper"],[360,false,"paper"]] as const){
       const frame=`<!doctype html><html data-theme="${theme}" ${mac?'data-mac-titlebar="true"':''}><style>${css}html,body{margin:0}#measurement{display:none}</style>
         ${mac?'<div class="mac-titlebar">Synthetic title bar</div>':''}<div id="root"></div><pre id="measurement"></pre><script>
         window.publishFixtureResult=value=>{const json=JSON.stringify(value);document.querySelector('#measurement').textContent=json;parent.postMessage({type:'agent-console-fixture-result',json},'*')};

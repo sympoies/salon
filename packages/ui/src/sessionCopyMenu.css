@@ -6,7 +6,7 @@
   background: var(--surface-floating);
   border: 1px solid var(--border-default);
   border-radius: var(--r-lg);
-  box-shadow: 0 12px 40px #0008;
+  box-shadow: 0 12px 40px rgba(var(--shadow-rgb), calc(0.533 * var(--shadow-strength)));
 }
 .session-copy-menu button {
   display: flex;
@@ -20,7 +20,7 @@
 }
 .session-copy-menu button:hover, .session-copy-menu button:focus-visible { background: var(--panel-2); }
 .session-copy-menu code { overflow-wrap: anywhere; white-space: normal; font-size: var(--text-xs); color: var(--muted); }
-.session-copy-backdrop { position: fixed; inset: 0; z-index: 99; background: #0008; }
+.session-copy-backdrop { position: fixed; inset: 0; z-index: 99; background: rgba(var(--shadow-rgb), calc(0.533 * var(--scrim-strength))); }
 .session-copy-sheet {
   position: fixed;
   bottom: 0;
@@ -42,6 +42,6 @@
   border-radius: var(--r-md);
   background: var(--surface-floating);
   color: var(--ok);
-  box-shadow: 0 4px 16px #0008;
+  box-shadow: 0 4px 16px rgba(var(--shadow-rgb), calc(0.533 * var(--shadow-strength)));
   pointer-events: none;
 }
