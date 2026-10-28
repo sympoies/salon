@@ -132,6 +132,15 @@ isolated compiled consumer checks the actual image contract declarations and
 authenticated exact byte forwarding; source headless fixtures cover the mounted
 views. Real provider/native acceptance remains with its owning milestone.
 
+## Theme
+
+The console resolves a System / Dark / Paper setting (default System, stored per
+device) to `data-theme="dark"` or `data-theme="paper"` on the root element and
+keeps the chosen mode in `data-theme-mode`. `<meta name="theme-color">` follows
+the resolved canvas colour. A consumer overlay can style its own markers with
+`:root[data-theme="paper"]` or read the same state with `useTheme()` from
+`@agent-console/ui/theme`, which also returns `setMode`.
+
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and

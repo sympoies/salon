@@ -267,12 +267,12 @@ test("usageMeterLevel maps remaining capacity to codex-cli diag color bands", ()
   assert.equal(usageMeterLevel(100), "plenty");
 
   for (const selector of ["hu-meter-fill", "usage-meter-fill"]) {
-    assert.match(css, new RegExp(`\\.${selector}\\.empty \\{\\s*background: #637777;`));
-    assert.match(css, new RegExp(`\\.${selector}\\.plenty \\{\\s*background: #7fdbca;`));
-    assert.match(css, new RegExp(`\\.${selector}\\.good \\{\\s*background: #addb67;`));
-    assert.match(css, new RegExp(`\\.${selector}\\.fair \\{\\s*background: #ecc48d;`));
-    assert.match(css, new RegExp(`\\.${selector}\\.low \\{\\s*background: #f78c6c;`));
-    assert.match(css, new RegExp(`\\.${selector}\\.critical \\{\\s*background: #f07178;`));
+    assert.match(css, new RegExp(`\\.${selector}\\.empty \\{\\s*background: var\\(--meter-empty\\);`));
+    assert.match(css, new RegExp(`\\.${selector}\\.plenty \\{\\s*background: var\\(--meter-plenty\\);`));
+    assert.match(css, new RegExp(`\\.${selector}\\.good \\{\\s*background: var\\(--meter-good\\);`));
+    assert.match(css, new RegExp(`\\.${selector}\\.fair \\{\\s*background: var\\(--meter-fair\\);`));
+    assert.match(css, new RegExp(`\\.${selector}\\.low \\{\\s*background: var\\(--meter-low\\);`));
+    assert.match(css, new RegExp(`\\.${selector}\\.critical \\{\\s*background: var\\(--meter-critical\\);`));
   }
 });
 

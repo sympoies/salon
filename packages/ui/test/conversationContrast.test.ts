@@ -12,13 +12,13 @@ function ratio(a: string, b: string): number {
   return (high! + 0.05) / (low! + 0.05);
 }
 const css = uiStyles();
-const blocks = [...css.matchAll(/:root(?:\[data-theme="light"\])?\s*\{([^}]*--conversation-pane:[^}]*)\}/g)];
+const blocks = [...css.matchAll(/:root(?:\[data-theme="paper"\])?\s*\{([^}]*--conversation-pane:[^}]*)\}/g)];
 const approved = [
   {pane:'#00111f','agent-bubble':'#1b3a55','agent-text':'#e6edf4','user-bubble':'#2a548c','user-text':'#f4f8fd',meta:'#6f879e',code:'#0b2337',composer:'#0b2942'},
   {pane:'#e4eaf1','agent-bubble':'#ffffff','agent-text':'#14283b','user-bubble':'#cfe2ff','user-text':'#0d2240',meta:'#6b7d8f',code:'#eef2f6',composer:'#f6f8fb'},
 ];
 for (const [index, match] of blocks.entries()) {
-  const theme = index === 0 ? 'dark' : 'light';
+  const theme = index === 0 ? 'dark' : 'paper';
   const tokens = Object.fromEntries([...match[1]!.matchAll(/--conversation-([\w-]+):\s*(#[\da-f]{6})/g)].map(item => [item[1], item[2]]));
   test(`${theme} conversation tokens match the approved palette`, () => assert.deepEqual(tokens, approved[index]));
   for (const role of ['agent', 'user']) {

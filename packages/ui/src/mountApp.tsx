@@ -4,6 +4,7 @@ import App from "./App";
 import { createUiExtensionRegistry, UiExtensionsProvider, type UiExtension } from "./extensions.tsx";
 import { installAndroidSafeAreaInsets } from "./runtime.ts";
 import { installMacTitleBar, MacTitleBar } from "./MacTitleBar.tsx";
+import { installTheme } from "./theme.ts";
 import "./styles.css";
 
 export interface MountAppOptions {
@@ -17,6 +18,7 @@ export function mountApp(root: HTMLElement | null, options: MountAppOptions = {}
     throw new Error("agent-console: #root element missing");
   }
   const registry = createUiExtensionRegistry(options.extensions ?? []);
+  installTheme();
   installAndroidSafeAreaInsets();
   installMacTitleBar();
   createRoot(root).render(

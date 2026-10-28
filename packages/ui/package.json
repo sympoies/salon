@@ -25,6 +25,11 @@
       "types": "./dist-package/src/IconButton.d.ts",
       "default": "./dist-package/src/IconButton.js"
     },
+    "./theme": {
+      "source": "./src/theme.ts",
+      "types": "./dist-package/src/theme.d.ts",
+      "default": "./dist-package/src/theme.js"
+    },
     "./storage": {
       "source": "./src/storage.ts",
       "types": "./dist-package/src/storage.d.ts",
