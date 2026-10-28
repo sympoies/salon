@@ -10,6 +10,7 @@ import type { HistoryMessage } from "../src/types.ts";
 import { makeSession } from "./support/fixtures.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 import { assertNoElement } from "./support/domAssert.ts";
+import { openReplyMenu, replyMenuItem } from "./support/replyMenu.ts";
 
 const session = makeSession({ machine: "fixture", id: "shared-reply", agent: "codex", session_incarnation: "inc-1",
   provider_resume: { provider: "codex", session_id: "fixture-thread" },
@@ -688,4 +689,60 @@ test("a delayed equal-revision snapshot cannot hide the sender's acknowledged qu
     allowPut.release(); allowStale.release(); allowFresh.release(); globalThis.fetch = transport;
     other.close(); await h.close();
   }
+});
+
+const sharedItem = (id: string, text: string, state: "queued" | "unknown" | "refused" | "submitted", createdAt: number): SharedOutboxItem => ({
+  id, text, state, revision: 3, session_incarnation: "inc-1", created_at: createdAt, updated_at: createdAt, edit_hold: null, error_code: null,
+  request_id: state === "queued" ? null : id,
+  receipt: state === "queued" ? null : { request_id: id, session_id: session.id, session_incarnation: "inc-1", outcome: state,
+    code: state === "submitted" ? null : state === "unknown" ? "structured-prompt-outcome-unknown" : "session-blocked" },
+});
+
+// #110: a reply sent mid-turn is recorded by Claude Code as a queued_command
+// attachment, stamped by the provider host; it can precede the edge's admission
+// time for the same reply.
+test("#110 a mid-turn reply's transcript turn stamped before its admission clears the pending bubble", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const id = crypto.randomUUID(), sent = "typed first\nthen a paste";
+    const createdAt = Date.now();
+    await h.ownServer({ revision: 3, compose_holds: [], items: [sharedItem(id, sent, "submitted", createdAt)] });
+    await h.client.sync(h.target);
+    await h.showReplies(session, []);
+    assert.ok(h.container.textContent?.includes("then a paste"), "the echo shows until the transcript has the turn");
+    const turn: HistoryMessage = { id: "queued-turn", role: "user", timestamp: new Date(createdAt - 150).toISOString(),
+      text: '\n\ntyped first\n<pasted_content id="a1b2">\nthen a paste\n</pasted_content id="a1b2">\n' };
+    await h.showReplies(session, [turn]);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 0, "the transcript turn took over the bubble");
+    assert.ok(h.requests.every(method => method === "GET"), "nothing is sent again");
+  } finally { await h.close(); }
+});
+
+test("#110 a pending bubble is dismissed from its context menu, only locally, and stays dismissed", async () => {
+  const factory = new IDBFactory();
+  let h = await fixture(factory, false);
+  try {
+    const stuck = crypto.randomUUID(), uncertain = crypto.randomUUID(), refused = crypto.randomUUID(), queued = crypto.randomUUID();
+    await h.ownServer({ revision: 5, compose_holds: [], items: [
+      sharedItem(stuck, "stuck submitted reply", "submitted", Date.now()), sharedItem(uncertain, "stuck uncertain reply", "unknown", Date.now()),
+      sharedItem(refused, "refused reply", "refused", Date.now()), sharedItem(queued, "queued reply", "queued", Date.now())] });
+    await h.client.sync(h.target);
+    await h.showReplies(session, []);
+    const mutations = () => h.requests.filter(method => method !== "GET").length;
+    const before = mutations();
+    await openReplyMenu(h.container, "refused reply"); assert.equal(replyMenuItem(), undefined, "a refused reply keeps Discard and Retry");
+    await openReplyMenu(h.container, "queued reply"); assert.equal(replyMenuItem(), undefined, "an unsent reply is not dismissible");
+    await openReplyMenu(h.container, "stuck submitted reply");
+    await act(async () => replyMenuItem()!.click()); await h.settle();
+    await openReplyMenu(h.container, "stuck uncertain reply");
+    await act(async () => replyMenuItem()!.click()); await h.settle();
+    assert.ok(!h.container.textContent?.includes("stuck submitted reply") && !h.container.textContent?.includes("stuck uncertain reply"));
+    assert.ok(h.container.textContent?.includes("refused reply") && h.container.textContent?.includes("queued reply"));
+    assert.equal(mutations(), before, "dismissing sends, cancels and edits nothing on the server");
+    assert.equal(h.snapshot().items.length, 4, "the server rows are untouched");
+    await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
+    await h.showReplies(session, []);
+    assert.ok(!h.container.textContent?.includes("stuck submitted reply"), "the dismissal survives a restart");
+    assert.ok(h.container.textContent?.includes("queued reply"));
+  } finally { await h.close(); }
 });

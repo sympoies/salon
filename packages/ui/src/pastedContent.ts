@@ -1,1 +1,1 @@
-export { unwrapPastedContent } from "@agent-console/shared/pasted-content";
+export { stripPasteWrappers, unwrapPastedContent } from "@agent-console/shared/pasted-content";
