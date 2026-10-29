@@ -20,16 +20,13 @@ import {
   archiveSession,
   createSession,
   type CreatedSessionSnapshot,
-  type CreateSessionResult,
   cancelSessionAutoResume,
   killSession,
   inspectSessionMaintenance,
   executeSessionMaintenanceAction,
-  listHistorySessions,
   listSessions,
   refreshSessionInfo,
   resetSessionPollRequests,
-  resumeHistorySession,
   resumeSession,
   setSessionAutoResume,
   switchSessionAccount,
@@ -37,12 +34,10 @@ import {
 } from "./api.ts";
 import { recordDebugEvent } from "./debugLog.ts";
 import { loadPerformanceCapture } from "./performanceSummary.ts";
-import { resolveHistoryResumeTarget, type HistoryResumeTarget } from "./historyResumeById.ts";
 import { orderForCreatedSession } from "./layoutOrder.ts";
 import { updateHeaderCompaction } from "./headerResponsive.ts";
 import { LayoutPicker } from "./LayoutPicker.tsx";
 import { isMacTauri } from "./runtime.ts";
-import { sessionRetitlePathForAgent } from "./sessionRetitle.ts";
 import { pruneAutoTitleStates } from "./autoTitle.ts";
 import {
   createdSessionAutoTitleState,
@@ -1694,9 +1689,6 @@ export function Dashboard({
     setCreating(true);
     setCreateError(undefined);
     let created = false;
-    // Set once the prompt rides in the create request: an unknown create outcome
-    // then means the daemon may already have pasted it.
-    let promptSentWithCreate = false;
     const retainUnknownCreation = (message: string) => {
       // Abort shared poll reads that may have started before the failure, so a
       // later poll cannot join one and reconcile from a pre-incident answer.
@@ -1706,7 +1698,7 @@ export function Dashboard({
         key: nextCreatePromptRecoveryKeyRef.current,
         prompt: body.prompt ?? "",
         machine,
-        submissionOutcome: promptSentWithCreate ? "unknown" : "not-submitted",
+        submissionOutcome: "not-submitted",
         creationOutcomeUnknown: true,
         listRequestFloor: listRequestSequenceRef.current,
       }]);
@@ -1723,9 +1715,7 @@ export function Dashboard({
         titlePrompt,
         baseTitle,
         fallbackTitle,
-        promptDeliveredAtCreate,
       } = prepareCreateSessionAutoTitle(body);
-      promptSentWithCreate = promptDeliveredAtCreate;
       const defaultAutoResumeInitialization = defaultAutoResumeForCreate(
         defaultAutoResume,
         createBody,
@@ -1759,7 +1749,6 @@ export function Dashboard({
         createdSessionIncarnation: r.session?.session_incarnation,
         createdStartup: r.startup,
         prompt,
-        promptDeliveredAtCreate,
         defaultAutoResume: defaultAutoResumeInitialization.enabled
           ? {
               enabled: true,
@@ -1806,12 +1795,9 @@ export function Dashboard({
         const titleSession = createdSession
           ? {
               ...createdSession,
-              retitle_path: sessionRetitlePathForAgent(
-                createdSession.retitle_path
-                  ?? retitlePathByMachineRef.current.get(createdSession.machine)
-                  ?? "legacy_edge",
-                createdSession.agent,
-              ),
+              retitle_path: createdSession.retitle_path
+                ?? retitlePathByMachineRef.current.get(createdSession.machine)
+                ?? "legacy_edge",
             }
           : null;
         const createdTitleState = createdSession
@@ -1877,66 +1863,6 @@ export function Dashboard({
       } else {
         setCreateError(message);
       }
-    } finally {
-      createInFlightRef.current = false;
-      setCreating(false);
-    }
-  };
-
-  // Resume by ID for a history-backed profile (DSH): find the history entry that
-  // carries the pasted provider id, then let the daemon resume it from history.
-  const onResumeFromHistory = async (machine: string, target: HistoryResumeTarget) => {
-    if (createInFlightRef.current) {
-      return;
-    }
-    const targetSlot = pendingSlot;
-    const targetPage = pendingCreatePageRef.current;
-    createInFlightRef.current = true;
-    setCreating(true);
-    setCreateError(undefined);
-    try {
-      const found = await resolveHistoryResumeTarget(machine, target, listHistorySessions);
-      if (!found.ok) {
-        setCreateError(found.error);
-        return;
-      }
-      const result = await resumeHistorySession(machine, found.historyId)
-        .catch((): CreateSessionResult => ({
-          ok: false,
-          outcomeUnknown: true,
-          error: "Resume transport failed.",
-        }));
-      if (result.outcomeUnknown || (result.ok && !result.id)) {
-        setShowCreate(false);
-        setPendingSlot(null);
-        pendingCreatePageRef.current = null;
-        setError("Resume may have succeeded. Check or refresh live sessions before retrying.");
-        return;
-      }
-      if (!result.ok || !result.id) {
-        setCreateError(result.error ?? "Session could not be resumed");
-        return;
-      }
-      setShowCreate(false);
-      setPendingSlot(null);
-      const resumedKey = sessionKey({ machine, id: result.id });
-      pendingCreatedFocusKeyRef.current = resumedKey;
-      pendingCreatedGridPageRef.current = targetPage;
-      pendingCreatePageRef.current = null;
-      pendingCreatedFocusFulfilledRef.current = false;
-      const res = await listSessions(enabledMachinesRef.current).catch(() => null);
-      if (!res) {
-        void refresh();
-        return;
-      }
-      const applied = applyLiveSessionList(res);
-      if (applied.sessions.some((session) => sessionKey(session) === resumedKey)) {
-        placeCreatedSession(targetSlot, resumedKey, applied);
-      } else {
-        void refresh();
-      }
-    } catch (err) {
-      setCreateError((err as Error).message);
     } finally {
       createInFlightRef.current = false;
       setCreating(false);
@@ -3309,7 +3235,6 @@ export function Dashboard({
           busy={creating}
           error={createError}
           onCreate={onCreate}
-          onResumeFromHistory={onResumeFromHistory}
           onClose={() => {
             if (creating) return;
             setShowCreate(false);

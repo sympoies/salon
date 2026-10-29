@@ -51,7 +51,6 @@ test("prepareCreateSessionAutoTitle stages prompt text outside the backend creat
   assert.equal(prepared.titlePrompt, "Fix mobile title flow");
   assert.equal(prepared.baseTitle, "agent-console");
   assert.equal(prepared.fallbackTitle, "agent-console - Fix mobile title flow");
-  assert.equal(prepared.promptDeliveredAtCreate, false);
   assert.deepEqual(prepared.createBody, {
     agent: "codex",
     cwd: "/repo",
@@ -63,19 +62,6 @@ test("prepareCreateSessionAutoTitle stages prompt text outside the backend creat
       activity: null,
     },
   });
-});
-
-test("prepareCreateSessionAutoTitle leaves a DSH prompt for the daemon to deliver at create", () => {
-  const prepared = prepareCreateSessionAutoTitle({
-    agent: "dsh",
-    agent_profile: "dsh-workbench",
-    prompt: "hi",
-  });
-
-  assert.equal(prepared.prompt, "hi");
-  assert.equal(prepared.promptDeliveredAtCreate, true);
-  assert.equal(prepared.createBody.prompt, "hi");
-  assert.equal(prepared.createBody.agent_profile, "dsh-workbench");
 });
 
 test("prepareCreateSessionAutoTitle derives safe title context from the reported URL-leading prompt", () => {
@@ -1065,12 +1051,4 @@ test("applyTurnPromptAutoTitleSummary reports update failures", async () => {
   assert.equal(result, "update-failed");
   assert.deepEqual(errors, ["title update failed"]);
   assert.equal(refreshes, 1);
-});
-
-test("prepareCreateSessionAutoTitle keeps a DSH prompt with terminal controls off the create body", () => {
-  const prepared = prepareCreateSessionAutoTitle({ agent: "dsh", agent_profile: "dsh-workbench", prompt: "hi\u001b[A" });
-
-  assert.equal(prepared.promptDeliveredAtCreate, false);
-  assert.equal(prepared.createBody.prompt, undefined);
-  assert.equal(prepared.prompt, "hi\u001b[A");
 });

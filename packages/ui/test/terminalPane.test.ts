@@ -267,7 +267,7 @@ test("TerminalPane status emission is not tied to onStatusChange callback identi
 test("TerminalPane pauses bottom auto-scroll while the user has a text selection", () => {
   assert.match(
     terminalInstanceSource,
-    /import \{[\s\S]*?\bcreateTerminalBottomPin\b[\s\S]*?\bcreateTerminalBottomPinTarget\b[\s\S]*?\bshouldAutoPinBottom\b[\s\S]*?\} from "\.\/terminalBottomPin\.ts";/,
+    /import \{[\s\S]*?\bcreateTerminalBottomPin\b[\s\S]*?\bcreatePlainBottomPinTarget\b[\s\S]*?\bshouldAutoPinBottom\b[\s\S]*?\} from "\.\/terminalBottomPin\.ts";/,
   );
   // All three auto-scroll decisions must route through the selection-aware predicate.
   const sites = terminalInstanceSource.match(/shouldAutoPinBottom\(\{/g) ?? [];
@@ -277,24 +277,12 @@ test("TerminalPane pauses bottom auto-scroll while the user has a text selection
   assert.doesNotMatch(terminalInstanceSource, /const shouldPinAfterFit = forceNextBottomPin \|\| keepBottomPinned/);
 });
 
-test("TerminalPane selects the bottom pin target from the session agent", () => {
-  assert.match(source, /readonly agent\?: string;/);
-  assert.match(source, /agent,/);
-  assert.match(
-    terminalInstanceSource,
-    /const bottomPinTarget = createTerminalBottomPinTarget\(term, deps\.agent\);/,
-  );
-  assert.match(terminalInstanceSource, /const bottomPin = createTerminalBottomPin\(bottomPinTarget, scheduler\);/);
-});
 
 // Cheap tripwire only. The behavior these lines carry is owned by
-// terminalBottomPin.test.ts (nextBottomPinIntent and the streaming simulation);
+// terminalBottomPin.test.ts (nextBottomPinIntent);
 // this asserts the wiring delegates to those units instead of asking xterm
-// directly, which is what froze content-aware panes.
+// directly.
 test("TerminalPane reads at-bottom only through the bottom pin target", () => {
-  // A content-aware target parks the viewport above xterm's baseY, so any
-  // remaining plain `viewportY >= baseY` read would flip keepBottomPinned off on
-  // the pin's own scroll event and freeze the follow for the rest of the session.
   assert.doesNotMatch(terminalInstanceSource, /isTerminalAtBottom\(/);
   assert.doesNotMatch(terminalInstanceSource, /term\.buffer\.active\.baseY/);
   // One owner for the intent, reached from both the xterm and scrollbar paths.
@@ -303,13 +291,9 @@ test("TerminalPane reads at-bottom only through the bottom pin target", () => {
   const intentCalls = terminalInstanceSource.match(/updateBottomPinIntentFromBuffer\(\)/g) ?? [];
   assert.equal(intentCalls.length, 2);
   assert.match(terminalInstanceSource, /hasSelection: term\.hasSelection\(\),\s*isAtBottom: bottomPinTarget\.isAtBottom\(\),\s*keepPinned: keepBottomPinned,/);
-  assert.match(
-    terminalInstanceSource,
-    /const scrollSub = term\.onScroll\(\(\) => \{[\s\S]*?if \(!keepBottomPinned && bottomPinTarget\.programmaticScrollIsSynchronous\) \{[\s\S]*?bottomPin\.cancel\(\);/,
-  );
 });
 
-test("TerminalPane catches a content-aware pane up when a selection clears", () => {
+test("TerminalPane catches up when a selection clears", () => {
   // The pause leaves the viewport behind the tail; without this the pane waits
   // for a write that may never arrive once the turn ended mid-selection.
   assert.match(
@@ -1248,7 +1232,7 @@ test("TerminalPane only offers the overflow toggle when the agent has commands",
 });
 
 test("TerminalPane collapses the overflow row when it stops applying", () => {
-  // Swapping the focused pane from claude to DSH empties the row; leaving it
+  // Swapping the focused pane to an agent without commands empties the row; leaving it
   // open would show an empty second bar over the terminal.
   assert.match(
     source,

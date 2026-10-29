@@ -4,7 +4,6 @@ import type { SessionRetitleV3Readiness } from "@agent-console/shared/session-re
 import {
   createManualSessionRetitleRequest,
   sessionRetitlePath,
-  sessionRetitlePathForAgent,
   sessionRetitleErrorMessage,
   sessionRetitleStatusMessage,
   sessionRetitleV3FailureMessage,
@@ -34,15 +33,6 @@ test("retitle negotiation selects v3 only when edge and machine both advertise i
     "daemon_v2",
   );
   assert.equal(sessionRetitlePath({}, { session_retitle_v2: true }), "legacy_edge");
-});
-
-test("DSH sessions use the available legacy title path", () => {
-  assert.equal(sessionRetitlePathForAgent("daemon_v3", "dsh"), "legacy_edge");
-  assert.equal(sessionRetitlePathForAgent("daemon_v2", "dsh"), "legacy_edge");
-  // The retired hermes base is no longer treated as DSH.
-  assert.equal(sessionRetitlePathForAgent("daemon_v3", "hermes"), "daemon_v3");
-  assert.equal(sessionRetitlePathForAgent("daemon_v3", "claude"), "daemon_v3");
-  assert.equal(sessionRetitlePathForAgent("daemon_v2", "codex"), "daemon_v2");
 });
 
 test("manual v2 requests are fresh, fenced, and content-free", () => {

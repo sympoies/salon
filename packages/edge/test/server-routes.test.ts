@@ -1692,7 +1692,7 @@ test("Claude accounts route is authenticated and forwards a nickname-only invent
 
 test("account routes serve only account providers", async () => {
   daemonRequests.length = 0;
-  for (const path of ["/api/machines/maple/dsh/accounts", "/api/dsh/default-account", "/api/layout/default-account"]) {
+  for (const path of ["/api/machines/maple/other-provider/accounts", "/api/other-provider/default-account", "/api/layout/default-account"]) {
     const response = await request({ path }, authHeaders());
     assert.equal(response.status, 404, path);
   }
@@ -1704,7 +1704,7 @@ test("Claude create forwards claude_account only for Claude and requires a bound
   daemonRequests.length = 0;
   for (const body of [
     { agent: "codex", claude_account: "alpha" },
-    { agent: "dsh", claude_account: "alpha" },
+    { agent: "other-provider", claude_account: "alpha" },
     { agent: "claude", claude_account: "../escape" },
     { agent: "claude", claude_account: 7 },
     { agent: "claude", claude_account: "-x" },

@@ -159,9 +159,8 @@ const FAILED_CREATE_LOOKUP_MS = 5_000;
 const FAILED_CREATE_LOOKUP_INTERVAL_MS = 1_000;
 const FAILED_CREATE_LOOKUP_REQUEST_MS = 2_000;
 const ATTACHMENT_UPLOAD_TIMEOUT_MS = 30 * 60 * 1000;
-// DSH history may use one bounded catalog adapter call followed by one bounded
-// selected-page enrichment call. Let the daemon return its partial-result
-// contract instead of aborting at the ordinary ten-second upstream default.
+// Let the daemon return its partial-result history contract instead of
+// aborting at the ordinary ten-second upstream default.
 const HISTORY_DAEMON_TIMEOUT_MS = 25_000;
 export const SESSION_RETITLE_PROVIDER_MAX_TIMEOUT_MS = 120_000;
 export const SESSION_RETITLE_TIMEOUT_MS = SESSION_RETITLE_PROVIDER_MAX_TIMEOUT_MS + 5_000;

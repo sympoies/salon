@@ -213,7 +213,7 @@ test("safe slash commands, IME and permission answers retain their input bytes",
   });
 });
 
-for (const agent of ["shell", "dsh", "constructor", "__proto__"]) {
+for (const agent of ["shell", "constructor", "__proto__"]) {
   test(`${agent} keeps its ordinary slash text and Enter`, async () => {
     await withPane(agent, true, async p => {
       await p.text("/new"); await p.enter();

@@ -213,11 +213,8 @@ export function machineServesAccountSwitch(
 export interface AgentLaunchProfileSummary {
   readonly id: string;
   readonly label: string;
-  readonly agent: "codex" | "claude" | "dsh";
+  readonly agent: "codex" | "claude";
   readonly provider_resume_import_supported?: boolean;
-  // The daemon can resume this profile from its own session history (DSH), which
-  // the UI reaches by looking the provider session id up in history first.
-  readonly history_resume_supported?: boolean;
 }
 
 export const MAX_AGENT_LAUNCH_PROFILES = 16;
@@ -272,7 +269,7 @@ export function normalizeAgentLaunchProfiles(value: unknown): AgentLaunchProfile
       || label.length === 0
       || label.length > 64
       || /[\u0000-\u001f\u007f]/.test(label)
-      || (agent !== "codex" && agent !== "claude" && agent !== "dsh")
+      || (agent !== "codex" && agent !== "claude")
     ) continue;
     seen.add(id);
     profiles.push({
@@ -282,7 +279,6 @@ export function normalizeAgentLaunchProfiles(value: unknown): AgentLaunchProfile
       ...(raw.provider_resume_import_supported === true
         ? { provider_resume_import_supported: true }
         : {}),
-      ...(raw.history_resume_supported === true ? { history_resume_supported: true } : {}),
     });
   }
   return profiles;
@@ -1018,7 +1014,7 @@ export const ACCOUNT_CREATE_TIMEOUT_MS: Readonly<Record<AccountProvider, number>
   claude: 45_000,
 };
 // A create that carries a prompt returns only after the daemon pasted it: the
-// launch delay (5 s for DSH), up to 15 s waiting for the pane to draw, and the
+// launch delay, up to 15 s waiting for the pane to draw, and the
 // paste settle time.
 export const PROMPT_CREATE_TIMEOUT_MS = 30_000;
 // A Codex switch applies live; a Claude switch may restart the idle session.

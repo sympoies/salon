@@ -2,7 +2,6 @@ import type { AutoResumeMutationResult, SendSessionInputBody, SendSessionInputRe
 import type { StartupStatus } from "@agent-console/shared/api";
 import { CreateLifecycleDeadlineError } from "./createLifecycle.ts";
 import type { CreateBody, Session } from "./types.ts";
-import { isDshAgent } from "./dshAgent.ts";
 
 type CreatedSessionTarget = Pick<Session, "machine" | "id">;
 
@@ -76,8 +75,6 @@ export interface InitializeCreatedSessionInput {
   /** @deprecated Provider submission no longer varies by UI agent label. */
   readonly agent?: CreateBody["agent"];
   readonly prompt: string | null;
-  /** The create request carried the prompt and the daemon delivered it during launch. */
-  readonly promptDeliveredAtCreate?: boolean;
   readonly defaultAutoResume: DefaultAutoResumeInitialization;
   /** @deprecated Optional compatibility seam; terminal writes cannot acknowledge provider submission. */
   readonly sendSessionInput?: (machine: string, id: string, body: SendSessionInputBody) => Promise<SendSessionInputResult>;
@@ -97,7 +94,7 @@ export function defaultAutoResumeForCreate(
   createBody: Pick<CreateBody, "agent" | "provider_resume_id">,
   setSessionAutoResume: Extract<DefaultAutoResumeInitialization, { enabled: true }>["setSessionAutoResume"],
 ): DefaultAutoResumeInitialization {
-  if (!enabled || isDshAgent(createBody.agent) || createBody.provider_resume_id !== undefined) {
+  if (!enabled || createBody.provider_resume_id !== undefined) {
     return { enabled: false };
   }
   return { enabled: true, setSessionAutoResume };
@@ -195,7 +192,6 @@ export async function initializeCreatedSession({
   createdSessionIncarnation,
   createdStartup,
   prompt,
-  promptDeliveredAtCreate = false,
   defaultAutoResume,
   submitSessionPrompt,
 }: InitializeCreatedSessionInput): Promise<CreatedSessionInitializationResult> {
@@ -210,13 +206,11 @@ export async function initializeCreatedSession({
   const autoResume = await applyDefaultAutoResume(target, defaultAutoResume);
   const promptResult: CreatedPromptSubmitResult = autoResume.status === "unknown"
     ? { status: "skipped", reason: "auto-resume-outcome-unknown" }
-    : promptDeliveredAtCreate && target && prompt?.trim()
-      ? { status: "submitted", session: target }
-      : await submitCreatedPrompt(
-        target,
-        prompt,
-        createdSessionIncarnation,
-        submitSessionPrompt,
-      );
+    : await submitCreatedPrompt(
+      target,
+      prompt,
+      createdSessionIncarnation,
+      submitSessionPrompt,
+    );
   return { autoResume, prompt: promptResult };
 }

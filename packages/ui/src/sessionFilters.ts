@@ -1,6 +1,5 @@
 const boardRefKey = (ref: { readonly machine: string; readonly session_id: string; readonly session_created_at: string }) => JSON.stringify([ref.machine, ref.session_id, ref.session_created_at]);
 import type { SessionDispatchedBy } from "@agent-console/shared/api";
-import { isDshAgent } from "./dshAgent.ts";
 import { classifySessionStatus, sessionStatusEvidence, type SessionStatusGroup } from "./sessionStatusGroups.ts";
 
 export interface SessionFilters {
@@ -101,7 +100,7 @@ export function filterRecords<T extends FilterRecord>(records: readonly T[], fil
       && (!filters.workspaces?.length || filters.workspaces.includes(row.workspace ?? null))
       && !filters.excludedWorkspaces?.includes(row.workspace ?? null)
       && (allRolesSelected || filters.roles!.includes(recordRole(row, scopes)))
-      && (filters.harness === null || (isDshAgent(row.provider) ? "dsh" : row.provider) === filters.harness)
+      && (filters.harness === null || row.provider === filters.harness)
       && (!filters.repo || (row.repo_name?.trim() || row.cwd?.replace(/\/+$/, "").split("/").at(-1)) === filters.repo)
       && (filters.statusGroup === null || classifySessionStatus(sessionStatusEvidence(row)) === filters.statusGroup)
       && (scope === "all" || scopes?.options.find(option => option.id === scope)?.includes(row) === true);

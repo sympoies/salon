@@ -11,7 +11,6 @@ import {
   titleCandidateFromSummary,
   type AutoTitleState,
 } from "./autoTitle.ts";
-import { hasUnsafeInitialPromptControl } from "./createdSessionInitialization.ts";
 import type { CreateBody, Glance, Session } from "./types.ts";
 import {
   emptySessionTitleState,
@@ -22,7 +21,6 @@ import {
   userSessionTitleState,
   type SessionTitleState,
 } from "@agent-console/shared/title";
-import { isDshAgent } from "./dshAgent.ts";
 
 const TURN_TITLE_GLANCE_TAIL = 80;
 export const MANUAL_RETITLE_GLANCE_TAIL = 160;
@@ -35,8 +33,6 @@ export interface PreparedCreateSessionAutoTitle {
   readonly titlePrompt: string | null;
   readonly baseTitle: string | null;
   readonly fallbackTitle: string | null;
-  /** The prompt stays in `createBody` because the daemon delivers it while starting the session. */
-  readonly promptDeliveredAtCreate: boolean;
 }
 
 export interface CreatedSessionAutoTitleStateInput {
@@ -88,15 +84,6 @@ function baseTitleForCreate(body: CreateBody): string | null {
 
 export function prepareCreateSessionAutoTitle(body: CreateBody): PreparedCreateSessionAutoTitle {
   const { prompt: initialPrompt, ...bodyWithoutPrompt } = body;
-  // DSH sessions have no structured prompt channel, so the daemon pastes their
-  // initial prompt during launch, after a profile-tuned startup delay. They never take default auto-resume, so nothing has to run
-  // between create and the prompt.
-  // A prompt with terminal controls keeps the fenced path, which refuses it and
-  // retains it for manual submission instead of pasting control keys.
-  const promptDeliveredAtCreate = isDshAgent(body.agent)
-    && Boolean(initialPrompt?.trim())
-    && !hasUnsafeInitialPromptControl(initialPrompt ?? "");
-  const backendBody = promptDeliveredAtCreate ? { ...bodyWithoutPrompt, prompt: initialPrompt } : bodyWithoutPrompt;
   const shouldSeedTitle = !isProviderResumeCreate(body);
   const prompt = initialPrompt?.trim() ? initialPrompt : null;
   const titlePrompt = shouldSeedTitle && prompt ? promptTitleSuffix(prompt) : null;
@@ -113,16 +100,15 @@ export function prepareCreateSessionAutoTitle(body: CreateBody): PreparedCreateS
   return {
     createBody: shouldSeedTitle
       ? {
-          ...backendBody,
+          ...bodyWithoutPrompt,
           ...(provisionalTitle ? { title: provisionalTitle } : {}),
           title_state: titleState,
         }
-      : backendBody,
+      : bodyWithoutPrompt,
     prompt,
     titlePrompt,
     baseTitle,
     fallbackTitle,
-    promptDeliveredAtCreate,
   };
 }
 

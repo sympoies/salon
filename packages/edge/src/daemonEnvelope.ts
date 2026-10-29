@@ -343,7 +343,7 @@ function projectHistorySession(value: unknown): Record<string, unknown> | null {
   const raw = value as Record<string, unknown>;
   const id = boundedHistoryString(raw.id, 80);
   const providerSessionId = boundedHistoryString(raw.provider_session_id, 256);
-  const provider = raw.provider === "codex" || raw.provider === "claude" || raw.provider === "dsh"
+  const provider = raw.provider === "codex" || raw.provider === "claude"
     ? raw.provider
     : undefined;
   const cwd = boundedHistoryString(raw.cwd, 4096);
@@ -1033,7 +1033,6 @@ const SAFE_DAEMON_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   "history-resume-not-supported": "this history session cannot be resumed",
   "history-resume-identity-mismatch": "session history identity changed; refresh History and try again",
   "history-resume-profile-unavailable": "history resume profile is unavailable; refresh History and try again",
-  "dsh-history-unavailable": "DSH history is unavailable; refresh History and try again",
   "provider-session-already-running": "this provider session is already running",
   "history-session-live": "this conversation is already open; switching to its live session",
   "history-read-failed": "session history could not be read; refresh History and try again",

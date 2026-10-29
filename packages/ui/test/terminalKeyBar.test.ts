@@ -27,7 +27,7 @@ test("the bar offers no ^C key", () => {
   // Dropped deliberately: the width is worth more to the keys this bar actually
   // gets used for. c-c stays a supported SpecialKey everywhere else, so Ctrl+C
   // from a physical keyboard still reaches the session via terminalInput.
-  for (const agent of ["codex", "claude", "dsh", undefined]) {
+  for (const agent of ["codex", "claude", undefined]) {
     const layout = terminalKeyBarLayout(agent);
     const all = [...layout.primary, ...layout.overflow];
     assert.ok(all.every((entry) => entry.kind !== "key" || entry.key !== "c-c"));
@@ -68,16 +68,6 @@ test("a slash command inserts its text without submitting it", () => {
   }
 });
 
-test("DSH sessions get no slash commands, so no overflow row at all", () => {
-  // DSH is neither Codex nor Claude Code, so /model and /compact would only put
-  // dead text on the prompt line.
-  assert.deepEqual(terminalKeyBarLayout("dsh").overflow, []);
-  assert.deepEqual(
-    ids(terminalKeyBarLayout("dsh").primary),
-    ["escape", "tab", "left", "right", "up", "down", "enter"],
-  );
-});
-
 test("an unknown or absent agent gets no slash commands", () => {
   // Allowlisted rather than denylisted: a future agent kind must not inherit
   // commands it has never been shown to accept.
@@ -87,7 +77,7 @@ test("an unknown or absent agent gets no slash commands", () => {
 });
 
 test("every entry carries a stable unique id and a visible label", () => {
-  for (const agent of ["codex", "claude", "dsh", undefined]) {
+  for (const agent of ["codex", "claude", undefined]) {
     const layout = terminalKeyBarLayout(agent);
     const all = [...layout.primary, ...layout.overflow];
     assert.equal(new Set(ids(all)).size, all.length, `duplicate id for agent ${agent}`);

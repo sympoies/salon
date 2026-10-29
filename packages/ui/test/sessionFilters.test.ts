@@ -61,7 +61,7 @@ const facetRows = [
   { machine: "host-a", session_id: "review", created_at: "2030-01-01T00:00:00Z", provider: "codex", role: "reviewer" as const, repo_name: "console", status: "running" },
   { machine: "host-b", session_id: "plain", created_at: "2030-01-01T00:00:00Z", provider: "claude", repo_name: "console", status: "stopped" },
   { machine: "host-b", session_id: "worker", created_at: "2030-01-01T00:00:00Z", provider: "codex", role: "worker" as const, repo_name: "console", status: "running" },
-  { machine: "host-a", session_id: "elsewhere", created_at: "2030-01-01T00:00:00Z", provider: "dsh", repo_name: "other", status: "running" },
+  { machine: "host-a", session_id: "elsewhere", created_at: "2030-01-01T00:00:00Z", provider: "other-provider", repo_name: "other", status: "running" },
 ];
 test("facet options replace their dimension and respect all other selected dimensions", () => {
   const filters = { ...CLEAR_SESSION_FILTERS, hosts: ["host-a"], harness: "claude", repo: "console" };
@@ -75,7 +75,7 @@ test("zero-count facets and each all option agree with the corresponding list", 
     assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, option), filterRecords(facetRows, CLEAR_SESSION_FILTERS).length);
   }
   assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, { hosts: ["empty-host"] }), 0);
-  assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, { harness: "dsh" }), 1);
+  assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, { harness: "other-provider" }), 1);
   assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, { roles: [null] }), 2);
 });
 test("the first host pick isolates that value; the all state is null", () => {

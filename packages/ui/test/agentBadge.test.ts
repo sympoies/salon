@@ -42,19 +42,13 @@ test("AgentBadge renders provider icons with accessible labels", async () => {
   assert.match(claude, /class="agent-badge-icon claude-mark"/);
   assert.doesNotMatch(claude, /agent-badge-fallback/);
 
-  const dsh = renderAgentBadge(AgentBadge, "dsh");
-  assert.match(dsh, /class="agent-badge dsh"/);
-  assert.match(dsh, /aria-label="DSH"/);
-  assert.match(dsh, /title="DSH"/);
-  assert.match(dsh, /class="agent-badge-icon dsh-mark"/);
-  assert.doesNotMatch(dsh, /agent-badge-fallback/);
 });
 
 test("AgentBadge renders fallback labels for non-icon providers", async () => {
   const AgentBadge = await loadAgentBadge();
 
   const unknown = renderAgentBadge(AgentBadge, "other provider!");
-  assert.match(unknown, /class="agent-badge otherprovider"/);
+  assert.match(unknown, /class="agent-badge unknown"/);
   assert.match(unknown, /aria-label="other provider!"/);
   assert.match(unknown, /title="other provider!"/);
   assert.match(unknown, /class="agent-badge-fallback" aria-hidden="true">O<\/span>/);
@@ -70,8 +64,7 @@ test("AgentBadge no longer carries a mark for the retired hermes kind", async ()
   const AgentBadge = await loadAgentBadge();
 
   const hermes = renderAgentBadge(AgentBadge, "hermes");
-  assert.match(hermes, /class="agent-badge hermes"/);
+  assert.match(hermes, /class="agent-badge unknown"/);
   assert.match(hermes, /class="agent-badge-fallback" aria-hidden="true">H<\/span>/);
-  // The retired hermes base no longer renders as DSH.
-  assert.doesNotMatch(hermes, /hermes-mark|dsh-mark|aria-label="DSH"/);
+  assert.doesNotMatch(hermes, /hermes-mark/);
 });

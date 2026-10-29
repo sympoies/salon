@@ -18,7 +18,7 @@ after(async () => ssr.close());
 
 test("session model badge shows each provider and independent unknown values", async () => {
   const { SessionModelBadge } = await ssr.loadModule<{ SessionModelBadge: ComponentType<{ session: SessionModelSettings }> }>("/src/SessionModelBadge.tsx");
-  for (const [agent, model, effort] of [["codex", "example-model", "medium"], ["claude", "opus", "medium"], ["dsh", "local-model", null]] as const) {
+  for (const [agent, model, effort] of [["codex", "example-model", "medium"], ["claude", "opus", "medium"], ["other-provider", "local-model", null]] as const) {
     const session = makeSession({ agent, model, reasoning_effort: effort });
     const label = `${model} · ${effort ?? "unknown"}`;
     assert.equal(badgeText(renderComponent(SessionModelBadge, { session })), label);
