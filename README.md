@@ -6,13 +6,12 @@ same session later.
 
 ## Preview
 
-![Salon in the Dark theme on a desktop browser: three session tiles, with the retry-backoff conversation open on the left, showing a plan, a diff, a test result, a chart and a scheduled notice](docs/assets/readme/desktop-dark-1280.png)
+<p>
+  <img src="docs/assets/readme/desktop-dark-1280.png" width="73.62%" alt="Salon in the Dark theme on a desktop browser: three session tiles, with the retry-backoff conversation open on the left, showing a plan, a diff, a test result, a chart and a scheduled notice">
+  <img src="docs/assets/readme/phone-paper-390.png" width="24.38%" alt="Salon in the Paper theme on a phone: the retry-backoff conversation with a plan, a diff and a test result, and a reply composer at the bottom">
+</p>
 
-*UI preview · synthetic data*
-
-<img src="docs/assets/readme/phone-paper-390.png" width="390" alt="Salon in the Paper theme on a phone: the retry-backoff conversation with a plan, a diff and a test result, and a reply composer at the bottom">
-
-*UI preview · synthetic data*
+*UI preview · synthetic data — desktop in the Dark theme, phone in the Paper theme*
 
 The previews show the UI core rendered with fictional sessions served by a
 stand-in daemon. They are not a provider session. See
