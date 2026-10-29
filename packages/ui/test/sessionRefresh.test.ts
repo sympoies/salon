@@ -72,21 +72,76 @@ test("a refreshed record updates only the facts a refresh re-reads on the matchi
     id: "s1", session_incarnation: "inc-1", model: "model-b", reasoning_effort: "high", title: "After", title_revision: 2,
     context_usage: { used_tokens: 10, window_tokens: 100, source: "codex-rollout", observed_at: "2026-10-07T00:00:00Z", model: "model-b" },
     status: "closed", cwd: "/elsewhere",
-  });
-  assert.equal(merged[1], other, "other sessions keep their identity");
-  assert.equal(merged[0]!.model, "model-b");
-  assert.equal(merged[0]!.reasoning_effort, "high");
-  assert.equal(merged[0]!.title, "After");
-  assert.equal(merged[0]!.title_revision, 2);
-  assert.equal(merged[0]!.context_usage?.used_tokens, 10);
-  assert.equal(merged[0]!.status, "running", "lifecycle and location stay with the list poll");
-  assert.equal(merged[0]!.cwd, "/work");
-  assert.deepEqual(merged[0]!.last_prompt, { text: "keep me" });
+  }, "inc-1");
+  assert.equal(merged.applied, true);
+  assert.equal(merged.sessions[1], other, "other sessions keep their identity");
+  const [first] = merged.sessions;
+  assert.equal(first!.model, "model-b");
+  assert.equal(first!.reasoning_effort, "high");
+  assert.equal(first!.title, "After");
+  assert.equal(first!.title_revision, 2);
+  assert.equal(first!.context_usage?.used_tokens, 10);
+  assert.equal(first!.status, "running", "lifecycle and location stay with the list poll");
+  assert.equal(first!.cwd, "/work");
+  assert.deepEqual(first!.last_prompt, { text: "keep me" });
+});
 
-  assert.equal(mergeRefreshedSession(list, "other-host", { id: "s1", model: "x" }), list);
-  assert.equal(mergeRefreshedSession(list, "fixture", { id: "s1", session_incarnation: "inc-2", model: "x" }), list,
-    "a record of a replaced runtime is not applied");
-  assert.equal(mergeRefreshedSession(list, "fixture", { id: "gone", model: "x" }), list);
+test("a record that cannot be applied leaves the list unchanged and reports it was not applied", () => {
+  const list = [session()];
+  const rejected = (machine: string, record: Record<string, unknown>, requested: string | undefined = "inc-1") => {
+    const merged = mergeRefreshedSession(list, machine, record, requested);
+    assert.equal(merged.applied, false);
+    assert.equal(merged.sessions, list);
+  };
+  rejected("other-host", { id: "s1", model: "x" });
+  rejected("fixture", { id: "gone", model: "x" });
+  rejected("fixture", { id: "s1", session_incarnation: "inc-2", model: "x" });
+});
+
+test("an unbound legacy reply is applied to the runtime that was asked and refused for a replaced one", () => {
+  const unbound = { id: "s1", model: "model-b", title: "Old", title_revision: 1 };
+  const same = mergeRefreshedSession([session()], "fixture", unbound, "inc-1");
+  assert.equal(same.applied, true, "an unbound reply stays supported for the runtime it was requested from");
+  assert.equal(same.sessions[0]!.model, "model-b");
+
+  const replaced = [session({ session_incarnation: "inc-2", model: "replacement-model", title: "Replacement" })];
+  const refused = mergeRefreshedSession(replaced, "fixture", unbound, "inc-1");
+  assert.equal(refused.applied, false);
+  assert.equal(refused.sessions, replaced, "the old runtime's facts do not overwrite the replacement");
+
+  const legacy = [session({ session_incarnation: undefined })];
+  assert.equal(mergeRefreshedSession(legacy, "fixture", unbound, undefined).applied, true);
+  assert.equal(mergeRefreshedSession(replaced, "fixture", unbound, undefined).applied, false,
+    "a runtime that gained an incarnation since the request is a different runtime");
+});
+
+test("a delayed reply does not restore an older title or context observation", () => {
+  const usage = (observed_at: string, used_tokens: number) =>
+    ({ used_tokens, window_tokens: 100, source: "codex-rollout", observed_at, model: "model-a" }) as const;
+  const list = [session({
+    title: "Newest", title_revision: 5, title_state: "manual", context_usage: usage("2026-10-07T00:10:00Z", 50),
+  })];
+  const merged = mergeRefreshedSession(list, "fixture", {
+    id: "s1", session_incarnation: "inc-1", model: "model-b", title: "Older", title_revision: 4, title_state: "auto",
+    context_usage: usage("2026-10-07T00:05:00Z", 10),
+  }, "inc-1");
+  assert.equal(merged.applied, true, "the facts without a newer value still apply");
+  const [first] = merged.sessions;
+  assert.equal(first!.model, "model-b");
+  assert.equal(first!.title, "Newest");
+  assert.equal(first!.title_revision, 5);
+  assert.equal(first!.title_state, "manual");
+  assert.equal(first!.context_usage?.used_tokens, 50);
+
+  const newer = mergeRefreshedSession(list, "fixture", {
+    id: "s1", session_incarnation: "inc-1", title: "Even newer", title_revision: 6,
+    context_usage: usage("2026-10-07T00:20:00Z", 70),
+  }, "inc-1").sessions[0]!;
+  assert.equal(newer.title, "Even newer");
+  assert.equal(newer.context_usage?.used_tokens, 70);
+
+  const unversioned = mergeRefreshedSession(list, "fixture", { id: "s1", title: "No revision" }, "inc-1").sessions[0]!;
+  assert.equal(unversioned.title, "Newest", "an unversioned title cannot replace a versioned one");
 });
 
 interface Mounted { states: SessionRefreshState[]; refresh: ReturnType<typeof useSessionRefresh>["refresh"]; unmount(): Promise<void> }

@@ -169,6 +169,39 @@ test("the macOS title bar keeps the status counts while an overlay backgrounds t
   assert.equal(titleBarCounts.hasAttribute("inert"), false, "usable again once the overlay closes");
 });
 
+test("the dashboard refresh control reports an unapplied reply as failed and applies a matching one", async () => {
+  const mounted = installDom();
+  cleanupStack.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([dashboardApiMockPlugin(), terminalPaneMockPlugin()]);
+  cleanupStack.push(ssr.close);
+  const listed = makeSession({ id: "alpha", machine: "fixture", title: "Alpha", model: "model-a", session_incarnation: "inc-1" });
+  const reply = (id: string, incarnation: string) => ({ ok: true, changed: ["model"], unavailable: ["account"],
+    session: { id, agent: "codex", session_incarnation: incarnation, model: "model-b" } });
+  let answer = reply("gone", "inc-1");
+  globalThis.__agentConsoleDashboardBehaviorApiMock = {
+    listSessions: async () => ({ ok: true, sessions: [listed], machines: [{ name: "fixture", ok: true }] }),
+    refreshSessionInfo: async () => answer,
+  };
+  const { Dashboard } = await ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
+  const { UiExtensionsProvider, createUiExtensionRegistry, useSessionRefresh } =
+    await ssr.loadModule<typeof import("../src/extensions.tsx")>("/src/extensions.tsx");
+  let hook!: ReturnType<typeof useSessionRefresh>;
+  const Probe = () => { hook = useSessionRefresh(); return null; };
+  const registry = createUiExtensionRegistry([{ id: "refresher", sessionBadges: [{ id: "probe", render: () => createElement(Probe) }] }]);
+  await act(async () => mounted.root.render(createElement(UiExtensionsProvider, { registry },
+    createElement(Dashboard, { active: true, machines: ["fixture"], enabledMachines: ["fixture"], machineColors: {},
+      onDebug() {}, onUsage() {}, onSettings() {} }))));
+  await waitForCondition(() => hook !== undefined, "a mounted refresh consumer");
+
+  let state!: Awaited<ReturnType<typeof hook.refresh>>;
+  await act(async () => { state = await hook.refresh({ machine: "fixture", id: "gone" }); });
+  assert.equal(state.status, "failed", "a reply for a session the list no longer has is not reported as updated");
+
+  answer = reply("alpha", "inc-1");
+  await act(async () => { state = await hook.refresh({ machine: "fixture", id: "alpha" }); });
+  assert.equal(state.status, "updated");
+});
+
 // Web and phone have no native title bar: a focused session carries its own
 // count strip, with the logo on desktop and counts only on phones (#938).
 async function mountFocusedCountsDashboard(width: number, props: Record<string, unknown> = {}) {
@@ -878,6 +911,7 @@ function dashboardApiMockPlugin(): Plugin {
         export const listAccounts = (...args) => mock().listAccounts?.(...args) ?? Promise.resolve({ accounts: [] });
         export const switchSessionAccount = (...args) => mock().switchSessionAccount?.(...args) ?? ok();
         export const putLayoutOrder = (order, ...args) => mock().putLayoutOrder?.(order, ...args) ?? Promise.resolve(layout(order));
+        export const refreshSessionInfo = (...args) => mock().refreshSessionInfo?.(...args) ?? Promise.resolve({ ok: false, error: "refresh unavailable" });
         export const resumeSession = (...args) => mock().resumeSession?.(...args) ?? ok();
         export const restartRuntime = (...args) => mock().restartRuntime?.(...args) ?? ok();
         export const setSessionAutoResume = (...args) => mock().setSessionAutoResume?.(...args) ?? ok();

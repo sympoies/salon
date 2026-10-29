@@ -1598,15 +1598,14 @@ export function Dashboard({
   // Consumers refresh one session on demand through useSessionRefresh.
   const sessionRefreshControl = useMemo<SessionRefreshControl>(() => ({
     async refresh(target) {
+      const listed = sessionsRef.current.find((session) => sessionKey(session) === sessionKey(target));
       const result = await refreshSessionInfo(target);
       if (!result.ok) return { ok: false, message: result.error };
-      if (liveRef.current) {
-        setSessions((current) => {
-          const next = mergeRefreshedSession(current, target.machine, result.session);
-          sessionsRef.current = next as DashboardSession[];
-          return next as DashboardSession[];
-        });
-      }
+      if (!liveRef.current) return { ok: false, message: "Session info was not applied." };
+      const merged = mergeRefreshedSession(sessionsRef.current, target.machine, result.session, listed?.session_incarnation);
+      if (!merged.applied) return { ok: false, message: "The session changed while refreshing. Try again." };
+      sessionsRef.current = merged.sessions as DashboardSession[];
+      setSessions(merged.sessions as DashboardSession[]);
       return { ok: true, changed: result.changed };
     },
   }), []);
