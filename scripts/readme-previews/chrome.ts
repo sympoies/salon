@@ -74,7 +74,10 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
     let nextId = 1;
     const pending = new Map<number, { resolve(value: any): void; reject(error: Error): void }>();
     const loaded: { resolve(): void; reject(error: Error): void }[] = [];
+    // Once the connection has closed nothing can answer, so later requests must fail instead of waiting.
+    let closedReason: string | undefined;
     const lost = (reason: string) => {
+      closedReason = reason;
       for (const entry of [...pending.values(), ...loaded.splice(0)]) entry.reject(new Error(reason));
       pending.clear();
     };
@@ -87,13 +90,18 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
       } else if (message.method === "Page.loadEventFired") for (const waiter of loaded.splice(0)) waiter.resolve();
     };
     const send = <T>(method: string, params: object = {}) => new Promise<T>((resolve, reject) => {
-      const id = nextId++; pending.set(id, { resolve, reject }); connection.send(JSON.stringify({ id, method, params }));
+      if (closedReason) return reject(new Error(closedReason));
+      const id = nextId++; pending.set(id, { resolve, reject });
+      try { connection.send(JSON.stringify({ id, method, params })); }
+      catch (error) { pending.delete(id); reject(error as Error); }
     });
     await send("Page.enable");
     await send("Runtime.enable");
     return {
       async navigate(url) {
+        if (closedReason) throw new Error(closedReason);
         const done = new Promise<void>((resolve, reject) => loaded.push({ resolve, reject }));
+        done.catch(() => {}); // a rejection is reported through the send below or by the caller's await
         await send("Page.navigate", { url }); await done;
       },
       async evaluate<T>(expression: string) {
