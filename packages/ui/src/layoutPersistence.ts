@@ -154,7 +154,11 @@ export function createLayoutPersistQueue(args: {
         putLayoutOrder: args.putLayoutOrder,
         shouldRetry: () => serial === generation,
       });
-      if (result.reachable && result.snapshot) completedSnapshot = result.snapshot;
+      if (result.reachable && result.snapshot
+        && (completedSnapshot?.revision == null
+          || (result.snapshot.revision != null && result.snapshot.revision >= completedSnapshot.revision))) {
+        completedSnapshot = result.snapshot;
+      }
       if (serial !== generation) {
         return;
       }
