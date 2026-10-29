@@ -113,6 +113,7 @@ async function checkSubmittedUi(base: string) {
       const fixtureErrors = await evaluate("window.fixtureErrors");
       assert.fail(`public UI did not reach expected state: ${JSON.stringify({ value, fixtureErrors })}`);
     };
+    const displayReadsBefore = imageCredentials.length;
     await rpc("Page.navigate", { url: `${base}/?submitted-fixture` }, sessionId);
     const before = await wait(value => value.outboxReads > 0);
     assert.equal(before.visibleEchoes, 0, "another client's submitted reply is not a local echo before history arrives");
@@ -141,6 +142,8 @@ async function checkSubmittedUi(base: string) {
       };
       void poll();
     });
+    assert.ok(imageCredentials.length > displayReadsBefore, "display uses an authenticated image read");
+    const downloadReadsBefore = imageCredentials.length;
     await evaluate("document.querySelector('[aria-label=\\\"Download image\\\"]')?.click()");
     const imageDownload = await new Promise<any>((resolve, reject) => {
       const deadline = Date.now() + 10_000;
@@ -154,6 +157,7 @@ async function checkSubmittedUi(base: string) {
       };
       void poll();
     });
+    assert.ok(imageCredentials.length > downloadReadsBefore, "download uses an authenticated image read");
     assert.deepEqual(imageDownload, { name: "original plot.png", bytes: [...png] }, "compiled UI saves the authenticated original bytes and filename");
     expectedWrites = 0;
     await rpc("Page.navigate", { url: `${base}/?submitted-fixture&later` }, sessionId);
@@ -221,8 +225,7 @@ try {
   }
   assert.ok(fontsFetched >= 2, "both font assets survive packing and composition");
   await checkSubmittedUi(base);
-  assert.ok(imageCredentials.length >= 4, "thumbnail, viewer and download use authenticated image reads");
-  assert.ok(imageCredentials.every(credential => credential === "Bearer fixture-daemon-token"));
+  assert.ok(imageCredentials.every(credential => credential === "Bearer fixture-daemon-token"), "all image reads use the daemon credential");
   console.log("packed edge and generic UI: PASS (auth, extension route, shared runtime/refused action, authenticated image bytes, page, JS, CSS, fonts)");
 } catch (error) {
   // The server deliberately catches uncaught errors; the probe must still fail.
