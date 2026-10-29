@@ -95,6 +95,18 @@ test, explain the test-first waiver in the PR's `Test changes` section and list
 the substitute checks actually run. Add behavior tests when executable product
 behavior exists; do not create no-op or implementation-mirroring tests.
 
+## UI previews
+
+The README previews are generated, not hand-edited. `pnpm capture:readme`
+builds the workspace UI, starts a stand-in daemon that serves only the
+fictional "fernlight" scenario in `scripts/readme-previews/fixture.ts`, runs the
+real edge against it and drives headless Chrome (`CHROME_BIN`, default
+`google-chrome`) to write `docs/assets/readme/desktop-dark-1280.png` and
+`phone-paper-390.png`. The clock, time zone and language are fixed, so a rerun
+on the same Chrome and fonts reproduces the same bytes. Each image stays under
+300 KB. On Linux run it in the memory-limited scope used for validation. Keep
+the scenario synthetic: no real hosts, accounts, people, session ids or paths.
+
 ## Delivery
 
 Use a focused branch and a reviewed pull request with a semantic commit message.

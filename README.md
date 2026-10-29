@@ -4,6 +4,20 @@ Salon is a self-hostable, container-first chat workspace for working with
 coding agents from a browser: start a session, talk to it, and reconnect to the
 same session later.
 
+## Preview
+
+![Salon in the Dark theme on a desktop browser: three session tiles, with the retry-backoff conversation open on the left, showing a plan, a diff, a test result, a chart and a scheduled notice](docs/assets/readme/desktop-dark-1280.png)
+
+*UI preview · synthetic data*
+
+<img src="docs/assets/readme/phone-paper-390.png" width="390" alt="Salon in the Paper theme on a phone: the retry-backoff conversation with a plan, a diff and a test result, and a reply composer at the bottom">
+
+*UI preview · synthetic data*
+
+The previews show the UI core rendered with fictional sessions served by a
+stand-in daemon. They are not a provider session. See
+[DEVELOPMENT.md](DEVELOPMENT.md#ui-previews) to regenerate them.
+
 ## Status
 
 Salon is being bootstrapped. The reusable shared, edge and UI core can be built
