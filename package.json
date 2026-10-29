@@ -19,7 +19,8 @@
     "pack:core": "pnpm run build:packages && node scripts/pack-core.ts",
     "test:package-consumption": "pnpm run build:packages && node --test scripts/package-consumption.test.ts",
     "validate:core": "bash scripts/validate-core-packages.sh",
-    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit"
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
+    "capture:readme": "pnpm build && NODE_OPTIONS=--conditions=source node scripts/readme-previews/capture.ts"
   },
   "devDependencies": {
     "oxc-parser": "0.137.0",
