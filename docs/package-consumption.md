@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.14 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.15 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -144,13 +144,12 @@ the resolved canvas colour. A consumer overlay can style its own markers with
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.14`; its release is a GitHub
-prerelease with `latest=false`. It is the first release
-published from the public repository. It carries the Paper light theme with a
-System / Dark / Paper setting, the responsive Shell page header with an equal
-terminal inset, the restyled inline connection notice, and the guarded
-resume-preflight coordination relay. Existing `v0.1.0` through
-`v0.1.13` tags and assets stay immutable. The visibility transition does not
+merge. The checked-in SDK version is `0.1.15`; its release is a GitHub
+prerelease with `latest=false`. It carries on-demand
+refresh of one session's info, acceptance of `command_dispatched` prompt
+receipts from owner slash commands, and a select arrow that follows the theme
+colour. Existing `v0.1.0` through
+`v0.1.14` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
