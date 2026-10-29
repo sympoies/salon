@@ -21,6 +21,7 @@ const SHORTCUT_GROUPS = [
     title: "Navigation",
     rows: [
       ["⌘H / ⌘L", "Previous / next session"],
+      ["⌘< / ⌘>", "Previous / next page"],
       ["⌘1–4 / ⌘6", "Open session in shortcut order"],
       ["⌘F", "Toggle focused session"],
       ["⌘` / ⌘~", "Back to session list"],
@@ -30,7 +31,7 @@ const SHORTCUT_GROUPS = [
     title: "Layout and panels",
     rows: [
       ["⌘N / ⌘M", "Fewer / more panes"],
-      ["⌘;", "Usage"],
+      ["⌘;", "Show / hide usage"],
       ["⌘⇧S", "Open Shell (Ctrl⇧S on other platforms)"],
       ["⌘/", "Show / hide this help"],
     ],

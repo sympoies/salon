@@ -673,11 +673,11 @@ export function UsagePanel({ onExit, canResetRateLimits = false }: UsagePanelPro
     return result;
   }, [usageState.refresh]);
 
-  // Cmd+L closes the panel too. The dashboard opens Usage with the same chord
+  // Cmd+; closes the panel too. The dashboard opens Usage with the same chord
   // (see dashboardShortcuts), but that handler is inactive while this overlay is
   // up — so handle the close here to make the shortcut a round-trip toggle.
   // macOS-app only, matching the dashboard shortcut layer; the browser keeps its
-  // native Cmd+L (address bar).
+  // native shortcuts.
   useEffect(() => {
     if (!isMacTauri()) {
       return;
@@ -688,7 +688,7 @@ export function UsagePanel({ onExit, canResetRateLimits = false }: UsagePanelPro
         !event.ctrlKey &&
         !event.altKey &&
         !event.shiftKey &&
-        event.key.toLowerCase() === "l"
+        event.key === ";"
       ) {
         event.preventDefault();
         onExit();

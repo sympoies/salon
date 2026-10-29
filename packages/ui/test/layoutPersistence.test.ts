@@ -242,6 +242,89 @@ test("createLayoutPersistQueue collapses obsolete queued work so the newest inte
   assert.deepEqual(snapshot, { order: ["m/a", "m/remote", "m/new"], revision: 3 });
 });
 
+test("urgent writes wait for the in-flight revision and supersede queued work", async () => {
+  let snapshot: LayoutStoreSnapshot = { order: [], revision: 0 };
+  let serverRevision = 0;
+  let release!: () => void;
+  let started!: () => void;
+  const firstStarted = new Promise<void>((resolve) => { started = resolve; });
+  const calls: Array<{ reason?: string; revision?: number | null }> = [];
+  const queue = createLayoutPersistQueue({
+    isReachable: () => true, setUnreachable: () => { throw new Error("unreachable"); },
+    getSnapshot: () => snapshot, setSnapshot: (next) => { snapshot = next; },
+    getKnownMachines: () => live("m"),
+    putLayoutOrder: async (order, options) => {
+      calls.push({ reason: options?.reason, revision: options?.baseRevision });
+      if (calls.length === 1) { started(); await new Promise<void>((resolve) => { release = resolve; }); }
+      assert.equal(options?.baseRevision, serverRevision, "same-client revision conflict");
+      return { reachable: true, order: [...order], revision: ++serverRevision };
+    },
+  });
+  const intent = (reason: string, key: string, urgent = false) => ({
+    localOrder: [key], liveKeys: live("m/a", "m/b", "m/c"), reachableMachines: live("m"), reason, urgent,
+  });
+  const first = queue.persist(intent("reorder", "m/a"));
+  await firstStarted;
+  const skipped = queue.persist(intent("reorder", "m/b"));
+  const urgent = queue.persist(intent("close", "m/c", true));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(calls.length, 1);
+  release();
+  await Promise.all([first, skipped, urgent]);
+  assert.deepEqual(calls, [{ reason: "reorder", revision: 0 }, { reason: "close", revision: 1 }]);
+});
+
+test("a delayed older write cannot replace a newer superseded flush revision", async () => {
+  let snapshot: LayoutStoreSnapshot = { order: [], revision: 0 };
+  let serverRevision = 0;
+  let releaseFirst!: () => void;
+  let releaseFlush!: () => void;
+  let firstStarted!: () => void;
+  let flushApplied!: () => void;
+  const started = new Promise<void>(resolve => { firstStarted = resolve; });
+  const applied = new Promise<void>(resolve => { flushApplied = resolve; });
+  const calls: Array<{ reason?: string; revision?: number | null }> = [];
+  const queue = createLayoutPersistQueue({
+    isReachable: () => true, setUnreachable: () => { throw new Error("unreachable"); },
+    getSnapshot: () => snapshot, setSnapshot: next => { snapshot = next; },
+    getKnownMachines: () => live("m"),
+    putLayoutOrder: async (order, options) => {
+      calls.push({ reason: options?.reason, revision: options?.baseRevision });
+      if (options?.reason === "reorder") {
+        serverRevision = 1;
+        firstStarted();
+        await new Promise<void>(resolve => { releaseFirst = resolve; });
+        return { reachable: true, order: [...order], revision: 1 };
+      }
+      if (options?.reason === "flush") {
+        return { reachable: true, conflict: true, order: ["m/a"], revision: serverRevision };
+      }
+      if (options?.reason === "flush:retry") {
+        serverRevision = 2;
+        flushApplied();
+        await new Promise<void>(resolve => { releaseFlush = resolve; });
+        return { reachable: true, order: [...order], revision: 2 };
+      }
+      assert.equal(options?.baseRevision, serverRevision, "ordinary urgent write must use the latest completed revision");
+      return { reachable: true, order: [...order], revision: ++serverRevision };
+    },
+  });
+  const intent = (reason: string, key: string, urgent = false) => ({
+    localOrder: [key], liveKeys: live("m/a", "m/b", "m/c"), reachableMachines: live("m"), reason, urgent, keepalive: reason === "flush",
+  });
+  const first = queue.persist(intent("reorder", "m/a"));
+  await started;
+  const flush = queue.persist(intent("flush", "m/b", true));
+  await applied;
+  const create = queue.persist(intent("create", "m/c", true));
+  releaseFlush();
+  await flush;
+  releaseFirst();
+  await Promise.all([first, create]);
+  assert.deepEqual(calls.map(call => call.reason), ["reorder", "flush", "flush:retry", "create"]);
+  assert.equal(calls.at(-1)?.revision, 2);
+});
+
 test("createLayoutPersistQueue runs urgent keepalive intents without waiting for queued work", async () => {
   const calls: Array<{ order: readonly string[]; keepalive?: boolean; reason?: string }> = [];
   let snapshot: LayoutStoreSnapshot = { order: [], revision: 0 };
