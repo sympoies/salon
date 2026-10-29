@@ -195,3 +195,15 @@ test("Shell opens with Command/Control Shift S while editable fields stay untouc
   assert.equal(resolveDashboardShortcutAction({ ...key, editableTarget: true }), null);
   assert.equal(resolveDashboardShortcutAction({ ...key, altKey: true }), null);
 });
+
+
+test("page shortcuts accept translated keys and shifted physical keys with dashboard guards", () => {
+  for (const [key, code, action] of [["<", "Comma", "page-prev"], [">", "Period", "page-next"]] as const) {
+    assert.equal(resolveDashboardShortcutAction({ ...baseInput, key, code, shiftKey: true }), action);
+    assert.equal(resolveDashboardShortcutAction({ ...baseInput, key, code, shiftKey: false }), action);
+    assert.equal(resolveDashboardShortcutAction({ ...baseInput, key: code === "Comma" ? "," : ".", code, shiftKey: true }), action);
+    for (const guard of [{ isMacTauri: false }, { ctrlKey: true }, { altKey: true }, { editableTarget: true }]) {
+      assert.equal(resolveDashboardShortcutAction({ ...baseInput, key, code, shiftKey: true, ...guard }), null);
+    }
+  }
+});

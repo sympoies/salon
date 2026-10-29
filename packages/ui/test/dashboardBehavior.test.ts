@@ -1608,6 +1608,8 @@ function createHarness(SessionSlot: ComponentType<ReturnType<typeof makeSessionS
     isEditableShortcutTarget: () => false,
     isTerminalShortcutTarget: () => false,
     onUsage: () => {},
+    onPagePrevious: () => {},
+    onPageNext: () => {},
     openSessionByShortcutIndex,
     reconnectFocusedSession: () => {},
     renameFocusedSession: () => {},
@@ -7653,3 +7655,22 @@ async function extendedDashboard(ssr: ReturnType<typeof createUiSsrHarness>, ext
   const registry = createUiExtensionRegistry([{ id: "fixture", ...extension }]);
   return (props: Parameters<typeof Dashboard>[0]) => createElement(UiExtensionsProvider, { registry }, createElement(Dashboard, props));
 }
+
+
+test("page shortcuts wrap in overview and do nothing with a focused session", async () => {
+  const mounted = await mountOverviewShortcutDashboard();
+  const pageLabel = () => mounted.container.querySelector(".session-list-page-label")?.textContent?.trim();
+  const press = async (key: string) => {
+    await act(async () => { mounted.window.dispatchEvent(metaKey(mounted.window, key)); await flushPromises(); });
+  };
+  assert.equal(pageLabel(), "1 / 2");
+  await press("<");
+  assert.equal(pageLabel(), "2 / 2");
+  await press(">");
+  assert.equal(pageLabel(), "1 / 2");
+  await press("f");
+  assert.ok(mounted.container.querySelector(".terminal-slot.is-focused"));
+  await press(">");
+  await press("f");
+  assert.equal(pageLabel(), "1 / 2");
+});

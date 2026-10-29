@@ -2653,6 +2653,8 @@ export function Dashboard({
     isEditableShortcutTarget,
     isTerminalShortcutTarget,
     onUsage,
+    onPagePrevious: () => { if (focusedKey === null && overviewPage.pageCount > 1) goToPreviousSessionListPage(); },
+    onPageNext: () => { if (focusedKey === null && overviewPage.pageCount > 1) goToNextSessionListPage(); },
     onVoice: openFocusedVoicePrompt,
     onConversation: toggleFocusedConversation,
     onShortcutHelp: () => setShowShortcutHelp(true),

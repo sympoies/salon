@@ -19,6 +19,8 @@ interface UseDashboardKeyboardOptions {
   readonly isEditableShortcutTarget: (target: EventTarget | null) => boolean;
   readonly isTerminalShortcutTarget: (target: EventTarget | null) => boolean;
   readonly onUsage: () => void;
+  readonly onPagePrevious: () => void;
+  readonly onPageNext: () => void;
   readonly onVoice: () => void;
   readonly onConversation: () => void;
   readonly onShortcutHelp: () => void;
@@ -45,6 +47,8 @@ export function useDashboardKeyboard({
   isEditableShortcutTarget,
   isTerminalShortcutTarget,
   onUsage,
+  onPagePrevious,
+  onPageNext,
   onVoice,
   onConversation,
   onShortcutHelp,
@@ -110,6 +114,12 @@ export function useDashboardKeyboard({
           setLayoutMode((current) => stepLayoutMode(autoLayout ? autoDesktopMode : current, 1));
           setAutoLayout(false);
           break;
+        case "page-prev":
+          onPagePrevious();
+          break;
+        case "page-next":
+          onPageNext();
+          break;
         case "usage":
           onUsage();
           break;
@@ -155,6 +165,8 @@ export function useDashboardKeyboard({
     isEditableShortcutTarget,
     isTerminalShortcutTarget,
     onUsage,
+    onPagePrevious,
+    onPageNext,
     onVoice,
     onConversation,
     onShortcutHelp,
