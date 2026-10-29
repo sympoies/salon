@@ -8,7 +8,7 @@ import { headerFixture } from "./support/headerFixture.ts";
 interface Colours { background: string; border: string; borderWidth: string; color: string }
 interface Measure { stage: string | null; visible: boolean; layout: Colours; more: Colours }
 
-for (const theme of ["dark", "light"] as const) {
+for (const theme of ["dark", "paper"] as const) {
   for (const width of [1500, 1920]) {
     test(`the collapsed layout button matches the More button at ${width}px in the ${theme} theme`, async t => {
       if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }

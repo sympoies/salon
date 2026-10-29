@@ -117,6 +117,10 @@ async function checkSubmittedUi(base: string) {
     const before = await wait(value => value.outboxReads > 0);
     assert.equal(before.visibleEchoes, 0, "another client's submitted reply is not a local echo before history arrives");
     expectedWrites = 1;
+    const theme = await evaluate("window.themeFixture.inspect()");
+    assert.ok(theme.hook === "dark" || theme.hook === "paper", `the packed theme hook resolves a theme: ${JSON.stringify(theme)}`);
+    assert.deepEqual(theme, { hook: theme.hook, attribute: theme.hook, meta: theme.hook === "paper" ? "#f4f3ed" : "#011627" },
+      "the installed consumer sees the resolved theme on the root element and in theme-color");
     await evaluate("window.submittedFixture.send()");
     const sent = await wait(value => value.writes === 1 && value.visibleEchoes === 1);
     assert.equal(sent.visibleEchoes, 1, "the sender's submitted echo stays visible until matching history");

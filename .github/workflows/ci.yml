@@ -2,7 +2,6 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
@@ -19,9 +18,8 @@ jobs:
     name: Plan and cheap checks
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, sympoies, salon, ci, ephemeral]
+      github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       scope: ${{ steps.plan.outputs.scope }}
@@ -76,7 +74,7 @@ jobs:
     name: Validate ${{ matrix.suite }}
     needs: plan
     if: needs.plan.outputs.suites != '[]'
-    runs-on: [self-hosted, sympoies, salon, ci, ephemeral]
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -192,9 +190,8 @@ jobs:
     if: >-
       always() &&
       ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-       (github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name == github.repository))
-    runs-on: [self-hosted, sympoies, salon, ci, ephemeral]
+       github.event_name == 'pull_request')
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     defaults:
       run:

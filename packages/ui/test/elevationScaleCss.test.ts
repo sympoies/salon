@@ -29,14 +29,14 @@ test("root declares the surface/elevation ladder and keeps the legacy panel alia
 
   // The top-edge inset highlight is what reads as "lit from above" on a dark
   // UI; without it a raised surface only looks like a lighter rectangle.
-  assert.match(root, /--elev-1: inset 0 1px 0 rgba\(255, 255, 255, 0\.035\), 0 1px 2px rgba\(0, 0, 0, 0\.24\);/);
-  assert.match(root, /--elev-2: inset 0 1px 0 rgba\(255, 255, 255, 0\.05\), 0 4px 12px rgba\(0, 0, 0, 0\.28\);/);
-  assert.match(root, /--elev-3: 0 16px 40px rgba\(0, 0, 0, 0\.42\);/);
+  assert.match(root, /--elev-1: inset 0 1px 0 rgba\(255, 255, 255, 0\.035\), 0 1px 2px rgba\(var\(--shadow-rgb\), calc\(0\.24 \* var\(--shadow-strength\)\)\);/);
+  assert.match(root, /--elev-2: inset 0 1px 0 rgba\(255, 255, 255, 0\.05\), 0 4px 12px rgba\(var\(--shadow-rgb\), calc\(0\.28 \* var\(--shadow-strength\)\)\);/);
+  assert.match(root, /--elev-3: 0 16px 40px rgba\(var\(--shadow-rgb\), calc\(0\.42 \* var\(--shadow-strength\)\)\);/);
 
   // Three edge strengths separate resting containers, controls, and structural boundaries.
-  assert.match(root, /--border-subtle: rgba\(95, 126, 151, 0\.2\);/);
-  assert.match(root, /--border-default: rgba\(95, 126, 151, 0\.4\);/);
-  assert.match(root, /--border-strong: rgba\(95, 126, 151, 0\.62\);/);
+  assert.match(root, /--border-subtle: rgba\(var\(--edge-rgb\), 0\.2\);/);
+  assert.match(root, /--border-default: rgba\(var\(--edge-rgb\), 0\.4\);/);
+  assert.match(root, /--border-strong: rgba\(var\(--edge-rgb\), 0\.62\);/);
 
   // ~100 existing rules read --panel / --panel-2; they alias the ladder rather
   // than duplicating hex values.

@@ -19,7 +19,8 @@ for (const width of [1280, 412, 360]) {
       assert.equal(result.pillPointerEvents, "auto");
       assert.ok(result.pillClickable, "dismiss button remains clickable");
       assert.ok(result.noticeBottom < 730, "notice stays above the simulated keyboard area");
-      assert.notEqual(result.shadow, "none", "notice uses a defined elevation token");
+      if (surface === "dashboard") assert.equal(result.shadow, "none", "inline header notice has no floating elevation");
+      else assert.notEqual(result.shadow, "none", "floating notice uses a defined elevation token");
       assert.equal(result.reducedAnimation, "none", "spinner respects reduced motion");
     });
   }

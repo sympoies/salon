@@ -484,3 +484,29 @@ test("connection settings distinguish startup timeout and transport failure with
   await act(async () => mounted.root.render(createElement(module.Settings, props)));
   assert.equal(Boolean(mounted.container.querySelector('[role="alert"]')), false, "first-run onboarding has no startup error");
 });
+
+test("Settings offers System / Dark / Paper (default System) and applies the choice without reload", async () => {
+  const harness = createUiSsrHarness();
+  cleanupStack.push(() => harness.close());
+  const mounted = installDom(); cleanupStack.push(mounted.cleanup);
+  const stored = new Map<string, string>();
+  Object.defineProperty(mounted.window, "localStorage", {
+    configurable: true,
+    value: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => void stored.set(key, value) },
+  });
+  const { Settings } = await harness.loadModule<{ Settings: ComponentType<SettingsProps> }>("/src/Settings.tsx");
+  await act(async () => mounted.root.render(createElement(Settings, versionSettingsProps())));
+  const select = [...mounted.container.querySelectorAll<HTMLSelectElement>("select")]
+    .find(candidate => candidate.closest("label")?.textContent?.startsWith("Theme"));
+  assert.ok(select, "Settings has a Theme control");
+  assert.deepEqual([...select.options].map(option => [option.value, option.textContent]), [["system", "System"], ["dark", "Dark"], ["paper", "Paper"]]);
+  assert.equal(select.value, "system");
+  await act(async () => {
+    select.value = "paper";
+    select.dispatchEvent(new mounted.window.Event("change", { bubbles: true }));
+  });
+  assert.equal(mounted.window.document.documentElement.getAttribute("data-theme"), "paper");
+  assert.equal(mounted.window.document.documentElement.getAttribute("data-theme-mode"), "paper");
+  assert.equal(select.value, "paper");
+  assert.equal([...stored.values()].includes("paper"), true, "the choice is persisted on the device");
+});

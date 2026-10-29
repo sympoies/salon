@@ -1179,7 +1179,7 @@ test("TerminalPane CSS hides only the xterm viewport scrollbar until activity", 
   assert.match(css, /\.terminal-pane \.xterm \.xterm-viewport::-webkit-scrollbar-thumb \{/);
   assert.match(css, /\.terminal-pane\.is-scrolling \.xterm \.xterm-viewport::-webkit-scrollbar-thumb \{/);
   assert.match(css, /\.terminal-pane \.xterm \.xterm-scrollable-element > \.scrollbar\.vertical > \.slider \{\s*background: transparent !important;\s*border-radius: 999px;\s*\}/);
-  assert.match(css, /\.terminal-pane \.xterm \.xterm-scrollable-element > \.scrollbar\.vertical > \.slider::before \{\s*content: "";\s*position: absolute;\s*inset: 0 4px;\s*border-radius: 999px;\s*background: rgba\(95, 126, 151, 0\.5\);\s*\}/);
+  assert.match(css, /\.terminal-pane \.xterm \.xterm-scrollable-element > \.scrollbar\.vertical > \.slider::before \{\s*content: "";\s*position: absolute;\s*inset: 0 4px;\s*border-radius: 999px;\s*background: rgba\(var\(--edge-rgb\), 0\.5\);\s*\}/);
 });
 
 test("TerminalPane scrollbar styling follows the installed xterm viewport contract", () => {

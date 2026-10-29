@@ -32,7 +32,8 @@ for (const kind of ["host-offline", "attention", "info"] as const) {
             error: kind === "host-offline" ? "very-long-production-machine-name: offline (cooling down after a failed probe)" : kind === "attention" ? "Session update needs attention" : undefined });
           const m = measure(markup, width, native, `${kind}-${width}-${native}-${focused}-${counts}`);
           if (width <= 760) {
-            assert.ok(Math.abs(m.noticeHeight - m.rowHeight) <= 1, `notice height matches count row: ${JSON.stringify(m)}`);
+            if (focused) assert.ok((m.rowHeight - m.noticeHeight) / 2 >= 3, `notice is inset from the count strip edges, never touching the top: ${JSON.stringify(m)}`);
+            else assert.ok(Math.abs(m.noticeHeight - m.rowHeight) <= 1, `notice height matches the list header count row: ${JSON.stringify(m)}`);
             assert.ok(Math.abs(m.noticeCenter - m.rowCenter) <= 1, `notice is vertically centered: ${JSON.stringify(m)}`);
             assert.ok(m.dismissHeight >= 24 && m.dismissWidth >= 24, "preserve the existing 24px dismissal hit area");
             assert.equal(m.dismissEdgesClickable, true, "dismissal hit area remains reachable above and below its center");

@@ -71,7 +71,7 @@ test("base and ghost buttons gain a hover/focus affordance without touching .dan
   // The pre-existing louder .danger hover must survive the new scoped hover.
   assert.match(
     styles,
-    /\.btn\.danger:hover,\s*\.btn\.danger:focus-visible\s*\{[^}]*border-color:\s*rgba\(248, 113, 113, 0\.82\);/s,
+    /\.btn\.danger:hover,\s*\.btn\.danger:focus-visible\s*\{[^}]*border-color:\s*rgba\(var\(--danger-rgb\), 0\.82\);/s,
   );
 });
 
