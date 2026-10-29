@@ -52,7 +52,8 @@ test("native and app-rendered select decoration preserves the shared geometry", 
   const controlRuleFor = makeCssRuleLookup(controls);
   const selectorDecoration = controlRuleFor("select,\n.select-menu-trigger");
   assert.match(selectorDecoration, /background-image:/);
-  assert.match(selectorDecoration, /background-position: right 0\.7rem center;/);
+  assert.match(selectorDecoration, /background-position:\s*right [\d.]+rem top calc\(50%/, "the arrow stays anchored at the right, vertically centred");
+  assert.match(selectorDecoration, /padding-right: var\(--space-2xl\);/, "text keeps clear of the arrow");
   assert.match(controls, /textarea \{[\s\S]*?min-height: 4\.5rem;/);
 
   assert.match(cssRuleFor(".slot-title-input"), /min-height: var\(--control-compact-height\);/);
