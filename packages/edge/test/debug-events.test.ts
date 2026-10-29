@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createHttpServer } from "node:http";
 import { createEdgeServer } from "../src/server.ts";
-import { redactDebugPath } from "../src/debugEvents.ts";
+import { DebugEventBuffer, redactDebugPath } from "../src/debugEvents.ts";
 import { cookieFrom, listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
 const uiDir = mkdtempSync(join(tmpdir(), "ac-debug-ui-"));
@@ -14,6 +14,18 @@ writeFileSync(join(uiDir, "index.html"), "<!doctype html><title>ac</title>");
 
 after(() => {
   rmSync(uiDir, { recursive: true, force: true });
+});
+
+test("only the layout revision conflict is recorded as neutral", () => {
+  const buffer = new DebugEventBuffer();
+  const envelope = { ok: false, error: { message: "layout revision conflict" } };
+  const record = (route: string, status: number, errorEnvelope: unknown) => buffer.record({
+    source: "edge", method: "PUT", route, status, ok: false, errorEnvelope,
+  });
+  assert.equal(record("/api/layout", 409, envelope).ok, true);
+  assert.equal(record("/api/other", 409, envelope).ok, false);
+  assert.equal(record("/api/layout", 500, envelope).ok, false);
+  assert.equal(record("/api/layout", 409, { ok: false, error: { message: "other conflict" } }).ok, false);
 });
 
 test("redactDebugPath keeps route shape without sensitive path or query values", () => {
