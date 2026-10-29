@@ -83,6 +83,7 @@ test("managed testers can view granted sessions but cannot invoke daemon, termin
     ["POST", "/api/sessions/fixture/granted/attachments"],
     ["POST", "/api/sessions/fixture/granted/display-metadata"],
     ["POST", "/api/sessions/fixture/granted/retitle"],
+    ["POST", "/api/sessions/fixture/granted/refresh"],
     ["POST", "/api/sessions/fixture/granted/retitle-v3"],
     ["POST", "/api/history/sessions/fixture/granted/star"],
     ["POST", "/api/history/sessions/fixture/granted/resume"],

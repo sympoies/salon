@@ -50,6 +50,7 @@ import {
   normalizeAgentConsolePrincipal,
   normalizeRevision as layoutRevision,
   normalizePublicSessionDeleteResult,
+  normalizeSessionRefresh,
   projectPublicAgentSession,
   normalizeSessionCoordinatorTree,
   normalizeSessionDispatchedBy,
@@ -2250,6 +2251,32 @@ export async function updateSessionTitleMode(session: Session, mode: "auto" | "p
     return {ok:true,revision:Number(updated.display_revision)};
   }
   return {ok:false,error:body?.error?.message??"Title mode was not confirmed. Refresh before retrying."};
+}
+
+export type SessionRefreshResult =
+  | { readonly ok: true; readonly session: Record<string, unknown>; readonly changed: readonly string[]; readonly unavailable: readonly string[] }
+  | { readonly ok: false; readonly code?: string; readonly error: string };
+
+/** Re-reads one session's model, reasoning effort, title and context usage on its host. */
+export async function refreshSessionInfo(target: { readonly machine: string; readonly id: string }): Promise<SessionRefreshResult> {
+  let response: Json;
+  try {
+    response = await req(`/api/sessions/${encodeURIComponent(target.machine)}/${encodeURIComponent(target.id)}/refresh`, { method: "POST" });
+  } catch {
+    return { ok: false, error: "Could not reach the console server." };
+  }
+  const body = response.body as { ok?: boolean; data?: { machine?: unknown; refresh?: unknown }; error?: { code?: unknown; message?: unknown } } | undefined;
+  if (response.status >= 200 && response.status < 300 && body?.ok === true && body.data?.machine === target.machine) {
+    const refresh = normalizeSessionRefresh(body.data.refresh, target.id);
+    if (refresh) return { ok: true, session: refresh.session, changed: refresh.changed, unavailable: refresh.unavailable };
+    return { ok: false, error: "Session refresh returned an unexpected response." };
+  }
+  const code = typeof body?.error?.code === "string" ? body.error.code : undefined;
+  return {
+    ok: false,
+    ...(code ? { code } : {}),
+    error: typeof body?.error?.message === "string" && body.error.message ? body.error.message : `Session refresh failed (${response.status}).`,
+  };
 }
 
 export interface SharedOutboxTarget {

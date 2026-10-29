@@ -137,6 +137,24 @@ test("desktop session cards render registered badges with the lineage action", a
   assert.match(plain, /data-probe="card:host-a:reviewer:plain"/);
 });
 
+test("a badge can address its session and use the refresh hook from the extensions entry", async () => {
+  const { UiExtensionsProvider, createUiExtensionRegistry, useSessionRefresh } = await extensions();
+  const { SessionSlot } = await ssr.loadModule<SlotModule>("/src/SessionSlot.tsx");
+  const RefreshIcon = ({ target }: { readonly target: { readonly machine: string; readonly id: string } }) =>
+    createElement("button", { "data-refresh": `${target.machine}:${target.id}:${useSessionRefresh().state.status}` });
+  const refresher = {
+    id: "refresher",
+    sessionBadges: [{
+      id: "role-icon",
+      render: (item: { readonly machine?: string; readonly id?: string }): ReactNode =>
+        item.machine && item.id ? createElement(RefreshIcon, { target: { machine: item.machine, id: item.id } }) : null,
+    }],
+  };
+  const html = renderToStaticMarkup(createElement(UiExtensionsProvider, { registry: createUiExtensionRegistry([refresher]) },
+    createElement(SessionSlot, makeSessionSlotProps({ session: makeSession({ id: "a", machine: "host-a" }) }))));
+  assert.match(html, /data-refresh="host-a:a:idle"/);
+});
+
 test("phone session cards render registered badges", async () => {
   const { UiExtensionsProvider, createUiExtensionRegistry } = await extensions();
   const { MobileSessionList } = await ssr.loadModule<MobileModule>("/src/MobileSessionList.tsx");
