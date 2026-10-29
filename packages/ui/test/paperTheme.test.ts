@@ -108,3 +108,12 @@ test("popups, menus and viewers take their surfaces from tokens, not dark-only l
     assert.doesNotMatch(source.replace(/rgba\(0,\s*0,\s*0,\s*\.75\)/, ""), /#0008|rgba\(1, 22, 39|#d6deeb|rgba\(0,\s*0,\s*0,\s*\.94\)/, `${file} keeps a dark-only colour`);
   }
 });
+
+test("the select arrow follows the text colour: no colour in a data URI, 3:1 on the field on paper, unchanged on dark", () => {
+  assert.doesNotMatch(css, /url\(\s*["']?data:[^)]*(?:%23[\da-f]{3,8}|#[\da-f]{3,8}|rgba?\()/i, "a CSS data URI hard-codes a colour");
+  const rule = css.match(/\nselect,\n\.select-menu-trigger \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(rule, /currentColor/, "the arrow is painted with the text colour");
+  assert.match(css.match(/\nselect,\ntextarea,\n\.select-menu-trigger \{([^}]*)\}/)?.[1] ?? "", /\bcolor:\s*var\(--fg\)/, "the text colour is the theme foreground");
+  assert.ok(ratio(paperColor("--fg"), paperColor("--surface-inset")) >= 3, "arrow on the paper field");
+  assert.equal(dark.get("--fg"), "#d6deeb", "the dark arrow keeps its colour");
+});
