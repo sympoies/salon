@@ -1,3 +1,4 @@
+import { normalizeAgentLaunchProfiles } from "@agent-console/shared/api";
 import { strict as assert } from "node:assert";
 import { after, test } from "node:test";
 import { Window } from "happy-dom";
@@ -55,7 +56,7 @@ test("CreateDialog scopes a launch-profile choice to machines advertising it rea
       agentProfilesByMachine: Readonly<Record<string, readonly {
         id: string;
         label: string;
-        agent: "codex" | "claude" | "dsh";
+        agent: "codex" | "claude";
         provider_resume_import_supported?: boolean;
       }[]>>;
       accountsByProvider: Readonly<Record<"codex" | "claude", Readonly<Record<string, unknown>>>>;
@@ -211,27 +212,8 @@ test("CreateDialog scopes a launch-profile choice to machines advertising it rea
   }
 });
 
-test("CreateDialog resumes a history-backed DSH profile by its session id", async () => {
-  const { CreateDialog } = await ssr.loadModule<{
-    CreateDialog: ComponentType<{
-      machines: readonly string[];
-      agentProfilesByMachine: Readonly<Record<string, readonly {
-        id: string;
-        label: string;
-        agent: "codex" | "claude" | "dsh";
-        provider_resume_import_supported?: boolean;
-        history_resume_supported?: boolean;
-      }[]>>;
-      accountsByProvider: Readonly<Record<"codex" | "claude", Readonly<Record<string, unknown>>>>;
-      busy: boolean;
-      onCreate: (machine: string, body: CreateBody) => void;
-      onResumeFromHistory: (
-        machine: string,
-        target: { agentProfile: string; providerSessionId: string; label: string },
-      ) => void;
-      onClose: () => void;
-    }>;
-  }>("/src/CreateDialog.tsx");
+test("CreateDialog excludes old-daemon dsh and history-only profiles from Resume by ID", async () => {
+  const { CreateDialog } = await ssr.loadModule<{ CreateDialog: ComponentType<Record<string, unknown>> }>("/src/CreateDialog.tsx");
   const window = new Window({ url: "http://localhost" });
   const previous = {
     window: globalThis.window,
@@ -254,67 +236,26 @@ test("CreateDialog resumes a history-backed DSH profile by its session id", asyn
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
-  let created: unknown;
-  let resumed: unknown;
   try {
-    await act(async () => {
-      root.render(createElement(CreateDialog, {
-        machines: ["maple"],
-        agentProfilesByMachine: {
-          maple: [{ id: "dsh-workbench", label: "DSH", agent: "dsh", history_resume_supported: true }],
-        },
-        accountsByProvider: { codex: { maple: { accounts: [] } }, claude: {} },
-        busy: false,
-        onCreate: (machine, body) => {
-          created = { machine, body };
-        },
-        onResumeFromHistory: (machine, target) => {
-          resumed = { machine, target };
-        },
-        onClose: () => {},
-      }));
-    });
-    const click = async (element: Element | undefined) => {
+    await act(async () => root.render(createElement(CreateDialog, {
+      machines: ["host-a"],
+      agentProfilesByMachine: { "host-a": normalizeAgentLaunchProfiles([
+        { id: "retired", label: "Retired", agent: "dsh", history_resume_supported: true },
+        { id: "history-only", label: "History only", agent: "claude", history_resume_supported: true },
+        { id: "custom-codex", label: "Custom Codex", agent: "codex", provider_resume_import_supported: true },
+      ]) },
+      accountsByProvider: { codex: {}, claude: {} }, busy: false,
+      onCreate: () => {}, onResumeFromHistory: () => {}, onClose: () => {},
+    })));
+    const click = async (element: Element | null | undefined) => {
       assert.ok(element);
-      await act(async () => {
-        element.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-        await new Promise((resolve) => window.setTimeout(resolve, 0));
-      });
+      await act(async () => element.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true })));
     };
-    const option = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('button[role="option"]')]
-      .find((candidate) => candidate.textContent?.trim() === label);
-    const agentTrigger = () => container.querySelector<HTMLButtonElement>(
-      'button[role="combobox"][aria-label^="Agent:"]',
-    ) ?? undefined;
-
-    await click([...container.querySelectorAll<HTMLButtonElement>('button[role="radio"]')]
-      .find((button) => button.textContent?.trim() === "Resume by ID"));
-    await click(agentTrigger());
-    await click(option("DSH"));
-    assert.match(agentTrigger()?.getAttribute("aria-label") ?? "", /DSH/);
-
-    const resumeInput = container.querySelector<HTMLInputElement>(
-      'input[placeholder="Session ID or pasted resume command"]',
-    );
-    assert.ok(resumeInput);
-    await act(async () => {
-      const paste = new window.Event("paste", { bubbles: true, cancelable: true });
-      Object.defineProperty(paste, "clipboardData", {
-        value: { getData: (type: string) => type === "text" ? "dsh-session-1" : "" },
-      });
-      resumeInput.dispatchEvent(paste);
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-    });
-    const createButton = [...container.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent?.trim() === "Create");
-    assert.equal(createButton?.disabled, false);
-    await click(createButton);
-
-    assert.equal(created, undefined);
-    assert.deepEqual(resumed, {
-      machine: "maple",
-      target: { agentProfile: "dsh-workbench", providerSessionId: "dsh-session-1", label: "DSH" },
-    });
+    await click([...container.querySelectorAll('button[role="radio"]')]
+      .find(button => button.textContent?.trim() === "Resume by ID"));
+    await click(container.querySelector('button[role="combobox"][aria-label^="Agent:"]'));
+    assert.deepEqual([...container.querySelectorAll('button[role="option"]')].map(option => option.textContent?.trim()),
+      ["codex", "claude", "Custom Codex"]);
   } finally {
     await act(async () => root.unmount());
     Object.assign(globalThis, previous);
@@ -527,80 +468,6 @@ test(`CreateDialog explains ${reason} and keeps default Codex creation available
 
 }
 
-test("CreateDialog creates a second DSH profile on the dsh base", async () => {
-  const { CreateDialog } = await ssr.loadModule<{
-    CreateDialog: ComponentType<{
-      machines: readonly string[];
-      agentProfilesByMachine: Readonly<Record<string, readonly {
-        id: string;
-        label: string;
-        agent: "codex" | "claude" | "dsh";
-      }[]>>;
-      accountsByProvider: Readonly<Record<"codex" | "claude", Readonly<Record<string, unknown>>>>;
-      busy: boolean;
-      onCreate: (machine: string, body: CreateBody) => void;
-      onClose: () => void;
-    }>;
-  }>("/src/CreateDialog.tsx");
-  const window = new Window({ url: "http://localhost" });
-  const previous = {
-    window: globalThis.window,
-    document: globalThis.document,
-    Element: globalThis.Element,
-    HTMLElement: globalThis.HTMLElement,
-    Event: globalThis.Event,
-    MouseEvent: globalThis.MouseEvent,
-    IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT,
-  };
-  Object.assign(globalThis, {
-    window,
-    document: window.document,
-    Element: window.Element,
-    HTMLElement: window.HTMLElement,
-    Event: window.Event,
-    MouseEvent: window.MouseEvent,
-    IS_REACT_ACT_ENVIRONMENT: true,
-  });
-  const container = window.document.createElement("div");
-  window.document.body.append(container);
-  const root = createRoot(container);
-  let submitted: { machine: string; body: CreateBody } | undefined;
-  try {
-    await act(async () => {
-      root.render(createElement(CreateDialog, {
-        machines: ["maple"],
-        agentProfilesByMachine: { maple: [{ id: "dsh-tui", label: "DSH TUI", agent: "dsh" }] },
-        accountsByProvider: { codex: { maple: { accounts: [] } }, claude: {} },
-        busy: false,
-        onCreate: (machine, body) => {
-          submitted = { machine, body };
-        },
-        onClose: () => {},
-      }));
-    });
-    const click = async (element: Element | undefined) => {
-      assert.ok(element);
-      await act(async () => {
-        element.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-        await new Promise((resolve) => window.setTimeout(resolve, 0));
-      });
-    };
-    const options = () => [...container.querySelectorAll<HTMLButtonElement>('button[role="option"]')];
-    await click(container.querySelector<HTMLButtonElement>('button[role="combobox"][aria-label^="Agent:"]') ?? undefined);
-    assert.deepEqual(options().map((option) => option.textContent?.trim()), ["codex", "claude", "DSH TUI"]);
-    await click(options().find((option) => option.textContent?.trim() === "DSH TUI"));
-    await click([...container.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent?.trim() === "Create"));
-    assert.deepEqual(submitted, {
-      machine: "maple",
-      body: { agent: "dsh", agent_profile: "dsh-tui" },
-    });
-  } finally {
-    await act(async () => root.unmount());
-    Object.assign(globalThis, previous);
-  }
-});
-
 test("CreateDialog marks Machine and Agent choices with their badges", async () => {
   const { CreateDialog } = await ssr.loadModule<{
     CreateDialog: ComponentType<{
@@ -610,7 +477,7 @@ test("CreateDialog marks Machine and Agent choices with their badges", async () 
       agentProfilesByMachine: Readonly<Record<string, readonly {
         id: string;
         label: string;
-        agent: "codex" | "claude" | "dsh";
+        agent: "codex" | "claude";
       }[]>>;
       accountsByProvider: Readonly<Record<"codex" | "claude", Readonly<Record<string, unknown>>>>;
       busy: boolean;
@@ -648,8 +515,8 @@ test("CreateDialog marks Machine and Agent choices with their badges", async () 
         // maple carries a user override; m2 falls back to the default palette.
         machineColors: { maple: "#22da6e" },
         agentProfilesByMachine: {
-          maple: [{ id: "dsh-workbench", label: "DSH", agent: "dsh" }],
-          m2: [{ id: "dsh-workbench", label: "DSH", agent: "dsh" }],
+          maple: [],
+          m2: [],
         },
         accountsByProvider: { codex: { maple: { accounts: [] }, m2: { accounts: [] } }, claude: {} },
         busy: false,
@@ -685,13 +552,11 @@ test("CreateDialog marks Machine and Agent choices with their badges", async () 
     assert.deepEqual(optionAccents(), ["#22da6e", "#82aaff"]);
 
     await openSelect("Agent");
-    // Each kind gets its own mark; the DSH profile carries the fish.
+    // Each supported kind gets its own mark.
     assert.deepEqual(optionAgentMarks(), [
       "agent-badge codex",
       "agent-badge claude",
-      "agent-badge dsh",
     ]);
-    assert.equal(container.querySelectorAll('[role="option"] .dsh-mark').length, 1);
     // Marks stay decorative: the option name is still the plain label.
     assert.equal(
       container.querySelector('[role="option"]')?.getAttribute("aria-label") ?? null,

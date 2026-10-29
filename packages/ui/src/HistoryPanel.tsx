@@ -50,7 +50,7 @@ function firstPromptPreview(session: HistorySession): string | undefined {
 }
 
 function harnessLabel(provider: HistorySession["provider"]): string {
-  return provider === "dsh" ? "DSH" : provider === "codex" ? "Codex" : "Claude";
+  return provider === "codex" ? "Codex" : "Claude";
 }
 
 function projectLabel(session: HistorySession): string {
@@ -398,7 +398,6 @@ export function HistoryPanel({ machines, liveSessions = [], onClose, onResumed }
               <option value="">All</option>
               <option value="codex">Codex</option>
               <option value="claude">Claude</option>
-              <option value="dsh">DSH</option>
             </select>
           </label>
           <label className="history-search">

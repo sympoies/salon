@@ -228,7 +228,7 @@ function trimCapturedPrompt(value: string): string | null {
 function isTerminalCursorPositionReport(value: string): boolean {
   // xterm answers a TUI's device-status query on the same onData stream as
   // keyboard input. This report describes the terminal cursor; it is not a
-  // user edit and must not discard an otherwise clean legacy/DSH prompt.
+  // user edit and must not discard an otherwise clean legacy prompt.
   return /^\x1b\[\d{1,6};\d{1,6}R$/.test(value);
 }
 

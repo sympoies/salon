@@ -195,7 +195,7 @@ export function TerminalPane({
   const keyBarOverflowId = useId();
   const [keyBarOverflowOpen, setKeyBarOverflowOpen] = useState(false);
   useEffect(() => {
-    // Focusing a DSH pane after a claude one empties the row; leaving it open
+    // Focusing a pane without commands empties the row; leaving it open
     // would hang an empty second bar over the terminal.
     if (keyBarLayout.overflow.length === 0) {
       setKeyBarOverflowOpen(false);

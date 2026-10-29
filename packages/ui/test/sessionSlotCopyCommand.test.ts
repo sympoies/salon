@@ -157,26 +157,16 @@ test("SessionSlot explains every blocked profile recovery reason without offerin
   }
 });
 
-test("SessionSlot uses the fish badge for DSH sessions only", async () => {
+test("SessionSlot renders an old-daemon dsh session with the generic unknown badge", async () => {
   const SessionSlot = await loadSessionSlot();
-  const dsh = renderSlot(
-    SessionSlot,
-    makeSession({ agent: "dsh", agent_profile: "dsh-workbench" }),
-  );
-  const profiledCodex = renderSlot(
-    SessionSlot,
-    makeSession({ agent: "codex", agent_profile: "dsh-workbench" }),
-  );
-  const profiledClaude = renderSlot(
-    SessionSlot,
-    makeSession({ agent: "claude", agent_profile: "dsh-workbench" }),
-  );
-
-  assert.match(dsh, /dsh-mark/);
-  assert.doesNotMatch(profiledCodex, /dsh-mark/);
-  assert.match(profiledCodex, /openai-mark/);
-  assert.doesNotMatch(profiledClaude, /dsh-mark/);
-  assert.match(profiledClaude, /claude-mark/);
+  const html = renderSlot(SessionSlot, makeSession({ agent: "dsh" }));
+  assert.match(html, /agent-badge unknown/);
+  assert.match(html, /agent-badge-fallback[^>]*>D<\/span>/);
+  const { AgentBadge } = await ssr.loadModule<{ AgentBadge: ComponentType<{ agent: string }> }>("/src/AgentBadge.tsx");
+  assert.match(renderComponent(AgentBadge, { agent: "dsh" }), /aria-label="dsh"/);
+  assert.doesNotMatch(html, /DSH|dsh-mark|agent-badge dsh/);
+  assert.match(renderSlot(SessionSlot, makeSession({ agent: "codex" })), /openai-mark/);
+  assert.match(renderSlot(SessionSlot, makeSession({ agent: "claude" })), /claude-mark/);
 });
 
 test("SessionSlot renders the current repo badge as an open-repository link", async () => {

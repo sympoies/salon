@@ -108,7 +108,7 @@ import {
   type SessionRetitleV3Receipts,
   type SessionRetitleV3Result,
 } from "@agent-console/shared/session-retitle";
-import { sessionRetitlePath, sessionRetitlePathForAgent } from "./sessionRetitle.ts";
+import { sessionRetitlePath } from "./sessionRetitle.ts";
 
 import type { SpeechProviderSummary, SpeechTranscription } from "@agent-console/shared/speech";
 
@@ -352,16 +352,13 @@ function normalizeMachineStatuses(value: unknown, profileResumeImport: boolean):
     if (typeof raw.name !== "string" || !raw.name || typeof raw.ok !== "boolean") continue;
     const capabilities = normalizeAgentSessionCapabilities(raw.capabilities);
     const profiles: AgentLaunchProfileSummary[] = normalizeAgentLaunchProfiles(raw.agent_profiles)
-      .map(({ history_resume_supported: historyResume, ...profile }) => ({
+      .map((profile) => ({
         ...profile,
         provider_resume_import_supported: Boolean(
           profileResumeImport
           && capabilities.profile_resume_import === true
           && profile.provider_resume_import_supported === true
         ),
-        ...(historyResume === true && capabilities.history === true
-          ? { history_resume_supported: true }
-          : {}),
       }));
     machines.push({
       name: raw.name,
@@ -463,10 +460,10 @@ export async function listSessions(
     } = session;
     const titleState = session.title_state;
     const daemonCapabilities = machineCapabilities.get(session.machine);
-    const retitlePath = sessionRetitlePathForAgent(sessionRetitlePath({
+    const retitlePath = sessionRetitlePath({
       ...(sessionRetitleV2 ? { session_retitle_v2: true } : {}),
       ...(sessionRetitleV3 ? { session_retitle_v3: true } : {}),
-    }, daemonCapabilities), session.agent);
+    }, daemonCapabilities);
     const normalizedResumeBlockedReason = resumeBlockedReason
       && daemonCapabilities?.resume_blocked_reason === true
       ? session.resume_blocked_reason
@@ -563,7 +560,7 @@ function normalizeHistorySession(value: unknown, machine: string): HistorySessio
   const raw = value as Record<string, unknown>;
   const id = boundedString(raw.id, 80);
   const providerSessionId = boundedString(raw.provider_session_id, 256);
-  const provider = raw.provider === "codex" || raw.provider === "claude" || raw.provider === "dsh"
+  const provider = raw.provider === "codex" || raw.provider === "claude"
     ? raw.provider
     : undefined;
   const cwd = boundedString(raw.cwd, 4096);
@@ -672,7 +669,6 @@ const DETERMINATE_HISTORY_RESUME_FAILURE_CODES = new Set([
   "history-resume-identity-mismatch",
   "agent-profile-unavailable",
   "history-resume-profile-unavailable",
-  "dsh-history-unavailable",
   "provider-session-already-running",
   "history-read-failed",
 ]);

@@ -10,7 +10,7 @@ import type { Session } from "./types.ts";
 
 function providerLabel(session: Session): string {
   const provider = session.provider_resume?.provider ?? session.agent;
-  return provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : provider === "dsh" ? "DSH" : provider;
+  return provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : provider;
 }
 
 /** Shared live-session history reader for the full panel and desktop tiles. */

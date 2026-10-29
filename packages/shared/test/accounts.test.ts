@@ -64,9 +64,9 @@ test("a created binding is confirmed only for the runtime the create started", (
 
 test("a create budget adds the account binding and the prompt paste", () => {
   assert.equal(createSessionTimeoutMs({ agent: "claude" }), undefined);
-  assert.equal(createSessionTimeoutMs({ agent: "dsh", prompt: "   " }), undefined);
-  assert.equal(createSessionTimeoutMs({ agent: "dsh", prompt: "hi" }), PROMPT_CREATE_TIMEOUT_MS);
-  // 5 s DSH launch delay + 15 s pane-ready deadline + paste settle, with margin.
+  assert.equal(createSessionTimeoutMs({ agent: "claude", prompt: "   " }), undefined);
+  assert.equal(createSessionTimeoutMs({ agent: "claude", prompt: "hi" }), PROMPT_CREATE_TIMEOUT_MS);
+  // Pane-ready deadline and paste settle time include a transport margin.
   assert.ok(PROMPT_CREATE_TIMEOUT_MS >= 25_000);
   for (const provider of ["codex", "claude"] as const) {
     const body = { agent: provider, [`${provider}_account`]: "alpha" };

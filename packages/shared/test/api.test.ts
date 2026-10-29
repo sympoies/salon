@@ -139,24 +139,15 @@ test("shared profile projection is bounded, deduplicated, and public-safe", () =
   assert.equal(profiles.at(-1)?.id, "codex-12");
 });
 
-test("shared profile projection keeps DSH history resume and retires the hermes kind", () => {
-  const profiles = normalizeAgentLaunchProfiles([
-    {
-      id: "dsh-workbench",
-      label: "DSH",
-      agent: "dsh",
-      provider_resume_import_supported: false,
-      history_resume_supported: true,
-    },
-    // A hermes-base DSH row is dropped like any unknown agent.
-    { id: "dsh-tui", label: "DSH TUI", agent: "hermes", history_resume_supported: true },
-    { id: "legacy", label: "Legacy", agent: "gemini" },
-    { id: "plain", label: "Plain", agent: "codex", history_resume_supported: "yes" },
-  ]);
-
-  assert.deepEqual(profiles, [
-    { id: "dsh-workbench", label: "DSH", agent: "dsh", history_resume_supported: true },
-    { id: "plain", label: "Plain", agent: "codex" },
+test("shared profile projection drops old-daemon dsh and unknown launch profiles", () => {
+  assert.deepEqual(normalizeAgentLaunchProfiles([
+    { id: "retired", label: "Retired", agent: "dsh", history_resume_supported: true },
+    { id: "unknown", label: "Unknown", agent: "unknown-provider" },
+    { id: "custom-codex", label: "Custom Codex", agent: "codex", provider_resume_import_supported: true },
+    { id: "custom-claude", label: "Custom Claude", agent: "claude", history_resume_supported: true },
+  ]), [
+    { id: "custom-codex", label: "Custom Codex", agent: "codex", provider_resume_import_supported: true },
+    { id: "custom-claude", label: "Custom Claude", agent: "claude" },
   ]);
 });
 
@@ -537,7 +528,7 @@ test("the failure envelope projection keeps bounded decisions and drops everythi
 });
 
 test("public session projection preserves effective model and effort without account inference", () => {
-  for (const agent of ["codex", "claude", "dsh"]) {
+  for (const agent of ["codex", "claude"]) {
     const row = projectPublicAgentSession({ id: "s", agent, model: "example-model", reasoning_effort: "medium" });
     assert.equal(row.model, "example-model");
     assert.equal(row.reasoning_effort, "medium");

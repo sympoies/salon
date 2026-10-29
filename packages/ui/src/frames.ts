@@ -13,9 +13,7 @@ export type SpecialKey =
   | "right"
   | "tab";
 
-// `dsh` is only reachable through a daemon launch profile, so it is not a plain
-// option of its own.
-export type AgentKind = "codex" | "claude" | "dsh";
+export type AgentKind = "codex" | "claude";
 export const AGENT_KINDS: readonly AgentKind[] = ["codex", "claude"];
 
 export const PROVIDER_PROMPT_CAPABILITY = "provider-prompt.v1";

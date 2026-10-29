@@ -11,7 +11,6 @@ import {
 } from "./activityClock.ts";
 import type { ActivityDeliveryState } from "./activityStream.ts";
 import type { DashboardSession, TurnState } from "./types.ts";
-import { isDshAgent } from "./dshAgent.ts";
 import {classifySessionStatus, sessionStatusEvidence, type SessionStatusGroup} from "./sessionStatusGroups.ts";
 
 export type SessionActivityKind =
@@ -291,10 +290,9 @@ function safeSessionStatus(status: unknown): "running" | "stopped" | "unknown" {
   return "unknown";
 }
 
-function providerDisplayLabel(provider: unknown): "Codex" | "Claude" | "DSH" | undefined {
+function providerDisplayLabel(provider: unknown): "Codex" | "Claude" | undefined {
   if (provider === "codex") return "Codex";
   if (provider === "claude") return "Claude";
-  if (typeof provider === "string" && isDshAgent(provider)) return "DSH";
   return undefined;
 }
 

@@ -21,7 +21,7 @@ import {
 } from "./terminalFit.ts";
 import {
   createTerminalBottomPin,
-  createTerminalBottomPinTarget,
+  createPlainBottomPinTarget,
   nextBottomPinIntent,
   shouldAutoPinBottom,
 } from "./terminalBottomPin.ts";
@@ -340,9 +340,7 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
     const viewport = term.element?.querySelector<HTMLElement>(".xterm-viewport");
     const wheelTarget = term.element?.querySelector<HTMLElement>(".xterm-screen") ?? term.element ?? hostEl;
     let scrollbarTimer: number | undefined;
-    // DSH sessions pin the last content row rather than xterm's baseY; see
-    // TerminalBottomPinTarget.
-    const bottomPinTarget = createTerminalBottomPinTarget(term, deps.agent);
+    const bottomPinTarget = createPlainBottomPinTarget(term);
     let keepBottomPinned = true;
     let forceNextBottomPin = true;
     let lastCols: number | null = null;
@@ -954,12 +952,6 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       // output, xterm's own viewport-change re-hover restores it immediately.
       disclosedLink = null;
       updateBottomPinIntentFromBuffer();
-      if (!keepBottomPinned && bottomPinTarget.programmaticScrollIsSynchronous) {
-        // A real scroll-away wins over settle retries that were armed by an
-        // earlier write. Only content-aware pins land synchronously; plain
-        // xterm pins emit off-target onScroll events during their animation.
-        bottomPin.cancel();
-      }
       syncSelectionHandles();
     });
     const writeParsedSub = term.onWriteParsed(() => {

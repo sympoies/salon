@@ -942,7 +942,7 @@ test('stopped, unsupported and unfenced sessions do not admit conversation repli
   for (const changes of [
     { status: 'stopped' },
     { session_incarnation: undefined },
-    { agent: 'dsh', provider_resume: { provider: 'dsh', session_id: 'provider-7' } },
+    { agent: 'other-provider', provider_resume: { provider: 'other-provider', session_id: 'provider-7' } },
   ]) {
     await panel.render(changes);
     await panel.send();

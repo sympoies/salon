@@ -48,8 +48,6 @@ test("HistoryPanel exposes metadata-only discovery, transcript browsing, and res
   );
   assert.match(conversation, /setMessages\(\(current\) => \[\.\.\.result\.messages, \.\.\.current\]\.slice\(0, HISTORY_MESSAGE_WINDOW\)\)/);
   assert.match(source, />Resume<|"Resuming…" : "Resume"/);
-  assert.match(source, /<option value="dsh">DSH<\/option>/);
-  assert.match(source, /provider === "dsh" \? "DSH"/);
   assert.match(
     source,
     /disabled=\{resuming \|\| resumeOutcomeUnknown \|\| !resumeAvailable \|\| !selected\.resumable\}/,

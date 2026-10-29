@@ -193,7 +193,7 @@ test("resumeCommand prefers daemon resume args and only composes known provider 
   assert.equal(resumeCommand({ id: "hs-1" }), null);
 });
 
-test("sessionCommand requires Codex provider resume and has no DSH fallback", () => {
+test("sessionCommand requires Codex provider resume", () => {
   assert.equal(
     sessionCommand({
       id: "hs-1",
@@ -212,16 +212,6 @@ test("sessionCommand requires Codex provider resume and has no DSH fallback", ()
       provider_resume: { provider: "codex", session_id: "codex-provider-id" },
     }),
     "codex resume codex-provider-id",
-  );
-  assert.equal(
-    sessionCommand({
-      id: "hs-1",
-      agent: "dsh",
-      agent_profile: "dsh-workbench",
-      status: "running",
-      attach_command: "tmux attach -t hs-dsh-1",
-    }),
-    null,
   );
   assert.equal(
     sessionCommand({

@@ -761,7 +761,7 @@ test("an unconfirmed resume checks inventory and disables blind retry", async ()
       sessions: [{
         id: "history-1",
         machine: "maple",
-        provider: "dsh" as const,
+        provider: "claude" as const,
         provider_session_id: "provider-1",
         cwd: "/repo",
         created_at: "2026-08-31T00:00:00Z",
@@ -835,7 +835,7 @@ test("a resume transport failure looks up the exact conversation before returnin
       sessions: [{
         id: "history-1",
         machine: "maple",
-        provider: "dsh" as const,
+        provider: "claude" as const,
         provider_session_id: "provider-1",
         cwd: "/repo",
         created_at: "2026-08-31T00:00:00Z",
@@ -848,7 +848,7 @@ test("a resume transport failure looks up the exact conversation before returnin
     listHistoryMessages: async () => ({ ok: true, messages: [] }),
     lookupLiveHistorySession: async (machine, provider, providerSessionId) => {
       lookups += 1;
-      assert.deepEqual([machine, provider, providerSessionId], ["maple", "dsh", "provider-1"]);
+      assert.deepEqual([machine, provider, providerSessionId], ["maple", "claude", "provider-1"]);
       return lookups === 1 ? undefined : "live-9";
     },
     resumeHistorySession: async () => {
@@ -898,7 +898,7 @@ test("History unmount cancels a pending resume lookup and handoff", async () => 
     listHistorySessions: async () => ({
       ok: true,
       sessions: [{
-        id: "history-1", machine: "maple", provider: "dsh" as const,
+        id: "history-1", machine: "maple", provider: "claude" as const,
         provider_session_id: "provider-1", cwd: "/repo",
         created_at: "2026-08-31T00:00:00Z", updated_at: "2026-08-31T00:00:01Z", resumable: true,
       }],
@@ -953,7 +953,7 @@ test("History does not start an inventory lookup when unmounted during the resum
     listHistorySessions: async () => ({
       ok: true,
       sessions: [{
-        id: "history-1", machine: "maple", provider: "dsh" as const,
+        id: "history-1", machine: "maple", provider: "claude" as const,
         provider_session_id: "provider-1", cwd: "/repo",
         created_at: "2026-08-31T00:00:00Z", updated_at: "2026-08-31T00:00:01Z", resumable: true,
       }],

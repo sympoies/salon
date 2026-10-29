@@ -6,7 +6,7 @@ import { normalizeSessionModelSettings, sessionModelLabel } from "../src/session
 test("namespaced model IDs survive normalization, projection, and display", () => {
   for (const model of ["meta-llama/llama-3.1-8b-instruct", "hf.co/org/model", "org/local-model:8b", `org/${"m".repeat(124)}`]) {
     assert.deepEqual(normalizeSessionModelSettings({ model, reasoning_effort: "high" }), { model, reasoning_effort: "high" });
-    assert.equal(projectPublicAgentSession({ id: "session", agent: "dsh", model }).model, model);
+    assert.equal(projectPublicAgentSession({ id: "session", agent: "other-provider", model }).model, model);
     assert.equal(sessionModelLabel({ model }), `${model} · unknown`);
   }
 });
@@ -28,7 +28,7 @@ test("public model credentials stay unknown in every namespace component", () =>
   ]) {
     for (const model of [credential, `org/${credential}`]) {
       assert.deepEqual(normalizeSessionModelSettings({ model, reasoning_effort: "medium" }), { model: null, reasoning_effort: "medium" });
-      assert.equal(projectPublicAgentSession({ id: "session", agent: "dsh", model }).model, null);
+      assert.equal(projectPublicAgentSession({ id: "session", agent: "other-provider", model }).model, null);
       assert.equal(sessionModelLabel({ model, reasoning_effort: "medium" }), "unknown · medium");
     }
   }

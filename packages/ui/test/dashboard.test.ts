@@ -226,7 +226,6 @@ test("Dashboard renders agent providers as icon badges", () => {
   assert.match(cssRuleFor(".agent-retitle-button"), /cursor: pointer;/);
   assert.match(css, /\.agent-badge\.codex \{/);
   assert.match(css, /\.agent-badge\.claude \{/);
-  assert.match(css, /\.agent-badge\.dsh \{/);
   // claude-gpt is retired: no badge tint, and no orphan mark rule behind it.
   assert.doesNotMatch(css, /\.agent-badge\.agent-console \{/);
   assert.doesNotMatch(css, /\.agent-badge-icon\.agent-console-mark \{/);

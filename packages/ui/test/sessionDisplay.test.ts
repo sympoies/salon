@@ -132,7 +132,7 @@ test('header count, filter and card agree for every harness and turn state (#873
       source:{kind:'provider_hook' as const, confidence:'authoritative' as const},
       last_turn:{completed_at:at, outcome:'failed' as const}})},
   } as const;
-  for (const agent of ['codex', 'claude', 'dsh']) {
+  for (const agent of ['codex', 'claude']) {
     for (const [name, fixture] of Object.entries(fixtures)) {
       for (const certainty of name === 'pending' ? ['exact', 'conservative'] as const : ['exact'] as const) {
         const label = `${agent} ${name}${name === 'pending' ? ` (${certainty})` : ''}`;
