@@ -25,6 +25,7 @@ jobs:
       scope: ${{ steps.plan.outputs.scope }}
       tree: ${{ steps.plan.outputs.tree }}
       suites: ${{ steps.plan.outputs.suites }}
+      matrix: ${{ steps.plan.outputs.matrix }}
       reused_run: ${{ steps.plan.outputs.reused_run }}
     defaults:
       run:
@@ -71,15 +72,15 @@ jobs:
         run: bash .agents/scripts/pre-pr.sh --suite cheap
 
   suites:
-    name: Validate ${{ matrix.suite }}
+    name: Validate ${{ matrix.suite }}${{ matrix.shard && format(' ({0})', matrix.shard) || '' }}
     needs: plan
-    if: needs.plan.outputs.suites != '[]'
+    if: needs.plan.outputs.matrix != '[]'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        suite: ${{ fromJSON(needs.plan.outputs.suites) }}
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     defaults:
       run:
         shell: bash
@@ -182,6 +183,7 @@ jobs:
       - name: Run validation suite
         env:
           VALIDATION_SUITE: ${{ matrix.suite }}
+          UI_TEST_SHARD: ${{ matrix.shard }}
         run: bash .agents/scripts/pre-pr.sh --suite "$VALIDATION_SUITE"
 
   validate:
@@ -207,6 +209,7 @@ jobs:
           PLAN_RESULT: ${{ needs.plan.result }}
           SUITES_RESULT: ${{ needs.suites.result }}
           SELECTED_SUITES: ${{ needs.plan.outputs.suites }}
+          SELECTED_MATRIX: ${{ needs.plan.outputs.matrix }}
           REUSED_RUN: ${{ needs.plan.outputs.reused_run }}
           VALIDATION_SCOPE: ${{ needs.plan.outputs.scope }}
         run: python3 scripts/validation/ci_result.py

@@ -9,6 +9,9 @@ import subprocess
 from urllib.request import Request, urlopen
 
 
+UI_SHARD_COUNTS = {"ui-browser": 4, "ui-unit": 3}
+
+
 def select_scope(paths):
     packages = set()
     for path in paths:
@@ -34,6 +37,17 @@ def selected_suites(scope):
     }[scope]
 
 
+def job_matrix(scope):
+    return [{"suite": suite, "shard": f"{i}/{count}" if count > 1 else ""}
+            for suite in selected_suites(scope)
+            for count in [UI_SHARD_COUNTS.get(suite, 1)]
+            for i in range(1, count + 1)]
+
+
+def job_name(job):
+    return f"Validate {job['suite']}" + (f" ({job['shard']})" if job["shard"] else "")
+
+
 def changed_scope(base, head="HEAD"):
     # --no-renames includes both sides of cross-package moves and deletions.
     merge_base = subprocess.check_output(["git", "merge-base", base, head], text=True).strip()
@@ -48,6 +62,8 @@ def reusable_run(run, jobs, tree, repository):
         run.get("event") == "pull_request" and run.get("conclusion") == "success"
         and (run.get("head_repository") or {}).get("full_name") == repository
         and (run.get("head_commit") or {}).get("tree_id") == tree
+        and all(any(job.get("name") == job_name(expected) and job.get("conclusion") == "success"
+                    for job in jobs) for expected in job_matrix("full"))
         and any(job.get("name") == "Core package validation" and job.get("conclusion") == "success"
                 and any(step.get("name") == f"Full suite passed: {tree}"
                         and step.get("conclusion") == "success" for step in job.get("steps", []))
@@ -100,7 +116,8 @@ def main():
     else:
         raise SystemExit("Unsupported CI event")
     outputs = {"scope": scope, "tree": tree, "reused_run": reused,
-               "suites": json.dumps([] if reused else selected_suites(scope), separators=(",", ":"))}
+               "suites": json.dumps([] if reused else selected_suites(scope), separators=(",", ":")),
+               "matrix": json.dumps([] if reused else job_matrix(scope), separators=(",", ":"))}
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
         for key, value in outputs.items():
             print(f"{key}={value}", file=output)

@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import ci_scope
 from unittest import mock
 from ci_scope import select_scope, selected_suites, reusable_run, duplicate_run
 
@@ -39,24 +40,47 @@ class ScopeTest(unittest.TestCase):
         self.assertEqual(selected_suites("ui"), ["core", "ui-unit", "ui-browser"])
         self.assertEqual(selected_suites("full"), ["core", "edge", "ui-unit", "ui-browser"])
 
+    def test_job_matrix_expands_only_ui_suites(self):
+        core = [{"suite": "core", "shard": ""}]
+        edge = [{"suite": "edge", "shard": ""}]
+        unit = [{"suite": "ui-unit", "shard": f"{i}/3"} for i in range(1, 4)]
+        browser = [{"suite": "ui-browser", "shard": f"{i}/4"} for i in range(1, 5)]
+        for scope, expected in [("docs", []), ("edge", core + edge),
+                                ("ui", core + unit + browser),
+                                ("full", core + edge + unit + browser)]:
+            with self.subTest(scope=scope):
+                self.assertEqual(ci_scope.job_matrix(scope), expected)
+
     def test_only_matching_successful_full_run_is_reused(self):
         tree = "a" * 40
         run = {"id": 10, "event": "pull_request", "conclusion": "success",
                "head_commit": {"tree_id": tree}, "head_repository": {"full_name": "example/project"}}
         job = {"name": "Core package validation", "conclusion": "success", "steps": [
             {"name": f"Full suite passed: {tree}", "conclusion": "success"}]}
-        self.assertTrue(reusable_run(run, [job], tree, "example/project"))
+        suite_jobs = [{"name": f"Validate {suite}" + (f" ({i}/{n})" if n > 1 else ""),
+                       "conclusion": "success"}
+                      for suite, n in [("core", 1), ("edge", 1), ("ui-unit", 3), ("ui-browser", 4)]
+                      for i in range(1, n + 1)]
+        self.assertTrue(reusable_run(run, [job] + suite_jobs, tree, "example/project"))
+        for index in range(len(suite_jobs)):
+            with self.subTest(missing=suite_jobs[index]["name"]):
+                self.assertFalse(reusable_run(run, [job] + suite_jobs[:index] + suite_jobs[index + 1:],
+                                              tree, "example/project"))
+            for result in ["failure", "cancelled", "skipped"]:
+                jobs = [job] + suite_jobs.copy()
+                jobs[index + 1] = jobs[index + 1] | {"conclusion": result}
+                self.assertFalse(reusable_run(run, jobs, tree, "example/project"))
         for change in [{"event": "push"}, {"conclusion": "failure"},
                        {"head_commit": {"tree_id": "b" * 40}},
                        {"head_repository": {"full_name": "example/fork"}}]:
             with self.subTest(change=change):
-                self.assertFalse(reusable_run(run | change, [job], tree, "example/project"))
+                self.assertFalse(reusable_run(run | change, [job] + suite_jobs, tree, "example/project"))
         for jobs in [[], [job | {"conclusion": "failure"}],
                      [job | {"steps": []}], [job | {"steps": [{
                          "name": f"Full suite passed: {tree}", "conclusion": "skipped"}]}],
                      [job | {"steps": [{"name": f"Full suite passed: {'b' * 40}", "conclusion": "success"}]}]]:
             with self.subTest(jobs=jobs):
-                self.assertFalse(reusable_run(run, jobs, tree, "example/project"))
+                self.assertFalse(reusable_run(run, jobs + suite_jobs, tree, "example/project"))
 
 
 class NullableRunTest(unittest.TestCase):

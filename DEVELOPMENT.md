@@ -82,10 +82,16 @@ continues to use the full default gate. Results appear in job logs and the
 workflow summary. The required check remains `Core package validation` and
 fails if planning or any selected job fails, is cancelled, or is unexpectedly
 skipped. Core checks, edge tests, UI unit tests and UI browser fixtures run in
-parallel when runners are available. Core packed consumption and UI browser
-fixtures both require Chrome; those two jobs probe or install it.
-The UI partitions retain the assertion safety preflight and three-file worker
-limit. The full local gate continues to run all tests in sequence.
+parallel when runners are available. UI browser tests use four file shards and
+UI unit tests use three, giving nine parallel validation jobs for full coverage.
+Core packed consumption and each UI browser shard probe or install Chrome.
+Every UI shard retains the assertion safety preflight and three-file worker
+limit. All selected shards must succeed, including for identical-tree reuse.
+The full local gate continues to run all tests sequentially and unsharded.
+Run one UI shard locally with `UI_TEST_SHARD=1/4 bash scripts/test-ui.sh browser`
+or `UI_TEST_SHARD=1/3 bash scripts/test-ui.sh unit`. The shard must be `i/n` with
+positive integers and `i <= n`; an empty shard succeeds, while an empty
+partition fails.
 CI reuses an image-installed devlog only when its binary SHA-256 matches the
 pinned release artifact. Otherwise it downloads and verifies the existing
 pinned archive before extraction; download limits and validation stay the same.
