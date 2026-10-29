@@ -32,8 +32,8 @@ function messageTimeLabel(date: Date | undefined): string | undefined {
   return date && [date.getHours(), date.getMinutes()].map(part => String(part).padStart(2, "0")).join(":");
 }
 
-function messageDayLabel(date: Date): string {
-  return date.toDateString() === new Date().toDateString() ? "今天"
+export function messageDayLabel(date: Date, now: Date = new Date()): string {
+  return date.toDateString() === now.toDateString() ? "Today"
     : `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
 }
 

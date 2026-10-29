@@ -496,7 +496,7 @@ test("HistoryPanel shows each message's local send time", async () => {
   assert.equal(timeOf("untimed"), null);
   assert.equal(timeOf("invalid"), null);
   assertNoElement(mounted.container, '[data-history-message-id="earlier"] header');
-  assert.deepEqual([...mounted.container.querySelectorAll('.history-day-separator')].map(day => day.textContent), ['2026/9/1', '今天']);
+  assert.deepEqual([...mounted.container.querySelectorAll('.history-day-separator')].map(day => day.textContent), ['2026/9/1', 'Today']);
 });
 
 test("HistoryPanel stars a session from the list and lifts it to the front", async () => {
