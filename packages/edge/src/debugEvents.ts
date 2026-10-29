@@ -1,5 +1,6 @@
 import {
   classifyDebugEvent,
+  isLayoutRevisionConflict,
   normalizeDebugErrorEnvelope,
   normalizeDebugLifecycleMetadata,
   type DebugEvent,
@@ -58,7 +59,7 @@ export class DebugEventBuffer {
       method: input.method?.toUpperCase() ?? null,
       route: redactDebugPath(input.route),
       status: input.status ?? null,
-      ok: input.ok ?? null,
+      ok: isLayoutRevisionConflict(input) ? true : input.ok ?? null,
       duration_ms: input.duration_ms === undefined || input.duration_ms === null
         ? null
         : Math.max(0, Math.round(input.duration_ms)),
