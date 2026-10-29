@@ -1602,10 +1602,17 @@ export function Dashboard({
       const result = await refreshSessionInfo(target);
       if (!result.ok) return { ok: false, message: result.error };
       if (!liveRef.current) return { ok: false, message: "Session info was not applied." };
-      const merged = mergeRefreshedSession(sessionsRef.current, target.machine, result.session, listed?.session_incarnation);
-      if (!merged.applied) return { ok: false, message: "The session changed while refreshing. Try again." };
-      sessionsRef.current = merged.sessions as DashboardSession[];
-      setSessions(merged.sessions as DashboardSession[]);
+      // Merge inside the state queue, after any queued activity or poll update, and report from it.
+      const applied = await new Promise<boolean>((resolve) => {
+        setSessions((current) => {
+          const merged = mergeRefreshedSession(current, target.machine, result.session, listed?.session_incarnation);
+          resolve(merged.applied);
+          if (!merged.applied) return current;
+          sessionsRef.current = merged.sessions as DashboardSession[];
+          return merged.sessions as DashboardSession[];
+        });
+      });
+      if (!applied) return { ok: false, message: "The session changed while refreshing. Try again." };
       return { ok: true, changed: result.changed };
     },
   }), []);

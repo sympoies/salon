@@ -39,6 +39,7 @@ import type {
   SessionMaintenancePreview,
 } from "@agent-console/shared/maintenance";
 import { makeSession, makeSessionSlotProps } from "./support/fixtures.ts";
+import { serializeActivitySseEvent } from "@agent-console/shared/activity";
 import { sharedAdmissionFixture } from "./support/sharedAdmissionFixture.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 import { createRequestTimeoutMs } from "../src/createLifecycle.ts";
@@ -169,37 +170,86 @@ test("the macOS title bar keeps the status counts while an overlay backgrounds t
   assert.equal(titleBarCounts.hasAttribute("inert"), false, "usable again once the overlay closes");
 });
 
-test("the dashboard refresh control reports an unapplied reply as failed and applies a matching one", async () => {
-  const mounted = installDom();
+// A Dashboard with one listed session and a badge that exposes the refresh hook
+// and the live session object the dashboard currently holds for it.
+async function mountRefreshDashboard(refreshSessionInfo: () => Promise<unknown>, options: { readonly web?: boolean } = {}) {
+  const mounted = installDom(options);
   cleanupStack.push(mounted.cleanup);
   const ssr = createUiSsrHarness([dashboardApiMockPlugin(), terminalPaneMockPlugin()]);
   cleanupStack.push(ssr.close);
   const listed = makeSession({ id: "alpha", machine: "fixture", title: "Alpha", model: "model-a", session_incarnation: "inc-1" });
-  const reply = (id: string, incarnation: string) => ({ ok: true, changed: ["model"], unavailable: ["account"],
-    session: { id, agent: "codex", session_incarnation: incarnation, model: "model-b" } });
-  let answer = reply("gone", "inc-1");
   globalThis.__agentConsoleDashboardBehaviorApiMock = {
     listSessions: async () => ({ ok: true, sessions: [listed], machines: [{ name: "fixture", ok: true }] }),
-    refreshSessionInfo: async () => answer,
+    refreshSessionInfo,
   };
   const { Dashboard } = await ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
   const { UiExtensionsProvider, createUiExtensionRegistry, useSessionRefresh } =
     await ssr.loadModule<typeof import("../src/extensions.tsx")>("/src/extensions.tsx");
   let hook!: ReturnType<typeof useSessionRefresh>;
+  let live: Record<string, unknown> | undefined;
   const Probe = () => { hook = useSessionRefresh(); return null; };
-  const registry = createUiExtensionRegistry([{ id: "refresher", sessionBadges: [{ id: "probe", render: () => createElement(Probe) }] }]);
+  const registry = createUiExtensionRegistry([{ id: "refresher", sessionBadges: [{ id: "probe", render: item => {
+    live = item as Record<string, unknown>;
+    return createElement(Probe);
+  } }] }]);
   await act(async () => mounted.root.render(createElement(UiExtensionsProvider, { registry },
     createElement(Dashboard, { active: true, machines: ["fixture"], enabledMachines: ["fixture"], machineColors: {},
       onDebug() {}, onUsage() {}, onSettings() {} }))));
-  await waitForCondition(() => hook !== undefined, "a mounted refresh consumer");
+  await waitForCondition(() => hook !== undefined && live !== undefined, "a mounted refresh consumer");
+  return { mounted, refresh: (target: { machine: string; id: string }) => hook.refresh(target), live: () => live! };
+}
 
-  let state!: Awaited<ReturnType<typeof hook.refresh>>;
-  await act(async () => { state = await hook.refresh({ machine: "fixture", id: "gone" }); });
+const refreshReply = (id: string, incarnation: string) => ({ ok: true, changed: ["model"], unavailable: ["account"],
+  session: { id, agent: "codex", session_incarnation: incarnation, model: "model-b" } });
+
+test("the dashboard refresh control reports an unapplied reply as failed and applies a matching one", async () => {
+  let answer = refreshReply("gone", "inc-1");
+  const { refresh, live } = await mountRefreshDashboard(async () => answer);
+
+  let state!: Awaited<ReturnType<typeof refresh>>;
+  await act(async () => { state = await refresh({ machine: "fixture", id: "gone" }); });
   assert.equal(state.status, "failed", "a reply for a session the list no longer has is not reported as updated");
 
-  answer = reply("alpha", "inc-1");
-  await act(async () => { state = await hook.refresh({ machine: "fixture", id: "alpha" }); });
+  answer = refreshReply("alpha", "inc-1");
+  await act(async () => { state = await refresh({ machine: "fixture", id: "alpha" }); });
   assert.equal(state.status, "updated");
+  assert.equal(live().model, "model-b");
+});
+
+test("a refresh that resolves while an activity update is still queued keeps both", async () => {
+  const realFetch = globalThis.fetch;
+  cleanupStack.push(async () => { globalThis.fetch = realFetch; });
+  let feed!: ReadableStreamDefaultController<Uint8Array>;
+  globalThis.fetch = (async (input: unknown) => String(input).startsWith("/api/activity/events")
+    ? new Response(new ReadableStream<Uint8Array>({ start(controller) { feed = controller; } }),
+      { headers: { "content-type": "text/event-stream" } })
+    : new Response("{}", { status: 404 })) as typeof fetch;
+  let release!: (reply: unknown) => void;
+  const { refresh, live } = await mountRefreshDashboard(() => new Promise(resolve => { release = resolve; }), { web: true });
+  await waitForCondition(() => feed !== undefined, "the activity stream connection");
+
+  const activity = serializeActivitySseEvent({
+    schema_version: "agent-session.activity-stream.event.v1", type: "snapshot", stream_id: "boot-a", sequence: 1,
+    machine: "fixture", observed_at: "2026-10-29T00:00:00Z",
+    sessions: [{ id: "alpha", turn_state: {
+      schema_version: "agent-session.turn-state.v1", phase: "working", phase_changed_at: "2026-10-29T00:00:00Z", revision: 1,
+      source: { kind: "provider_hook", provider: "codex", confidence: "authoritative" },
+      current_turn: { started_at: "2026-10-29T00:00:00Z" }, last_turn: null,
+    } }],
+  } as Parameters<typeof serializeActivitySseEvent>[0]);
+  let state!: Awaited<ReturnType<typeof refresh>>;
+  await act(async () => {
+    const pending = refresh({ machine: "fixture", id: "alpha" });
+    feed.enqueue(new TextEncoder().encode(activity));
+    // Let the stream deliver the event so its state update is queued, unrendered, before the refresh resolves.
+    for (let turn = 0; turn < 5; turn += 1) await new Promise(resolve => setTimeout(resolve, 0));
+    release(refreshReply("alpha", "inc-1"));
+    state = await pending;
+  });
+  assert.equal(state.status, "updated");
+  assert.equal((live().turn_state as { phase?: string } | undefined)?.phase, "working", "the queued activity update survives");
+  assert.equal(live().model, "model-b", "and the refreshed facts are applied");
+  feed.close();
 });
 
 // Web and phone have no native title bar: a focused session carries its own
@@ -927,13 +977,13 @@ function dashboardApiMockPlugin(): Plugin {
   };
 }
 
-function installDom(): {
+function installDom(options: { readonly web?: boolean } = {}): {
   readonly window: Window;
   readonly root: Root;
   readonly container: HTMLElement;
   cleanup(): Promise<void>;
 } {
-  const window = new Window({ url: "tauri://localhost" });
+  const window = new Window({ url: options.web ? "https://console.test" : "tauri://localhost" });
   const previous = {
     window: globalThis.window,
     document: globalThis.document,
@@ -965,7 +1015,7 @@ function installDom(): {
     IS_REACT_ACT_ENVIRONMENT: true,
   });
   Object.defineProperty(globalThis, "navigator", { value: window.navigator, configurable: true });
-  Object.defineProperty(window, "__TAURI__", { value: {}, configurable: true });
+  if (!options.web) Object.defineProperty(window, "__TAURI__", { value: {}, configurable: true });
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
