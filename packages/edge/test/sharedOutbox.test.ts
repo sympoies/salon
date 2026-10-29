@@ -276,12 +276,15 @@ test("lost or malformed acknowledgement reconciles the original key without a se
 test("a command_dispatched receipt completes the reply without transcript proof, retry or a second POST", async t => {
   for (const mode of ["command", "command-lost"]) await t.test(mode, async t => {
     const f = await fixture(t); f.state.mode = mode;
+    // While the receipt is not yet readable the lost acknowledgement stays unknown.
+    if (mode === "command-lost") f.state.lookup = "missing";
     await f.admit(); f.advance();
     await f.until(async () => (await f.list()).items[0]?.state === (mode === "command" ? "command_dispatched" : "unknown"));
     if (mode === "command-lost") {
       await f.restart(); f.advance();
+      await f.until(() => f.state.lookups.length > 0);
+      f.state.lookup = "normal";
       await f.until(async () => (await f.list()).items[0]?.state === "command_dispatched");
-      assert.ok(f.state.lookups.length > 0);
     } else assert.equal(f.state.lookups.length, 0);
     const done = (await f.list()).items[0]!;
     assert.equal(done.receipt?.outcome, "command_dispatched"); assert.equal(done.error_code, null);
