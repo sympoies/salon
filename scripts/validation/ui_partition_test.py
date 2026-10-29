@@ -63,12 +63,27 @@ if os.environ.get("FAIL_GUARD") == "1":
             for name in names:
                 (test_dir / name).write_text(f'import {{ test }} from "node:test"; test("{name}", () => {{}});\n')
 
+            # Normalize the preflight reporter across local and hosted Node defaults.
+            node_bin = shutil.which("node")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            wrapper = bin_dir / "node"
+            wrapper.write_text(f'''#!/usr/bin/env python3
+import os, sys
+args = sys.argv[1:]
+if not any(arg.startswith("--test-reporter=") for arg in args):
+    args.insert(0, "--test-reporter=tap")
+os.execv({node_bin!r}, [{node_bin!r}, *args])
+''')
+            wrapper.chmod(0o755)
+
             def run(kind, shard=""):
                 result = subprocess.run(["bash", str(root / "scripts/test-ui.sh"), kind],
-                                        env=dict(os.environ, UI_TEST_SHARD=shard), capture_output=True, text=True)
+                                        env=dict(os.environ, UI_TEST_SHARD=shard, PATH=f"{bin_dir}:{os.environ['PATH']}"),
+                                        capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 tests = re.findall(r"^# Subtest: (.+)$", result.stdout, re.MULTILINE)
-                self.assertIn("domAssertSafety.test.ts", result.stdout)
+                self.assertEqual(tests.pop(0), "domAssertSafety.test.ts")
                 return tests
 
             for kind, count in [("unit", 3), ("browser", 4)]:
