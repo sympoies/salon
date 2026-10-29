@@ -122,6 +122,7 @@ export function createLayoutPersistQueue(args: {
 }): { persist: (intent: LayoutPersistIntent) => Promise<void> } {
   let generation = 0;
   let queue = Promise.resolve();
+  let completedSnapshot: LayoutStoreSnapshot | null = null;
   const persist = (intent: LayoutPersistIntent): Promise<void> => {
     const serial = ++generation;
     const frozenIntent: LayoutPersistIntent = {
@@ -143,13 +144,17 @@ export function createLayoutPersistQueue(args: {
       }
       // Capture when this intent runs, keeping one registry throughout its awaits.
       const knownMachines = new Set(args.getKnownMachines());
+      const current = args.getSnapshot();
+      const previous = completedSnapshot?.revision != null && (current?.revision ?? -1) < completedSnapshot.revision
+        ? completedSnapshot : current;
       const result = await persistLayoutIntent({
-        previous: args.getSnapshot() ?? { order: [], revision: null },
+        previous: previous ?? { order: [], revision: null },
         intent: frozenIntent,
         knownMachines,
         putLayoutOrder: args.putLayoutOrder,
         shouldRetry: () => serial === generation,
       });
+      if (result.reachable && result.snapshot) completedSnapshot = result.snapshot;
       if (serial !== generation) {
         return;
       }
@@ -162,7 +167,7 @@ export function createLayoutPersistQueue(args: {
       }
     };
     const revisionedSnapshot = (args.getSnapshot()?.revision ?? null) !== null;
-    if (frozenIntent.urgent && revisionedSnapshot) {
+    if (frozenIntent.urgent && frozenIntent.reason === "flush" && revisionedSnapshot) {
       const next = run();
       queue = queue.catch(() => undefined).then(() => next).catch(() => undefined);
       return next;

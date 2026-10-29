@@ -138,3 +138,25 @@ test("DebugPanel passes installed diagnostic probes through its registry", async
     assert.deepEqual(api.receivedProbes, probes);
   } finally { await mounted.cleanup(); await ssr.close(); }
 });
+
+
+test("layout revision conflicts render neutrally while other failures remain errors", async () => {
+  const mounted = await installDom();
+  const ssr = createUiSsrHarness([apiMock]);
+  try {
+    const { DebugPanel } = await ssr.loadModule<typeof import("../src/DebugPanel.tsx")>("/src/DebugPanel.tsx");
+    const { recordDebugEvent } = await ssr.loadModule<typeof import("../src/debugLog.ts")>("/src/debugLog.ts");
+    recordDebugEvent({ source: "client", method: "PUT", route: "/api/layout", status: 409, ok: false, error: "layout revision conflict" });
+    recordDebugEvent({ source: "client", method: "PUT", route: "/api/other", status: 409, ok: false, error: "layout revision conflict" });
+    recordDebugEvent({ source: "client", method: "PUT", route: "/api/layout", status: 500, ok: false });
+    await act(async () => { mounted.root.render(createElement(DebugPanel, { onExit() {} })); await flush(); });
+    const rows = [...mounted.container.querySelectorAll<HTMLElement>(".debug-event")];
+    const conflict = rows.find(row => row.textContent?.includes("/api/layout") && row.textContent?.includes("409"));
+    const other = rows.find(row => row.textContent?.includes("/api/other"));
+    const failure = rows.find(row => row.textContent?.includes("/api/layout") && row.textContent?.includes("500"));
+    assert.ok(conflict && other && failure);
+    assert.equal(conflict.classList.contains("is-error"), false);
+    assert.equal(other.classList.contains("is-error"), true);
+    assert.equal(failure.classList.contains("is-error"), true);
+  } finally { await mounted.cleanup(); await ssr.close(); }
+});

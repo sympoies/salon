@@ -1893,6 +1893,12 @@ export function normalizeDebugLifecycleMetadata(input: {
   };
 }
 
+export function isLayoutRevisionConflict(input: { method?: string | null; route: string; status?: number | null; error?: string | null; errorEnvelope?: unknown }): boolean {
+  const envelope = input.errorEnvelope as { error?: { message?: unknown } } | undefined;
+  return input.method?.toUpperCase() === "PUT" && input.route === "/api/layout" && input.status === 409
+    && (input.error ?? envelope?.error?.message) === "layout revision conflict";
+}
+
 /** Projects the bounded diagnosis out of a failed `{ok:false,error}` envelope.
  *
  * The edge already answers "what went wrong and what should happen next" in a
