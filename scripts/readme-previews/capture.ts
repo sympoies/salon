@@ -96,54 +96,62 @@ const save = (name: string, bytes: Buffer) => {
   if (size > MAX_BYTES) throw new Error(`${name} is ${size} bytes; the limit is about ${MAX_BYTES}`);
 };
 
-mkdirSync(outDir, { recursive: true });
-const page = await launchPage();
-let daemon: Awaited<ReturnType<typeof startFakeDaemon>> | undefined;
-let edge: ReturnType<typeof startEdge> | undefined;
-try {
-  await page.setEnvironment("UTC", "en-US");
-  daemon = await startFakeDaemon(await renderChart(page));
-  const port = await freePort();
-  edge = startEdge({
-    AGENT_CONSOLE_EDGE_HOST: "127.0.0.1", AGENT_CONSOLE_EDGE_PORT: String(port),
-    AGENT_CONSOLE_UI_DIR: fileURLToPath(new URL("apps/workspace/dist", root)),
-    AGENT_CONSOLE_NO_AUTH: "1", AGENT_CONSOLE_INSECURE_COOKIE: "1",
-    AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: MACHINE, url: daemon.url, token: "synthetic-daemon-token" }]),
-  });
-  await page.addInitScript(fixedClock);
-  const origin = `http://127.0.0.1:${port}/`;
+async function main(): Promise<void> {
+  mkdirSync(outDir, { recursive: true });
+  const page = await launchPage();
+  let daemon: Awaited<ReturnType<typeof startFakeDaemon>> | undefined;
+  let edge: ReturnType<typeof startEdge> | undefined;
+  try {
+    await page.setEnvironment("UTC", "en-US");
+    daemon = await startFakeDaemon(await renderChart(page));
+    const port = await freePort();
+    edge = startEdge({
+      AGENT_CONSOLE_EDGE_HOST: "127.0.0.1", AGENT_CONSOLE_EDGE_PORT: String(port),
+      AGENT_CONSOLE_UI_DIR: fileURLToPath(new URL("apps/workspace/dist", root)),
+      AGENT_CONSOLE_NO_AUTH: "1", AGENT_CONSOLE_INSECURE_COOKIE: "1",
+      AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: MACHINE, url: daemon.url, token: "synthetic-daemon-token" }]),
+    });
+    await page.addInitScript(fixedClock);
+    const origin = `http://127.0.0.1:${port}/`;
 
-  if (!only || only === "desktop") {
-    await page.addInitScript(`if (location.search === "?preview=desktop") { ${seedStorage(desktopSettings)} }`);
-    await page.setViewport(1280, 1000, 1);
-    await page.navigate(`${origin}?preview=desktop`);
-    await until(page, `document.body.innerText.includes("CI for #412 passed")`, "the #412 conversation");
-    await until(page, `[...document.querySelectorAll(".history-bubble img")].some(image => image.complete && image.naturalWidth > 0)`, "the chart image");
-    await page.evaluate(`document.querySelectorAll(".history-messages").forEach(pane => { pane.scrollTop = pane.scrollHeight; })`);
-    await settle();
-    save("desktop-dark-1280.png", await page.screenshot());
+    if (!only || only === "desktop") {
+      await page.addInitScript(`if (location.search === "?preview=desktop") { ${seedStorage(desktopSettings)} }`);
+      await page.setViewport(1280, 1000, 1);
+      await page.navigate(`${origin}?preview=desktop`);
+      await until(page, `document.body.innerText.includes("CI for #412 passed")`, "the #412 conversation");
+      await until(page, `[...document.querySelectorAll(".history-bubble img")].some(image => image.complete && image.naturalWidth > 0)`, "the chart image");
+      await page.evaluate(`document.querySelectorAll(".history-messages").forEach(pane => { pane.scrollTop = pane.scrollHeight; })`);
+      await settle();
+      save("desktop-dark-1280.png", await page.screenshot());
+    }
+
+    if (!only || only === "phone") {
+      await page.addInitScript(`if (location.search === "?preview=phone") { ${seedStorage(phoneSettings)} }`);
+      await page.setViewport(390, 920, 2, true);
+      await page.navigate(`${origin}?preview=phone`);
+      await until(page, `document.body.innerText.includes("fernlight#412 retry backoff for ingest workers")`, "the session list");
+      await settle();
+      await page.evaluate(`(() => {
+        [...document.querySelectorAll("button")].find(button => (button.getAttribute("aria-label") || "").startsWith("Open fernlight#412")).click();
+      })()`);
+      await until(page, `document.body.innerText.includes("48 passed")`, "the #412 conversation");
+      await settle();
+      // Start at the request, so the plan, the diff and the test result fill the screen.
+      await page.evaluate(`document.querySelectorAll(".history-messages").forEach(pane => { pane.scrollTop = 0; })`);
+      await settle();
+      save("phone-paper-390.png", await page.screenshot());
+    }
+
+    const stray = [...new Set(daemon.unhandled)].filter(entry => !/\/(activity\/events|codex\/accounts)\b|\/attach\b/.test(entry));
+    if (stray.length) console.warn("The UI asked the stand-in daemon for something it does not serve:", stray.join(", "));
+  } finally {
+    // Each step runs even if an earlier one fails, so nothing keeps the process alive.
+    await page.close().catch(error => console.error("Closing Chrome failed:", error));
+    edge?.close();
+    await daemon?.close().catch(error => console.error("Closing the stand-in daemon failed:", error));
   }
-
-  if (!only || only === "phone") {
-    await page.addInitScript(`if (location.search === "?preview=phone") { ${seedStorage(phoneSettings)} }`);
-    await page.setViewport(390, 920, 2, true);
-    await page.navigate(`${origin}?preview=phone`);
-    await until(page, `document.body.innerText.includes("fernlight#412 retry backoff for ingest workers")`, "the session list");
-    await settle();
-    await page.evaluate(`(() => {
-      [...document.querySelectorAll("button")].find(button => (button.getAttribute("aria-label") || "").startsWith("Open fernlight#412")).click();
-    })()`);
-    await until(page, `document.body.innerText.includes("48 passed")`, "the #412 conversation");
-    await settle();
-    // Start at the request, so the plan, the diff and the test result fill the screen.
-    await page.evaluate(`document.querySelectorAll(".history-messages").forEach(pane => { pane.scrollTop = 0; })`);
-    await settle();
-    save("phone-paper-390.png", await page.screenshot());
-  }
-
-  const stray = [...new Set(daemon.unhandled)].filter(entry => !/\/(activity\/events|codex\/accounts)\b|\/attach\b/.test(entry));
-  if (stray.length) console.warn("The UI asked the stand-in daemon for something it does not serve:", stray.join(", "));
-} finally {
-  await page.close(); edge?.close(); await daemon?.close();
 }
-process.exit(0);
+
+// The edge installs a process-wide handler that logs and carries on, so a failure
+// must end the process explicitly instead of leaving its server running.
+main().then(() => process.exit(0), error => { console.error(error); process.exit(1); });
