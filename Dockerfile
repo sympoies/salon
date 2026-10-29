@@ -52,4 +52,4 @@ RUN mkdir -p /home/node/Project/workspace /home/node/.codex /home/node/.local/st
 USER node
 WORKDIR /home/node/Project/workspace
 EXPOSE 3000
-CMD ["node", "/opt/salon/docker/start.mjs"]
+CMD ["node", "/opt/salon/docker/start.ts"]

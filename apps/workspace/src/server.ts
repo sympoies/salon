@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { startEdge } from "@agent-console/edge/start";
 
-export function startWorkspaceEdge({ daemonToken, clientToken }) {
+export function startWorkspaceEdge({ daemonToken, clientToken }: { daemonToken: string; clientToken: string }) {
   // This object belongs to edge configuration only, never process.env. The
   // daemon was launched with a separate environment before edge starts.
   return startEdge({

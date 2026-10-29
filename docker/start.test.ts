@@ -5,11 +5,12 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, unlink, writeFile 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import type { ChildProcess } from "node:child_process";
 
-async function fixture(t, { earlyExit = false } = {}) {
+async function fixture(t: TestContext, { earlyExit = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "salon-start-"));
-  const children = [];
+  const children: ChildProcess[] = [];
   t.after(async () => {
     for (const child of children) {
       if (child.exitCode === null && child.signalCode === null) {
@@ -24,7 +25,7 @@ async function fixture(t, { earlyExit = false } = {}) {
   for (const dir of ["bin", "docker", "apps/workspace/src", "home/Project/workspace"]) {
     await mkdir(join(root, dir), { recursive: true });
   }
-  await copyFile(new URL("./start.mjs", import.meta.url), join(root, "docker/start.mjs"));
+  await copyFile(new URL("./start.ts", import.meta.url), join(root, "docker/start.ts"));
   const daemon = `#!${process.execPath}
 import { writeFileSync } from 'node:fs';
 const root = ${JSON.stringify(root)};
@@ -46,7 +47,7 @@ setInterval(() => {}, 1000);
 import { existsSync } from 'node:fs';
 globalThis.fetch = async () => new Response("", { status: existsSync(${JSON.stringify(join(root, "ready"))}) ? 200 : 503 });
 `);
-  await writeFile(join(root, "apps/workspace/src/server.mjs"), `
+  await writeFile(join(root, "apps/workspace/src/server.ts"), `
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 export function startWorkspaceEdge({ daemonToken, clientToken }) {
@@ -71,7 +72,7 @@ export function startWorkspaceEdge({ daemonToken, clientToken }) {
     AGENT_CONSOLE_MACHINES: "fixture-inherited-upstream-credential",
   };
   function start() {
-    const child = spawn(process.execPath, [join(root, "docker/start.mjs")], {
+    const child = spawn(process.execPath, [join(root, "docker/start.ts")], {
       cwd: join(home, "Project/workspace"), env, stdio: ["ignore", "pipe", "pipe"],
     });
     let output = "";
@@ -83,10 +84,10 @@ export function startWorkspaceEdge({ daemonToken, clientToken }) {
   return { root, home, start };
 }
 
-async function waitFile(path, running) {
+async function waitFile(path: string, running: { child: ChildProcess; output: () => string }) {
   for (let i = 0; i < 150; i++) {
     try { return JSON.parse(await readFile(path, "utf8")); } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     if (running.child.exitCode !== null) {
       assert.fail(`Startup exited before ready: ${running.output()}`);
