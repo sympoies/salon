@@ -77,7 +77,7 @@ test("status colours and the accent on paper clear 4.5:1 as text on every surfac
 });
 
 test("role markers (agent badges) on paper clear 4.5:1 over their tinted fills", () => {
-  const tints: Record<string, number[]> = { codex: [36, 87, 167], claude: [217, 119, 87], dsh: [107, 118, 255] };
+  const tints: Record<string, number[]> = { codex: [36, 87, 167], claude: [217, 119, 87] };
   for (const [role, tint] of Object.entries(tints)) for (const surface of ["--surface-card", "--surface-canvas"]) {
     const under = paperColor(surface);
     const measured = ratio(paperColor(`--badge-${role}-fg`), blend(tint, 0.14, under));

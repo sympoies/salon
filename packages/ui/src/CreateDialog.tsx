@@ -22,7 +22,6 @@ import {
   planResumeFieldInput,
   planResumePaste,
 } from "./providerResume.ts";
-import type { HistoryResumeTarget } from "./historyResumeById.ts";
 import type { CreateBody } from "./types.ts";
 import { boundedInitialPromptUpdate, validateInitialPrompt } from "./createLifecycle.ts";
 import {
@@ -52,8 +51,6 @@ export interface CreateDialogProps {
   readonly busy: boolean;
   readonly error?: string;
   readonly onCreate: (machine: string, body: CreateBody) => void;
-  /** Resumes a history-backed profile (DSH) whose provider id cannot be imported directly. */
-  readonly onResumeFromHistory?: (machine: string, target: HistoryResumeTarget) => void;
   readonly onClose: () => void;
 }
 
@@ -66,7 +63,6 @@ export function CreateDialog({
   busy,
   error,
   onCreate,
-  onResumeFromHistory,
   onClose,
 }: CreateDialogProps) {
   const initialMachine = defaultMachine && machines.includes(defaultMachine) ? defaultMachine : machines[0] ?? "";
@@ -96,20 +92,13 @@ export function CreateDialog({
   const availableProfiles = agentProfilesByMachine[machine] ?? [];
   const selectableProfiles = mode === "resume"
     ? availableProfiles.filter((profile) =>
-      profile.provider_resume_import_supported === true
-      || (onResumeFromHistory !== undefined && profile.history_resume_supported === true))
+      profile.provider_resume_import_supported === true)
     : availableProfiles;
   const selectedProfile = agentChoice.startsWith("profile:")
     ? selectableProfiles.find((profile) => `profile:${profile.id}` === agentChoice)
     : undefined;
   const agent = selectedProfile?.agent
     ?? (AGENT_KINDS.includes(agentChoice as AgentKind) ? agentChoice as AgentKind : "codex");
-  // Resume by ID for a profile the daemon only resumes from its own history.
-  const historyResumeProfile = mode === "resume"
-    && selectedProfile?.provider_resume_import_supported !== true
-    && selectedProfile?.history_resume_supported === true
-    ? selectedProfile
-    : undefined;
   // Marks mirror the ones every downstream surface uses for a running session,
   // so the dialog teaches the icon-to-agent mapping at the point of choice.
   const agentOptions = [
@@ -191,17 +180,6 @@ export function CreateDialog({
     if (!machine) {
       return;
     }
-    if (historyResumeProfile) {
-      const providerSessionId = parseProviderResumeInput(providerResumeId).id;
-      if (providerSessionId) {
-        onResumeFromHistory?.(machine, {
-          agentProfile: historyResumeProfile.id,
-          providerSessionId,
-          label: historyResumeProfile.label,
-        });
-      }
-      return;
-    }
     const body = createSessionBody({
       mode,
       agent,
@@ -223,7 +201,7 @@ export function CreateDialog({
   const canSubmit =
     Boolean(machine)
     && promptValidationError === null
-    && (mode === "new" || ((isProviderResumeAgent(agent) || Boolean(historyResumeProfile)) && Boolean(parsedResumeId)));
+    && (mode === "new" || (isProviderResumeAgent(agent) && Boolean(parsedResumeId)));
 
   return (
     <Modal androidBackEntry="new-session" onClose={onClose} busy={busy} ariaLabel="New session">
@@ -392,20 +370,17 @@ export function CreateDialog({
             {workdirError ? <span className="hint">{workdirError}</span> : null}
           </label>
         ) : null}
-        {/* History resume keeps the title the daemon recorded for the session. */}
-        {historyResumeProfile ? null : (
-          <label>
-            <span className="field-label">
-              Title <span className="hint">optional</span>
-            </span>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. refactor edge"
-              disabled={busy}
-            />
-          </label>
-        )}
+        <label>
+          <span className="field-label">
+            Title <span className="hint">optional</span>
+          </span>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. refactor edge"
+            disabled={busy}
+          />
+        </label>
         {mode === "new" ? (
             <label>
               <span className="field-label">

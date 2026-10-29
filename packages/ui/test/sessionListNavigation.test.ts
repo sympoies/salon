@@ -200,17 +200,18 @@ test("host and harness filters intersect before pagination and exclude other ses
   assert.equal(paginateSessionList({ sessions: filtered, requestedPage: 2, pageSize: 1 }).pageCount, 1);
 });
 
-test("DSH sessions filter by their own dsh harness", async () => {
-  const { filterSessionListSessions } = await loadNavigation();
-  const sessions = [
-    makeSession({ id: "codex", agent: "codex" }),
-    makeSession({ id: "dsh", agent: "dsh", agent_profile: "dsh-workbench" }),
-    // A session still recorded on the retired hermes base is not DSH.
-    makeSession({ id: "hermes-dsh", agent: "hermes", agent_profile: "dsh-tui" }),
-  ];
-  const input = { sessions, selectedRunId: null, showSubagents: true };
-  assert.deepEqual(keys(filterSessionListSessions({ ...input, harness: "dsh" })), ["summit/dsh"]);
-  assert.deepEqual(keys(filterSessionListSessions({ ...input, harness: "codex" })), ["summit/codex"]);
+test("old-daemon dsh sessions use raw unknown-agent navigation and filters", async () => {
+  const { deriveSessionListHarnessOptions, filterSessionListSessions, paginateSessionList } = await import("../src/sessionListNavigation.ts");
+  const { CLEAR_SESSION_FILTERS, filterRecords } = await import("../src/sessionFilters.ts");
+  const session = makeSession({ id: "retired", agent: "dsh", machine: "host-a" });
+  const sessions = [makeSession({ id: "current", agent: "codex", machine: "host-a" }), session];
+  assert.deepEqual(deriveSessionListHarnessOptions(sessions), [{ id: "codex", label: "Codex" }, { id: "dsh", label: "dsh" }]);
+  const filtered = filterSessionListSessions({ sessions, harness: "dsh" });
+  assert.deepEqual(filtered, [session]);
+  assert.deepEqual(paginateSessionList({ sessions: filtered, requestedPage: 1, pageSize: 1 }).sessionKeys, ["host-a/retired"]);
+  const row = { ...session, session_id: session.id, provider: session.agent };
+  assert.deepEqual(filterRecords([row], { ...CLEAR_SESSION_FILTERS, harness: "dsh" }), [row]);
+  assert.deepEqual(filterRecords([row], { ...CLEAR_SESSION_FILTERS, harness: "codex" }), []);
 });
 
 test("preferred full layout order survives page-sized projections and appends new sessions", async () => {

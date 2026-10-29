@@ -12,7 +12,6 @@ import {
   type SessionRetitleV3Readiness,
   type SessionRetitleV3Request,
 } from "@agent-console/shared/session-retitle";
-import { isDshAgent } from "./dshAgent.ts";
 
 export function sessionRetitlePath(
   edgeCapabilities: AgentSessionCapabilities | undefined,
@@ -24,12 +23,6 @@ export function sessionRetitlePath(
   return edgeCapabilities?.session_retitle_v2 === true && machineCapabilities?.session_retitle_v2 === true
     ? "daemon_v2"
     : "legacy_edge";
-}
-
-export function sessionRetitlePathForAgent(path: SessionRetitlePath, agent: string): SessionRetitlePath {
-  // New DSH sessions lack the provider history identity needed by v2/v3, and v3
-  // cannot project DSH history yet.
-  return isDshAgent(agent) ? "legacy_edge" : path;
 }
 
 export function createManualSessionRetitleRequest(

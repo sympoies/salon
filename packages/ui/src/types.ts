@@ -142,7 +142,7 @@ export interface SessionsResponse {
 export interface HistorySession {
   readonly id: string;
   readonly machine: string;
-  readonly provider: "codex" | "claude" | "dsh";
+  readonly provider: "codex" | "claude";
   readonly provider_session_id: string;
   readonly agent_profile?: string;
   readonly title?: string | null;

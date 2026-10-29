@@ -1235,7 +1235,6 @@ button.history-outgoing-bubble {
   /* Role markers: agent badge text over its tinted fill. */
   --badge-codex-fg: #c8d6ff;
   --badge-claude-fg: #f0b39a;
-  --badge-dsh-fg: #b7bcff;
 
   /* Session state (card icon, status counts) and remaining-capacity meters. */
   --status-working: #3ddc84;
@@ -1401,7 +1400,6 @@ button.history-outgoing-bubble {
 
   --badge-codex-fg: #1d4a95;
   --badge-claude-fg: #8a3a1c;
-  --badge-dsh-fg: #3d44b8;
 
   --status-working: #1f7a45;
   --status-waiting: #2457a7;
@@ -5204,13 +5202,6 @@ textarea {
   background: rgba(217, 119, 87, 0.14);
   border-color: rgba(217, 119, 87, 0.5);
 }
-/* Indigo rather than codex's sky blue, so the two blues stay tellable apart at
-   badge size. */
-.agent-badge.dsh {
-  color: var(--badge-dsh-fg);
-  background: rgba(107, 118, 255, 0.14);
-  border-color: rgba(107, 118, 255, 0.5);
-}
 .agent-badge-icon {
   display: block;
   width: 0.98rem;
@@ -5219,10 +5210,6 @@ textarea {
 .agent-badge-icon.openai-mark {
   width: 1.02rem;
   height: 1.02rem;
-}
-.agent-badge-icon.dsh-mark {
-  width: 1.1rem;
-  height: 1.1rem;
 }
 .agent-badge-fallback {
   font-size: var(--text-sm);

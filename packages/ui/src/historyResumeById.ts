@@ -1,19 +1,5 @@
 import type { HistorySession, HistorySessionsResponse } from "./types.ts";
 
-// A profile the daemon resumes from its own session history (DSH) cannot import
-// a provider id directly; Resume by ID finds the matching history entry first
-// and then uses the daemon-owned history resume route.
-export interface HistoryResumeTarget {
-  readonly agentProfile: string;
-  readonly providerSessionId: string;
-  /** Profile label used in user-facing errors. */
-  readonly label: string;
-}
-
-export type HistoryResumeResolution =
-  | { readonly ok: true; readonly historyId: string }
-  | { readonly ok: false; readonly error: string };
-
 export interface HistoryEntryTarget {
   /** When set, only an entry under this agent profile matches. */
   readonly agentProfile?: string;
@@ -88,20 +74,4 @@ export async function findHistoryEntry(
     };
   }
   return { ok: true, session: match, latestMessagePaging };
-}
-
-export async function resolveHistoryResumeTarget(
-  machine: string,
-  target: HistoryResumeTarget,
-  listHistorySessions: HistorySessionLister,
-): Promise<HistoryResumeResolution> {
-  const found = await findHistoryEntry(machine, target, listHistorySessions);
-  if (!found.ok) return found;
-  if (!found.session.resumable) {
-    return {
-      ok: false,
-      error: `${target.label} session ${target.providerSessionId} is in history but cannot be resumed.`,
-    };
-  }
-  return { ok: true, historyId: found.session.id };
 }

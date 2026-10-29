@@ -51,10 +51,7 @@ const CODEX_COMMANDS: readonly TerminalKeyBarEntry[] = Object.freeze([
 
 const NO_COMMANDS: readonly TerminalKeyBarEntry[] = Object.freeze([] as const);
 
-// Allowlisted, not denylisted. DSH is neither Codex nor Claude Code and has no
-// such commands, and a future agent kind must not inherit commands it has never
-// been shown to accept; either way the row would only put dead text on the
-// prompt line.
+// Only supported providers receive their known commands.
 const SLASH_COMMAND_AGENTS: ReadonlySet<string> = new Set(["codex", "claude"]);
 
 export function terminalKeyBarLayout(agent: string | null | undefined): TerminalKeyBarLayout {

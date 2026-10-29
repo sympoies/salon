@@ -108,19 +108,12 @@ test("history projections carry the star and supported mutation capabilities", (
   });
 });
 
-test("history projection accepts bounded non-resumable DSH sessions", () => {
-  const dsh = {
-    ...session,
-    id: "h-dsh",
-    provider: "dsh",
-    provider_session_id: "dsh-session",
-    agent_profile: "dsh-workbench",
-    resumable: false,
-  };
-  assert.deepEqual(projectHistorySessionsDaemonData({ sessions: [dsh], truncated: false }), {
-    sessions: [dsh],
+test("history projection drops old-daemon dsh rows and preserves supported providers", () => {
+  const claude = { ...session, id: "h-claude", provider: "claude" };
+  assert.deepEqual(projectHistorySessionsDaemonData({
+    sessions: [session, { ...session, id: "retired", provider: "dsh" }, claude],
     truncated: false,
-  });
+  }), { sessions: [session, claude], truncated: false });
 });
 
 test("archive projection carries a star set as the session lands in history", () => {

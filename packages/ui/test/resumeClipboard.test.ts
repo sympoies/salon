@@ -82,7 +82,7 @@ test("profiled provider ID copy round-trips through Resume by ID", async () => {
   });
 });
 
-test("copySessionCommandToClipboard requires Codex metadata and has no DSH fallback", async () => {
+test("copySessionCommandToClipboard requires Codex metadata", async () => {
   let copied = "";
   const codex = await copySessionCommandToClipboard(
     {
@@ -100,25 +100,6 @@ test("copySessionCommandToClipboard requires Codex metadata and has no DSH fallb
   );
 
   assert.deepEqual(codex, { ok: false, reason: "no-command" });
-  assert.equal(copied, "");
-
-  const dsh = await copySessionCommandToClipboard(
-    {
-      id: "hs-1",
-      agent: "dsh",
-      agent_profile: "dsh-workbench",
-      status: "running",
-      ssh_attach_command: "ssh -t summit 'tmux attach -t hs-dsh-1'",
-      attach_command: "tmux attach -t hs-dsh-1",
-    },
-    {
-      writeText: (text) => {
-        copied = text;
-      },
-    },
-  );
-
-  assert.deepEqual(dsh, { ok: false, reason: "no-command" });
   assert.equal(copied, "");
 });
 

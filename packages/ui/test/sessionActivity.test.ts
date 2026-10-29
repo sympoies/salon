@@ -112,7 +112,7 @@ test("selectSessionActivity maps provider phases to semantic timers", () => {
 });
 
 test("continuous Working age survives several new turns for every provider harness", () => {
-  for (const agent of ["codex", "claude", "dsh", "other-provider"]) {
+  for (const agent of ["codex", "claude", "other-provider"]) {
     for (const turnAgeSeconds of [180, 90, 53]) {
       const session = makeSession({ agent, turn_state: {
         ...providerState("working"),
@@ -455,28 +455,6 @@ test("activity details expose freshness, delivery, source, and confidence access
   assert.equal(rows.get("Delivery"), "Poll fallback · realtime reconnecting");
   assert.equal(rows.get("Confidence"), "Observed");
   assert.equal(rows.get("Source"), "Codex · Provider Hook");
-});
-
-test("activity details name DSH only for the dsh provider source", () => {
-  const sourceFor = (provider: string) => {
-    const state = providerState("working");
-    const session = makeSession({
-      agent: provider,
-      turn_state: { ...state, source: { ...state.source, provider } },
-    });
-    const input = {
-      session,
-      machineReachable: true,
-      focused: false,
-      nowMs: Date.parse("2026-07-10T12:10:00Z"),
-    };
-    const effective = selectSessionActivity(input);
-    const details = buildSessionActivityDetails({ ...input, effective });
-    return new Map(details.flatMap((group) => group.rows.map((row) => [row.label, row.value] as const))).get("Source");
-  };
-  assert.equal(sourceFor("dsh"), "DSH · Provider Hook");
-  // The retired hermes base is no longer labelled as DSH.
-  assert.notEqual(sourceFor("hermes"), "DSH · Provider Hook");
 });
 
 test("activity delivery detail is session-scoped for mixed old and new daemons", () => {

@@ -85,7 +85,7 @@ test("createRequestTimeoutMs outlasts the edge budget for slow create paths", ()
     ACCOUNT_CREATE_TIMEOUT_MS.codex + CREATE_REQUEST_TIMEOUT_MARGIN_MS,
   );
   // The edge probes the profile (up to 3 s) and gives a prompt-carrying create 30 s.
-  assert.equal(createRequestTimeoutMs({ agent: "dsh", prompt: "hi" }), 40_000);
+  assert.equal(createRequestTimeoutMs({ agent: "claude", prompt: "hi" }), 40_000);
   for (const provider of ["codex", "claude"] as const) {
     const body = { agent: provider, [`${provider}_account`]: "work" };
     assert.equal(

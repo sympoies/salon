@@ -487,29 +487,20 @@ test("history APIs normalize bounded public fields and never project daemon path
   assert.match(requestedUrls.at(-1) ?? "", /direction=latest/);
 });
 
-test("history API accepts DSH as a strict provider filter and response identity", async () => {
-  let requested = "";
-  setFetchMock(async (input) => {
-    requested = String(input);
-    return jsonResponse({ ok: true, data: {
-      sessions: [{
-        id: "h-dsh",
-        provider: "dsh",
-        provider_session_id: "dsh-session",
-        agent_profile: "dsh-workbench",
-        cwd: "/repo/dsh",
-        created_at: "2026-09-12T01:00:00Z",
-        updated_at: "2026-09-12T02:00:00Z",
-        resumable: false,
-      }],
-      truncated: false,
-    } });
-  });
-
-  const result = await listHistorySessions("summit", { provider: "dsh" });
-  assert.equal(result.sessions[0]?.provider, "dsh");
-  assert.equal(result.sessions[0]?.resumable, false);
-  assert.match(requested, /provider=dsh/);
+test("history API drops old-daemon dsh rows and preserves supported providers", async () => {
+  const row = {
+    id: "h-1", provider: "codex", provider_session_id: "provider-1", cwd: "/workspace/example",
+    created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:01Z", resumable: true,
+  };
+  setFetchMock(async () => jsonResponse({ ok: true, data: {
+    sessions: [row, { ...row, id: "retired", provider: "dsh" }, { ...row, id: "h-2", provider: "claude" }],
+    truncated: false,
+  } }));
+  const result = await listHistorySessions("host-a");
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.sessions.map(({ id, provider }) => ({ id, provider })), [
+    { id: "h-1", provider: "codex" }, { id: "h-2", provider: "claude" },
+  ]);
 });
 
 test("archiveSession posts an incarnation fence to the distinct archive route", async () => {
@@ -748,7 +739,7 @@ test("listSessions preserves absent/valid turn state and clears partial or futur
     },
     {
       id: "future",
-      agent: "dsh",
+      agent: "codex",
       status: "running",
       machine: "summit",
       turn_state: { schema_version: "agent-session.turn-state.v99", phase: "working" },
@@ -2072,7 +2063,6 @@ test("listSessions negotiates v3, v2, and legacy paths from both capability surf
     data: {
       sessions: [
         { id: "v3", agent: "codex", status: "running", machine: "m3" },
-        { id: "dsh", agent: "dsh", agent_profile: "dsh-workbench", status: "running", machine: "m3" },
         { id: "v2", agent: "codex", status: "running", machine: "maple" },
         { id: "old", agent: "codex", status: "running", machine: "m2" },
       ],
@@ -2086,9 +2076,8 @@ test("listSessions negotiates v3, v2, and legacy paths from both capability surf
   }));
   const result = await listSessions();
   assert.equal(result.sessions[0]?.retitle_path, "daemon_v3");
-  assert.equal(result.sessions[1]?.retitle_path, "legacy_edge");
-  assert.equal(result.sessions[2]?.retitle_path, "daemon_v2");
-  assert.equal(result.sessions[3]?.retitle_path, "legacy_edge");
+  assert.equal(result.sessions[1]?.retitle_path, "daemon_v2");
+  assert.equal(result.sessions[2]?.retitle_path, "legacy_edge");
   assert.equal(result.capabilities?.session_retitle_v2, true);
   assert.equal(result.capabilities?.session_retitle_v3, true);
 });
@@ -2937,7 +2926,6 @@ test("listSessions enables managed resume only through edge and machine capabili
           label: "Custom Claude",
           agent: "claude",
           provider_resume_import_supported: true,
-          history_resume_supported: true,
         }],
       },
       {
@@ -2948,7 +2936,6 @@ test("listSessions enables managed resume only through edge and machine capabili
           label: "Custom Claude",
           agent: "claude",
           provider_resume_import_supported: true,
-          history_resume_supported: true,
         }],
       },
     ],
@@ -2976,9 +2963,6 @@ test("listSessions enables managed resume only through edge and machine capabili
   assert.equal(result.sessions[2]?.managed_resume_command_available, true);
   assert.equal(result.machines[0]?.agent_profiles?.[0]?.provider_resume_import_supported, true);
   assert.equal(result.machines[1]?.agent_profiles?.[0]?.provider_resume_import_supported, false);
-  // History-backed resume needs the machine to serve history as well.
-  assert.equal(result.machines[0]?.agent_profiles?.[0]?.history_resume_supported, true);
-  assert.equal(result.machines[1]?.agent_profiles?.[0]?.history_resume_supported, undefined);
 });
 
 
@@ -3358,14 +3342,14 @@ test("resumeHistorySession posts no browser-selected launch arguments and return
     seenInit = init;
     return jsonResponse({
       ok: true,
-      data: { session: { id: "live-9", agent: "dsh", private_runtime_path: "/private" } },
+      data: { session: { id: "live-9", agent: "codex", private_runtime_path: "/private" } },
     });
   });
 
   assert.deepEqual(await resumeHistorySession("summit", "h-123"), {
     ok: true,
     id: "live-9",
-    session: { id: "live-9", agent: "dsh", machine: "summit" },
+    session: { id: "live-9", agent: "codex", machine: "summit" },
   });
   assert.equal(seenPath, "/api/history/sessions/summit/h-123/resume");
   assert.equal(seenInit?.method, "POST");
@@ -3405,7 +3389,7 @@ test("resumeHistorySession rejects every 2xx response without a created session"
   const responses = [
     new Response(null, { status: 200 }),
     new Response("{", { status: 200, headers: { "content-type": "application/json" } }),
-    jsonResponse({ ok: true, data: { session: { id: "", agent: "dsh" } } }),
+    jsonResponse({ ok: true, data: { session: { id: "", agent: "codex" } } }),
   ];
   for (const response of responses.slice(0, 2)) {
     setFetchMock(async () => response);
@@ -3474,16 +3458,6 @@ test("resumeHistorySession preserves safe typed failures and determinate daemon 
     ok: false,
     error: "session history could not be read; refresh History and try again",
     errorCode: "history-read-failed",
-  });
-
-  setFetchMock(async () => jsonResponse({
-    ok: false,
-    error: { code: "dsh-history-unavailable", message: "DSH history is unavailable; refresh History and try again" },
-  }, { status: 503 }));
-  assert.deepEqual(await resumeHistorySession("summit", "h-dsh"), {
-    ok: false,
-    error: "DSH history is unavailable; refresh History and try again",
-    errorCode: "dsh-history-unavailable",
   });
 
   setFetchMock(async () => jsonResponse({

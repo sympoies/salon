@@ -336,16 +336,6 @@ test("create requests forward only safe, advertised launch profile ids", async (
             label: "Custom Claude",
             agent: "claude",
             provider_resume_import_supported: true,
-          }, {
-            id: "dsh-workbench",
-            label: "DSH",
-            agent: "dsh",
-            provider_resume_import_supported: false,
-          }, {
-            // A stale hermes-base DSH row is dropped like any unknown agent.
-            id: "dsh-tui",
-            label: "DSH TUI",
-            agent: "hermes",
           }],
         },
       }));
@@ -359,17 +349,15 @@ test("create requests forward only safe, advertised launch profile ids", async (
     };
     seen.push(parsed);
     if (req.method === "POST" && req.url === "/sessions") {
-      const session = parsed.agent_profile === "custom-claude"
-        ? {
-          id: "c1",
-          agent: "claude",
-          agent_profile: "custom-claude",
-          status: "running",
-          ...(typeof parsed.provider_resume_id === "string"
-            ? { provider_resume: { provider: "claude", session_id: parsed.provider_resume_id } }
-            : {}),
-        }
-        : { id: "d1", agent: "dsh", agent_profile: "dsh-workbench", status: "running" };
+      const session = {
+        id: "c1",
+        agent: "claude",
+        agent_profile: "custom-claude",
+        status: "running",
+        ...(typeof parsed.provider_resume_id === "string"
+          ? { provider_resume: { provider: "claude", session_id: parsed.provider_resume_id } }
+          : {}),
+      };
       res.end(JSON.stringify({ ok: true, data: { session } }));
       return;
     }
@@ -416,27 +404,6 @@ test("create requests forward only safe, advertised launch profile ids", async (
       }),
     });
     assert.equal(customClaudeResume.status, 200);
-    const dshProfile = await fetch(`${edgeBase}/api/sessions/maple`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ agent: "dsh", agent_profile: "dsh-workbench" }),
-    });
-    assert.equal(dshProfile.status, 200);
-    // The retired hermes kind cannot reach the DSH profile under its old base.
-    const retiredHermesBase = await fetch(`${edgeBase}/api/sessions/maple`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ agent: "hermes", agent_profile: "dsh-workbench" }),
-    });
-    assert.equal(retiredHermesBase.status, 409);
-    // A profile still advertised on the hermes base is not listed, so it cannot
-    // be created either.
-    const hermesBaseProfile = await fetch(`${edgeBase}/api/sessions/maple`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ agent: "hermes", agent_profile: "dsh-tui" }),
-    });
-    assert.equal(hermesBaseProfile.status, 409);
     // The profile owning its launch command also means the browser cannot append
     // to it: without this, a profiled create's argv is only the prefix of whatever
     // a caller supplies.
@@ -444,8 +411,8 @@ test("create requests forward only safe, advertised launch profile ids", async (
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({
-        agent: "dsh",
-        agent_profile: "dsh-workbench",
+        agent: "claude",
+        agent_profile: "custom-claude",
         agent_args: ["chat", "--browser-must-not-control"],
       }),
     });
@@ -469,13 +436,8 @@ test("create requests forward only safe, advertised launch profile ids", async (
         lineage: CONSOLE_ROOT_LINEAGE,
       },
       {
-        agent: "dsh",
-        agent_profile: "dsh-workbench",
-        lineage: CONSOLE_ROOT_LINEAGE,
-      },
-      {
-        agent: "dsh",
-        agent_profile: "dsh-workbench",
+        agent: "claude",
+        agent_profile: "custom-claude",
         lineage: CONSOLE_ROOT_LINEAGE,
       },
     ]);

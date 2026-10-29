@@ -36,10 +36,10 @@ test("terminal prompt capture ignores cursor escape sequences instead of appendi
 test("terminal prompt capture preserves text across terminal cursor-position reports", () => {
   const capture = createTerminalPromptCapture();
 
-  assert.deepEqual(capture.acceptText("refresh DSH title"), []);
+  assert.deepEqual(capture.acceptText("refresh session title"), []);
   assert.deepEqual(capture.acceptText("\x1b[2;"), []);
   assert.deepEqual(capture.acceptText("1R"), []);
-  assert.deepEqual(capture.acceptKey("enter"), ["refresh DSH title"]);
+  assert.deepEqual(capture.acceptKey("enter"), ["refresh session title"]);
 });
 
 test("terminal prompt capture fails closed when special-key enter interrupts an escape", () => {

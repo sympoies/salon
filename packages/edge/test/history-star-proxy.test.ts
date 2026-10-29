@@ -55,17 +55,6 @@ before(async () => {
       }));
       return;
     }
-    if (url.endsWith("/h-unavailable/resume")) {
-      res.writeHead(503);
-      res.end(JSON.stringify({
-        ok: false,
-        error: {
-          code: "dsh-history-unavailable",
-          message: "private DSH root: /private/dsh/sessions",
-        },
-      }));
-      return;
-    }
     if (url.endsWith("/h-profile-unavailable/resume")) {
       res.writeHead(503);
       res.end(JSON.stringify({
@@ -82,8 +71,8 @@ before(async () => {
         machine: "maple",
         session: {
           id: "live-9",
-          agent: "dsh",
-          agent_profile: "dsh-runtime-kit",
+          agent: "claude",
+          agent_profile: "custom-claude",
           cwd: "/work/example",
           status: "running",
           private_runtime_path: "/private/runtime",
@@ -241,8 +230,8 @@ test("the history resume route forwards only the stable id and projects the live
     data: {
       session: {
         id: "live-9",
-        agent: "dsh",
-        agent_profile: "dsh-runtime-kit",
+        agent: "claude",
+        agent_profile: "custom-claude",
         cwd: "/work/example",
         status: "running",
       },
@@ -272,7 +261,7 @@ test("the history resume route rejects browser-selected launch inputs", async ()
   daemonRequests.length = 0;
 
   const res = await post("/api/history/sessions/maple/h-abc/resume", {
-    provider: "dsh",
+    provider: "claude",
     cwd: "/untrusted/browser/path",
     agent_args: ["--resume", "another-session"],
   });
@@ -301,26 +290,6 @@ test("the history resume route preserves a typed rejection with a safe message",
   assert.deepEqual(daemonRequests.at(-1), {
     method: "POST",
     url: "/history/sessions/h-conflict/resume",
-    body: undefined,
-  });
-});
-
-test("the history resume route safely maps a vanished DSH history root", async () => {
-  daemonRequests.length = 0;
-
-  const res = await post("/api/history/sessions/maple/h-unavailable/resume");
-
-  assert.equal(res.status, 503);
-  assert.deepEqual(await res.json(), {
-    ok: false,
-    error: {
-      code: "dsh-history-unavailable",
-      message: "DSH history is unavailable; refresh History and try again",
-    },
-  });
-  assert.deepEqual(daemonRequests.at(-1), {
-    method: "POST",
-    url: "/history/sessions/h-unavailable/resume",
     body: undefined,
   });
 });

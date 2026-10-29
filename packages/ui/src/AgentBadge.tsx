@@ -1,5 +1,3 @@
-import { isDshAgent } from "./dshAgent.ts";
-
 interface AgentBadgeProps {
   readonly agent: string;
   readonly decorative?: boolean;
@@ -8,31 +6,13 @@ interface AgentBadgeProps {
 const AGENT_LABELS: Record<string, string> = {
   codex: "Codex",
   claude: "Claude",
-  dsh: "DSH",
 };
-
-function safeAgentClass(agent: string): string {
-  return agent.toLowerCase().replace(/[^a-z0-9_-]/g, "") || "unknown";
-}
 
 function fallbackInitial(agent: string): string {
   return (AGENT_LABELS[agent] ?? agent).trim().slice(0, 1).toUpperCase() || "?";
 }
 
 function AgentIcon({ agent }: AgentBadgeProps) {
-  if (agent === "dsh") {
-    // DSH distilled to the fish its TUI uses as its own emblem: a rounded body
-    // with a raised tail and a spout. One filled group so it inherits the badge
-    // theme colour via currentColor and stays legible at badge size, matching the
-    // codex/claude marks.
-    return (
-      <svg className="agent-badge-icon dsh-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M3.0 15.2 C1.9 12.0 4.6 8.2 9.6 7.6 C14.4 7.0 17.7 9.2 19.0 12.0 C19.2 12.5 19.2 13.1 18.9 13.6 C17.3 16.0 14.3 17.3 10.8 17.3 C7.6 17.3 4.7 16.6 3.3 15.6 C3.1 15.5 3.0 15.4 3.0 15.2 Z" />
-        <path d="M18.4 12.6 C19.7 11.4 20.7 10.0 21.4 8.5 C21.6 8.0 22.4 8.2 22.3 8.8 C22.1 10.6 21.6 12.2 20.9 13.3 C21.6 14.2 22.1 15.2 22.4 16.3 C22.5 16.9 21.7 17.2 21.4 16.7 C20.6 15.3 19.6 14.2 18.3 13.3 Z" />
-        <path d="M8.4 6.0 C 8.2 4.8 8.8 3.8 9.8 3.2 C10.2 3.0 10.6 3.5 10.3 3.9 C9.7 4.6 9.4 5.4 9.5 6.2 C9.5 6.7 8.5 6.7 8.4 6.0 Z" />
-      </svg>
-    );
-  }
   if (agent === "codex") {
     return (
       <svg className="agent-badge-icon openai-mark" viewBox="0 0 41 41" aria-hidden="true">
@@ -58,11 +38,9 @@ function AgentIcon({ agent }: AgentBadgeProps) {
   return <span className="agent-badge-fallback" aria-hidden="true">{fallbackInitial(agent)}</span>;
 }
 
-export function AgentBadge({ agent: rawAgent, decorative = false }: AgentBadgeProps) {
-  // Every DSH base kind reads as DSH, so the mark, label, and tint stay one.
-  const agent = isDshAgent(rawAgent) ? "dsh" : rawAgent;
+export function AgentBadge({ agent, decorative = false }: AgentBadgeProps) {
   const label = (AGENT_LABELS[agent] ?? agent).trim() || "Unknown agent";
-  const badgeClass = safeAgentClass(agent);
+  const badgeClass = agent === "codex" || agent === "claude" ? agent : "unknown";
 
   if (decorative) {
     return (

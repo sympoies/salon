@@ -61,51 +61,6 @@ test("initializeCreatedSession submits a staged prompt only through the fenced p
   }]);
 });
 
-test("initializeCreatedSession trusts a prompt the daemon delivered at create", async () => {
-  const promptCalls: PromptCall[] = [];
-  const submitSessionPrompt = async (machine: string, id: string, body: PromptCall["body"]) => {
-    promptCalls.push({ machine, id, body });
-    return { ok: false, error: "structured-prompt-unsupported" };
-  };
-  const delivered = await initializeCreatedSession({
-    machine: "maple",
-    createdId: "dsh-1",
-    createdSessionIncarnation: "dsh-1-incarnation",
-    prompt: "hi",
-    promptDeliveredAtCreate: true,
-    defaultAutoResume: disabled,
-    submitSessionPrompt,
-  });
-
-  assert.deepEqual(delivered, {
-    autoResume: { status: "skipped", reason: "disabled" },
-    prompt: { status: "submitted", session: { machine: "maple", id: "dsh-1" } },
-  });
-  assert.equal(recoverableCreatedPrompt("hi", delivered), null);
-  assert.deepEqual(promptCalls, []);
-
-  const failedStart = await initializeCreatedSession({
-    machine: "maple",
-    createdId: "dsh-2",
-    createdStartup: {
-      schema_version: "agent-session.startup.v1",
-      state: "failed",
-      stage: "runtime",
-      started_at: "2026-09-25T00:00:00Z",
-      failure_code: "agent-binary-unavailable",
-      message: "The selected agent CLI could not be started.",
-      occurred_at: "2026-09-25T00:00:01Z",
-      retry_safe: false,
-    },
-    prompt: "hi",
-    promptDeliveredAtCreate: true,
-    defaultAutoResume: disabled,
-    submitSessionPrompt,
-  });
-  assert.equal(recoverableCreatedPrompt("hi", failedStart), "hi");
-  assert.deepEqual(promptCalls, []);
-});
-
 test("initializeCreatedSession skips every post-create mutation for a reported startup failure and retains the prompt", async () => {
   const calls: string[] = [];
   const prompt = "Keep this prompt";
@@ -675,7 +630,6 @@ test("defaultAutoResumeForCreate centralizes fresh supported-session eligibility
     async () => ({ ok: true });
 
   assert.deepEqual(defaultAutoResumeForCreate(false, { agent: "codex" }, setter), { enabled: false });
-  assert.deepEqual(defaultAutoResumeForCreate(true, { agent: "dsh" }, setter), { enabled: false });
   assert.deepEqual(
     defaultAutoResumeForCreate(true, { agent: "codex", provider_resume_id: "existing" }, setter),
     { enabled: false },

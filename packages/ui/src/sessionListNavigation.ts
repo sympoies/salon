@@ -1,6 +1,5 @@
 import { autoLayoutMode, sessionKey, type LayoutMode } from "./layout.ts";
 import type { Session } from "./types.ts";
-import { isDshAgent } from "./dshAgent.ts";
 import { isCoordinatorTreeMember } from "./coordinatorTree.ts";
 
 export interface SessionListHarnessOption {
@@ -9,14 +8,13 @@ export interface SessionListHarnessOption {
 }
 
 export function sessionListHarness(session: Pick<Session, "agent">): string {
-  return isDshAgent(session.agent) ? "dsh" : session.agent;
+  return session.agent;
 }
 
 export function sessionListHarnessLabel(harness: string): string {
   switch (harness) {
     case "codex": return "Codex";
     case "claude": return "Claude";
-    case "dsh": return "DSH";
     default: return harness;
   }
 }

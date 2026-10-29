@@ -50,28 +50,6 @@ test("createSessionBody keeps the Claude base agent for an advertised launch pro
   );
 });
 
-test("createSessionBody sends a DSH launch profile without injected agent args", () => {
-  // A launch profile owns its whole launch command, so nothing is layered on it.
-  assert.deepEqual(
-    createSessionBody({
-      mode: "new",
-      agent: "dsh",
-      agentProfile: "dsh-workbench",
-      title: "DSH",
-      workdirSelection: selectedRepo,
-      prompt: "",
-      providerResumeId: "",
-      account: "",
-    }),
-    {
-      agent: "dsh",
-      agent_profile: "dsh-workbench",
-      title: "DSH",
-      cwd: "/home/runner/Project/summit/agent-console",
-    },
-  );
-});
-
 test("createSessionBody builds a resume-id import payload without cwd or prompt", () => {
   assert.deepEqual(
     createSessionBody({
@@ -164,22 +142,6 @@ test("createSessionBody refuses blank resume ids", () => {
   );
 });
 
-test("createSessionBody refuses unsupported resume-id agents", () => {
-  assert.equal(
-    createSessionBody({
-      mode: "resume",
-      agent: "dsh",
-      agentProfile: "dsh-workbench",
-      title: "Imported DSH",
-      workdirSelection: selectedRepo,
-      prompt: "",
-      providerResumeId: "external-dsh-id",
-      account: "",
-    }),
-    null,
-  );
-});
-
 test("a native session launch carries the workdir as context and scopes no access", () => {
   const anchored = createSessionBody({
     mode: "new",
@@ -237,6 +199,5 @@ test("createSessionBody carries the chosen account for its provider, except wher
     createSessionBody({ ...base, agent: "codex", agentProfile: "custom-codex" }),
     { agent: "codex", agent_profile: "custom-codex", codex_account: "alpha" },
   );
-  assert.deepEqual(createSessionBody({ ...base, agent: "dsh" }), { agent: "dsh" });
   assert.deepEqual(createSessionBody({ ...base, agent: "claude", account: "" }), { agent: "claude" });
 });
