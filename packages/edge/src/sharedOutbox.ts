@@ -11,7 +11,7 @@ export function outboxCredentialGeneration(principal: PrincipalConfig, machine: 
 }
 
 export function outboxReceipt(result: DaemonResult, attempt: OutboxAttempt, lookup: boolean): PromptReceipt | null {
-  const body = result.body as { ok?: unknown; data?: { receipt?: unknown; submitted?: unknown; session_incarnation?: unknown };
+  const body = result.body as { ok?: unknown; data?: { receipt?: unknown; submitted?: unknown; command_dispatched?: unknown; session_incarnation?: unknown };
     error?: { details?: { receipt?: unknown } } } | undefined;
   const expected = { request_id: attempt.item.request_id!, session_id: attempt.target.sessionId,
     session_incarnation: attempt.target.incarnation };
@@ -21,6 +21,10 @@ export function outboxReceipt(result: DaemonResult, attempt: OutboxAttempt, look
   if (lookup) return success ? receipt : null;
   if (receipt.outcome === "unknown") return receipt;
   if (receipt.outcome === "refused") return !success && result.status >= 400 ? receipt : null;
+  if (receipt.outcome === "command_dispatched") {
+    return success && body?.data?.command_dispatched === true && body.data.submitted === false
+      && body.data.session_incarnation === expected.session_incarnation ? receipt : null;
+  }
   return success && body?.data?.submitted === true && body.data.session_incarnation === expected.session_incarnation ? receipt : null;
 }
 

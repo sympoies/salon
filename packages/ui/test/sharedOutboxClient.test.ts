@@ -318,6 +318,28 @@ test("an unknown server delivery remains visible with no retry or provider repla
   } finally { await h.close(); }
 });
 
+test("a command_dispatched shared reply is terminal: no bubble, no error, no pending composer and no resend", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const id = crypto.randomUUID(), requestId = crypto.randomUUID();
+    await h.ownServer({ revision: 3, compose_holds: [], items: [{
+      id, text: "/status", state: "command_dispatched", revision: 3, session_incarnation: "inc-1",
+      created_at: 1, updated_at: 2, request_id: requestId, edit_hold: null, error_code: null,
+      receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "command_dispatched", code: null },
+    }] });
+    await h.client.sync(h.target);
+    assert.equal(h.client.state(h.target).snapshot.items[0]?.state, "command_dispatched", "the client accepts the new terminal state");
+    assert.equal(h.client.error(h.target), undefined);
+    await h.showReplies();
+    assertNoElement(h.container, ".history-outgoing-reply, [role=\"alert\"]");
+    await act(async () => { await h.client.sync(h.target); });
+    assert.deepEqual(h.requests.filter(method => method !== "GET"), []);
+    await h.showFailedComposer();
+    assert.ok([...h.container.querySelectorAll("button")].some(button => button.textContent === "Resend"),
+      "a finished command is not a pending reply and must not hold back the resend");
+  } finally { await h.close(); }
+});
+
 // The transcript shows a submitted message; a second bubble would repeat it.
 for (const provider of ["codex", "claude"] as const) test(`a submitted ${provider} reply stays visible until its transcript arrives`, async () => {
   const factory = new IDBFactory();

@@ -1,9 +1,13 @@
-/** Public keyed prompt delivery receipt from agent-session prompt/v2. */
+/**
+ * Public keyed prompt delivery receipt from agent-session prompt/v2.
+ * `command_dispatched` means an owner slash command opened its own UI; it is
+ * terminal and is not model input.
+ */
 export interface PromptReceipt {
   readonly request_id: string;
   readonly session_id: string;
   readonly session_incarnation: string;
-  readonly outcome: "submitted" | "refused" | "unknown";
+  readonly outcome: "submitted" | "command_dispatched" | "refused" | "unknown";
   readonly code: string | null;
 }
 export interface PromptReceiptIdentity {
@@ -23,7 +27,7 @@ export function normalizePromptReceipt(value: unknown, expected: PromptReceiptId
   if (!isPromptRequestId(raw.request_id) || raw.request_id !== expected.request_id
     || raw.session_id !== expected.session_id || raw.session_incarnation !== expected.session_incarnation
     || !isPromptIncarnation(raw.session_incarnation)) return null;
-  if (raw.outcome === "submitted" ? raw.code !== null
+  if (raw.outcome === "submitted" || raw.outcome === "command_dispatched" ? raw.code !== null
     : raw.outcome === "unknown" ? raw.code !== "structured-prompt-outcome-unknown"
     : raw.outcome === "refused" ? typeof raw.code !== "string" || !/^[a-z][a-z0-9-]{0,127}$/.test(raw.code)
     : true) return null;

@@ -1,7 +1,7 @@
 import { isPromptIncarnation, type PromptReceipt } from "./promptReceipt.ts";
 
 /** Server admission is distinct from the daemon's provider submission receipt. */
-export type SharedOutboxState = "queued" | "sending" | "submitted" | "refused" | "unknown" | "cancelled";
+export type SharedOutboxState = "queued" | "sending" | "submitted" | "command_dispatched" | "refused" | "unknown" | "cancelled";
 export interface SharedOutboxItem {
   readonly id: string;
   readonly text: string;

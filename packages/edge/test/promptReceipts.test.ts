@@ -74,3 +74,24 @@ test("an older runtime without keyed prompts yields a definite unsupported refus
   const fenced=await submit({text:"fenced reply",expected_session_incarnation:"inc-1"});assert.equal(fenced.status,200);
   assert.deepEqual(calls.map(call=>call.body),[{text:"fenced reply",expected_session_incarnation:"inc-1"}]);
 });
+
+test("edge forwards a command_dispatched receipt as a terminal success and keeps its lookup terminal",async()=>{
+  const dispatched=receipt("command_dispatched");
+  calls.length=0;status=200;payload={ok:true,data:{machine:"host-a",submitted:false,command_dispatched:true,session_incarnation:"inc-1",receipt:{...dispatched,private_debug:"must-not-leak"},debug:"must-not-leak"}};
+  let response=await submit(keyed);assert.equal(response.status,200);
+  const forwarded=await response.text();assert.doesNotMatch(forwarded,/must-not-leak/);
+  assert.deepEqual(JSON.parse(forwarded),{ok:true,data:{submitted:false,command_dispatched:true,session_incarnation:"inc-1",receipt:dispatched}});
+  payload={ok:true,data:{receipt:dispatched}};
+  response=await lookup();assert.equal(response.status,200);assert.deepEqual(await response.json(),{ok:true,data:{receipt:dispatched}});
+});
+test("edge rejects a command_dispatched acknowledgement without the matching command flag or binding",async()=>{
+  for(const data of [
+    {submitted:false,session_incarnation:"inc-1",receipt:receipt("command_dispatched")},
+    {submitted:true,command_dispatched:true,session_incarnation:"inc-1",receipt:receipt("command_dispatched")},
+    {submitted:false,command_dispatched:true,session_incarnation:"other",receipt:receipt("command_dispatched")},
+    {submitted:false,command_dispatched:true,session_incarnation:"inc-1",receipt:receipt("command_dispatched","busy")},
+  ]){
+    status=200;payload={ok:true,data};
+    const response=await submit(keyed);assert.equal(response.status,502);
+  }
+});
