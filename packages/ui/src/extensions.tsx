@@ -10,6 +10,13 @@ import type { Session } from "./types.ts";
 import type { SessionRole } from "@agent-console/shared/lineage";
 import { createMachineColorMap, normalizeMachineColor } from "./machineColors.ts";
 
+export {
+  useSessionRefresh,
+  type SessionRefreshOutcome,
+  type SessionRefreshState,
+  type SessionRefreshTarget,
+} from "./useSessionRefresh.ts";
+
 const EXTENSION_ID = /^[a-z][a-z0-9-]*$/;
 
 /** Where a session badge is drawn. */
@@ -17,6 +24,8 @@ export type SessionBadgeSurface = "card" | "mobile-card" | "history";
 
 /** The session facts a badge may read: a live session or a history row's marker item. */
 export interface SessionBadgeItem {
+  /** Present on live sessions; with `machine` it addresses `useSessionRefresh`. */
+  readonly id?: string;
   readonly machine?: string;
   readonly role?: SessionRole | null;
   readonly dispatched_by?: SessionDispatchedBy;

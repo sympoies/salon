@@ -16,6 +16,7 @@ import {
   normalizeSelectionStrategies,
   normalizeStartupStatus,
   normalizePublicSessionDeleteResult,
+  normalizeSessionRefresh,
   normalizeSessionWorkspace,
   normalizeSessionOrigin,
   projectPublicAgentSession,
@@ -645,6 +646,42 @@ export function forwardAutoResumeDaemon(res: ServerResponse, r: DaemonResult): v
   sendJson(res, r.status, { ok: true, data: { auto_resume: autoResume } });
 }
 
+// A host that predates the daemon route answers 404 or 405 without an error
+// code, or 501. Unlike a coded 404 (an unknown session), that is not a failure
+// of this session, so the caller gets a typed unsupported error and no fallback.
+export function forwardSessionRefreshDaemon(
+  res: ServerResponse,
+  r: DaemonResult,
+  expectedMachine: string,
+  sessionId: string,
+): void {
+  const ok2xx = r.status >= 200 && r.status < 300;
+  const body = r.body as { ok?: unknown; data?: { machine?: unknown; refresh?: unknown }; error?: { code?: unknown } } | undefined;
+  if (r.status === 405 || r.status === 501 || (r.status === 404 && safeErrorCode(body?.error?.code) === undefined)) {
+    sendJson(res, 501, {
+      ok: false,
+      error: { code: "session-refresh-unsupported", message: "This host cannot refresh session info yet." },
+    });
+    return;
+  }
+  if (!ok2xx || body?.ok === false) {
+    sendJson(res, ok2xx ? 502 : r.status, {
+      ok: false,
+      error: safeDaemonError(body?.error?.code, "Session refresh failed."),
+    });
+    return;
+  }
+  const refresh = body?.data?.machine === expectedMachine ? normalizeSessionRefresh(body.data.refresh, sessionId) : null;
+  if (!refresh) {
+    sendJson(res, 502, {
+      ok: false,
+      error: { code: "invalid-session-refresh-response", message: "Invalid session refresh response." },
+    });
+    return;
+  }
+  sendJson(res, 200, { ok: true, data: { machine: expectedMachine, refresh } });
+}
+
 function maintenanceUnsupported(r: DaemonResult): boolean {
   if (r.status === 405 || r.status === 501) return true;
   if (r.status !== 404) return false;
@@ -973,6 +1010,8 @@ const SAFE_DAEMON_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   "display-revision-conflict": "Session display metadata changed; refresh and retry.",
   "title-mode-pinned": "Automatic retitle is disabled for this session.",
   "invalid-json-body": "The request body is invalid.",
+  "session-not-found": "Session not found.",
+  "refresh-unsupported-agent": "Only Claude and Codex sessions can be refreshed.",
   ...sharedAccountErrorMessages(),
   "invalid-agent": "agent is invalid",
   "missing-cwd": "working directory is required",
