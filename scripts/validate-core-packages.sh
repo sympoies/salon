@@ -44,8 +44,8 @@ if [[ -n "$suite" ]]; then
       pnpm --filter @salon/workspace run build
       ;;
     edge) pnpm --filter @agent-console/edge run test ;;
-    ui-unit) bash scripts/test-ui.sh unit ;;
-    ui-browser) bash scripts/test-ui.sh browser ;;
+    ui-unit) UI_TEST_SHARD="${UI_TEST_SHARD:-}" bash scripts/test-ui.sh unit ;;
+    ui-browser) UI_TEST_SHARD="${UI_TEST_SHARD:-}" bash scripts/test-ui.sh browser ;;
   esac
   exit 0
 fi
