@@ -1668,7 +1668,7 @@ async function submitSessionPromptRequest(
   );
   const result = resultOf(response);
   if (body.request_id !== undefined) {
-    const envelope = response.body as {data?: {submitted?: unknown; session_incarnation?: unknown; queued?: unknown; receipt?: unknown}; error?: {code?: unknown; details?: {receipt?: unknown}}} | undefined;
+    const envelope = response.body as {data?: {submitted?: unknown; command_dispatched?: unknown; session_incarnation?: unknown; queued?: unknown; receipt?: unknown}; error?: {code?: unknown; details?: {receipt?: unknown}}} | undefined;
     const receipt = normalizePromptReceipt(envelope?.data?.receipt ?? envelope?.error?.details?.receipt, {
       request_id: body.request_id, session_id: id, session_incarnation: expectedSessionIncarnation ?? "",
     });
@@ -1679,6 +1679,10 @@ async function submitSessionPromptRequest(
     if (receipt.outcome === "submitted" && response.status >= 200 && response.status < 300 && result.ok
       && envelope?.data?.submitted === true && envelope.data.session_incarnation === expectedSessionIncarnation) {
       return {ok:true, receipt, ...(envelope.data.queued === true ? {queued:true} : {})};
+    }
+    if (receipt.outcome === "command_dispatched" && response.status >= 200 && response.status < 300 && result.ok
+      && envelope?.data?.command_dispatched === true && envelope.data.submitted === false && envelope.data.session_incarnation === expectedSessionIncarnation) {
+      return {ok:true, receipt};
     }
     if (receipt.outcome === "refused" && !result.ok) return {ok:false, receipt, error:receipt.code === "busy" ? "The session is busy. This reply remains queued." : `The queued reply was refused (${receipt.code}).`};
     return {ok:false, outcomeUnknown:true, ...(receipt.outcome === "unknown" ? {receipt} : {}), error:"Queued reply delivery is unknown. Check its receipt before retrying."};
@@ -2272,7 +2276,7 @@ function sharedItem(value: unknown, target: SharedOutboxTarget, intent?: string)
   if (!raw || !isPromptRequestId(raw.id) || (intent && raw.id !== intent) || !validOutboxText(raw.text)
     || raw.session_incarnation !== target.incarnation || !sharedRevision(raw.revision)
     || !sharedRevision(raw.created_at) || !sharedRevision(raw.updated_at)
-    || !["queued", "sending", "submitted", "refused", "unknown", "cancelled"].includes(String(raw.state))
+    || !["queued", "sending", "submitted", "command_dispatched", "refused", "unknown", "cancelled"].includes(String(raw.state))
     || (raw.request_id !== null && !isPromptRequestId(raw.request_id))
     || (raw.edit_hold !== null && !isPromptRequestId(raw.edit_hold))
     || (raw.error_code !== null && (typeof raw.error_code !== "string" || !/^[a-z][a-z0-9-]{0,127}$/.test(raw.error_code)))) return null;
@@ -2280,7 +2284,7 @@ function sharedItem(value: unknown, target: SharedOutboxTarget, intent?: string)
   const receipt = receiptRaw ? normalizePromptReceipt(receiptRaw, { request_id: String(raw.request_id ?? receiptRaw.request_id),
     session_id: target.id, session_incarnation: target.incarnation }) : null;
   if (raw.receipt !== null && !receipt) return null;
-  if ((raw.state === "submitted" || raw.state === "unknown") && (receipt?.outcome !== raw.state || !raw.request_id)) return null;
+  if ((raw.state === "submitted" || raw.state === "command_dispatched" || raw.state === "unknown") && (receipt?.outcome !== raw.state || !raw.request_id)) return null;
   if (raw.state === "sending" && !raw.request_id) return null;
   return { id: raw.id, text: raw.text, session_incarnation: target.incarnation,
     state: raw.state as SharedOutboxItem["state"], revision: raw.revision, created_at: raw.created_at, updated_at: raw.updated_at,

@@ -87,7 +87,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const sharedReply = usesSharedOutbox(session);
   const sharedPending = sharedReply && shared.targets(session).some(row =>
     row.admissions.length > 0 || shared.outgoingItems(row).some(item =>
-      item.state !== "submitted" && item.state !== "cancelled" && item.state !== "refused"));
+      item.state !== "submitted" && item.state !== "command_dispatched" && item.state !== "cancelled" && item.state !== "refused"));
   const queued = outbox.items(session);
   const outboxVersion = outbox.snapshot();
   const updateReply = useCallback((patch: Partial<ConversationReplyDraft>) => {

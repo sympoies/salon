@@ -13,6 +13,15 @@ test("keyed prompt preserves the required idle guard and exact matching receipt"
   const result=await api.submitSessionPrompt("host-a","s1",request);
   assert.deepEqual((result as {receipt?:unknown}).receipt,receipt());
 });
+test("keyed command_dispatched is a terminal success that is not a submitted model turn",async()=>{
+  const dispatched=receipt("command_dispatched");
+  setFetchMock(async()=>jsonResponse({ok:true,data:{submitted:false,command_dispatched:true,session_incarnation:"inc-1",receipt:dispatched}}));
+  const result=await api.submitSessionPrompt("host-a","s1",request);
+  assert.equal(result.ok,true);assert.deepEqual((result as {receipt?:unknown}).receipt,dispatched);
+  setFetchMock(async()=>jsonResponse({ok:true,data:{submitted:false,session_incarnation:"inc-1",receipt:dispatched}}));
+  const unflagged=await api.submitSessionPrompt("host-a","s1",request);
+  assert.equal(unflagged.ok,false);assert.equal(unflagged.outcomeUnknown,true);
+});
 test("keyed prompt cannot accept another request's positive acknowledgement",async()=>{
   setFetchMock(async()=>jsonResponse({ok:true,data:{submitted:true,session_incarnation:"inc-1",receipt:{...receipt(),request_id:"another-attempt"}}}));
   const result=await api.submitSessionPrompt("host-a","s1",request);

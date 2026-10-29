@@ -5,7 +5,7 @@ import {sendJson} from "./http.ts";
 
 /** Project only public receipt metadata; daemon messages/details stay private. */
 export function forwardPromptReceipt(res:ServerResponse,result:DaemonResult,identity:PromptReceiptIdentity,lookup=false):void {
-  const body=result.body as {ok?:unknown;data?:{receipt?:unknown;submitted?:unknown;session_incarnation?:unknown;queued?:unknown};error?:{code?:unknown;details?:{receipt?:unknown}}}|undefined;
+  const body=result.body as {ok?:unknown;data?:{receipt?:unknown;submitted?:unknown;command_dispatched?:unknown;session_incarnation?:unknown;queued?:unknown};error?:{code?:unknown;details?:{receipt?:unknown}}}|undefined;
   const success=result.status>=200&&result.status<300&&body?.ok===true;
   // The edge validated the keyed body, so a daemon that rejects it as unknown
   // fields predates keyed prompts; it rejects before dispatch, so nothing was sent.
@@ -24,6 +24,9 @@ export function forwardPromptReceipt(res:ServerResponse,result:DaemonResult,iden
   }else if(receipt){
     if(success&&receipt.outcome==="submitted"&&body?.data?.submitted===true&&body.data.session_incarnation===identity.session_incarnation){
       sendJson(res,result.status,{ok:true,data:{submitted:true,session_incarnation:identity.session_incarnation,receipt,...(body.data.queued===true?{queued:true}:{})}});return;
+    }
+    if(success&&receipt.outcome==="command_dispatched"&&body?.data?.command_dispatched===true&&body.data.submitted===false&&body.data.session_incarnation===identity.session_incarnation){
+      sendJson(res,result.status,{ok:true,data:{submitted:false,command_dispatched:true,session_incarnation:identity.session_incarnation,receipt}});return;
     }
     if(!success&&result.status>=400&&receipt.outcome==="refused"){
       sendJson(res,result.status,{ok:false,error:{code:receipt.code,message:"The queued prompt was refused before delivery.",details:{receipt}}});return;

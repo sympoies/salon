@@ -95,7 +95,7 @@ export class OutboxStore {
     return (this.#db.prepare("SELECT count(*) AS count FROM outbox_items").get() as { count: number }).count;
   }
   /**
-   * At capacity the oldest submitted/cancelled rows make room, keeping the
+   * At capacity the oldest submitted/command_dispatched/cancelled rows make room, keeping the
    * newest `keep` rows untouched (#1051). Cancellation records also cover
    * pre-dispatch refusals, which have no attempt to fence a late PUT replay.
    */
@@ -107,7 +107,7 @@ export class OutboxStore {
       SELECT scope,id,admission_hash,value FROM outbox_items
       WHERE ${where} json_extract(value,'$.state') = 'cancelled' AND ${older}`)
       .run(...args);
-    this.#db.prepare(`DELETE FROM outbox_items WHERE ${where} json_extract(value,'$.state') IN ('submitted','cancelled') AND ${older}`)
+    this.#db.prepare(`DELETE FROM outbox_items WHERE ${where} json_extract(value,'$.state') IN ('submitted','command_dispatched','cancelled') AND ${older}`)
       .run(...args);
   }
   #row(target: OutboxTarget, id: string): ItemRow | undefined {
