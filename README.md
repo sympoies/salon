@@ -10,7 +10,7 @@ same session later.
 
 *UI preview · synthetic data*
 
-<img src="docs/assets/readme/phone-paper-390.png" width="390" alt="Salon in the Paper theme on a phone: a conversation with a reply composer at the bottom">
+<img src="docs/assets/readme/phone-paper-390.png" width="390" alt="Salon in the Paper theme on a phone: the retry-backoff conversation with a plan, a diff and a test result, and a reply composer at the bottom">
 
 *UI preview · synthetic data*
 

@@ -126,14 +126,17 @@ try {
 
   if (!only || only === "phone") {
     await page.addInitScript(`if (location.search === "?preview=phone") { ${seedStorage(phoneSettings)} }`);
-    await page.setViewport(390, 720, 2, true);
+    await page.setViewport(390, 920, 2, true);
     await page.navigate(`${origin}?preview=phone`);
-    await until(page, `document.body.innerText.includes("fernlight#398 flaky rollup compaction test")`, "the session list");
+    await until(page, `document.body.innerText.includes("fernlight#412 retry backoff for ingest workers")`, "the session list");
     await settle();
     await page.evaluate(`(() => {
-      [...document.querySelectorAll("button")].find(button => (button.getAttribute("aria-label") || "").startsWith("Open fernlight#398")).click();
+      [...document.querySelectorAll("button")].find(button => (button.getAttribute("aria-label") || "").startsWith("Open fernlight#412")).click();
     })()`);
-    await until(page, `document.body.innerText.includes("Opened PR #415.")`, "the #398 conversation");
+    await until(page, `document.body.innerText.includes("48 passed")`, "the #412 conversation");
+    await settle();
+    // Start at the request, so the plan, the diff and the test result fill the screen.
+    await page.evaluate(`document.querySelectorAll(".history-messages").forEach(pane => { pane.scrollTop = 0; })`);
     await settle();
     save("phone-paper-390.png", await page.screenshot());
   }
