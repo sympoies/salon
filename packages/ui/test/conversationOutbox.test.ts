@@ -708,6 +708,17 @@ for(const agent of [claude,{}] as Partial<Session>[])test(`#969 an idle ${agent.
     assert.equal(h.status("straight away"),"delivered","still a plain bubble once delivered");
   }finally{await h.close();}
 });
+test("a command_dispatched receipt leaves no bubble, no error and is never sent again",async()=>{
+  const h=await mount();try{
+    h.submit(async()=>({ok:true,receipt:{request_id:(h.requests[0] as PromptBody).request_id,session_id:"outbox",session_incarnation:"inc-1",outcome:"command_dispatched",code:null}}));
+    await h.render("idle",1);await h.write("/status");await h.reply();
+    assert.equal(h.requests.length,1);assert.equal(h.status("/status"),undefined,"no model-turn or pending bubble");
+    assert.equal(h.queueModule.conversationOutbox().items(h.session()).length,0,"nothing waits for transcript proof");
+    assert.equal(h.queued(),"");assertNoElement(h.container,'[role="alert"]');
+    await h.render("idle",2);await h.render("idle",3);
+    assert.equal(h.requests.length,1,"never retried");assert.equal(h.lookups.length,0);
+  }finally{await h.close();}
+});
 // Like the old direct send, two replies in the same idle period both go out at
 // once; the one-guarded-attempt-per-idle fence is for queued replies (#993 F1).
 test("#969 two direct replies in the same idle period both go out at once, keyed without the idle guard",async()=>{

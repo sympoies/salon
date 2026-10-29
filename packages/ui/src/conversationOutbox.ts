@@ -527,6 +527,12 @@ export class ConversationOutbox {
           : { ...candidate, state: "delivered", error: undefined, newAttempt: undefined });
         return true;
       }
+      if (receipt?.outcome === "command_dispatched") {
+        // A command opens its own UI and starts no model turn: nothing to prove from the transcript.
+        queue.items = queue.items.filter(candidate => candidate.id !== item.id);
+        queue.consumedIdle = undefined;
+        return true;
+      }
       const refused = receipt?.outcome === "refused" || refusalCode === "request-id-conflict" || refusalCode === "keyed-prompt-unsupported";
       const busy = receipt?.outcome === "refused" && receipt.code === "busy";
       const terminalDraft = receipt?.outcome === "refused" && receipt.code && Object.hasOwn(TERMINAL_DRAFT_ERRORS, receipt.code)

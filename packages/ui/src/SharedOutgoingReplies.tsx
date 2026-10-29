@@ -18,7 +18,7 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
   const visibleRows = rows.map(row => {
     const current = row.target.incarnation === session.session_incarnation;
     const proven = current ? client.submittedProof(row, messages) : {};
-    return { ...row, items: client.outgoingItems(row).filter(item => item.state !== "cancelled" && !client.isDismissed(row, item)
+    return { ...row, items: client.outgoingItems(row).filter(item => item.state !== "cancelled" && item.state !== "command_dispatched" && !client.isDismissed(row, item)
       && (item.state !== "submitted" || (current && !Object.hasOwn(proven, item.id)))) };
   });
   useEffect(() => {

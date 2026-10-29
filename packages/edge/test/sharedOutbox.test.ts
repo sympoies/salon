@@ -96,7 +96,8 @@ async function fixture(t: import("node:test").TestContext, multiUser = false) {
       let text = ""; for await (const chunk of req) text += String(chunk);
       const body = JSON.parse(text) as Record<string, unknown>; state.posts.push(body);
       const receipt = { request_id: body.request_id, session_id: "session-a", session_incarnation: body.expected_session_incarnation,
-        outcome: state.mode === "busy" ? "refused" : "submitted", code: state.mode === "busy" ? "busy" : null };
+        outcome: state.mode === "busy" ? "refused" : state.mode.startsWith("command") ? "command_dispatched" : "submitted",
+        code: state.mode === "busy" ? "busy" : null };
       if (state.mode === "busy") {
         state.receipts.set(String(body.request_id), receipt);
         res.writeHead(409); return void res.end(JSON.stringify({ ok: false, error: { code: "busy", details: { receipt } } }));
@@ -106,7 +107,8 @@ async function fixture(t: import("node:test").TestContext, multiUser = false) {
       }
       if (!state.receipts.has(String(body.request_id))) state.submitted++;
       state.receipts.set(String(body.request_id), receipt);
-      if (state.mode === "lost") return void req.socket.destroy();
+      if (state.mode === "lost" || state.mode === "command-lost") return void req.socket.destroy();
+      if (state.mode === "command") return void res.end(JSON.stringify({ ok: true, data: { receipt, submitted: false, command_dispatched: true, session_incarnation: state.incarnation } }));
       if (state.mode === "malformed") return void res.end(JSON.stringify({ ok: true, data: { receipt } }));
       return void res.end(JSON.stringify({ ok: true, data: { receipt, submitted: true, session_incarnation: state.incarnation } }));
     }
@@ -268,6 +270,31 @@ test("lost or malformed acknowledgement reconciles the original key without a se
     f.state.lookup = "normal";
     await f.until(async () => (await f.list()).items[0]?.state === "submitted");
     assert.ok(f.state.lookups.every(key => key === first)); assert.equal(f.state.posts.length, 1);
+  });
+});
+
+test("a command_dispatched receipt completes the reply without transcript proof, retry or a second POST", async t => {
+  for (const mode of ["command", "command-lost"]) await t.test(mode, async t => {
+    const f = await fixture(t); f.state.mode = mode;
+    // While the receipt is not yet readable the lost acknowledgement stays unknown.
+    if (mode === "command-lost") f.state.lookup = "missing";
+    await f.admit(); f.advance();
+    await f.until(async () => (await f.list()).items[0]?.state === (mode === "command" ? "command_dispatched" : "unknown"));
+    if (mode === "command-lost") {
+      await f.restart(); f.advance();
+      await f.until(() => f.state.lookups.length > 0);
+      f.state.lookup = "normal";
+      await f.until(async () => (await f.list()).items[0]?.state === "command_dispatched");
+    } else assert.equal(f.state.lookups.length, 0);
+    const done = (await f.list()).items[0]!;
+    assert.equal(done.receipt?.outcome, "command_dispatched"); assert.equal(done.error_code, null);
+    assert.equal((await f.request("/intent-a", "PATCH", { expected_session_incarnation: incarnation,
+      base_revision: done.revision, operation: "retry_refused" })).status, 409);
+    await f.restart(); f.advance(); await f.list();
+    assert.equal(f.state.posts.length, 1); assert.equal(f.state.submitted, 1);
+    assert.equal((await f.list()).items[0]?.state, "command_dispatched");
+    assert.equal((await f.request("/intent-a", "PUT", { ...admission })).status, 200);
+    assert.equal(f.state.posts.length, 1);
   });
 });
 
