@@ -14,6 +14,8 @@ export type DashboardShortcutAction =
   | "voice"
   | "conversation"
   | "shortcut-help"
+  | "page-prev"
+  | "page-next"
   | "session-prev"
   | "session-next"
   | `open-${1 | 2 | 3 | 4 | 6}`;
@@ -80,6 +82,9 @@ export function resolveDashboardShortcutAction(
   if (input.key === "`" || input.key === "~") {
     return "back";
   }
+
+  if (input.key === "<" || (input.shiftKey && input.code === "Comma")) return "page-prev";
+  if (input.key === ">" || (input.shiftKey && input.code === "Period")) return "page-next";
 
   if (input.shiftKey) {
     return null;

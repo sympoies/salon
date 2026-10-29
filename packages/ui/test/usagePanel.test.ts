@@ -913,3 +913,17 @@ test("failed Codex accounts show unavailable with reasons beside selectable heal
   await act(async () => cards[4].querySelector<HTMLButtonElement>("button")?.click());
   assert.deepEqual(switches, ["paid"]);
 });
+
+
+test("Command semicolon closes Usage while Command L does not", async () => {
+  const mounted = installDom();
+  cleanupStack.push(mounted.cleanup);
+  Object.defineProperty(mounted.window, "__TAURI__", { value: {}, configurable: true });
+  const UsagePanel = await loadUsagePanel();
+  let exits = 0;
+  await act(async () => { mounted.root.render(createElement(UsagePanel, { onExit: () => { exits += 1; } })); });
+  await act(async () => { mounted.window.dispatchEvent(new mounted.window.KeyboardEvent("keydown", { key: "l", metaKey: true })); });
+  assert.equal(exits, 0);
+  await act(async () => { mounted.window.dispatchEvent(new mounted.window.KeyboardEvent("keydown", { key: ";", metaKey: true })); });
+  assert.equal(exits, 1);
+});
