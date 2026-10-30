@@ -562,6 +562,25 @@ test("a shared composer draft refusal explains safe recovery without automatic r
   } finally { await h.close(); }
 });
 
+for (const [code, expected] of [
+  ["busy", 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'],
+  ["auth-quarantined", "This message was not sent."],
+] as const) test(`a shared reply refused as ${code} shows its own text and keeps Retry and Discard`, async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const item: SharedOutboxItem = { id: `refused-${code}`, text: "/status", state: "refused", revision: 2,
+      session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: null, receipt: null, edit_hold: null, error_code: code };
+    await h.ownServer({ revision: 2, items: [item], compose_holds: [] });
+    await h.client.sync(h.target);
+    await h.showReplies();
+    const refused = h.container.querySelector('[data-status="refused"]');
+    assert.ok(refused);
+    assert.equal(refused.querySelector('[role="alert"]')?.textContent, expected);
+    const labels = [...refused.querySelectorAll("button")].map(node => node.textContent);
+    assert.ok(labels.includes("Retry") && labels.includes("Discard"));
+  } finally { await h.close(); }
+});
+
 for (const current of [true, false]) test(`refused shared reply offers global Discard and ${current ? "Retry" : "no Retry for a prior incarnation"}`, async () => {
   const h = await fixture(new IDBFactory(), false);
   try {
