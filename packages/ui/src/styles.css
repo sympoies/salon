@@ -7185,11 +7185,15 @@ textarea {
 .session-status-count[data-status-group="attention"] { color: var(--warn); }
 .session-status-count[data-status-group="waiting"] { color: var(--status-waiting); }
 .session-filter-notice-indicator { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: var(--warn); color: var(--surface-toolbar); font-size: var(--text-2xs); font-weight: var(--weight-bold); line-height: 1; }
-.session-filters-trigger-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--weight-normal); }
+.session-filters-trigger-summary { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; column-gap: 0.5ch; height: 1lh; overflow: hidden; white-space: nowrap; font-weight: var(--weight-normal); }
+.session-filters-trigger-part { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.session-filters-trigger-part + .session-filters-trigger-part::before { content: "·"; margin-right: 0.5ch; }
 .session-filters-trigger-chevron { margin-left: auto; flex: none; display: block; width: 14px; height: 14px; transition: transform 150ms ease; }
 .session-filters-trigger[aria-expanded="true"] .session-filters-trigger-chevron { transform: rotate(180deg); }
 .session-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); margin-top: var(--space-xs); }
-.session-filter-chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.session-filter-chip { display: inline-flex; max-width: 100%; min-width: 0; white-space: nowrap; text-align: left; }
+.session-filter-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.session-filter-chip > span:last-child { flex: none; }
 .session-filter-coverage { font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-xs); }
 .session-filters-summary.is-compact-header .session-filter-coverage { flex: none; margin: 0; white-space: nowrap; }
 .session-filters-summary.is-compact-header { width: 100%; }
