@@ -23,6 +23,41 @@ test("normalizeOrder reads the { order: [...] } envelope", () => {
   assert.deepEqual(normalizeOrder({ order: ["summit/a", "summit/b"] }), ["summit/a", "summit/b"]);
 });
 
+test("public session projection preserves bounded launch_env literally without private fields", () => {
+  const launch_env = {
+    AGENT_RUNTIME_SUPPRESS_MEMORY: "1",
+    AGENT_RUNTIME_SUPPRESS_HEALTH: "",
+    AGENT_RUNTIME_CUSTOM_SWITCH: "  a=b=$(literal)  ",
+  };
+  assert.deepEqual(projectPublicAgentSession({
+    id: "s", launch_env, env: { PRIVATE_TOKEN: "fixture-only" },
+    environment: { PRIVATE_TOKEN: "fixture-only" }, credentials: { token: "fixture-only" },
+    runtime: { launch_env }, private_extra: "fixture-only",
+  }), { id: "s", launch_env });
+  assert.deepEqual(projectPublicAgentSession({ launch_env: {} }), { launch_env: {} });
+  assert.deepEqual(projectPublicAgentSession({ id: "legacy" }), { id: "legacy" });
+  const bounded = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [
+    i === 0 ? `AGENT_RUNTIME_${"A".repeat(114)}` : `AGENT_RUNTIME_SWITCH_${i}`, "é".repeat(512),
+  ]));
+  assert.deepEqual(projectPublicAgentSession({ launch_env: bounded }), { launch_env: bounded });
+});
+
+test("public session projection omits malformed, unbounded or credential-like launch_env", () => {
+  const invalid = [
+    null, [], "bad", 1, { AGENT_RUNTIME_SUPPRESS_MEMORY: 1 },
+    { AGENT_RUNTIME_SUPPRESS_MEMORY: "bad\u0085value" },
+    { AGENT_RUNTIME_SUPPRESS_MEMORY: "é".repeat(513) },
+    Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`AGENT_RUNTIME_SWITCH_${i}`, "1"])),
+    ...["PATH", "AGENT_RUNTIME_", "AGENT_RUNTIME_lower", "AGENT_RUNTIME_BAD-KEY",
+      `AGENT_RUNTIME_${"A".repeat(115)}`, ...["SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL", "API_KEY", "PRIVATE_KEY"]
+        .map(word => `AGENT_RUNTIME_${word}`),
+    ].map(key => ({ AGENT_RUNTIME_SUPPRESS_MEMORY: "1", [key]: "fixture-only" })),
+  ];
+  for (const launch_env of invalid) {
+    assert.deepEqual(projectPublicAgentSession({ id: "s", launch_env }), { id: "s" });
+  }
+});
+
 test("public session projection preserves only bounded context usage fields", () => {
   assert.deepEqual(projectPublicAgentSession({
     id: "s",

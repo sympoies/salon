@@ -55,6 +55,7 @@ import {
   isAccountProvider,
   normalizeAccountNickname,
   normalizeAgentLaunchProfileId,
+  normalizeSessionLaunchEnv,
   normalizeSessionWorkspace,
   type TitleSummaryTrace,
 } from "@agent-console/shared/api";
@@ -3265,6 +3266,11 @@ function projectCreateSessionBody(value: unknown): Record<string, unknown> | nul
   const raw = value as Record<string, unknown>;
   if (typeof raw.agent !== "string" || raw.agent.length === 0 || raw.agent.length > 32) return null;
   const body: Record<string, unknown> = { agent: raw.agent };
+  if (Object.hasOwn(raw, "launch_env")) {
+    const launchEnv = normalizeSessionLaunchEnv(raw.launch_env);
+    if (launchEnv === undefined) return null;
+    body.launch_env = launchEnv;
+  }
   if (raw.workspace !== undefined) {
     const workspace = normalizeSessionWorkspace(raw.workspace);
     if (raw.workspace !== null && workspace === null) return null;
