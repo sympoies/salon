@@ -1,5 +1,12 @@
 /** Opaque daemon selectors; image bytes and paths never enter history snapshots. */
-export interface ConversationImage { readonly id: string }
+export interface ConversationImage {
+  readonly id: string;
+  /** Proven provenance; absent for ordinary images and unknown producer values. */
+  readonly origin?: ConversationImageOrigin;
+  /** Opaque same-history upload identity shared by an attachment and its tool re-read. */
+  readonly attachment_ref?: string;
+}
+export type ConversationImageOrigin = "user_attachment" | "tool_result";
 export const CONVERSATION_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 export const CONVERSATION_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 /** Bounded basename from an authenticated image response, never a local path. */
@@ -26,6 +33,10 @@ export function normalizeConversationImages(value: unknown): ConversationImage[]
   if (!Array.isArray(value)) return [];
   return value.slice(0,16).flatMap((image: unknown) => {
     const id = image && typeof image === "object" ? (image as { id?: unknown }).id : undefined;
-    return isConversationImageId(id) ? [{ id }] : [];
+    if (!isConversationImageId(id)) return [];
+    const { origin, attachment_ref: ref } = image as { origin?: unknown; attachment_ref?: unknown };
+    return [{ id,
+      ...(origin === "user_attachment" || origin === "tool_result" ? { origin } : {}),
+      ...(typeof ref === "string" && /^[A-Za-z0-9._~-]{1,128}$/.test(ref) ? { attachment_ref: ref } : {}) }];
   });
 }

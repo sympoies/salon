@@ -11,7 +11,7 @@ afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 const imageId = (index: number) => `${"a".repeat(16)}.0.${index}.${"b".repeat(32)}`;
 
 async function mountImages(responseFor?: (path: string) => Response, nested = false,
-  images: Array<{id:string}> = [{id:imageId(0)},{id:imageId(1)}]) {
+  images: Array<{id:string}> = [{id:imageId(0)},{id:imageId(1)}], messages?: unknown[]) {
   const window = new Window({ url: "http://localhost" });
   const saved = { window: globalThis.window, document: globalThis.document, HTMLElement: globalThis.HTMLElement,
     IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT, fetch: globalThis.fetch };
@@ -27,7 +27,7 @@ async function mountImages(responseFor?: (path: string) => Response, nested = fa
   const root = createRoot(window.document.body.appendChild(window.document.createElement("div")));
   cleanups.push(async () => { await act(async () => root.unmount()); await ssr.close(); Object.assign(globalThis,saved); window.close(); });
   const { HistoryConversationView } = await ssr.loadModule<typeof import("../src/HistoryConversation.tsx")>("/src/HistoryConversation.tsx");
-  const conversation = { session:{ id:"history",machine:"fixture",provider:"codex" },messages:[
+  const conversation = { session:{ id:"history",machine:"fixture",provider:"codex" },messages:messages ?? [
     {id:"message",role:"user",text:"Look at these",images}
   ],latestMessagePaging:true,loading:false,viewportRef:{current:null} };
   const content = createElement(HistoryConversationView,{conversation:conversation as never,onJumpToLatest(){}});
@@ -242,4 +242,57 @@ test("navigation keeps keyboard focus inside the viewer when the selected arrow 
   assert.match(viewer.textContent ?? "",/1 \/ 2/);
   await act(async () => window.document.activeElement!.dispatchEvent(new window.KeyboardEvent("keydown",{key:"Escape",bubbles:true})));
   assertNoElement(window.document,'[aria-label="Conversation images"]');
+});
+
+const attachment = (index: number, ref?: string, origin?: string) =>
+  ({id:imageId(index),...(origin ? {origin} : {}),...(ref ? {attachment_ref:ref} : {})});
+const mountMessages = (messages: unknown[]) => mountImages(undefined,false,[],messages);
+const articles = (window: Window) => [...window.document.querySelectorAll("article")];
+
+test("a user attachment stays in the user bubble", async () => {
+  const {window} = await mountMessages([{id:"u",role:"user",text:"Look",images:[attachment(0,"up-1","user_attachment")]}]);
+  const [user] = articles(window);
+  assert.ok(user!.classList.contains("is-user"));
+  assert.ok(user!.querySelector(".history-bubble .conversation-image-thumbnail"));
+  assertNoElement(user!,".history-tool-output");
+});
+
+test("a tool re-read of a shown user attachment collapses to one line", async () => {
+  const {window,requests} = await mountMessages([
+    {id:"u",role:"user",text:"Look",images:[attachment(0,"up-1","user_attachment")]},
+    {id:"t",role:"user",text:"",images:[attachment(1,"up-1","tool_result")]},
+  ]);
+  const [, tool] = articles(window);
+  assert.equal(tool!.querySelectorAll(".conversation-image-thumbnail").length,0);
+  assert.match(tool!.textContent ?? "",/Read attachment/);
+  assert.equal(window.document.querySelectorAll(".conversation-image-thumbnail").length,1);
+  assert.ok(!requests.some(path => path.includes(imageId(1))),"collapsed re-read is not fetched");
+});
+
+test("a tool image without a shown matching attachment is labelled tool output", async () => {
+  for (const messages of [
+    [{id:"t",role:"user",text:"",images:[attachment(1,"up-9","tool_result")]}],
+    [{id:"u",role:"user",text:"Look",images:[attachment(0,"up-1","user_attachment")]},
+     {id:"t",role:"assistant",text:"",images:[attachment(1,undefined,"tool_result")]}],
+    [{id:"t",role:"assistant",text:"",images:[attachment(1,"up-1","tool_result")]},
+     {id:"u",role:"user",text:"Look",images:[attachment(0,"up-1","user_attachment")]}],
+  ]) {
+    const {window} = await mountMessages(messages);
+    const tool = articles(window).find(article => article.getAttribute("data-history-message-id") === "t")!;
+    assert.match(tool.querySelector(".history-tool-output")?.textContent ?? "",/Tool output/);
+    assert.equal(tool.querySelectorAll(".history-tool-output .conversation-image-thumbnail").length,1);
+    assertNoElement(tool,".history-bubble .conversation-image-thumbnail");
+    assert.doesNotMatch(tool.textContent ?? "",/Read attachment/);
+  }
+});
+
+test("images without provenance render in the bubble as before", async () => {
+  const {window} = await mountMessages([
+    {id:"a",role:"assistant",text:"Chart",images:[attachment(0)]},
+    {id:"b",role:"user",text:"Odd",images:[{...attachment(1,"up-1"),origin:"unknown"}]},
+  ]);
+  for (const article of articles(window)) {
+    assert.equal(article.querySelectorAll(".history-bubble .conversation-image-thumbnail").length,1);
+    assertNoElement(article,".history-tool-output");
+  }
 });
