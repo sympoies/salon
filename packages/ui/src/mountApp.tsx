@@ -1,3 +1,4 @@
+import { AppNameContext } from "./appName.ts";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
@@ -8,6 +9,8 @@ import { installTheme } from "./theme.ts";
 import "./styles.css";
 
 export interface MountAppOptions {
+  /** Name displayed in the application title. Defaults to Agent Console. */
+  readonly appName?: string;
   /** Extensions from the distribution entry; core's own entry passes none. */
   readonly extensions?: readonly UiExtension[];
 }
@@ -18,15 +21,18 @@ export function mountApp(root: HTMLElement | null, options: MountAppOptions = {}
     throw new Error("agent-console: #root element missing");
   }
   const registry = createUiExtensionRegistry(options.extensions ?? []);
+  if (options.appName !== undefined) document.title = options.appName;
   installTheme();
   installAndroidSafeAreaInsets();
   installMacTitleBar();
   createRoot(root).render(
     <StrictMode>
-      <MacTitleBar />
-      <UiExtensionsProvider registry={registry}>
-        <App />
-      </UiExtensionsProvider>
+      <AppNameContext.Provider value={options.appName ?? "Agent Console"}>
+        <MacTitleBar />
+        <UiExtensionsProvider registry={registry}>
+          <App />
+        </UiExtensionsProvider>
+      </AppNameContext.Provider>
     </StrictMode>,
   );
 }

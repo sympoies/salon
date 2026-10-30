@@ -1,0 +1,10 @@
+# UI package
+
+`mountApp` accepts an optional `appName` for the rendered application title and
+document title. When omitted, the rendered title remains `Agent Console`.
+
+```ts
+import { mountApp } from "@agent-console/ui/app";
+
+mountApp(document.getElementById("root"), { appName: "Agent Console Test" });
+```

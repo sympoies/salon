@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { AppNameContext } from "./appName.ts";
 import { IconButton } from "./IconButton.tsx";
 import agentConsoleIconUrl from "./assets/agent-console-icon.svg";
 
@@ -14,6 +16,7 @@ export function BrandTitle({
   markBusy = false,
   markTitle,
 }: BrandTitleProps) {
+  const appName = useContext(AppNameContext);
   const mark = onMarkClick ? (
     <IconButton preset="identity"
       className="brand-title-mark brand-title-mark-button is-icon-busy"
@@ -32,7 +35,7 @@ export function BrandTitle({
   return (
     <div className="brand-title">
       {mark}
-      <h1>Agent Console</h1>
+      <h1>{appName}</h1>
     </div>
   );
 }
