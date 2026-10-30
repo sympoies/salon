@@ -7,8 +7,8 @@ import type { Plugin } from "vite";
 import { assertNoElement } from "./support/domAssert.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 
-for (const host of ["mac", "browser", "android"] as const) {
-  test(`the actual entry reserves themed title chrome only for macOS (${host})`, async () => {
+for (const [host, appName] of [["mac", undefined], ["mac", "Agent Console Test"], ["browser", undefined], ["android", undefined]] as const) {
+  test(`the actual entry reserves themed title chrome only for macOS (${host}, ${appName ?? "default"})`, async () => {
     const window = new Window({ url: "http://localhost" });
     Object.defineProperty(window.navigator, "userAgent", { value: host === "android" ? "Android" : "Macintosh" });
     if (host !== "browser") Object.assign(window, { __TAURI_INTERNALS__: {} });
@@ -28,18 +28,19 @@ for (const host of ["mac", "browser", "android"] as const) {
         if (source === "react-dom/client") return "\0titlebar-root";
       },
       load(id) {
-        if (id === "\0titlebar-app") return 'import React from "react";export default function App(){return React.createElement("main",{className:"dash"},"Application content");}';
+        if (id === "\0titlebar-app") return 'import React from "react";import { BrandTitle } from "/src/BrandTitle.tsx";export default function App(){return React.createElement("main",{className:"dash"},React.createElement(BrandTitle));}';
         if (id === "\0titlebar-root") return 'export const createRoot=(...args)=>globalThis.__titleBarCreateRoot(...args);';
       },
     };
     const harness = createUiSsrHarness([boundary]);
     try {
-      await act(async () => { await harness.loadModule("/src/main.tsx"); });
-      assert.equal(container.querySelector("main")?.textContent, "Application content");
+      await act(async () => { const { mountApp } = await harness.loadModule<typeof import("../src/mountApp.tsx")>("/src/mountApp.tsx"); mountApp(container, appName === undefined ? {} : { appName }); });
+      assert.equal(container.querySelector("main h1")?.textContent, appName ?? "Agent Console");
+      if (appName !== undefined) assert.equal(window.document.title, appName);
       if (host === "mac") {
         const bar = container.querySelector(".mac-titlebar");
         assert.ok(bar, "macOS must render title chrome rather than the system-gray centered title");
-        assert.equal(bar.textContent, "Agent Console");
+        assert.equal(bar.textContent, appName ?? "Agent Console");
         assert.equal(bar.getAttribute("data-tauri-drag-region"), "");
         assert.equal(bar.querySelector("span")?.getAttribute("data-tauri-drag-region"), "");
         assert.equal(window.document.documentElement.dataset.macTitlebar, "true");
