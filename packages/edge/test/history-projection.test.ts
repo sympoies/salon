@@ -53,6 +53,19 @@ test("history projections strip private and oversized daemon fields", () => {
   }), { messages: [{ id: "g1", role: "goal", text: "Repair retitle" }] });
 });
 
+test("history projection admits the notice role only for a valid envelope without images", () => {
+  const text = "<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\nSynthetic update";
+  const image = { id: `${"a".repeat(16)}.0.0.${"b".repeat(32)}` };
+  assert.deepEqual(projectHistoryMessagesDaemonData({
+    messages: [
+      { id: "n1", role: "notice", text, timestamp: "2026-01-01T00:00:00Z", internal: "private" },
+      { id: "n2", role: "notice", text: "plain text, not an envelope" },
+      { id: "n3", role: "notice", text, images: [image] },
+      { id: "n4", role: "notice", text: "" },
+    ],
+  }), { messages: [{ id: "n1", role: "notice", text, timestamp: "2026-01-01T00:00:00Z" }] });
+});
+
 test("archive projection requires matching delete acknowledgement and strips private fields", () => {
   const archived = {
     history_id: "h-abc",

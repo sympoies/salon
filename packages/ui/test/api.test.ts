@@ -487,6 +487,20 @@ test("history APIs normalize bounded public fields and never project daemon path
   assert.match(requestedUrls.at(-1) ?? "", /direction=latest/);
 });
 
+test("history messages admit the notice role only for a valid envelope without images", async () => {
+  const text = "<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\nSynthetic update";
+  setFetchMock(async () => jsonResponse({ ok: true, data: { messages: [
+    { id: "n1", role: "notice", text, timestamp: "2026-08-31T00:00:00Z" },
+    { id: "n2", role: "notice", text: "plain text, not an envelope" },
+    { id: "n3", role: "notice", text, images: [{ id: `${"a".repeat(16)}.0.0.${"b".repeat(32)}` }] },
+    { id: "u1", role: "user", text: "hello" },
+  ] } }));
+  assert.deepEqual(await listHistoryMessages("summit", "h-123"), {
+    ok: true,
+    messages: [{ id: "n1", role: "notice", text, timestamp: "2026-08-31T00:00:00Z" }, { id: "u1", role: "user", text: "hello" }],
+  });
+});
+
 test("history API drops old-daemon dsh rows and preserves supported providers", async () => {
   const row = {
     id: "h-1", provider: "codex", provider_session_id: "provider-1", cwd: "/workspace/example",

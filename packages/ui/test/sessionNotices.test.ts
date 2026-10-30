@@ -12,7 +12,7 @@ const raw = '<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 
-async function mount(text: string, latestMessagePaging = true) {
+async function mount(text: string, latestMessagePaging = true, role = "user") {
   const window = new Window({ url: "http://localhost" });
   const previous = { window: globalThis.window, document: globalThis.document, IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT };
   Object.assign(globalThis, { window, document: window.document, IS_REACT_ACT_ENVIRONMENT: true });
@@ -24,7 +24,7 @@ async function mount(text: string, latestMessagePaging = true) {
   const { HistoryConversationView } = await ssr.loadModule<typeof import("../src/HistoryConversation.tsx")>("/src/HistoryConversation.tsx");
   const conversation = {
     session: { machine: "fixture", id: "sample", provider: "codex" },
-    messages: [{ id: "notice", role: "user", text, timestamp: "2026-01-01T12:00:00" }],
+    messages: [{ id: "notice", role, text, timestamp: "2026-01-01T12:00:00" }],
     latestMessagePaging, loading: false, viewportRef: { current: null }, messagePage: 0, messagePageCursors: [],
   } as unknown as import("../src/HistoryConversation.tsx").HistoryConversation;
   await act(async () => root.render(createElement(HistoryConversationView, { conversation, onJumpToLatest() {} })));
@@ -45,6 +45,17 @@ test("notice header is hidden and full plain-text body is visible in live and hi
   assert.equal(Boolean(live.container.querySelector("strong")), false, "Markdown stays literal");
 });
 
+
+test("a notice-role message renders once as the same System notice as a user message with the header", async () => {
+  const asNotice = await mount(raw, true, "notice");
+  const asUser = await mount(raw);
+  assert.equal(asNotice.container.querySelectorAll("article").length, 1);
+  assert.equal(asNotice.container.querySelectorAll(".session-notice-body").length, 1);
+  assert.equal(asNotice.container.querySelector("article")?.getAttribute("aria-label"), "System notice");
+  assert.equal(Boolean(asNotice.container.querySelector(".history-bubble")), false);
+  assert.equal(asNotice.container.querySelector("article")?.outerHTML, asUser.container.querySelector("article")?.outerHTML);
+  assert.doesNotMatch(asNotice.container.textContent ?? "", /<!-- agent-notice:/);
+});
 
 test("strict draft corpus preserves body bytes and extracts plain metadata", () => {
   for (const fixture of validNotices) {

@@ -167,7 +167,7 @@ export interface HistorySession {
 export interface HistoryMessage {
   readonly images?: readonly import("@agent-console/shared/conversation-images").ConversationImage[];
   readonly id: string;
-  readonly role: "user" | "assistant" | "goal";
+  readonly role: "user" | "assistant" | "goal" | "notice";
   readonly text: string;
   readonly timestamp?: string;
 }

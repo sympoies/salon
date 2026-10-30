@@ -1,5 +1,6 @@
 import { normalizeConversationImages, type ConversationImage } from "./conversationImages.ts";
 import { NormalizedSseDecoder } from "./sse.ts";
+import { parseSessionNotice } from "./parseSessionNotice.ts";
 
 export type ResourceSubscription =
   | { readonly resource: "sessions"; readonly machines: readonly string[] }
@@ -15,7 +16,7 @@ export function resourceKey(subscription: ResourceSubscription): string {
 // pages stay on HTTP so an eight-conversation stream remains bounded.
 export const CONVERSATION_SNAPSHOT_MAX_BYTES = 60 * 1024;
 export interface ConversationSnapshot {
-  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal"; readonly text: string; readonly images?: readonly ConversationImage[]; readonly timestamp?: string }>;
+  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly images?: readonly ConversationImage[]; readonly timestamp?: string }>;
   readonly next_cursor?: string;
   readonly older_cursor?: string;
 }
@@ -29,12 +30,14 @@ export function normalizeConversationSnapshot(value: unknown): ConversationSnaps
     if (!value || typeof value !== "object") return undefined;
     const item = value as Record<string, unknown>;
     if (typeof item.id !== "string" || !item.id || item.id.length > 160 || ids.has(item.id)
-      || !["user", "assistant", "goal"].includes(String(item.role))
+      || !["user", "assistant", "goal", "notice"].includes(String(item.role))
       || typeof item.text !== "string" || item.text.length > 64 * 1024
       || (item.timestamp !== undefined && (typeof item.timestamp !== "string" || item.timestamp.length > 64))) return undefined;
     const images = normalizeConversationImages(item.images);
+    // A notice is display-only machine text: it must parse as an envelope and carry no images.
+    if (item.role === "notice" && (images.length || !parseSessionNotice(item.text))) continue;
     ids.add(item.id);
-    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal", text: item.text, ...(images.length ? { images } : {}),
+    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal" | "notice", text: item.text, ...(images.length ? { images } : {}),
       ...(typeof item.timestamp === "string" ? { timestamp: item.timestamp } : {}) });
   }
   const snapshot: ConversationSnapshot = { messages };
