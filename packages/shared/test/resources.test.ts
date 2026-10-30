@@ -13,6 +13,20 @@ test("resource notifications allowlist metadata and reject malformed keys or rev
   assert.deepEqual(decoder.push("\n"), [event]);
 });
 
+test("conversation snapshots admit the notice role only for a valid envelope without images", () => {
+  const metadata = { schema_version: "agent-console.resource-event.v1", type: "changed", resource: "conversation/host/history", revision: 1 };
+  const text = "<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\nSynthetic update";
+  const conversation = { messages: [
+    { id: "n1", role: "notice", text },
+    { id: "n2", role: "notice", text: "plain text, not an envelope" },
+    { id: "n3", role: "notice", text, images: [{ id: `${"a".repeat(16)}.0.0.${"b".repeat(32)}` }] },
+    { id: "u1", role: "user", text: "hello" },
+  ] };
+  assert.deepEqual(normalizeResourceEvent({ ...metadata, conversation }), {
+    ...metadata, conversation: { messages: [{ id: "n1", role: "notice", text }, { id: "u1", role: "user", text: "hello" }] },
+  });
+});
+
 test("conversation snapshots carry only bounded normalized messages and cursors", () => {
   const metadata = { schema_version: "agent-console.resource-event.v1", type: "changed", resource: "conversation/host/history", revision: 1 };
   const snapshot = { messages: [{ id: "a1", role: "assistant", text: "new reply", source_path: "private" }], older_cursor: "older", token: "private" };

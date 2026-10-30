@@ -25,7 +25,7 @@ export function stuckTurn(state: TurnState | null, autoResume: AutoResumeStatus 
   messages: readonly HistoryMessage[]): StuckTurn | null {
   const last = state?.last_turn;
   if (last?.outcome !== "failed") return null;
-  const lastMessage = [...messages].reverse().find(message => message.role !== "goal");
+  const lastMessage = [...messages].reverse().find(message => message.role !== "goal" && message.role !== "notice");
   // A message sent after the failure is already the next try, even before the
   // turn state catches up.
   if (lastMessage?.role === "user" && Date.parse(lastMessage.timestamp ?? "") > Date.parse(last.completed_at)) return null;
