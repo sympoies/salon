@@ -25,3 +25,27 @@ test("image filenames preserve Unicode and spaces but cannot contain paths or co
     assert.equal(conversationImageFilename(header),undefined,header ?? "missing");
   }
 });
+
+test("image provenance keeps only the agreed origin values and an opaque bounded reference", () => {
+  const id = `${"a".repeat(16)}.0.0.${"b".repeat(32)}`;
+  assert.deepEqual(normalizeConversationImages([
+    {id,origin:"user_attachment",attachment_ref:"upload-1"},
+    {id,origin:"tool_result",attachment_ref:"upload-1"},
+    {id,origin:"tool_result"},
+    {id,attachment_ref:"upload.2_x~y-z"},
+  ]),[
+    {id,origin:"user_attachment",attachment_ref:"upload-1"},
+    {id,origin:"tool_result",attachment_ref:"upload-1"},
+    {id,origin:"tool_result"},
+    {id,attachment_ref:"upload.2_x~y-z"},
+  ]);
+});
+
+test("unknown origins and malformed references are dropped while the image stays", () => {
+  const id = `${"a".repeat(16)}.0.0.${"b".repeat(32)}`;
+  assert.deepEqual(normalizeConversationImages([
+    {id,origin:"assistant"}, {id,origin:7}, {id,origin:null},
+    {id,attachment_ref:"/private/path.png"}, {id,attachment_ref:"https://example.invalid/a.png"},
+    {id,attachment_ref:"a b"}, {id,attachment_ref:""}, {id,attachment_ref:"x".repeat(129)}, {id,attachment_ref:42},
+  ]),Array(9).fill({id}));
+});

@@ -351,6 +351,26 @@
   color: var(--conversation-user-text);
 }
 
+.history-message:has(> .history-tool-output) {
+  flex-wrap: wrap;
+}
+
+.history-tool-output {
+  flex: 1 0 100%;
+  min-width: 0;
+  color: var(--conversation-meta);
+  font-size: var(--text-xs);
+}
+
+.history-tool-output > p {
+  margin: 0;
+}
+
+.history-tool-label {
+  display: block;
+  margin-bottom: 2px;
+}
+
 .history-message.is-continuation {
   padding-left: 34px;
 }

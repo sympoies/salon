@@ -37,6 +37,22 @@ export function messageDayLabel(date: Date, now: Date = new Date()): string {
     : `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
 }
 
+/**
+ * Per message: tool-result images leave the bubble; those re-reading a user
+ * attachment already shown earlier in this history collapse to one line.
+ */
+function splitImages(messages: readonly HistoryMessage[]) {
+  const shown = new Set<string>();
+  return messages.map((message) => {
+    const images = message.images ?? [];
+    const bubble = images.filter((image) => image.origin !== "tool_result");
+    for (const image of bubble) if (image.origin === "user_attachment" && image.attachment_ref) shown.add(image.attachment_ref);
+    const tool = images.filter((image) => image.origin === "tool_result");
+    const reread = tool.filter((image) => image.attachment_ref && shown.has(image.attachment_ref));
+    return { bubble, reread: reread.length, tool: tool.filter((image) => !reread.includes(image)) };
+  });
+}
+
 export interface HistoryConversation {
   readonly session: HistorySession | undefined;
   readonly latestMessagePaging: boolean;
@@ -344,6 +360,7 @@ export function HistoryConversationView({
     messagePageCursors,
     loading,
   } = conversation;
+  const split = splitImages(messages);
   const showWorking = working && !browsingOlder && (latestMessagePaging || messageCursor === null);
   // Keep a reader who follows the latest messages at the bottom as the line appears.
   useLayoutEffect(() => {
@@ -372,7 +389,9 @@ export function HistoryConversationView({
           const user = message.role === "user";
           const showAvatar = !user && (newDay || previous?.role !== message.role);
           const caption = imageCaption(message.text, message.images?.length ?? 0);
-          const imageOnly = Boolean(session && message.images?.length && !caption.trim() && message.role !== "goal");
+          const { bubble: bubbleImages, reread, tool: toolImages } = split[index]!;
+          const imageOnly = Boolean(session && bubbleImages.length && !caption.trim() && message.role !== "goal");
+          const toolOnly = Boolean(session && (reread || toolImages.length) && !bubbleImages.length && !caption.trim());
           const time = sentAt ? <time dateTime={message.timestamp}>{sentAt}</time> : null;
           return (
             <Fragment key={message.id}>
@@ -385,8 +404,15 @@ export function HistoryConversationView({
                 </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
                 {user && !imageOnly ? time : null}
-                <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} />{message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}{imageOnly ? time : null}</div>
+                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} /> : null}{imageOnly ? time : null}</div>}
                 {!user && !imageOnly ? time : null}
+                {session && (reread || toolImages.length) ? <div className="history-tool-output">
+                  {reread ? <p className="history-tool-reread">Read attachment</p> : null}
+                  {toolImages.length ? <>
+                    <span className="history-tool-label">Tool output</span>
+                    <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={toolImages} />
+                  </> : null}
+                </div> : null}
                 </>}
               </article>
             </Fragment>
