@@ -78,7 +78,7 @@ local state.
 ## Validation and acceptance
 
 Run the [project gate](../DEVELOPMENT.md#validation). It includes the actual
-workspace typecheck/build and `node --test docker/start.test.mjs`. The startup
+workspace typecheck/build and `node --test docker/start.test.ts`. The startup
 tests cover readiness, token separation, durable browser credentials, failure
 and shutdown with isolated process fixtures. They do not contact a provider.
 On Linux, use the documented memory scope for build/test commands; give an

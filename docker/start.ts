@@ -1,15 +1,16 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Writable } from "node:stream";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-let daemon;
-let edge;
+let daemon: ChildProcessByStdio<Writable, null, null> | undefined;
+let edge: ReturnType<typeof import("../apps/workspace/src/server.ts").startWorkspaceEdge> | undefined;
 let stopping = false;
 
-async function shutdown(code) {
+async function shutdown(code: number) {
   if (stopping) return;
   stopping = true;
   edge?.closeAllConnections();
@@ -18,7 +19,7 @@ async function shutdown(code) {
     const exited = once(daemon, "exit");
     daemon.kill("SIGTERM");
     const deadline = setTimeout(() => {
-      daemon.kill("SIGKILL");
+      daemon!.kill("SIGKILL");
       process.exit(code);
     }, 5000);
     deadline.unref();
@@ -32,7 +33,7 @@ process.once("SIGTERM", () => void shutdown(0));
 process.once("SIGINT", () => void shutdown(0));
 
 try {
-  const state = join(process.env.XDG_STATE_HOME, "salon");
+  const state = join(process.env.XDG_STATE_HOME!, "salon");
   await mkdir(state, { recursive: true, mode: 0o700 });
   const credential = join(state, "browser-token");
   try {
@@ -40,7 +41,7 @@ try {
       flag: "wx", mode: 0o600,
     });
   } catch (error) {
-    if (error.code !== "EEXIST") throw error;
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
   await chmod(credential, 0o600);
   const clientToken = (await readFile(credential, "utf8")).trim();
@@ -49,7 +50,7 @@ try {
 
   // Only runtime paths and terminal settings enter provider ancestry. Neither
   // operator credential is exported to the daemon, tmux or provider children.
-  const env = { LANG: "C.UTF-8", TERM: "xterm-256color" };
+  const env: NodeJS.ProcessEnv = { LANG: "C.UTF-8", TERM: "xterm-256color" };
   for (const key of ["PATH", "HOME", "CODEX_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR",
     "AGENT_HOME", "AGENT_SESSION_STATE_DIR", "TMPDIR"]) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
@@ -77,7 +78,7 @@ try {
     await delay(100);
   }
   if (!ready) throw new Error("Daemon readiness timed out");
-  const { startWorkspaceEdge } = await import("../apps/workspace/src/server.mjs");
+  const { startWorkspaceEdge } = await import("../apps/workspace/src/server.ts");
   edge = startWorkspaceEdge({ daemonToken, clientToken });
   edge.once("error", () => void shutdown(1));
   edge.once("close", () => { if (!stopping) void shutdown(1); });

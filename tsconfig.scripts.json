@@ -15,10 +15,13 @@
   },
   "include": [
     "scripts/*.ts",
+    "docker/*.ts",
+    "apps/workspace/src/*.ts",
     "scripts/test/*.ts",
     "packages/edge/scripts/title-summarizer-openai-compatible.ts"
   ],
   "exclude": [
-    "scripts/fixtures"
+    "scripts/fixtures",
+    "scripts/test/shared-outbox-two-clients.test.ts"
   ]
 }

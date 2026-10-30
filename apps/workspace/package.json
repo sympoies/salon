@@ -7,7 +7,7 @@
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "start": "node ../../docker/start.mjs"
+    "start": "node ../../docker/start.ts"
   },
   "dependencies": {
     "@agent-console/edge": "workspace:*",

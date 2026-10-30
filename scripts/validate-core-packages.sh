@@ -39,8 +39,7 @@ if [[ -n "$suite" ]]; then
       pnpm --filter @agent-console/shared run test
       pnpm run check:core
       node --test scripts/package-consumption.test.ts
-      node --test docker/start.test.mjs
-      node --check apps/workspace/src/server.mjs
+      node --test docker/start.test.ts
       pnpm --filter @salon/workspace run build
       ;;
     edge) pnpm --filter @agent-console/edge run test ;;
