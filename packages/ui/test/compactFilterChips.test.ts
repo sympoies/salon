@@ -50,6 +50,15 @@ for (const compactHeader of [false, true]) test(`session filter chips are compac
   }
 });
 
+test("a Roles selection whose roles no longer exist still reads as a labelled chip", async () => {
+  const mounted = await mount({ ...CLEAR_SESSION_FILTERS, roles: ["vanished"] }, false);
+  try {
+    const chip = chipOf(mounted.container, "Roles");
+    assert.equal(labelOf(chip), "Roles: None");
+    assert.equal(chip.getAttribute("aria-label"), "Remove Roles: None");
+  } finally { await mounted.close(); }
+});
+
 test("removing a compact chip still resets its whole dimension", async () => {
   let applied: SessionFilters | undefined;
   const mounted = await mount({ ...CLEAR_SESSION_FILTERS, workspaces: ["alpha", "beta"] }, false, next => { applied = next; });

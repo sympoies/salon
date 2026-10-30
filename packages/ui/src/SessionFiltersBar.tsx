@@ -137,8 +137,10 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     ? roleChoices.length : roleChoices.filter(role => filters.roles!.includes(role)).length;
   const rolesNarrowed = filters.roles != null && selectedRoleCount < roleChoices.length;
   // Chips and the summary show the first value plus a count; the full list stays in the title and accessible name.
-  const dimension = (name: string, values: readonly string[], prefix = "") =>
-    ({ label: `${name}: ${prefix}${values.join(", ")}`, compact: `${name}: ${prefix}${values[0]}${values.length > 1 ? ` +${values.length - 1}` : ""}` });
+  const dimension = (name: string, selected: readonly string[], prefix = "") => {
+    const values = selected.length ? selected : ["None"];
+    return { label: `${name}: ${prefix}${values.join(", ")}`, compact: `${name}: ${prefix}${values[0]}${values.length > 1 ? ` +${values.length - 1}` : ""}` };
+  };
   const workspaceChip = filters.excludedWorkspaces?.length ? dimension("Workspace", filters.excludedWorkspaces.map(nameWorkspace), "All except ")
     : selectedWorkspaces != null ? dimension("Workspace", selectedWorkspaces.map(nameWorkspace)) : undefined;
   const single = (label: string) => ({ label, compact: label });
