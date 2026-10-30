@@ -70,6 +70,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
         ...(state.echoLineage && body.work ? { work: body.work } : {}),
         ...(state.echoLineage && body.role ? { role: body.role } : {}),
         ...(Object.hasOwn(body, "workspace") ? { workspace: body.workspace } : {}),
+        ...(Object.hasOwn(body, "launch_env") ? { launch_env: body.launch_env } : {}),
         ...(body.origin ? { origin: body.origin } : {}),
       };
       if (state.createFailure === "drop-then-appear") {
@@ -191,6 +192,65 @@ test("the child session may start on another machine the owner is permitted", as
     assert.equal(f.source.creates.length, 0);
     assert.equal(f.other.creates.length, 1);
     assert.deepEqual(await listIds(f.base, "browser-tess", "cedar"), [result.body.data.session.id]);
+  } finally { await f.cleanup(); }
+});
+
+for (const [name, launch_env] of [
+  ["literal values", {
+    AGENT_RUNTIME_SUPPRESS_MEMORY: "1",
+    AGENT_RUNTIME_SUPPRESS_HEALTH: "",
+    AGENT_RUNTIME_CUSTOM_SWITCH: "  a=b=$(literal)  ",
+  }],
+  ["empty map", {}],
+  ["absent map", undefined],
+] as const) {
+  test(`a coordinated create preserves public launch_env with ${name}`, async () => {
+    const f = await fixture();
+    try {
+      const result = await create(f.base, {
+        ...caller, machine: f.otherMachine,
+        session: {
+          agent: "codex", ...(launch_env !== undefined ? { launch_env } : {}),
+          env: { PRIVATE_TOKEN: "fixture-only" }, environment: { PRIVATE_TOKEN: "fixture-only" },
+          credentials: { token: "fixture-only" }, private_extra: "fixture-only",
+        },
+      });
+      assert.equal(result.status, 201);
+      assert.equal(f.source.creates.length, 0);
+      assert.equal(f.other.creates.length, 1, "one request must create only one synthetic session");
+      const forwarded = f.other.creates[0]!;
+      assert.deepEqual(forwarded.launch_env, launch_env, "the target receives the exact map");
+      assert.equal(Object.hasOwn(forwarded, "launch_env"), launch_env !== undefined);
+      const child = result.body.data.session;
+      assert.deepEqual(child.launch_env, launch_env, "the daemon confirmation survives projection");
+      assert.equal(Object.hasOwn(child, "launch_env"), launch_env !== undefined);
+      for (const field of ["env", "environment", "credentials", "private_extra"]) {
+        assert.equal(Object.hasOwn(forwarded, field), false);
+        assert.equal(Object.hasOwn(child, field), false);
+      }
+      const listed = await listSessions(f.base, f.ownerToken, f.otherMachine);
+      assert.equal(listed.length, 1);
+      assert.equal(listed[0].id, child.id);
+      assert.deepEqual(listed[0].launch_env, launch_env);
+      assert.equal(Object.hasOwn(listed[0], "launch_env"), launch_env !== undefined);
+    } finally { await f.cleanup(); }
+  });
+}
+
+test("malformed or private launch_env is refused before creating a session", async () => {
+  const f = await fixture();
+  try {
+    for (const launch_env of [null, [], "bad", { PRIVATE_TOKEN: "fixture-only" },
+      { AGENT_RUNTIME_API_KEY: "fixture-only" }, { AGENT_RUNTIME_SUPPRESS_MEMORY: 1 },
+      { AGENT_RUNTIME_SUPPRESS_MEMORY: "bad\nvalue" },
+      { AGENT_RUNTIME_SUPPRESS_MEMORY: "é".repeat(513) },
+      Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`AGENT_RUNTIME_SWITCH_${i}`, "1"])),
+    ]) {
+      const result = await create(f.base, { ...caller, machine: f.otherMachine, session: { agent: "codex", launch_env } });
+      assert.equal(result.status, 400);
+      assert.equal(result.body.error.code, "invalid-request");
+    }
+    assert.equal(f.source.creates.length + f.other.creates.length, 0);
   } finally { await f.cleanup(); }
 });
 

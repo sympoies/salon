@@ -19,6 +19,7 @@ import {
   normalizeSessionRefresh,
   normalizeSessionWorkspace,
   normalizeSessionOrigin,
+  normalizeSessionLaunchEnv,
   projectPublicAgentSession,
   type AccountProvider,
 } from "@agent-console/shared/api";
@@ -1085,6 +1086,8 @@ function projectCreatedSession(session: Record<string, unknown>): Record<string,
   if (Object.hasOwn(session, "workspace")) projected.workspace = normalizeSessionWorkspace(session.workspace);
   const origin = normalizeSessionOrigin(session.origin);
   if (origin) projected.origin = origin;
+  const launchEnv = normalizeSessionLaunchEnv(session.launch_env);
+  if (launchEnv !== undefined) projected.launch_env = launchEnv;
   const agentProfile = normalizeAgentLaunchProfileId(session.agent_profile);
   if (agentProfile) projected.agent_profile = agentProfile;
   for (const field of [

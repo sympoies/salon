@@ -415,6 +415,20 @@ export function normalizeSessionOrigin(value: unknown): SessionOrigin | undefine
   return session_id && machine ? { parent: { session_id, machine } } : undefined;
 }
 
+/** Public launch-switch shape only; the target daemon owns allowlist admission. */
+export function normalizeSessionLaunchEnv(value: unknown): Readonly<Record<string, string>> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value);
+  if (entries.length > 16) return undefined;
+  for (const [key, item] of entries) {
+    if (key.length > 128 || !/^AGENT_RUNTIME_[A-Z0-9_]+$/.test(key)
+      || /SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|API_KEY|PRIVATE_KEY/.test(key)
+      || typeof item !== "string" || new TextEncoder().encode(item).length > 1024
+      || /\p{Cc}/u.test(item)) return undefined;
+  }
+  return Object.fromEntries(entries);
+}
+
 /**
  * Explicit public projection for daemon session records. Unknown fields and
  * unknown nested members are dropped so schema drift cannot expose host-only
@@ -427,6 +441,8 @@ export function projectPublicAgentSession(value: unknown): Record<string, unknow
   if (Object.hasOwn(raw, "workspace")) out.workspace = normalizeSessionWorkspace(raw.workspace);
   const origin = normalizeSessionOrigin(raw.origin);
   if (origin) out.origin = origin;
+  const launchEnv = normalizeSessionLaunchEnv(raw.launch_env);
+  if (launchEnv !== undefined) out.launch_env = launchEnv;
 
   for (const [field, maxLength] of [
     ["id", 512],

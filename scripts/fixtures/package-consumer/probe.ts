@@ -6,11 +6,13 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { startEdge } from "@agent-console/edge/start";
 import type { EdgeExtension } from "@agent-console/edge/extensions";
-import { normalizeOrder } from "@agent-console/shared/api";
+import { normalizeOrder, projectPublicAgentSession } from "@agent-console/shared/api";
 import { normalizeConversationImages, type ConversationImage } from "@agent-console/shared/conversation-images";
 import { normalizeRefusedOutboxAction, type RefusedOutboxAction } from "@agent-console/shared/shared-outbox";
 
 assert.deepEqual(normalizeOrder({ order: ["a", "a", ""] }), ["a"]);
+const launch_env = { AGENT_RUNTIME_SUPPRESS_MEMORY: "1", AGENT_RUNTIME_SUPPRESS_HEALTH: "", AGENT_RUNTIME_CUSTOM_SWITCH: "a=b" };
+assert.deepEqual(projectPublicAgentSession({ launch_env, env: { PRIVATE_TOKEN: "fixture-only" } }), { launch_env });
 const refusedAction: RefusedOutboxAction = {
   operation: "discard_refused", expected_session_incarnation: "fixture-incarnation", base_revision: 1,
 };
