@@ -136,24 +136,29 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
   const selectedRoleCount = filters.roles == null || roleChoices.every(role => filters.roles!.includes(role))
     ? roleChoices.length : roleChoices.filter(role => filters.roles!.includes(role)).length;
   const rolesNarrowed = filters.roles != null && selectedRoleCount < roleChoices.length;
+  // Chips and the summary show the first value plus a count; the full list stays in the title and accessible name.
+  const dimension = (name: string, values: readonly string[], prefix = "") =>
+    ({ label: `${name}: ${prefix}${values.join(", ")}`, compact: `${name}: ${prefix}${values[0]}${values.length > 1 ? ` +${values.length - 1}` : ""}` });
+  const workspaceChip = filters.excludedWorkspaces?.length ? dimension("Workspace", filters.excludedWorkspaces.map(nameWorkspace), "All except ")
+    : selectedWorkspaces != null ? dimension("Workspace", selectedWorkspaces.map(nameWorkspace)) : undefined;
+  const single = (label: string) => ({ label, compact: label });
   const chips = [
-    ...(filters.excludedWorkspaces?.length ? [{ key: "workspace", label: `Workspace: All except ${filters.excludedWorkspaces.map(nameWorkspace).join(", ")}`, reset: { workspaces: null, excludedWorkspaces: null } }]
-      : selectedWorkspaces != null ? [{ key: "workspace", label: `Workspace: ${selectedWorkspaces.map(nameWorkspace).join(", ")}`, reset: { workspaces: null, excludedWorkspaces: null } }] : []),
-    ...(resolveFilterScope(filters.scope, scopes) !== "all" ? [{ key: "scope", label: `Scope: ${scopeLabel(filters.scope, scopes)}`, reset: { scope: "all" } }] : []),
-    ...(filters.hosts !== null && restrictedHosts > 0 ? [{ key: "hosts", label: `Hosts: ${[...machines.filter(machine => filters.hosts!.includes(machine)), ...filters.hosts!.filter(host => !machines.includes(host))].join(", ")}`, reset: { hosts: null } }] : []),
-    ...(roles !== undefined && rolesNarrowed ? [{ key: "roles", label: `Roles: ${roleChoices.filter(role => filters.roles!.includes(role)).map(role => role ?? "No role").join(", ")}`, reset: { roles: null } }] : []),
-    ...(filters.harness ? [{ key: "harness", label: `Harness: ${sessionListHarnessLabel(filters.harness)}`, reset: { harness: null } }] : []),
-    ...(filters.repo ? [{ key: "repo", label: `Repository: ${filters.repo}`, reset: { repo: "" } }] : []),
-    ...(filters.statusGroup ? [{ key: "status", label: `Status: ${SESSION_STATUS_LABELS[filters.statusGroup][0]}`, reset: { statusGroup: null } }] : []),
+    ...(workspaceChip ? [{ key: "workspace", ...workspaceChip, reset: { workspaces: null, excludedWorkspaces: null } }] : []),
+    ...(resolveFilterScope(filters.scope, scopes) !== "all" ? [{ key: "scope", ...single(`Scope: ${scopeLabel(filters.scope, scopes)}`), reset: { scope: "all" } }] : []),
+    ...(filters.hosts !== null && restrictedHosts > 0 ? [{ key: "hosts", ...dimension("Hosts", [...machines.filter(machine => filters.hosts!.includes(machine)), ...filters.hosts!.filter(host => !machines.includes(host))]), reset: { hosts: null } }] : []),
+    ...(roles !== undefined && rolesNarrowed ? [{ key: "roles", ...dimension("Roles", roleChoices.filter(role => filters.roles!.includes(role)).map(role => role ?? "No role")), reset: { roles: null } }] : []),
+    ...(filters.harness ? [{ key: "harness", ...single(`Harness: ${sessionListHarnessLabel(filters.harness)}`), reset: { harness: null } }] : []),
+    ...(filters.repo ? [{ key: "repo", ...single(`Repository: ${filters.repo}`), reset: { repo: "" } }] : []),
+    ...(filters.statusGroup ? [{ key: "status", ...single(`Status: ${SESSION_STATUS_LABELS[filters.statusGroup][0]}`), reset: { statusGroup: null } }] : []),
   ];
-  const summary = [
+  const summaryEntries = [
     filters.hosts === null ? "All machines" : `${machines.length - restrictedHosts} of ${machines.length} machines`,
     filters.harness ? sessionListHarnessLabel(filters.harness) : undefined,
     filters.repo || undefined,
-    filters.excludedWorkspaces?.length ? `Workspace: All except ${filters.excludedWorkspaces.map(nameWorkspace).join(", ")}`
-      : selectedWorkspaces != null ? `Workspace: ${selectedWorkspaces.map(nameWorkspace).join(", ")}` : undefined,
+    workspaceChip,
     ...(filters.scope !== "all" ? [scopeLabel(filters.scope, scopes)] : []),
-  ].filter(Boolean).join(" · ");
+  ].flatMap(entry => !entry ? [] : typeof entry === "string" ? [{ label: entry, compact: entry }] : [entry]);
+  const summary = summaryEntries.map(entry => entry.label).join(" · ");
   const hostLabel = (count: number) => `${count} ${count === 1 ? "host" : "hosts"}`;
   const hostCoverage = filters.hosts === null
     ? `All ${hostLabel(machines.length)} shown`
@@ -181,8 +186,8 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
   };
   const filterDetails = <>
     <div className="session-filter-chips" aria-label="Active session filters">
-      {chips.map(chip => <button key={chip.key} type="button" className="control-chip btn session-filter-chip" aria-label={`Remove ${chip.label}`}
-        onClick={() => applyImmediate({ ...filters, ...chip.reset }, chip.reset)}>{chip.label}<span aria-hidden="true"> ×</span></button>)}
+      {chips.map(chip => <button key={chip.key} type="button" className="control-chip btn session-filter-chip" aria-label={`Remove ${chip.label}`} title={chip.label}
+        onClick={() => applyImmediate({ ...filters, ...chip.reset }, chip.reset)}><span className="session-filter-chip-label">{chip.compact}</span><span aria-hidden="true"> ×</span></button>)}
       {chips.length > 0 ? <button className="btn ghost" type="button" onClick={() => applyImmediate(CLEAR_SESSION_FILTERS)}>Clear all</button> : null}
     </div>
     {restrictedHosts > 0 ? <div className="session-list-hidden-hosts" role="status"><span>{restrictedHosts} {restrictedHosts === 1 ? "host" : "hosts"} excluded by your filter</span>
@@ -249,7 +254,7 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
               <span className="session-filter-search-chips" aria-label="Active session filters">
                 {chips.map(chip => <button key={chip.key} type="button" className="control-chip control-chip--dense btn session-filter-chip" aria-label={`Remove ${chip.label}`}
                   data-filter-chip={chip.key} title={chip.label}
-                  onClick={event => { event.stopPropagation(); applyImmediate({ ...filters, ...chip.reset }, chip.reset); }}><span className="session-filter-chip-label">{chip.label}</span><span aria-hidden="true"> ×</span></button>)}
+                  onClick={event => { event.stopPropagation(); applyImmediate({ ...filters, ...chip.reset }, chip.reset); }}><span className="session-filter-chip-label">{chip.compact}</span><span aria-hidden="true"> ×</span></button>)}
               </span>
               {noticeCue ? <span className="session-filter-notice-indicator" aria-hidden="true">!</span> : null}
               {fieldNotice ? <div className="session-filter-field-notice" onClick={event => event.stopPropagation()}>{statusNotice}</div> : null}
@@ -263,7 +268,7 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
           aria-haspopup="dialog" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
           <svg className="session-filters-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8v5l-4 2v-7z" /></svg>
           <strong className="session-filters-trigger-label">Filters</strong>
-          <span className="session-filters-trigger-summary">{summary}</span>
+          <span className="session-filters-trigger-summary">{summaryEntries.map(entry => <span key={entry.label} className="session-filters-trigger-part" title={entry.label}>{entry.compact}</span>)}</span>
           {noticeCue ? <span className="session-filter-notice-indicator" aria-hidden="true">!</span> : null}
           <SelectChevronIcon className="session-filters-trigger-chevron" />
         </button>{statusCountsElement}</div>}
