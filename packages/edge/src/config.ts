@@ -44,6 +44,17 @@ export interface CrossOwnerSessionAccessRule {
   readonly sessions: readonly CrossOwnerSessionSelector[];
 }
 
+// Lets `service_id` at `service_generation`, submitted through the relay of
+// `relay_machine`, start root sessions for `owners` on `machines`. Never a
+// session identity: it grants no mailbox, delegation, or browser access.
+export interface ConsoleStartServiceConfig {
+  readonly relay_machine: string;
+  readonly service_id: string;
+  readonly service_generation: string;
+  readonly owners: readonly string[];
+  readonly machines: readonly string[];
+}
+
 export interface SpeechProviderConfig {
   readonly id: string;
   readonly label: string;
@@ -108,6 +119,7 @@ export interface EdgeConfig {
   readonly coordinationRelays?: readonly CoordinationRelayConfig[];
   readonly crossOwnerMessaging?: readonly CrossOwnerMessagingRule[];
   readonly crossOwnerSessionAccess?: readonly CrossOwnerSessionAccessRule[];
+  readonly consoleStartServices?: readonly ConsoleStartServiceConfig[];
   // Edge-reachable ASR services. Host URLs and bearer tokens never reach the UI.
   readonly speechProviders: readonly SpeechProviderConfig[];
   readonly uiDir: string;
@@ -247,6 +259,34 @@ export function parseCoordinationRelays(raw: string | undefined, machines: reado
       || tokens.has(value.token) || tokens.has(value.ingress_token) || value.token === value.ingress_token) throw new Error("coordination relay needs unique machine and dedicated credentials");
     seen.add(value.machine); tokens.add(value.token); tokens.add(value.ingress_token);
     return { machine: value.machine, token: value.token, ingress_token: value.ingress_token };
+  });
+}
+
+const SERVICE_SELECTOR = /^[A-Za-z0-9._-]{1,128}$/;
+const SERVICE_ADMISSION_KEYS = ["relay_machine", "service_id", "service_generation", "owners", "machines"];
+
+export function parseConsoleStartServices(raw: string | undefined, machines: readonly MachineConfig[], principals: readonly PrincipalConfig[], relays: readonly CoordinationRelayConfig[]): ConsoleStartServiceConfig[] {
+  if (!raw?.trim()) return [];
+  const invalid = (): never => { throw new Error("AGENT_CONSOLE_CONSOLE_START_SERVICES must contain unique service admissions for a configured relay machine, nonempty configured non-root owners and nonempty configured machines"); };
+  let entries: unknown;
+  try { entries = JSON.parse(raw); } catch { return invalid(); }
+  if (!Array.isArray(entries)) return invalid();
+  const admitted = new Set<string>();
+  return entries.map(entry => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return invalid();
+    const v = entry as Record<string, unknown>;
+    if (Object.keys(v).length !== SERVICE_ADMISSION_KEYS.length || !SERVICE_ADMISSION_KEYS.every(key => Object.hasOwn(v, key))
+      || !relays.some(relay => relay.machine === v.relay_machine)
+      || typeof v.service_id !== "string" || !SERVICE_SELECTOR.test(v.service_id)
+      || typeof v.service_generation !== "string" || !SERVICE_SELECTOR.test(v.service_generation)
+      || !Array.isArray(v.owners) || !v.owners.length
+      || !v.owners.every(owner => principals.some(p => p.id === owner && !isRootPrincipal(p)))
+      || !Array.isArray(v.machines) || !v.machines.length
+      || !v.machines.every(name => machines.some(m => m.name === name))) return invalid();
+    const key = JSON.stringify([v.relay_machine, v.service_id, v.service_generation]);
+    if (admitted.has(key)) return invalid();
+    admitted.add(key);
+    return v as unknown as ConsoleStartServiceConfig;
   });
 }
 
@@ -535,6 +575,7 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
     throw new Error("AGENT_CONSOLE_TOKEN is required (or set AGENT_CONSOLE_NO_AUTH=1 for a private-network open deploy)");
   }
   const defaultUiDir = resolve(import.meta.dirname, "../../ui/dist");
+  const coordinationRelays = parseCoordinationRelays(env.AGENT_CONSOLE_COORDINATION_RELAYS, machines, principals);
   return {
     host: env.AGENT_CONSOLE_EDGE_HOST ?? "127.0.0.1",
     port: Number(env.AGENT_CONSOLE_EDGE_PORT ?? "8790"),
@@ -544,7 +585,8 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
     accessDbPath: accessDbPath || null,
     openAccess,
     machines,
-    coordinationRelays: parseCoordinationRelays(env.AGENT_CONSOLE_COORDINATION_RELAYS, machines, principals),
+    coordinationRelays,
+    consoleStartServices: parseConsoleStartServices(env.AGENT_CONSOLE_CONSOLE_START_SERVICES, machines, principals, coordinationRelays),
     crossOwnerMessaging: parseCrossOwnerMessaging(env.AGENT_CONSOLE_CROSS_OWNER_MESSAGING, principals),
     crossOwnerSessionAccess: parseCrossOwnerSessionAccess(env.AGENT_CONSOLE_CROSS_OWNER_SESSION_ACCESS, machines, principals),
     speechProviders: parseSpeechProviders(env.AGENT_CONSOLE_SPEECH_PROVIDERS, machines),

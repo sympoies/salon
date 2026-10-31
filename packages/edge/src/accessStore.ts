@@ -39,6 +39,26 @@ export interface SessionStartMark {
   readonly treeDepth?: number;
 }
 
+export interface ServiceStartOperation {
+  readonly sessionId: string;
+  readonly machine: string;
+  readonly agent: string;
+  readonly fingerprint: string;
+}
+
+export interface ServiceStartInput extends ServiceStartOperation {
+  readonly relayMachine: string;
+  readonly serviceId: string;
+  readonly operationId: string;
+}
+
+interface ServiceStartRow {
+  readonly session_id: string;
+  readonly machine: string;
+  readonly agent: string;
+  readonly fingerprint: string;
+}
+
 export interface SessionOwnershipInput {
   readonly principalId: string;
   readonly machine: string;
@@ -171,6 +191,17 @@ export class AccessStore {
         revision INTEGER NOT NULL CHECK (revision >= 0),
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS service_start_operation (
+        relay_machine TEXT NOT NULL,
+        service_id TEXT NOT NULL,
+        operation_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        machine TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (relay_machine, service_id, operation_id)
+      ) STRICT;
       -- Retired per-principal header account choice.
       DROP TABLE IF EXISTS principal_claude_display;
     `);
@@ -255,6 +286,31 @@ export class AccessStore {
       WHERE machine = ? AND session_id = ?
     `).get(machine, sessionId) as unknown as SessionOwnerRow | undefined;
     return row?.principal_id === principalId ? row.incarnation : undefined;
+  }
+
+  /**
+   * Reserves a service operation for `sessionId`, or returns the record that
+   * already holds it. The row is written before any daemon call, so whatever
+   * becomes of that call the operation can never start a second session.
+   */
+  beginServiceStart(input: ServiceStartInput): ServiceStartOperation {
+    this.#db.prepare(`
+      INSERT INTO service_start_operation (relay_machine, service_id, operation_id, session_id, machine, agent, fingerprint)
+      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
+    `).run(input.relayMachine, input.serviceId, input.operationId, input.sessionId, input.machine, input.agent, input.fingerprint);
+    const row = this.#db.prepare(`
+      SELECT session_id, machine, agent, fingerprint FROM service_start_operation
+      WHERE relay_machine = ? AND service_id = ? AND operation_id = ?
+    `).get(input.relayMachine, input.serviceId, input.operationId) as unknown as ServiceStartRow;
+    return { sessionId: row.session_id, machine: row.machine, agent: row.agent, fingerprint: row.fingerprint };
+  }
+
+  // Sessions a service started on `machine`, across its generations.
+  serviceStartSessions(relayMachine: string, serviceId: string, machine: string): ReadonlySet<string> {
+    const rows = this.#db.prepare(`
+      SELECT session_id FROM service_start_operation WHERE relay_machine = ? AND service_id = ? AND machine = ?
+    `).all(relayMachine, serviceId, machine) as unknown as Array<{ session_id: string }>;
+    return new Set(rows.map(row => row.session_id));
   }
 
   sessionGrant(machine: string, sessionId: string): SessionGrant | undefined {

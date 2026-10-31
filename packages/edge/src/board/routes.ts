@@ -37,6 +37,7 @@ export function boardViewForRequest(
   includeAncestorContext = true,
   disabledMachines: ReadonlySet<string> = new Set(),
   viewerAccess: ((machine: string, sessionId: string) => boolean) | null = null,
+  only: ((sessionId: string) => boolean) | null = null,
 ): BoardView {
   // Fail closed: a multi-user request must never fall back to the whole board.
   if (config.multiUser && (!reader || !accessStore)) throw new Error("board reader is required in multi-user mode");
@@ -64,7 +65,8 @@ export function boardViewForRequest(
     ? {
       machines: machines.filter((name) => reader.machines.includes(name)),
       include: (record: Pick<BoardRecord, "machine" | "session_id">) =>
-        ownerOf(record.machine, record.session_id) === reader.id || viewerAccess?.(record.machine, record.session_id) === true,
+        (only?.(record.session_id) ?? true)
+        && (ownerOf(record.machine, record.session_id) === reader.id || viewerAccess?.(record.machine, record.session_id) === true),
     }
     : { machines };
   const view = buildBoardView({

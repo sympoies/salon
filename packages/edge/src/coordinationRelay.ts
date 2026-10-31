@@ -1,12 +1,12 @@
 import { normalizeAccountNickname } from "@agent-console/shared/api";
 import {normalizeSessionRole} from "@agent-console/shared/lineage";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { OUTSIDE_COORDINATOR_TREE, type AccessStore, type SessionStartMark } from "./accessStore.ts";
 import { bearerToken, timingSafeEqualStr } from "./auth.ts";
 import type { CrossOwnerMessagingRule, EdgeConfig, MachineConfig, MessagingSelector, PrincipalConfig } from "./config.ts";
 import { readJsonBody, sendJson } from "./http.ts";
-import { BoardQueryError } from "./board/query.ts";
+import { BoardQueryError, type BoardView } from "./board/query.ts";
 import { boardViewForRequest } from "./board/routes.ts";
 import type { BoardService } from "./board/service.ts";
 
@@ -315,7 +315,9 @@ function quotaDetails(value: unknown): Record<string, string | number> | undefin
 // writing (and without starting the mark lookup) when `session` is not a valid
 // create-session body. `lineage` holds the verified lineage, work, and role
 // members to forward in the daemon create body. The lookup never rejects.
-export type OwnedSessionCreator = (principal: PrincipalConfig, machine: MachineConfig, session: Record<string, unknown>, startMark: () => Promise<SessionStartMark>, lineage: Record<string, unknown>) => Promise<boolean>;
+// `reserve`, called once the body is valid, supplies the session id, or answers
+// the request itself and returns null when no create may follow.
+export type OwnedSessionCreator = (principal: PrincipalConfig, machine: MachineConfig, session: Record<string, unknown>, startMark: () => Promise<SessionStartMark>, lineage: Record<string, unknown>, reserve?: () => string | null) => Promise<boolean>;
 // Starter kinds whose lineage names a parent (session-lineage-work-v1).
 // Legacy starter values still require exact-parent authentication.
 const PARENTED_STARTERS = new Set(["session", "main-agent"]);
@@ -376,6 +378,75 @@ function relayedLineage(session: Record<string, unknown>, caller: Identity): Rec
   return forwarded;
 }
 const CREATE_REQUEST_KEYS = ["source_session_id", "source_incarnation", "machine", "session"];
+const SERVICE_CREATE_KEYS = ["source_service_id", "source_service_generation", "owner", "machine", "session"];
+const SERVICE_BOARD_KEYS = ["source_service_id", "source_service_generation", "owner"];
+// The daemon sets `lineage`; everything else a service may set in `session`.
+const SERVICE_SESSION_KEYS = ["agent", "cwd", "workspace", "launch_env", "title_mode", "title", "prompt", "agent_args",
+  "agent_profile", "codex_account", "claude_account", "lineage"];
+const SERVICE_SELECTOR = /^[A-Za-z0-9._-]{1,128}$/;
+const MACHINE_NAME = /^[\x21-\x7e]{1,128}$/;
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+interface ServiceSelectors { serviceId: string; generation: string; owner: string; machine: string }
+
+function serviceSelectors(serviceId: unknown, generation: unknown, owner: unknown, machine: unknown): ServiceSelectors | null {
+  if (![serviceId, generation, owner].every(value => typeof value === "string" && SERVICE_SELECTOR.test(value))
+    || typeof machine !== "string" || !MACHINE_NAME.test(machine)) return null;
+  return { serviceId, generation, owner, machine } as ServiceSelectors;
+}
+
+// Binds the selectors to an explicit admission for the authenticated relay
+// machine. Every create and board scan passes here before any other effect.
+// Refusals are content-free. The unauthorized code stays off HTTP 401, which the
+// daemon reserves for a rejected relay credential.
+function serviceAdmission(config: EdgeConfig, relayMachine: string, selectors: ServiceSelectors): { principal: PrincipalConfig; machine: MachineConfig } {
+  const admission = config.consoleStartServices?.find(entry => entry.relay_machine === relayMachine
+    && entry.service_id === selectors.serviceId && entry.service_generation === selectors.generation);
+  if (!admission) return fail(403, "console-start-service-unauthorized", "the service is not admitted");
+  const principal = config.principals.find(p => p.id === selectors.owner);
+  if (!principal || !admission.owners.includes(principal.id)) return fail(422, "console-start-service-owner-denied", "the owner is not admitted for this service");
+  const machine = config.machines.find(m => m.name === selectors.machine);
+  if (!machine || !admission.machines.includes(machine.name) || !principal.machines.includes(machine.name)) return fail(422, "console-start-service-target-denied", "the machine is not admitted for this service");
+  return { principal, machine };
+}
+
+// A service session is always a console root; the target daemon validates the
+// rest of the lineage.
+function serviceLineage(session: Record<string, unknown>): Record<string, unknown> {
+  const lineage = object(session.lineage);
+  const starter = object(lineage?.starter);
+  if (!lineage || lineage.parent !== null || starter?.kind !== "console" || starter.via !== "console") {
+    return fail(400, "lineage-invalid", "a service start must be a console root");
+  }
+  if (session.title_mode !== undefined && session.title_mode !== "auto" && session.title_mode !== "pinned") return fail(400, "title-mode-invalid", "invalid title mode");
+  return { lineage, ...(session.title_mode !== undefined ? { title_mode: session.title_mode } : {}) };
+}
+
+// The operation id is an idempotency key for the admitted service: a request
+// reserves it durably before any daemon call, an identical retry answers from
+// the recorded session, and the fingerprint excludes the generation, so a retry
+// survives a rotation. A reservation without an ownership grant is in flight or
+// failed, and is never recreated: the service submits a new operation id.
+async function serviceCreate(config: EdgeConfig, store: AccessStore, relayMachine: string, request: Record<string, unknown>, operationId: unknown, res: ServerResponse, createSession: OwnedSessionCreator): Promise<void> {
+  const selectors = serviceSelectors(request.source_service_id, request.source_service_generation, request.owner, request.machine);
+  const session = object(request.session);
+  if (!exactKeys(request, SERVICE_CREATE_KEYS) || !selectors || typeof operationId !== "string" || !UUID_V7.test(operationId)
+    || !session || Object.keys(session).some(key => !SERVICE_SESSION_KEYS.includes(key))) return fail(400, "invalid-request", "invalid service create request");
+  const lineage = serviceLineage(session);
+  const { principal, machine } = serviceAdmission(config, relayMachine, selectors);
+  const fingerprint = createHash("sha256").update(JSON.stringify([selectors.owner, machine.name, session])).digest("hex");
+  const reserve = (): string | null => {
+    const sessionId = randomUUID();
+    const operation = store.beginServiceStart({ relayMachine, serviceId: selectors.serviceId, operationId, sessionId, machine: machine.name, agent: String(session.agent), fingerprint });
+    if (operation.fingerprint !== fingerprint) return fail(409, "console-start-operation-conflict", "the operation id belongs to a different request");
+    if (operation.sessionId === sessionId) return sessionId;
+    const grant = store.sessionGrant(operation.machine, operation.sessionId);
+    if (!grant) return fail(409, "console-start-unavailable", "the operation has no confirmed session; inspect Console before retrying");
+    sendJson(res, 201, { ok: true, data: { session: { id: operation.sessionId, agent: operation.agent, session_incarnation: grant.incarnation } } });
+    return null;
+  };
+  // A service is no session, so nothing launched or dispatched the root.
+  if (!await createSession(principal, machine, session, async () => ({ treeDepth: OUTSIDE_COORDINATOR_TREE }), lineage, reserve)) return fail(400, "invalid-request", "invalid service create request");
+}
 const RESUME_OR_IDENTITY_KEYS = ["id", "provider_resume_id", "resume_id"];
 
 const RESUME_SCHEMA = "cli.agent-session.resume-preflight.v1";
@@ -470,6 +541,20 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
       // unattributable caller is refused (ownership-unknown), never served the
       // whole board.
       if (!board) return fail(404, "board-disabled", "the session board is not enabled");
+      if (url.searchParams.has("source_service_id")) {
+        // A service sees only the root sessions it started for this owner on
+        // this machine; the daemon's reconcile needs nothing else.
+        const selectors = serviceSelectors(url.searchParams.get("source_service_id"), url.searchParams.get("source_service_generation"), url.searchParams.get("owner"), url.searchParams.get("machine"));
+        if (!selectors) return fail(400, "board-query-invalid", "service selectors required");
+        const { principal } = serviceAdmission(config, relay.machine, selectors);
+        const started = store.serviceStartSessions(relay.machine, selectors.serviceId, selectors.machine);
+        let view: BoardView;
+        try { view = boardViewForRequest(board, config, store, principal, url.searchParams, SERVICE_BOARD_KEYS, false, disabledMachines(principal), null, sessionId => started.has(sessionId)); }
+        catch (error) { if (error instanceof BoardQueryError) return fail(error.status, error.code, error.message); throw error; }
+        sendJson(res, 200, { ...view, machines: view.machines.filter(entry => entry.machine === selectors.machine),
+          records: view.records.filter(record => record.lineage !== null && record.lineage.parent === null) });
+        return;
+      }
       const caller = identity({ machine: relay.machine, session_id: url.searchParams.get("source_session_id"), session_incarnation: url.searchParams.get("source_incarnation") });
       if (!caller) return fail(400, "board-query-invalid", "source identity required");
       const principal = principalFor(config, store, caller);
@@ -509,6 +594,9 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
       // guarded provider history admission on the target daemon.
       if (!createSession) return fail(404, "route-not-found", "unknown coordination route");
       const request = object(await readJsonBody(req).catch(() => null));
+      if (request && Object.hasOwn(request, "source_service_id")) {
+        return await serviceCreate(config, store, relay.machine, request, req.headers["x-agent-session-operation-id"], res, createSession);
+      }
       if (!request || Object.keys(request).some(key => !CREATE_REQUEST_KEYS.includes(key))) return fail(400, "invalid-request", "invalid session create request");
       const caller = identity({ machine: relay.machine, session_id: request.source_session_id, session_incarnation: request.source_incarnation });
       if (!caller) return fail(400, "invalid-request", "source identity required");
