@@ -31,18 +31,18 @@ async function mount(text: string, latestMessagePaging = true, role = "user") {
   return { container: container as unknown as HTMLElement, window, ssr, root };
 }
 
-test("notice header is hidden and full plain-text body is visible in live and history", async () => {
+test("notice header is hidden and rendered Markdown body is visible in live and history", async () => {
   const live = await mount(raw);
   const history = await mount(raw, false);
   for (const { container } of [live, history]) {
     assert.doesNotMatch(container.textContent ?? "", /<!-- agent-notice:/, "the envelope must not appear as visible text");
     assert.match(container.textContent ?? "", /Mailbox.*12:00.*Synthetic update/s);
     assert.equal(Boolean(container.querySelector("button[aria-expanded]")), false);
-    assert.equal(container.querySelector(".session-notice-body")?.textContent, parseSessionNotice(raw)?.body);
+    assert.equal(container.querySelector(".session-notice-body")?.textContent, "Synthetic updateFull body");
     assert.equal(Boolean(container.querySelector(".history-bubble")), false);
   }
   assert.equal(live.container.querySelector("article")?.outerHTML, history.container.querySelector("article")?.outerHTML);
-  assert.equal(Boolean(live.container.querySelector("strong")), false, "Markdown stays literal");
+  assert.equal(live.container.querySelector(".session-notice-body strong")?.textContent, "Full body");
 });
 
 
@@ -117,7 +117,7 @@ test("failed notice child renders the parsed body without exposing the envelope"
 });
 
 
-test("body preserves blank lines and whitespace", async () => {
+test("leading blank lines do not leave empty blocks before the body", async () => {
   const { container } = await mount(`${header}\n\n\n   \nFirst readable line\nSecond line`);
-  assert.equal(container.querySelector(".session-notice-body")?.textContent, "\n   \nFirst readable line\nSecond line");
+  assert.equal(container.querySelector(".session-notice-body")?.textContent, "First readable line\nSecond line");
 });

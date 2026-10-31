@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { MessageMarkdownBoundary } from "./MessageMarkdown.tsx";
+import { MessageMarkdown, MessageMarkdownBoundary } from "./MessageMarkdown.tsx";
 import type { SessionNotice as ParsedNotice } from "@agent-console/shared";
 
 const KIND_FAMILY_LABELS = new Map([
@@ -16,7 +16,7 @@ function noticeLabel(kind: string): string {
   return family.length < kind.length ? KIND_FAMILY_LABELS.get(family) ?? "System notice" : "System notice";
 }
 
-function NoticeContent({ notice, time, children }: {
+function NoticeContent({ notice, time, suppressImages, children }: {
   readonly notice: ParsedNotice;
   readonly raw: string;
   readonly time: ReactNode;
@@ -28,7 +28,7 @@ function NoticeContent({ notice, time, children }: {
       <span className="session-notice-label">{noticeLabel(notice.kind)}</span>
       {time}
     </h3>
-    <div className="session-notice-body">{notice.body}</div>
+    <div className="session-notice-body"><MessageMarkdown text={notice.body} suppressImages={suppressImages} /></div>
     {children}
     <div className="session-notice-meta">
       <span>{notice.kind} · {notice.source}</span>
