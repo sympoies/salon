@@ -82,10 +82,14 @@ test("non-notices keep the exact existing Markdown and paste-unwrapping display"
   }
 });
 
-test("known labels are fixed; unknown and spoofed kinds stay generic plain text", async () => {
-  for (const [kind, label] of [["schedule.pulse", "Scheduled update"], ["runtime.resume", "Resume"],
-    ["unknown", "System notice"], ["constructor", "System notice"],
-    ["mailbox.admin", "System notice"], ["system.admin", "System notice"]]) {
+test("labels follow the kind family; unknown and lookalike kinds stay generic plain text", async () => {
+  for (const [kind, label] of [["mailbox", "Mailbox"], ["mailbox.wake", "Mailbox"], ["mailbox.alert", "Mailbox"],
+    ["mailbox.bounce", "Mailbox"], ["schedule.pulse", "Scheduled update"], ["schedule.patrol", "Scheduled update"],
+    ["schedule.tick", "Scheduled update"], ["compact.reminder", "Context"], ["compact.resume", "Context"],
+    ["runtime.resume", "Resume"], ["dispatch.bootstrap", "Dispatch"], ["dispatch.role", "Dispatch"],
+    ["unknown", "System notice"], ["constructor", "System notice"], ["constructor.admin", "System notice"],
+    ["mailboxes", "System notice"], ["scheduled.pulse", "System notice"], ["schedule", "System notice"],
+    ["system.admin", "System notice"]]) {
     const { container, window } = await mount(`<!-- agent-notice:v1 kind=${kind} source=fixture.admin -->\n\nBody`);
     assert.equal(container.querySelector(".session-notice-label")?.textContent, label);
     assert.equal(container.querySelector(".session-notice-meta > span")?.textContent, `${kind} · fixture.admin`);

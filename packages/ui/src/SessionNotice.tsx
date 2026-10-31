@@ -1,40 +1,37 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { MessageMarkdownBoundary } from "./MessageMarkdown.tsx";
-import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 import type { SessionNotice as ParsedNotice } from "@agent-console/shared";
 
-const KIND_LABELS = new Map([
+const KIND_FAMILY_LABELS = new Map([
   ["mailbox", "Mailbox"],
-  ["schedule.pulse", "Scheduled update"],
-  ["runtime.resume", "Resume"],
+  ["schedule", "Scheduled update"],
+  ["compact", "Context"],
+  ["runtime", "Resume"],
+  ["dispatch", "Dispatch"],
 ]);
 
-function NoticeContent({ notice, raw, time, children }: {
+function noticeLabel(kind: string): string {
+  if (kind === "mailbox") return "Mailbox";
+  const family = kind.split(".", 1)[0]!;
+  return family.length < kind.length ? KIND_FAMILY_LABELS.get(family) ?? "System notice" : "System notice";
+}
+
+function NoticeContent({ notice, time, children }: {
   readonly notice: ParsedNotice;
   readonly raw: string;
   readonly time: ReactNode;
   readonly suppressImages: boolean;
   readonly children?: ReactNode;
 }) {
-  const [copyState, setCopyState] = useState("Copy raw");
-  const copy = async () => {
-    try {
-      await writeTerminalClipboardText(raw);
-      setCopyState("Copied");
-    } catch {
-      setCopyState("Copy failed");
-    }
-  };
   return <div className="session-notice">
     <h3 className="session-notice-title">
-      <span className="session-notice-label">{KIND_LABELS.get(notice.kind) ?? "System notice"}</span>
+      <span className="session-notice-label">{noticeLabel(notice.kind)}</span>
       {time}
     </h3>
     <div className="session-notice-body">{notice.body}</div>
     {children}
     <div className="session-notice-meta">
       <span>{notice.kind} · {notice.source}</span>
-      <button type="button" className="btn ghost session-notice-copy" aria-label="Copy raw notice" onClick={() => void copy()}>{copyState}</button>
     </div>
   </div>;
 }

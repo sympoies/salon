@@ -8,7 +8,7 @@ import { build } from "vite";
 import react from "@vitejs/plugin-react";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
-test("session notices show a centered heading and three plain-text lines with keyboard raw copy", async () => {
+test("session notices show a centered heading and three selectable plain-text lines", async () => {
   assert.ok(hasHeadlessChrome(), "headless Chrome is required for notice acceptance");
   const body = "First synthetic line\n**Second synthetic line**\nThird synthetic line";
   const raw = `<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\n${body}`;
@@ -16,8 +16,6 @@ test("session notices show a centered heading and three plain-text lines with ke
     import React from 'react';
     import {createRoot} from 'react-dom/client';
     import {HistoryConversationView} from '/src/HistoryConversation.tsx';
-    window.copies=[];
-    Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>window.copies.push(text)}});
     const messages=[{id:'human',role:'user',text:'Synthetic human message'},
       {id:'agent',role:'assistant',text:'Synthetic agent reply'},
       {id:'notice',role:'user',text:${JSON.stringify(raw)}},
@@ -73,11 +71,6 @@ test("session notices show a centered heading and three plain-text lines with ke
       assert.equal(result.exceptionDetails,undefined,"browser fixture executes successfully");
       return result.result.value;
     };
-    const key = async (name:string, code:string, virtualKey:number) => {
-      await send("Input.dispatchKeyEvent",{type:"keyDown",key:name,code,windowsVirtualKeyCode:virtualKey,
-        ...(code === "Enter" ? {text:"\r"} : code === "Space" ? {text:" "} : {})});
-      await send("Input.dispatchKeyEvent",{type:"keyUp",key:name,code,windowsVirtualKeyCode:virtualKey});
-    };
     const results=[];
     for(const width of [360,1440]) {
       await send('Emulation.setDeviceMetricsOverride',{width,height:800,deviceScaleFactor:1,mobile:false});
@@ -105,7 +98,7 @@ test("session notices show a centered heading and three plain-text lines with ke
           rowLeft:r.left,rowRight:r.right,
           bodyLeft:br&&br.left+parseFloat(bodyStyle.paddingLeft),bodyRight:br&&br.right-parseFloat(bodyStyle.paddingRight),
           footerLeft:fr&&fr.left+parseFloat(fs.paddingLeft),footerRight:fr&&fr.right-parseFloat(fs.paddingRight),
-          copyRight:row.querySelector('.session-notice-copy')?.getBoundingClientRect().right,
+          copyButton:!!row.querySelector('.session-notice button'),bodySelect:bodyStyle?.userSelect,
           bubble:!!row.querySelector('.history-bubble'),background:getComputedStyle(notice).backgroundColor,
           timeVisible:time.x>=r.x&&time.right<=r.right,overflow:document.documentElement.scrollWidth>innerWidth||row.scrollWidth>row.clientWidth,
           footer:row.querySelector('.session-notice-meta > span')?.textContent};})()`);
@@ -115,16 +108,11 @@ test("session notices show a centered heading and three plain-text lines with ke
         writeFileSync(join(evidence,`notices-${width}.png`),Buffer.from(shot.data,'base64'));
         writeFileSync(join(evidence,`notices-${width}.json`),JSON.stringify(measured,null,2));
       }
-      const copy='document.querySelector(".session-notice-copy")';
-      if(await evaluate(`${copy}!==null`)){
-        await evaluate(`${copy}.focus()`);
-        assert.equal(await evaluate(`document.activeElement===${copy}`),true,'Copy raw accepts keyboard focus');
-        await key('Enter','Enter',13);
-        await waitFor('window.copies.length===1');
-        await key(' ','Space',32);
-        await waitFor('window.copies.length===2');
-        assert.deepEqual(await evaluate('window.copies'),[raw,raw]);
-      }
+      const bodyBox=await evaluate(`(()=>{const box=document.querySelector('[data-history-message-id="notice"] .session-notice-body').getBoundingClientRect();return {x:box.left+24,y:box.top+6,bottom:box.bottom-6,right:box.right-24};})()`);
+      await send('Input.dispatchMouseEvent',{type:'mousePressed',x:bodyBox.x,y:bodyBox.y,button:'left',buttons:1,clickCount:1});
+      await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:bodyBox.right,y:bodyBox.bottom,button:'left',buttons:1});
+      await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:bodyBox.right,y:bodyBox.bottom,button:'left',buttons:0,clickCount:1});
+      assert.ok((await evaluate('getSelection().toString()')).length>0,'dragging selects the notice body');
       await evaluate('window.fixtureRoot.unmount()');
     }
     for(const measured of results){
@@ -141,7 +129,8 @@ test("session notices show a centered heading and three plain-text lines with ke
       assert.ok(Math.abs((measured.bodyLeft-measured.rowLeft)-(measured.rowRight-measured.bodyRight))<1,'body inset is symmetric');
       assert.ok(Math.abs(measured.footerLeft-measured.bodyLeft)<1,'footer shares the body left inset');
       assert.ok(Math.abs(measured.footerRight-measured.bodyRight)<1,'footer shares the body right inset');
-      assert.ok(Math.abs(measured.copyRight-measured.bodyRight)<1,'Copy raw stays inside the right inset');
+      assert.equal(measured.copyButton,false,'the notice has no copy button');
+      assert.notEqual(measured.bodySelect,'none','the notice body stays selectable');
       assert.equal(measured.lines.length,3,'three source lines');
       for(const line of measured.lines)assert.equal(line.length,1,'each source line occupies one visual line');
       assert.ok(Math.abs(measured.lines[0][0].x-measured.bodyLeft)<1,'text starts at the inset content edge');

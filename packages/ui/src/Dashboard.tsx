@@ -118,6 +118,7 @@ import {
   paginateSessionList,
   reorderProjectedSessionKeys,
   resolveOverviewDesktopMode,
+  resolveFocusedPageStep,
   resolveOverviewPromptTargetForPage,
   resolveOverviewSessionListPageSize,
   stepSessionListPage,
@@ -2601,6 +2602,26 @@ export function Dashboard({
     [focusedKey, openSessionByShortcutIndex, overviewPage.sessionKeys, rememberSessionInteraction, requestPromptTargetFocus, sessionShortcutTarget, shortcutSessionKeys, showShortcutFeedback, viewport.mobile],
   );
 
+  const stepPageFromShortcut = (direction: -1 | 1) => {
+    if (focusedKey === null) {
+      if (overviewPage.pageCount <= 1) return;
+      if (direction > 0) goToNextSessionListPage();
+      else goToPreviousSessionListPage();
+      return;
+    }
+    if (phoneConversationLockedRef.current) return;
+    const step = resolveFocusedPageStep({
+      orderedSessionKeys: shortcutSessionKeys,
+      focusedKey,
+      fallbackPage: overviewPage.page ?? 1,
+      pageSize: sessionListPageSize,
+      direction,
+    });
+    if (!step) return;
+    setSessionListPage(step.page);
+    enterSession(step.sessionKey, sessionsByKey.get(step.sessionKey)?.machine);
+  };
+
   const cancelTitleEdit = () => {
     setEditingTitleKey(null);
   };
@@ -2693,8 +2714,8 @@ export function Dashboard({
     isEditableShortcutTarget,
     isTerminalShortcutTarget,
     onUsage,
-    onPagePrevious: () => { if (focusedKey === null && overviewPage.pageCount > 1) goToPreviousSessionListPage(); },
-    onPageNext: () => { if (focusedKey === null && overviewPage.pageCount > 1) goToNextSessionListPage(); },
+    onPagePrevious: () => stepPageFromShortcut(-1),
+    onPageNext: () => stepPageFromShortcut(1),
     onVoice: openFocusedVoicePrompt,
     onConversation: toggleFocusedConversation,
     onShortcutHelp: () => setShowShortcutHelp(true),
