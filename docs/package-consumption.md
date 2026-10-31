@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.18 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.19 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -144,12 +144,12 @@ the resolved canvas colour. A consumer overlay can style its own markers with
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.18`; its release is a GitHub
-prerelease with `latest=false`. It carries a tool-read label for images whose
-optional `origin` is `tool_result`, with user attachments kept in the user
-bubble, a busy-refusal explanation for slash-leading shared replies, and
-compact one-line active session filter chips. Existing `v0.1.0`
-through `v0.1.17` tags and assets stay immutable. The visibility transition does not
+merge. The checked-in SDK version is `0.1.19`; its release is a GitHub
+prerelease with `latest=false`. It admits a dedicated `notice` role in
+conversation history, rendered as a session notice only when its text parses as
+a notice envelope and it carries no images, and excludes notice rows from user
+and activity semantics, including the composer quiet-turn hint. Existing
+`v0.1.0` through `v0.1.18` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
