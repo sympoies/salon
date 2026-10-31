@@ -8,9 +8,18 @@ import { build } from "vite";
 import react from "@vitejs/plugin-react";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
-test("session notices show a centered heading and three selectable plain-text lines", async () => {
+test("session notices render Markdown bodies that stay selectable and wrap at phone width", async () => {
   assert.ok(hasHeadlessChrome(), "headless Chrome is required for notice acceptance");
-  const body = "First synthetic line\n**Second synthetic line**\nThird synthetic line";
+  const long = "A".repeat(160);
+  const body = [
+    "Intro with `inline code`, a [safe link](https://example.com/a) and a [bad link](javascript:alert(1)).",
+    "",
+    "- Parent one",
+    "  - Nested child",
+    "- Parent two ![remote](https://example.com/x.png)",
+    "",
+    long,
+  ].join("\n");
   const raw = `<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\n${body}`;
   const fixture = `import '/src/styles.css';
     import React from 'react';
@@ -84,16 +93,12 @@ test("session notices show a centered heading and three selectable plain-text li
         const body=row.querySelector('.session-notice-body'),time=row.querySelector('time').getBoundingClientRect();
         const r=row.getBoundingClientRect(),style=title&&getComputedStyle(title),bodyStyle=body&&getComputedStyle(body);
         const br=body?.getBoundingClientRect(),footer=row.querySelector('.session-notice-meta'),fr=footer?.getBoundingClientRect(),fs=footer&&getComputedStyle(footer);
-        const lines=[];
-        if(body?.firstChild?.nodeType===Node.TEXT_NODE){
-          let start=0;for(const line of body.firstChild.textContent.split('\\n')){
-            const range=document.createRange();range.setStart(body.firstChild,start);range.setEnd(body.firstChild,start+line.length);
-            lines.push([...range.getClientRects()].map(rect=>({x:rect.x,y:rect.y,h:rect.height})));start+=line.length+1;
-          }
-        }
         return {width:innerWidth,notice:!!notice,headerVisible:row.textContent.includes('<!-- agent-notice:'),
           centered:style?.textAlign==='center'||(style?.display==='flex'&&style?.justifyContent==='center'),
-          weight:Number(style?.fontWeight),body:body?.textContent,bodyAlign:bodyStyle?.textAlign,lines,
+          weight:Number(style?.fontWeight),text:body?.textContent,bodyAlign:bodyStyle?.textAlign,
+          nested:!!body?.querySelector('ul ul li'),topItems:body?.querySelectorAll('.message-markdown > ul > li').length,code:[...body.querySelectorAll('code')].map(c=>c.textContent),
+          links:[...body.querySelectorAll('a')].map(a=>a.getAttribute('href')),images:body.querySelectorAll('img').length,
+          bodyOverflow:body.scrollWidth>body.clientWidth,
           lineHeight:parseFloat(bodyStyle?.lineHeight),
           rowLeft:r.left,rowRight:r.right,
           bodyLeft:br&&br.left+parseFloat(bodyStyle.paddingLeft),bodyRight:br&&br.right-parseFloat(bodyStyle.paddingRight),
@@ -108,11 +113,14 @@ test("session notices show a centered heading and three selectable plain-text li
         writeFileSync(join(evidence,`notices-${width}.png`),Buffer.from(shot.data,'base64'));
         writeFileSync(join(evidence,`notices-${width}.json`),JSON.stringify(measured,null,2));
       }
-      const bodyBox=await evaluate(`(()=>{const box=document.querySelector('[data-history-message-id="notice"] .session-notice-body').getBoundingClientRect();return {x:box.left+24,y:box.top+6,bottom:box.bottom-6,right:box.right-24};})()`);
-      await send('Input.dispatchMouseEvent',{type:'mousePressed',x:bodyBox.x,y:bodyBox.y,button:'left',buttons:1,clickCount:1});
-      await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:bodyBox.right,y:bodyBox.bottom,button:'left',buttons:1});
-      await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:bodyBox.right,y:bodyBox.bottom,button:'left',buttons:0,clickCount:1});
-      assert.ok((await evaluate('getSelection().toString()')).length>0,'dragging selects the notice body');
+      const drag=await evaluate(`(()=>{const items=[...document.querySelectorAll('[data-history-message-id="notice"] .session-notice-body .message-markdown > ul > li')];
+        const first=items[0].getBoundingClientRect(),last=items[items.length-1].getBoundingClientRect();
+        return {x:first.left+2,y:first.top+2,toX:last.right-2,toY:last.bottom-2};})()`);
+      await send('Input.dispatchMouseEvent',{type:'mousePressed',x:drag.x,y:drag.y,button:'left',buttons:1,clickCount:1});
+      await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:drag.toX,y:drag.toY,button:'left',buttons:1});
+      await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:drag.toX,y:drag.toY,button:'left',buttons:0,clickCount:1});
+      const selected=await evaluate('getSelection().toString()');
+      for(const part of ['Parent one','Nested child','Parent two'])assert.ok(selected.includes(part),`dragging across list items selects "${part}"`);
       await evaluate('window.fixtureRoot.unmount()');
     }
     for(const measured of results){
@@ -122,7 +130,15 @@ test("session notices show a centered heading and three selectable plain-text li
       assert.equal(measured.timeVisible,true);
       assert.equal(measured.centered,true,`${measured.width}px title is centered`);
       assert.ok(measured.weight>=600,'title has heading weight');
-      assert.equal(measured.body,body,'full body is always visible without Markdown reflow');
+      assert.equal(measured.nested,true,'nested list keeps its structure');
+      assert.equal(measured.topItems,2);
+      assert.ok(!measured.text.includes('- Parent')&&!measured.text.includes('`'),'Markdown syntax is not shown literally');
+      assert.deepEqual(measured.code,['inline code']);
+      assert.deepEqual(measured.links,['https://example.com/a'],'only the http link becomes an anchor');
+      assert.equal(measured.images,0,'notice images never load');
+      assert.ok(measured.text.includes('Image unavailable'));
+      assert.ok(measured.text.includes(long));
+      assert.equal(measured.bodyOverflow,false,'a long unbroken token wraps inside the body');
       assert.equal(measured.bodyAlign,'left');
       assert.ok(measured.bodyLeft>measured.rowLeft,'body content is inset from the left edge');
       assert.ok(measured.bodyRight<measured.rowRight,'body content is inset from the right edge');
@@ -131,13 +147,6 @@ test("session notices show a centered heading and three selectable plain-text li
       assert.ok(Math.abs(measured.footerRight-measured.bodyRight)<1,'footer shares the body right inset');
       assert.equal(measured.copyButton,false,'the notice has no copy button');
       assert.notEqual(measured.bodySelect,'none','the notice body stays selectable');
-      assert.equal(measured.lines.length,3,'three source lines');
-      for(const line of measured.lines)assert.equal(line.length,1,'each source line occupies one visual line');
-      assert.ok(Math.abs(measured.lines[0][0].x-measured.bodyLeft)<1,'text starts at the inset content edge');
-      for(let i=1;i<3;i++){
-        assert.ok(Math.abs(measured.lines[i][0].y-measured.lines[i-1][0].y-measured.lineHeight)<1,'line breaks advance exactly one line');
-        assert.ok(Math.abs(measured.lines[i][0].x-measured.lines[0][0].x)<1,'lines share the left edge');
-      }
       assert.equal(measured.bubble,false);
       assert.equal(measured.background,'rgba(0, 0, 0, 0)','row has no bubble background');
       assert.equal(measured.footer,'mailbox · fixture');

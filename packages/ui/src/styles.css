@@ -405,7 +405,6 @@
 
 .session-notice-body {
   padding-inline: var(--space-md);
-  white-space: pre-wrap;
   text-align: left;
   line-height: 1.4;
   overflow-wrap: anywhere;
