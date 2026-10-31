@@ -15,6 +15,7 @@ import type { MachineColorMap } from "./machineColors.ts";
 import { Modal } from "./Modal.tsx";
 import { SelectMenu, SelectMenuGroup } from "./SelectMenu.tsx";
 import { createSessionBody, type CreateSessionMode } from "./createSessionBody.ts";
+import { resolveDashboardShortcutAction } from "./dashboardShortcuts.ts";
 import { AGENT_KINDS, type AgentKind } from "./frames.ts";
 import {
   isProviderResumeAgent,
@@ -22,6 +23,7 @@ import {
   planResumeFieldInput,
   planResumePaste,
 } from "./providerResume.ts";
+import { isMacTauri } from "./runtime.ts";
 import type { CreateBody } from "./types.ts";
 import { boundedInitialPromptUpdate, validateInitialPrompt } from "./createLifecycle.ts";
 import {
@@ -84,6 +86,31 @@ export function CreateDialog({
   const [workdirs, setWorkdirs] = useState<WorkdirSuggestion[]>([]);
   const [workdirError, setWorkdirError] = useState<string | null>(null);
   const [chosenAccounts, setChosenAccounts] = useState<Partial<Record<AccountProvider, string>>>({});
+  // Command-T closes the dialog too. The dashboard opens it with the same chord,
+  // but that handler is inactive while this dialog is up, so handle the close
+  // here. macOS-app only, matching the dashboard shortcut layer.
+  useEffect(() => {
+    if (!isMacTauri()) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (resolveDashboardShortcutAction({
+        key: event.key,
+        code: event.code,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        isMacTauri: true,
+        editableTarget: false,
+      }) === "create") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
   useEffect(() => {
     if (!machines.includes(machine)) {
       setMachine(defaultMachine && machines.includes(defaultMachine) ? defaultMachine : machines[0] ?? "");
