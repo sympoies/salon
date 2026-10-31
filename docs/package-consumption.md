@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.22 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.23 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -156,14 +156,12 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.22`; its release is a GitHub
-prerelease with `latest=false`. The header mark is configurable through an
-optional `appIcon` mount option and defaults to the Salon mark, so hosts that
-relied on the previous mark must pass `appIcon` (#174). Delivered shared
-replies no longer leave an unsent duplicate: refused or unknown rows reconcile
-against the matching delivered turn, and a committed reply stays visibly
-pending instead of re-enabling a second send (#181). Existing
-`v0.1.0` through `v0.1.21` tags and assets stay immutable. The visibility transition does not
+merge. The checked-in SDK version is `0.1.23`; its release is a GitHub
+prerelease with `latest=false`. A create that carries a prompt is budgeted
+125 s at the edge (was 30 s), so a create the daemon confirms inside the 120 s
+create request window reaches the client as created instead of
+`create-outcome-unknown` (#187). Existing
+`v0.1.0` through `v0.1.22` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
