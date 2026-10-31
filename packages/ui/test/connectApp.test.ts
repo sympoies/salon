@@ -4,6 +4,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Plugin } from "vite";
+import { assertNoElement } from "./support/domAssert.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 
 declare global { var __connectAppStatus: unknown; }
@@ -67,11 +68,11 @@ test("native App: a rejected Connect shows its outcome, a later successful Conne
     globalThis.__connectAppStatus = { authenticated: false, openAccess: false, principal: null, connectFailure: "rejected" };
     await submit("fixture-wrong-token");
     await waitFor(() => /token was rejected/i.test(container.querySelector('[role="alert"]')?.textContent ?? ""));
-    assert.equal(container.querySelector('[data-testid="dashboard"]'), null);
+    assertNoElement(container, '[data-testid="dashboard"]');
     globalThis.__connectAppStatus = { authenticated: true, openAccess: false, principal: { id: "viewer", permissions: [] } };
     await submit("fixture-right-token");
     await waitFor(() => container.querySelector('[data-testid="dashboard"]') !== null);
-    assert.equal(container.querySelector('[data-testid="console-sign-in"]'), null, "onboarding is left");
+    assertNoElement(container, '[data-testid="console-sign-in"]', "onboarding is left");
   } finally {
     await act(async () => root.unmount());
     await ssr.close();
