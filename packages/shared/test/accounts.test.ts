@@ -66,8 +66,9 @@ test("a create budget adds the account binding and the prompt paste", () => {
   assert.equal(createSessionTimeoutMs({ agent: "claude" }), undefined);
   assert.equal(createSessionTimeoutMs({ agent: "claude", prompt: "   " }), undefined);
   assert.equal(createSessionTimeoutMs({ agent: "claude", prompt: "hi" }), PROMPT_CREATE_TIMEOUT_MS);
-  // Pane-ready deadline and paste settle time include a transport margin.
-  assert.ok(PROMPT_CREATE_TIMEOUT_MS >= 25_000);
+  // The daemon may answer a prompt create as late as its 120 s outer deadline;
+  // the edge must still be waiting then, with a response margin.
+  assert.ok(PROMPT_CREATE_TIMEOUT_MS > 120_000);
   for (const provider of ["codex", "claude"] as const) {
     const body = { agent: provider, [`${provider}_account`]: "alpha" };
     assert.equal(createSessionTimeoutMs(body), ACCOUNT_CREATE_TIMEOUT_MS[provider]);
