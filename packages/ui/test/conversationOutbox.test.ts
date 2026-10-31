@@ -1589,6 +1589,21 @@ test("#921 new activity clears Possibly stuck: a turn state revision, a newer me
   }finally{await h.close();clock.restore();}
 });
 
+test("#169 a notice row is not activity: it does not reset the quiet duration of a working turn",async()=>{
+  const clock=graceClock();const h=await mount();try{
+    const start=Date.now();
+    await h.render("working",1,workingSince(1,start));
+    await clock.advance(16*MINUTE,h.settle);
+    assert.match(stuckCard(h),/Possibly stuck/);
+    const notice="<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\nSynthetic update";
+    await h.transcript([{id:"n1",role:"notice",text:notice,timestamp:new Date(Date.now()).toISOString()}] as never);
+    assert.match(stuckCard(h),/Possibly stuck/,"a newer notice row leaves the silent turn silent");
+    await h.transcript([{id:"n1",role:"notice",text:notice,timestamp:new Date(Date.now()).toISOString()},
+      {id:"a1",role:"assistant",text:"progress",timestamp:new Date(Date.now()).toISOString()}] as never);
+    assert.equal(stuckCard(h),"","an assistant message after the notice is still activity");
+  }finally{await h.close();clock.restore();}
+});
+
 test("#921 a page opened on a long-silent turn shows Possibly stuck at once",async()=>{
   const clock=graceClock();const h=await mount();try{
     const start=Date.now();

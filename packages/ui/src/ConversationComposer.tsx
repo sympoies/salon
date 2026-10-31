@@ -156,7 +156,9 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const [revisionSeen, setRevisionSeen] = useState(() => ({ key: `${key}:${state?.revision}`, at: 0 }));
   const revisionKey = `${key}:${state?.revision}`;
   if (revisionSeen.key !== revisionKey) setRevisionSeen({ key: revisionKey, at: Date.now() });
-  const latestMessage = messages.at(-1);
+  // A notice is machine text, not agent output: it is never activity.
+  const activityMessages = messages.filter(message => message.role !== "notice");
+  const latestMessage = activityMessages.at(-1);
   const [messageSeen, setMessageSeen] = useState(() => ({ key, ready: messagesReady, latest: latestMessage, at: 0 }));
   if (messageSeen.key !== key) {
     setMessageSeen({ key, ready: messagesReady, latest: latestMessage, at: 0 });
@@ -167,7 +169,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     setMessageSeen({ key, ready: true, latest: latestMessage,
       at: messageSeen.ready && latestMessage ? Date.now() : messageSeen.at });
   }
-  const newestMessageAt = messages.reduce((latest, message) => Math.max(latest, Date.parse(message.timestamp ?? "") || 0), 0);
+  const newestMessageAt = activityMessages.reduce((latest, message) => Math.max(latest, Date.parse(message.timestamp ?? "") || 0), 0);
   const lastActivityAt = Math.max(Date.parse(state?.phase_changed_at ?? "") || 0, newestMessageAt, revisionSeen.at, messageSeen.at);
   const [now, setNow] = useState(() => Date.now());
   const silentMinutes = hint === BUSY_REPLY_HINT ? silentTurnMinutes(state?.phase, lastActivityAt, Date.now()) : null;
