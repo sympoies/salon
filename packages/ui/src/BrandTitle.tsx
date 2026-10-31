@@ -1,7 +1,8 @@
 import { useContext } from "react";
 import { AppNameContext } from "./appName.ts";
 import { IconButton } from "./IconButton.tsx";
-import agentConsoleIconUrl from "./assets/agent-console-icon.svg";
+import { AppIconContext } from "./appIcon.ts";
+import { useTheme } from "./theme.ts";
 
 export interface BrandTitleProps {
   readonly onMarkClick?: () => void;
@@ -28,7 +29,7 @@ export function BrandTitle({
       onClick={onMarkClick}
     >
       {markBusy ? <span className="btn-spinner" aria-hidden="true" /> : null}
-      <img className="brand-title-icon" src={agentConsoleIconUrl} alt="" />
+      <BrandIcon />
     </IconButton>
   ) : <BrandMark />;
 
@@ -40,11 +41,17 @@ export function BrandTitle({
   );
 }
 
+function BrandIcon() {
+  const icon = useContext(AppIconContext);
+  const { resolved } = useTheme();
+  return <img className="brand-title-icon" src={resolved === "dark" ? icon.dark : icon.light} alt="" />;
+}
+
 /** The logo alone, as a decorative mark. */
 export function BrandMark() {
   return (
     <span className="brand-title-mark" aria-hidden="true">
-      <img className="brand-title-icon" src={agentConsoleIconUrl} alt="" />
+      <BrandIcon />
     </span>
   );
 }
