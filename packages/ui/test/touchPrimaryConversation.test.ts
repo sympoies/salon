@@ -46,8 +46,9 @@ const boundary: Plugin = {
 };
 
 
-async function harness(width: number, coarse: boolean) {
-  const window = new Window({ url: "http://localhost" });
+async function harness(width: number, coarse: boolean, android = false) {
+  const window = new Window({ url: "http://localhost", settings: android ? { navigator: { userAgent: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36" } } : {} });
+  if (android) Object.assign(window, { __TAURI_INTERNALS__: {} });
   Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
   Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 900 });
   (window as unknown as { matchMedia: unknown }).matchMedia = (query: string) => ({
@@ -116,6 +117,39 @@ for (const width of [1180, 1366]) {
     } finally { await h.close(); }
   });
 }
+
+// #207: the Android app is always a touch client, even when its WebView reports a fine pointer (stylus).
+for (const width of [900, 1180]) {
+  test(`the Android app at ${width}px with a fine pointer opens a session in conversation`, async () => {
+    const h = await harness(width, false, true);
+    try {
+      await openFirst(h);
+      await waitFor(() => panel(h), "the conversation panel shows the session");
+      assert.equal(terminal(h), false);
+    } finally { await h.close(); }
+  });
+}
+
+test("the Android app at 1180px with a fine pointer honors the terminal preference", async () => {
+  const h = await harness(1180, false, true);
+  try {
+    await openFirst(h, "terminal");
+    await waitFor(() => terminal(h), "the terminal opens");
+    assert.equal(panel(h), false);
+  } finally { await h.close(); }
+});
+
+test("the debug log records the live values behind the touch-primary decision", async () => {
+  const h = await harness(1180, false, true);
+  try {
+    await openFirst(h);
+    const { debugEvents } = await h.ssr.loadModule<typeof import("../src/debugLog.ts")>("/src/debugLog.ts");
+    const routes = debugEvents().map(event => event.route).filter(route => route.startsWith("/client/viewport/"));
+    assert.deepEqual(routes, ["/client/viewport/width-1180/pointer-coarse-0/any-pointer-coarse-0/touch-primary-1"]);
+    await h.resize(1366);
+    assert.equal(debugEvents().filter(event => event.route.startsWith("/client/viewport/")).length, 2);
+  } finally { await h.close(); }
+});
 
 test("a coarse pointer at 1180px opens the terminal on a machine without history", async () => {
   (globalThis as { __touchPrimaryNoHistory?: boolean }).__touchPrimaryNoHistory = true;
