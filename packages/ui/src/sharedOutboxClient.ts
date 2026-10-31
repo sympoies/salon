@@ -27,6 +27,8 @@ export interface SharedClientTarget {
   /** Rows whose local echo the owner dismissed (#110). The server row is untouched. */
   readonly dismissedIds?: readonly string[];
 }
+/** How long after a reply's first attempt a user turn may still be that reply (#181). */
+const REPLY_PROOF_WINDOW_MS = 10 * 60_000;
 const emptySnapshot: SharedOutboxSnapshot = { revision: 0, items: [], compose_holds: [] };
 function ownership(row: SharedClientTarget) {
   const localIntentIds = [...new Set([...(row.localIntentIds ?? []), ...row.admissions.map(item => item.id)])];
@@ -132,12 +134,23 @@ export class SharedOutboxClient {
     });
     return dismissed;
   }
+  /**
+   * Replies the transcript shows delivered, one user turn per row (#181). A
+   * submitted reply claims its turn first, so a genuine refusal of the same text
+   * sent twice keeps its Retry. No echoed id exists, so a refused or uncertain
+   * row also needs a turn within REPLY_PROOF_WINDOW_MS of its first attempt.
+   */
   submittedProof(row: SharedClientTarget, messages: readonly HistoryMessage[]): Readonly<Record<string, string>> {
     const settled = row.submittedProofs ?? {};
-    const matches = transcriptProof(this.outgoingItems(row).filter(item => item.state === "submitted" && !Object.hasOwn(settled, item.id)).map(item => ({
-      id: item.id, text: item.text, incarnation: item.session_incarnation, requestId: item.request_id!,
-      state: "delivered" as const, attemptedAt: item.created_at,
-    })), messages, Object.values(settled));
+    const outgoing = this.outgoingItems(row).filter(item => !Object.hasOwn(settled, item.id));
+    const echo = (item: SharedOutboxItem) => ({ id: item.id, text: item.text, incarnation: item.session_incarnation,
+      requestId: item.request_id ?? item.id, state: "delivered" as const, attemptedAt: item.created_at });
+    const matches = transcriptProof(outgoing.filter(item => item.state === "submitted").map(echo), messages, Object.values(settled));
+    for (const state of ["unknown", "refused"]) for (const item of outgoing.filter(candidate => candidate.state === state)) {
+      const window = messages.filter(message => Date.parse(message.timestamp ?? "") <= item.created_at + REPLY_PROOF_WINDOW_MS);
+      const proof = transcriptProof([echo(item)], window, [...Object.values(settled), ...matches.values()]).get(item.id);
+      if (proof !== undefined) matches.set(item.id, proof);
+    }
     return matches.size ? { ...settled, ...Object.fromEntries(matches) } : settled;
   }
   async confirmSubmitted(target: SharedOutboxTarget, messages: readonly HistoryMessage[]): Promise<void> {
@@ -167,6 +180,10 @@ export class SharedOutboxClient {
     this.rows = new Map(rows.map(row => [row.key, row])); this.changed();
   }
   private async update(target: SharedOutboxTarget, change: (row: SharedClientTarget) => SharedClientTarget): Promise<SharedClientTarget> {
+    const value = await this.commit(target, change);
+    this.requireActive(); this.rows.set(value.key, value); this.changed(); return value;
+  }
+  private async commit(target: SharedOutboxTarget, change: (row: SharedClientTarget) => SharedClientTarget): Promise<SharedClientTarget> {
     this.requireActive();
     const db = await this.db;
     this.requireActive();
@@ -184,7 +201,7 @@ export class SharedOutboxClient {
       tx.oncomplete = () => resolve(next);
       tx.onerror = tx.onabort = () => reject(new Error("Could not save shared reply state. Your draft has been kept."));
     });
-    this.requireActive(); this.rows.set(value.key, value); this.changed(); return value;
+    return value;
   }
   private async acceptSnapshot(target: SharedOutboxTarget, snapshot: SharedOutboxSnapshot) {
     // PUT can acknowledge an item before the local snapshot revision advances.
@@ -202,11 +219,17 @@ export class SharedOutboxClient {
     this.requireActive();
     if (!usesSharedOutbox(session) || !validOutboxText(text)) throw new Error("This reply cannot be queued. Keep the draft and check the target and text.");
     const target = sharedOutboxTarget(session), id = crypto.randomUUID();
-    await this.update(target, row => {
+    const saved = await this.commit(target, row => {
       if (row.admissions.length >= 256) throw new Error("This device's reply queue is full. Your draft has been kept.");
       return { ...row, localIntentIds: [...row.localIntentIds!, id],
         admissions: [...row.admissions, { id, text, created_at: Date.now(), attempted: false }] };
     });
+    // Once committed the intent is owned by the journal under this id. Rejecting
+    // now, or hiding it until a reload, would invite a second intent (#181). This
+    // client's rows stay in its own namespace; an inactive one neither notifies nor syncs.
+    this.rows.set(saved.key, saved);
+    if (!this.active()) return id;
+    this.changed();
     void this.sync(target).then(() => this.sync(target)); return id;
   }
   async actOnRefused(session: Session, target: SharedOutboxTarget, item: SharedOutboxItem,

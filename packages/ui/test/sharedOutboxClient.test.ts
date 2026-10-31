@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { IDBFactory } from "fake-indexeddb";
+import { IDBFactory, IDBObjectStore } from "fake-indexeddb";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -742,6 +742,113 @@ const sharedItem = (id: string, text: string, state: "queued" | "unknown" | "ref
 // #110: a reply sent mid-turn is recorded by Claude Code as a queued_command
 // attachment, stamped by the provider host; it can precede the edge's admission
 // time for the same reply.
+
+test("#181 a refused row whose text reached the transcript leaves no unsent bubble or Retry", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const id = crypto.randomUUID(), createdAt = Date.now(), sent = "reply delivered mid-turn";
+    const refused = { ...sharedItem(id, sent, "refused", createdAt), error_code: "composer-unobservable" };
+    await h.ownServer({ revision: 3, compose_holds: [], items: [refused] });
+    await h.client.sync(h.target);
+    const buttons = () => [...h.container.querySelectorAll("button")].map(button => button.textContent);
+    await h.showReplies(session, []);
+    assert.ok(buttons().includes("Retry"), "a genuine refusal keeps its Retry until history shows the text");
+    await h.showReplies(session, [{ id: "other-turn", role: "user", text: "a different reply", timestamp: new Date(createdAt + 1000).toISOString() }]);
+    assert.ok(buttons().includes("Retry"), "unrelated history proves nothing");
+    const turn: HistoryMessage = { id: "delivered-turn", role: "user", text: sent, timestamp: new Date(createdAt + 1000).toISOString() };
+    await h.showReplies(session, [turn]);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 0, "the delivered turn replaces the unsent bubble");
+    assert.ok(!h.container.textContent?.includes("This message was not sent."));
+    await h.showReplies(session, []);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 0, "the proof outlives a reloaded history page");
+    assert.ok(h.requests.every(method => method === "GET"), "nothing is sent again");
+  } finally { await h.close(); }
+});
+
+test("#181 the same text sent twice keeps Retry on the genuine refusal until a second turn exists", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const delivered = crypto.randomUUID(), refused = crypto.randomUUID(), createdAt = Date.now(), sent = "same reply text";
+    await h.ownServer({ revision: 3, compose_holds: [], items: [
+      { ...sharedItem(refused, sent, "refused", createdAt + 500), error_code: "composer-unobservable" },
+      sharedItem(delivered, sent, "submitted", createdAt),
+    ] });
+    await h.client.sync(h.target);
+    const first: HistoryMessage = { id: "first-turn", role: "user", text: sent, timestamp: new Date(createdAt + 100).toISOString() };
+    await h.showReplies(session, [first]);
+    assert.equal(h.container.querySelectorAll('.history-outgoing-reply[data-status="refused"]').length, 1, "one turn proves one row");
+    assert.equal(h.container.querySelectorAll('.history-outgoing-reply[data-status="submitted"]').length, 0, "the delivered row owns that turn");
+    assert.ok([...h.container.querySelectorAll("button")].some(button => button.textContent === "Retry"));
+    await h.showReplies(session, [first, { id: "second-turn", role: "user", text: sent, timestamp: new Date(createdAt + 1000).toISOString() }]);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 0, "a second turn is the second delivery");
+  } finally { await h.close(); }
+});
+
+test("#181 a turn outside the attempt window does not prove a refused row", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const id = crypto.randomUUID(), createdAt = Date.now() - 3_600_000, sent = "repeated much later";
+    await h.ownServer({ revision: 3, compose_holds: [], items: [{ ...sharedItem(id, sent, "refused", createdAt), error_code: "composer-unobservable" }] });
+    await h.client.sync(h.target);
+    await h.showReplies(session, [{ id: "later-turn", role: "user", text: sent, timestamp: new Date(createdAt + 3_000_000).toISOString() }]);
+    assert.ok([...h.container.querySelectorAll("button")].some(button => button.textContent === "Retry"));
+  } finally { await h.close(); }
+});
+
+test("#181 a reply saved before the client went inactive resolves, so the composer cannot make a second intent", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  const storage = await h.ssr.loadModule<typeof import("../src/storage.ts")>("/src/storage.ts");
+  const put = IDBObjectStore.prototype.put;
+  try {
+    // The account or connection changes while the journal write commits, after
+    // the transaction's last active check.
+    IDBObjectStore.prototype.put = function (...args) {
+      IDBObjectStore.prototype.put = put; storage.setPrincipalStorageNamespace("bob");
+      return put.apply(this, args);
+    };
+    const id = await h.client.enqueue(session, "saved while the connection changed");
+    storage.setPrincipalStorageNamespace("alice");
+    await h.client.sync(h.target); await h.client.sync(h.target);
+    assert.deepEqual(h.admissions.map(item => item.id), [id], "the durable intent uploads once under its own id");
+  } finally { IDBObjectStore.prototype.put = put; storage.setPrincipalStorageNamespace("alice"); await h.close(); }
+});
+
+test("#181 a failed-turn resend saved while inactive stays pending before any reload", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  const storage = await h.ssr.loadModule<typeof import("../src/storage.ts")>("/src/storage.ts");
+  const put = IDBObjectStore.prototype.put;
+  try {
+    // The dashboard keeps the client started, so returning to it waits for the
+    // poll interval instead of ticking at once.
+    const stop = h.client.start();
+    h.online(false); await h.showFailedComposer();
+    const resend = () => [...h.container.querySelectorAll("button")].find(button => button.textContent === "Resend");
+    IDBObjectStore.prototype.put = function (...args) {
+      IDBObjectStore.prototype.put = put; storage.setPrincipalStorageNamespace("bob");
+      return put.apply(this, args);
+    };
+    await act(async () => resend()!.click()); await h.settle();
+    storage.setPrincipalStorageNamespace("alice");
+    await h.showFailedComposer();
+    assert.ok(!resend(), "the same principal sees the durable intent before its next reload");
+    assert.equal(h.client.state(h.target).admissions.length, 1);
+    assert.ok(!h.requests.includes("PUT"), "an inactive client uploads nothing");
+    stop();
+  } finally { IDBObjectStore.prototype.put = put; storage.setPrincipalStorageNamespace("alice"); await h.close(); }
+});
+
+test("#181 a late unknown reply whose turn is in the transcript is reconciled without a resend", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const id = crypto.randomUUID(), createdAt = Date.now(), sent = "reply whose acknowledgement timed out";
+    await h.ownServer({ revision: 3, compose_holds: [], items: [sharedItem(id, sent, "unknown", createdAt)] });
+    await h.client.sync(h.target);
+    await h.showReplies(session, [{ id: "late-turn", role: "user", text: sent, timestamp: new Date(createdAt + 1000).toISOString() }]);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 0, "history confirms the uncertain reply");
+    assert.ok(h.requests.every(method => method === "GET"), "nothing is sent again");
+  } finally { await h.close(); }
+});
+
 test("#110 a mid-turn reply's transcript turn stamped before its admission clears the pending bubble", async () => {
   const h = await fixture(new IDBFactory(), false);
   try {
