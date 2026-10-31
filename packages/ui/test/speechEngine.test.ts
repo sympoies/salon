@@ -47,11 +47,8 @@ function installDom() {
   return { window, root, click, restore };
 }
 
-test("the stored engine is sent, a 400 keeps the audio retryable, and a different answering engine is shown", async () => {
-  const { SpeechComposer } = await ssr.loadModule<{ SpeechComposer: ComponentType<{ machine: string; id: string; sessionIncarnation: string; onBeforeOpen: () => void }> }>("/src/SpeechComposer.tsx");
-  const { saveSpeechEngine } = await ssr.loadModule<typeof import("../src/speechEngine.ts")>("/src/speechEngine.ts");
-  const dom = installDom();
-  Object.defineProperty(dom.window.navigator, "mediaDevices", {
+function installMedia(window: Window) {
+  Object.defineProperty(window.navigator, "mediaDevices", {
     configurable: true,
     value: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => {} }] }) as unknown as MediaStream },
   });
@@ -66,6 +63,13 @@ test("the stored engine is sent, a 400 keeps the audio retryable, and a differen
     stop() { this.state = "inactive"; this.ondataavailable?.({ data: new Blob(["clip"], { type: "audio/webm" }) }); this.onstop?.(); }
   }
   Object.defineProperty(globalThis, "MediaRecorder", { configurable: true, value: FakeRecorder });
+}
+
+test("the stored engine is sent, a 400 keeps the audio retryable, and a different answering engine is shown", async () => {
+  const { SpeechComposer } = await ssr.loadModule<{ SpeechComposer: ComponentType<{ machine: string; id: string; sessionIncarnation: string; onBeforeOpen: () => void }> }>("/src/SpeechComposer.tsx");
+  const { saveSpeechEngine } = await ssr.loadModule<typeof import("../src/speechEngine.ts")>("/src/speechEngine.ts");
+  const dom = installDom();
+  installMedia(dom.window);
   const uploads: Array<{ engine: string | null; size: number }> = [];
   let answer: "400" | "fallback" | "default" | "default-fallback" = "400";
   setFetchMock(async (url, init) => {
@@ -80,7 +84,7 @@ test("the stored engine is sent, a 400 keeps the audio retryable, and a differen
     throw new Error(`unexpected URL ${url}`);
   });
   try {
-    saveSpeechEngine("gpt-transcribe");
+    saveSpeechEngine("summit", "gpt-transcribe");
     await act(async () => dom.root.render(createElement(SpeechComposer, { machine: "mesa", id: "s1", sessionIncarnation: "inc", onBeforeOpen: () => {} })));
     await dom.click("Voice");
     await dom.click("Record");
@@ -93,7 +97,7 @@ test("the stored engine is sent, a 400 keeps the audio retryable, and a differen
     assert.deepEqual(uploads[1], { engine: "gpt-transcribe", size: 4 }, "the same recording is re-sent");
     assert.match(dom.window.document.body.textContent ?? "", /Answered by qwen/);
 
-    saveSpeechEngine(null);
+    saveSpeechEngine("summit", null);
     answer = "default";
     await dom.click("Record again");
     await act(async () => stopButton()?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
@@ -131,14 +135,63 @@ test("the settings picker lists engines, remembers the choice, and stays hidden 
       await act(async () => select.dispatchEvent(new dom.window.Event("change", { bubbles: true })));
     };
     await choose("gpt-transcribe");
-    assert.equal(store.loadSpeechEngine(), "gpt-transcribe");
+    assert.equal(store.loadSpeechEngine("summit"), "gpt-transcribe");
     await choose("");
-    assert.equal(store.loadSpeechEngine(), null);
+    assert.equal(store.loadSpeechEngine("summit"), null);
 
     legacy = true;
     await act(async () => dom.root.render(createElement("div")));
     await act(async () => dom.root.render(createElement(SpeechEngineSettings)));
     assertNoElement(dom.window.document, 'select[aria-label="Speech engine"]');
+  } finally {
+    await dom.restore();
+  }
+});
+
+const TWO_PROVIDERS = { ok: true, data: { providers: [
+  { id: "summit", label: "Summit GPU", max_duration_seconds: 90, max_bytes: 8388608 },
+  { id: "mesa", label: "Mesa CPU", max_duration_seconds: 90, max_bytes: 8388608 },
+] } };
+
+test("engine choices are bound to their own provider and retry follows the selected service", async () => {
+  const { SpeechComposer } = await ssr.loadModule<{ SpeechComposer: ComponentType<{ machine: string; id: string; sessionIncarnation: string; onBeforeOpen: () => void }> }>("/src/SpeechComposer.tsx");
+  const { SpeechEngineSettings } = await ssr.loadModule<{ SpeechEngineSettings: ComponentType }>("/src/SpeechEngineSettings.tsx");
+  const store = await ssr.loadModule<typeof import("../src/speechEngine.ts")>("/src/speechEngine.ts");
+  const dom = installDom();
+  installMedia(dom.window);
+  const uploads: Array<{ url: string; engine: string | null }> = [];
+  let failFirst = true;
+  setFetchMock(async (url, init) => {
+    if (url === "/api/speech/providers") return jsonResponse(TWO_PROVIDERS);
+    if (url === "/api/speech/summit/engines") return jsonResponse(ENGINES);
+    if (url === "/api/speech/mesa/engines") return jsonResponse({ ok: true, data: { engines: [{ id: "local", label: "Local", available: true }], default: "local" } });
+    if (url.endsWith("/transcriptions")) {
+      uploads.push({ url, engine: new Headers(init?.headers).get("x-speech-engine") });
+      if (failFirst) { failFirst = false; return jsonResponse({ ok: false, error: { message: "busy" } }, { status: 503 }); }
+      return jsonResponse({ ok: true, data: { text: "hi", language: null, provider: "x", engine: null } });
+    }
+    throw new Error(`unexpected URL ${url}`);
+  });
+  try {
+    // A stale choice for one provider must not be cleared by another provider's catalogue.
+    store.saveSpeechEngine("mesa", "local");
+    store.saveSpeechEngine("summit", "gpt-transcribe");
+    await act(async () => dom.root.render(createElement(SpeechEngineSettings)));
+    assert.equal(store.loadSpeechEngine("mesa"), "local");
+    assert.equal(store.loadSpeechEngine("summit"), "gpt-transcribe");
+    assert.equal(dom.window.document.querySelectorAll('select[aria-label^="Speech engine"]').length, 2);
+
+    await act(async () => dom.root.render(createElement(SpeechComposer, { machine: "mesa", id: "s1", sessionIncarnation: "inc", onBeforeOpen: () => {} })));
+    await dom.click("Voice");
+    await dom.click("Record");
+    const stopButton = () => [...dom.window.document.querySelectorAll("button")].find((b) => b.textContent === "Stop recording");
+    await act(async () => stopButton()?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+    assert.deepEqual(uploads[0], { url: "/api/speech/summit/transcriptions", engine: "gpt-transcribe" });
+    const select = dom.window.document.querySelector('.speech-modal select') as HTMLSelectElement;
+    select.value = "mesa";
+    await act(async () => select.dispatchEvent(new dom.window.Event("change", { bubbles: true })));
+    await dom.click("Retry transcription");
+    assert.deepEqual(uploads[1], { url: "/api/speech/mesa/transcriptions", engine: "local" }, "retry goes to the visible service with its own engine");
   } finally {
     await dom.restore();
   }

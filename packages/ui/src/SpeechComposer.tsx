@@ -48,7 +48,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   const [error, setError] = useState("");
   const [answeredBy, setAnsweredBy] = useState<string | null>(null);
   const [retryable, setRetryable] = useState(false);
-  const retained = useRef<{ blob: Blob; provider: SpeechProviderSummary } | null>(null);
+  const retained = useRef<Blob | null>(null);
   const active = useRef<ActiveRecording | null>(null);
   const starting = useRef<number | null>(null);
   const transcription = useRef<AbortController | null>(null);
@@ -123,14 +123,14 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   }, [openRequestToken]);
 
   const transcribe = (provider: SpeechProviderSummary, blob: Blob, currentGeneration: number) => {
-    retained.current = { blob, provider };
+    retained.current = blob;
     setRetryable(false);
     setError("");
     setAnsweredBy(null);
     setPhase("transcribing");
     const controller = new AbortController();
     transcription.current = controller;
-    const chosen = loadSpeechEngine();
+    const chosen = loadSpeechEngine(provider.id);
     void transcribeSpeechAudio(provider.id, blob, controller.signal, chosen).then((result) => {
       if (transcription.current === controller) transcription.current = null;
       if (generation.current !== currentGeneration) return;
@@ -357,7 +357,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
           <div className="modal-actions">
             <button type="button" className="btn ghost" onClick={close} disabled={phase === "sending"}>{replyRetained ? "Return to draft" : "Cancel"}</button>
             {phase === "recording" ? <button type="button" className="btn" onClick={stopTracks}>Stop recording</button> : null}
-            {phase === "ready" && retryable ? <button type="button" className="btn" onClick={() => { const kept = retained.current; if (kept) transcribe(kept.provider, kept.blob, generation.current); }}>Retry transcription</button> : null}
+            {phase === "ready" && retryable ? <button type="button" className="btn" onClick={() => { const kept = retained.current; const target = providers.find((item) => item.id === providerId); if (kept && target) transcribe(target, kept, generation.current); }}>Retry transcription</button> : null}
             {phase === "ready" || (phase === "review" && !replyRetained) ? <button type="button" className="btn" onClick={() => void start()} disabled={!providerId}>Record{phase === "review" ? " again" : ""}</button> : null}
             {phase === "review" && !replyRetained && onTranscript ? <button type="button" className="btn" onClick={insert} disabled={!text.trim()}>Insert to edit</button> : null}
             {phase === "review" && !replyRetained ? <button type="button" className="btn primary" onClick={() => void send()} disabled={!text.trim()}>{onTranscript && !onSendTranscript ? "Use transcript" : "Send"}</button> : null}
