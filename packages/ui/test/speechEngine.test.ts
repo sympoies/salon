@@ -67,14 +67,15 @@ test("the stored engine is sent, a 400 keeps the audio retryable, and a differen
   }
   Object.defineProperty(globalThis, "MediaRecorder", { configurable: true, value: FakeRecorder });
   const uploads: Array<{ engine: string | null; size: number }> = [];
-  let answer: "400" | "fallback" | "default" = "400";
+  let answer: "400" | "fallback" | "default" | "default-fallback" = "400";
   setFetchMock(async (url, init) => {
     if (url === "/api/speech/providers") return jsonResponse(PROVIDERS);
+    if (url === "/api/speech/summit/engines") return jsonResponse(ENGINES);
     if (url === "/api/speech/summit/transcriptions") {
       const headers = new Headers(init?.headers);
       uploads.push({ engine: headers.get("x-speech-engine"), size: (init?.body as Blob).size });
       if (answer === "400") return jsonResponse({ ok: false, error: { message: "engine gone" } }, { status: 400 });
-      return jsonResponse({ ok: true, data: { text: "hello", language: null, provider: "summit", engine: answer === "fallback" ? "qwen" : null } });
+      return jsonResponse({ ok: true, data: { text: "hello", language: null, provider: "summit", engine: answer === "fallback" ? "qwen" : answer === "default-fallback" ? "gpt-transcribe" : null } });
     }
     throw new Error(`unexpected URL ${url}`);
   });
@@ -98,6 +99,13 @@ test("the stored engine is sent, a 400 keeps the audio retryable, and a differen
     await act(async () => stopButton()?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
     assert.equal(uploads[2]?.engine, null, "the default sends no header");
     assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Answered by/);
+
+    // Default selected and a fallback answered: compare with the list default.
+    answer = "default-fallback";
+    await dom.click("Record again");
+    await act(async () => stopButton()?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+    assert.equal(uploads[3]?.engine, null);
+    assert.match(dom.window.document.body.textContent ?? "", /Answered by gpt-transcribe/);
   } finally {
     await dom.restore();
   }

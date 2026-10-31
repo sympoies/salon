@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import type { SpeechProviderSummary } from "@agent-console/shared/speech";
-import { getSpeechProviders, submitSessionPrompt, transcribeSpeechAudio } from "./api.ts";
+import { getSpeechEngines, getSpeechProviders, submitSessionPrompt, transcribeSpeechAudio } from "./api.ts";
 import { Modal } from "./Modal.tsx";
 import { isAndroidTauri } from "./runtime.ts";
 import { loadSpeechEngine } from "./speechEngine.ts";
@@ -138,6 +138,14 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
       setText(result.text);
       setLanguage(result.language);
       setAnsweredBy(chosen && result.engine && result.engine !== chosen ? result.engine : null);
+      if (!chosen && result.engine) {
+        const answered = result.engine;
+        // No engine was chosen: the server default is the reference. An
+        // unavailable list shows nothing.
+        void getSpeechEngines(provider.id).then((list) => {
+          if (list && list.default !== answered && generation.current === currentGeneration) setAnsweredBy(answered);
+        }).catch(() => {});
+      }
       setPhase("review");
       if (!result.text.trim()) setError("No speech was detected. Record again.");
     }).catch((cause: unknown) => {
