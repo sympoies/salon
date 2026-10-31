@@ -813,6 +813,30 @@ test("#181 a reply saved before the client went inactive resolves, so the compos
   } finally { IDBObjectStore.prototype.put = put; storage.setPrincipalStorageNamespace("alice"); await h.close(); }
 });
 
+test("#181 a failed-turn resend saved while inactive stays pending before any reload", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  const storage = await h.ssr.loadModule<typeof import("../src/storage.ts")>("/src/storage.ts");
+  const put = IDBObjectStore.prototype.put;
+  try {
+    // The dashboard keeps the client started, so returning to it waits for the
+    // poll interval instead of ticking at once.
+    const stop = h.client.start();
+    h.online(false); await h.showFailedComposer();
+    const resend = () => [...h.container.querySelectorAll("button")].find(button => button.textContent === "Resend");
+    IDBObjectStore.prototype.put = function (...args) {
+      IDBObjectStore.prototype.put = put; storage.setPrincipalStorageNamespace("bob");
+      return put.apply(this, args);
+    };
+    await act(async () => resend()!.click()); await h.settle();
+    storage.setPrincipalStorageNamespace("alice");
+    await h.showFailedComposer();
+    assert.ok(!resend(), "the same principal sees the durable intent before its next reload");
+    assert.equal(h.client.state(h.target).admissions.length, 1);
+    assert.ok(!h.requests.includes("PUT"), "an inactive client uploads nothing");
+    stop();
+  } finally { IDBObjectStore.prototype.put = put; storage.setPrincipalStorageNamespace("alice"); await h.close(); }
+});
+
 test("#181 a late unknown reply whose turn is in the transcript is reconciled without a resend", async () => {
   const h = await fixture(new IDBFactory(), false);
   try {

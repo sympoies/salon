@@ -225,9 +225,11 @@ export class SharedOutboxClient {
         admissions: [...row.admissions, { id, text, created_at: Date.now(), attempted: false }] };
     });
     // Once committed the intent is owned by the journal under this id. Rejecting
-    // now would leave the text in the composer to become a second intent (#181).
+    // now, or hiding it until a reload, would invite a second intent (#181). This
+    // client's rows stay in its own namespace; an inactive one neither notifies nor syncs.
+    this.rows.set(saved.key, saved);
     if (!this.active()) return id;
-    this.rows.set(saved.key, saved); this.changed();
+    this.changed();
     void this.sync(target).then(() => this.sync(target)); return id;
   }
   async actOnRefused(session: Session, target: SharedOutboxTarget, item: SharedOutboxItem,
