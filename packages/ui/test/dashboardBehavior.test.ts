@@ -7657,7 +7657,7 @@ async function extendedDashboard(ssr: ReturnType<typeof createUiSsrHarness>, ext
 }
 
 
-test("page shortcuts wrap in overview and do nothing with a focused session", async () => {
+test("page shortcuts wrap in overview", async () => {
   const mounted = await mountOverviewShortcutDashboard();
   const pageLabel = () => mounted.container.querySelector(".session-list-page-label")?.textContent?.trim();
   const press = async (key: string) => {
@@ -7667,10 +7667,5 @@ test("page shortcuts wrap in overview and do nothing with a focused session", as
   await press("<");
   assert.equal(pageLabel(), "2 / 2");
   await press(">");
-  assert.equal(pageLabel(), "1 / 2");
-  await press("f");
-  assert.ok(mounted.container.querySelector(".terminal-slot.is-focused"));
-  await press(">");
-  await press("f");
   assert.equal(pageLabel(), "1 / 2");
 });

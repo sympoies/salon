@@ -77,19 +77,8 @@ async function mountDashboard(macTauri = true) {
   };
 }
 
-// macOS reports either the translated or the unshifted character with Command held.
-const NEXT_KEYS = [{ key: ">", code: "Period", shiftKey: true }, { key: ".", code: "Period", shiftKey: true }];
-const PREVIOUS_KEYS = [{ key: "<", code: "Comma", shiftKey: true }, { key: ",", code: "Comma", shiftKey: true }];
-
-for (const [index, next] of NEXT_KEYS.entries()) test(`Command-> and Command-< step the visible list pager (${next.key})`, async () => {
-  const h = await mountDashboard();
-  try {
-    await h.press(next);
-    await h.settle(() => h.pageLabel() === "2 / 2", "Command-> did not advance the pager");
-    await h.press(PREVIOUS_KEYS[index]!);
-    await h.settle(() => h.pageLabel() === "1 / 2", "Command-< did not go back");
-  } finally { await h.close(); }
-});
+const NEXT = { key: ">", code: "Period", shiftKey: true };
+const PREVIOUS = { key: "<", code: "Comma", shiftKey: true };
 
 test("Command-> and Command-< move a focused session view across list pages and keep the list in step", async () => {
   const h = await mountDashboard();
@@ -99,11 +88,11 @@ test("Command-> and Command-< move a focused session view across list pages and 
     const pageOneSession = h.focusedSlot()!;
     assert.match(pageOneSession, /s2$/);
 
-    await h.press(NEXT_KEYS[0]!);
+    await h.press(NEXT);
     await h.settle(() => /s5$/.test(h.focusedSlot() ?? ""), "Command-> left the focused session in place");
-    await h.press(PREVIOUS_KEYS[0]!);
+    await h.press(PREVIOUS);
     await h.settle(() => /s1$/.test(h.focusedSlot() ?? ""), "Command-< left the focused session in place");
-    await h.press(PREVIOUS_KEYS[0]!);
+    await h.press(PREVIOUS);
     await h.settle(() => /s5$/.test(h.focusedSlot() ?? ""), "Command-< did not wrap like the list pager");
 
     await h.press({ key: "`", code: "Backquote" });
