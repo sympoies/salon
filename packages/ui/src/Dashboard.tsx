@@ -809,7 +809,15 @@ export function Dashboard({
   const knownMachineNamesRef = useRef<ReadonlySet<string>>(new Set(machines));
   const activityStreamCursorsRef = useRef(createActivityStreamCursorState());
   const agentProfileObservationsRef = useRef<ReadonlyMap<string, string>>(new Map());
-  const viewport = useViewport();
+  // A reply in flight keeps its mounted surface: the phone tier only changes
+  // once it is accepted.
+  const [conversationBusy, setConversationBusy] = useState(false);
+  const measuredViewport = useViewport();
+  const [appliedMobile, setAppliedMobile] = useState(measuredViewport.mobile);
+  useEffect(() => {
+    if (!conversationBusy) setAppliedMobile(measuredViewport.mobile);
+  }, [conversationBusy, measuredViewport.mobile]);
+  const viewport = useMemo(() => ({ ...measuredViewport, mobile: appliedMobile }), [measuredViewport, appliedMobile]);
   const closeOpenSlotMenus = useCallback(() => {
     setOpenSlotMenuKey(null);
   }, []);
@@ -1026,7 +1034,6 @@ export function Dashboard({
   const conversationSession = conversationKey
     ? sessions.find((candidate) => sessionKey(candidate) === conversationKey)
     : undefined;
-  const [conversationBusy, setConversationBusy] = useState(false);
   const closeConversation = useCallback(() => {
     if (conversationBusy) return false;
     setConversationKey(null);
@@ -1077,7 +1084,8 @@ export function Dashboard({
     setConversationFollowKey(null);
   }, [conversationBusy, enterSession, viewport.mobile]);
   // Crossing the phone tier keeps an open conversation: the wide panel becomes
-  // the focused session's Conversation mode, and back.
+  // the focused session's Conversation mode, and back. The tier itself is held
+  // while a reply is in flight (see `viewport`), so the transfer waits for it.
   const wasMobileRef = useRef(viewport.mobile);
   useEffect(() => {
     if (wasMobileRef.current === viewport.mobile) return;
@@ -1101,11 +1109,11 @@ export function Dashboard({
     const key = typeof next === "function" ? next(focusedKey) : next;
     const session = key !== null && key !== focusedKey ? sessionsByKey.get(key) : undefined;
     if (session && !viewport.mobile && viewport.touchPrimary && phoneSessionOpen === "conversation" && historyMachineNames.has(session.machine)) {
-      openConversation(session);
+      if (!conversationBusy) openConversation(session);
       return;
     }
     setFocusedKeyFromUser(next);
-  }, [focusedKey, historyMachineNames, openConversation, phoneSessionOpen, sessionsByKey, setFocusedKeyFromUser, viewport.mobile, viewport.touchPrimary]);
+  }, [conversationBusy, focusedKey, historyMachineNames, openConversation, phoneSessionOpen, sessionsByKey, setFocusedKeyFromUser, viewport.mobile, viewport.touchPrimary]);
   // Hook notices have higher severity than the phone history fallback (info).
   const visibleStatusNotice = statusNotice ?? (viewport.mobile && phoneConversationNotice
     ? { kind: "info" as const, message: phoneConversationNotice } : null);
