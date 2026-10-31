@@ -1073,8 +1073,9 @@ export function Dashboard({
     if (focusedKey === null) setPhoneConversationMode(false);
   }, [focusedKey]);
   const openConversation = useCallback((session: Session) => {
+    // A reply in flight keeps its session and composer on screen.
+    if (conversationBusy) return;
     if (viewport.mobile) {
-      if (conversationBusy) return;
       setPhoneConversationMode(true);
       enterSession(sessionKey(session), session.machine);
       return;
@@ -1109,11 +1110,11 @@ export function Dashboard({
     const key = typeof next === "function" ? next(focusedKey) : next;
     const session = key !== null && key !== focusedKey ? sessionsByKey.get(key) : undefined;
     if (session && !viewport.mobile && viewport.touchPrimary && phoneSessionOpen === "conversation" && historyMachineNames.has(session.machine)) {
-      if (!conversationBusy) openConversation(session);
+      openConversation(session);
       return;
     }
     setFocusedKeyFromUser(next);
-  }, [conversationBusy, focusedKey, historyMachineNames, openConversation, phoneSessionOpen, sessionsByKey, setFocusedKeyFromUser, viewport.mobile, viewport.touchPrimary]);
+  }, [focusedKey, historyMachineNames, openConversation, phoneSessionOpen, sessionsByKey, setFocusedKeyFromUser, viewport.mobile, viewport.touchPrimary]);
   // Hook notices have higher severity than the phone history fallback (info).
   const visibleStatusNotice = statusNotice ?? (viewport.mobile && phoneConversationNotice
     ? { kind: "info" as const, message: phoneConversationNotice } : null);

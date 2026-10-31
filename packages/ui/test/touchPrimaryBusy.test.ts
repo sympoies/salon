@@ -154,3 +154,22 @@ test("a wide card selection waits for a reply in flight", async () => {
     await release();
   } finally { delete globalThis.__touchBusySubmit; await h.close(); }
 });
+
+test("a wide card menu selection waits for a reply in flight", async () => {
+  const h = await harness(1180);
+  try {
+    await openFirst(h);
+    await waitFor(() => wideShows(h, "history-one"), "wide conversation open");
+    const field = editor(h)!;
+    const release = await startPendingReply(h);
+    const trigger = [...h.container.querySelectorAll<HTMLElement>('[aria-label="Session menu for First work"]')][0];
+    await act(async () => trigger.click());
+    const item = [...h.container.querySelectorAll<HTMLElement>(".slot-title-dropdown [role=menuitem]")].find(node => node.textContent?.includes("Second work"));
+    assert.ok(item, "the card menu lists the other session");
+    await act(async () => item.click());
+    await settle();
+    assert.equal(field.isConnected, true, "the composer with the reply in flight stays mounted");
+    assert.equal(wideShows(h, "history-two"), false);
+    await release();
+  } finally { delete globalThis.__touchBusySubmit; await h.close(); }
+});
