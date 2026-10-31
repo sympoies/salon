@@ -18,7 +18,10 @@ export async function fetchConversationImage(machine: string, history: string, i
       || Number(response.headers.get("content-length")) > CONVERSATION_IMAGE_MAX_BYTES) return {state:"unavailable"};
     // Native HTTP may expose headers separately from the Response's internal
     // headers. Bind the validated MIME to the original bytes for native saving.
-    const blob = (await response.blob()).slice(0, undefined, mime);
+    // Pass the real end: Chromium 116 reads an undefined end as 0 and returns
+    // an empty blob.
+    const original = await response.blob();
+    const blob = original.slice(0, original.size, mime);
     if (signal.aborted || blob.size > CONVERSATION_IMAGE_MAX_BYTES || !blob.size) return {state:"unavailable"};
     const extension = mime === "image/jpeg" ? "jpg" : mime!.slice("image/".length);
     const filename = conversationImageFilename(response.headers.get("content-disposition")) ?? `image-${image.slice(-32,-26)}.${extension}`;
