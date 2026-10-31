@@ -141,6 +141,18 @@ the resolved canvas colour. A consumer overlay can style its own markers with
 `:root[data-theme="paper"]` or read the same state with `useTheme()` from
 `@agent-console/ui/theme`, which also returns `setMode`.
 
+## Application name and mark
+
+`mountApp` takes optional `appName` and `appIcon` options. `appIcon` is
+`{ dark, light }`: URLs of the header mark for dark surfaces and for light and
+Paper surfaces. Every place the header mark renders (dashboard header, login,
+settings) uses it. When `appIcon` is omitted the Salon mark is shown, so a host
+that relied on the former Agent Console mark must now pass its own `appIcon`.
+
+```ts
+mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "/mark-light.svg" } });
+```
+
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and

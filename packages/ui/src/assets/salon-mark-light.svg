@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="salon-light-title">
+  <title id="salon-light-title">Salon continuous jade ribbon</title>
+  <defs>
+    <linearGradient id="salon-light-flow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#08796b"/>
+      <stop offset=".27" stop-color="#1c9e7c"/>
+      <stop offset=".49" stop-color="#35aa86"/>
+      <stop offset=".7" stop-color="#209b79"/>
+      <stop offset="1" stop-color="#086555"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(3 1) scale(.9)">
+    <path d="M43 12 20 22C12 25 12 30 21 33L43 40C51 43 51 47 43 51L25 59" fill="none" stroke="url(#salon-light-flow)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
