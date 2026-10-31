@@ -65,8 +65,10 @@ The access database reserves relay machine, service ID and operation ID before
 any daemon call, and keeps the record. An identical request replays
 `{"ok": true, "data": {"session": {"id", "agent", "session_incarnation"}}}` with
 HTTP 201 and never reaches the target daemon, including after a generation
-rotation. An operation that failed, or whose outcome is unknown, is never
-recreated: submit a new operation id.
+rotation. An operation that failed is never recreated: submit a new operation
+id. An operation whose outcome is unknown can leave a running session with no
+owner, which neither a retry nor the scan reveals, so check the target machine
+before submitting a new id.
 
 ## Board scan
 
