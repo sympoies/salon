@@ -147,8 +147,9 @@ Publication is reserved for the authorized publisher after designated review and
 merge. The checked-in SDK version is `0.1.20`; its release is a GitHub
 prerelease with `latest=false`. It stops rewriting the persisted debug event
 ring on routine idle polling: routine traffic is saved only when the page hides
-or unloads, and failure rows are written at most once every two minutes, so an
-idle client's localStorage writes stay bounded. Existing
+or unloads, and failure rows are written at most once every two minutes and otherwise
+deferred until the next debug event or page hide, so an idle client's
+localStorage writes stay bounded. Existing
 `v0.1.0` through `v0.1.19` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
