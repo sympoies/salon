@@ -211,6 +211,8 @@ interface Viewport {
   readonly width: number;
   readonly height: number;
   readonly mobile: boolean;
+  /** Primary pointer is coarse, whatever the width: decides how a session opens, not the layout. */
+  readonly touchPrimary: boolean;
 }
 
 interface RetitleFeedback {
@@ -281,12 +283,12 @@ function readSlots(): SlotKey[] {
 
 function currentViewport(): Viewport {
   if (typeof window === "undefined") {
-    return { width: 1024, height: 768, mobile: false };
+    return { width: 1024, height: 768, mobile: false, touchPrimary: false };
   }
   const width = window.innerWidth;
   const height = window.innerHeight;
   const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
-  return { width, height, mobile: width <= 760 || (coarse && width <= 1024) };
+  return { width, height, mobile: width <= 760 || (coarse && width <= 1024), touchPrimary: coarse };
 }
 
 function isTerminalShortcutTarget(target: EventTarget | null): boolean {
@@ -808,7 +810,15 @@ export function Dashboard({
   const knownMachineNamesRef = useRef<ReadonlySet<string>>(new Set(machines));
   const activityStreamCursorsRef = useRef(createActivityStreamCursorState());
   const agentProfileObservationsRef = useRef<ReadonlyMap<string, string>>(new Map());
-  const viewport = useViewport();
+  // A reply in flight keeps its mounted surface: the phone tier only changes
+  // once it is accepted.
+  const [conversationBusy, setConversationBusy] = useState(false);
+  const measuredViewport = useViewport();
+  const [appliedMobile, setAppliedMobile] = useState(measuredViewport.mobile);
+  useEffect(() => {
+    if (!conversationBusy) setAppliedMobile(measuredViewport.mobile);
+  }, [conversationBusy, measuredViewport.mobile]);
+  const viewport = useMemo(() => ({ ...measuredViewport, mobile: appliedMobile }), [measuredViewport, appliedMobile]);
   const closeOpenSlotMenus = useCallback(() => {
     setOpenSlotMenuKey(null);
   }, []);
@@ -1025,7 +1035,6 @@ export function Dashboard({
   const conversationSession = conversationKey
     ? sessions.find((candidate) => sessionKey(candidate) === conversationKey)
     : undefined;
-  const [conversationBusy, setConversationBusy] = useState(false);
   const closeConversation = useCallback(() => {
     if (conversationBusy) return false;
     setConversationKey(null);
@@ -1065,8 +1074,9 @@ export function Dashboard({
     if (focusedKey === null) setPhoneConversationMode(false);
   }, [focusedKey]);
   const openConversation = useCallback((session: Session) => {
+    // A reply in flight keeps its session and composer on screen.
+    if (conversationBusy) return;
     if (viewport.mobile) {
-      if (conversationBusy) return;
       setPhoneConversationMode(true);
       enterSession(sessionKey(session), session.machine);
       return;
@@ -1075,7 +1085,37 @@ export function Dashboard({
     setConversationPinned(false);
     setConversationFollowKey(null);
   }, [conversationBusy, enterSession, viewport.mobile]);
+  // Crossing the phone tier keeps an open conversation: the wide panel becomes
+  // the focused session's Conversation mode, and back. The tier itself is held
+  // while a reply is in flight (see `viewport`), so the transfer waits for it.
+  const wasMobileRef = useRef(viewport.mobile);
+  useEffect(() => {
+    if (wasMobileRef.current === viewport.mobile) return;
+    wasMobileRef.current = viewport.mobile;
+    if (viewport.mobile) {
+      if (conversationSession === undefined) return;
+      setConversationKey(null);
+      setPhoneConversationMode(true);
+      enterSession(sessionKey(conversationSession), conversationSession.machine);
+    } else if (phoneConversationMode && focusedKey !== null) {
+      setPhoneConversationMode(false);
+      setConversationKey(focusedKey);
+      setConversationPinned(false);
+      setConversationFollowKey(null);
+    }
+  }, [conversationSession, enterSession, focusedKey, phoneConversationMode, viewport.mobile]);
   const [phoneConversationNotice, setPhoneConversationNotice] = useState<string>();
+  // A wide grid has no session list: a touch-primary device selects a session
+  // with its card, and that opens the conversation like the phone list does.
+  const setSlotFocusedKey = useCallback<Dispatch<SetStateAction<string | null>>>((next) => {
+    const key = typeof next === "function" ? next(focusedKey) : next;
+    const session = key !== null && key !== focusedKey ? sessionsByKey.get(key) : undefined;
+    if (session && !viewport.mobile && viewport.touchPrimary && phoneSessionOpen === "conversation" && historyMachineNames.has(session.machine)) {
+      openConversation(session);
+      return;
+    }
+    setFocusedKeyFromUser(next);
+  }, [focusedKey, historyMachineNames, openConversation, phoneSessionOpen, sessionsByKey, setFocusedKeyFromUser, viewport.mobile, viewport.touchPrimary]);
   // Hook notices have higher severity than the phone history fallback (info).
   const visibleStatusNotice = statusNotice ?? (viewport.mobile && phoneConversationNotice
     ? { kind: "info" as const, message: phoneConversationNotice } : null);
@@ -2458,10 +2498,10 @@ export function Dashboard({
 
   const onOverviewSession = useCallback((key: string) => {
     const session = sessionsByKey.get(key);
-    if (viewport.mobile && phoneSessionOpen === "conversation" && session) {
+    if ((viewport.mobile || viewport.touchPrimary) && phoneSessionOpen === "conversation" && session) {
       setPhoneConversationNotice(undefined);
       if (historyMachineNames.has(session.machine)) openConversation(session);
-      else openPhoneTerminal(session, true);
+      else openPhoneTerminal(session, viewport.mobile);
       return;
     }
     const action = resolveSessionNavigatorSelection({
@@ -2478,7 +2518,7 @@ export function Dashboard({
     }
     overviewRestorePromptTargetKeyRef.current = action.restorePromptTargetKey;
     enterSession(action.sessionKey, sessionsByKey.get(action.sessionKey)?.machine);
-  }, [enterSession, overviewPage.sessionKeys, promptTargetKey, requestPromptTargetFocus, sessionsByKey, viewport.mobile, phoneSessionOpen, historyMachineNames, openConversation, openPhoneTerminal]);
+  }, [enterSession, overviewPage.sessionKeys, promptTargetKey, requestPromptTargetFocus, sessionsByKey, viewport.mobile, viewport.touchPrimary, phoneSessionOpen, historyMachineNames, openConversation, openPhoneTerminal]);
   // ⌘F: toggle between the grid list and a single focused session. From a
   // session it drops back to the list; from the list it enters the last
   // selected pane, falling back to the active terminal, remembered focus,
@@ -3164,7 +3204,7 @@ export function Dashboard({
                 }}
                 drag={slotDrag}
                 actions={{
-                  setFocusedKey: setFocusedKeyFromUser,
+                  setFocusedKey: setSlotFocusedKey,
                   setOpenSlotMenuKey,
                   rememberSessionInteraction,
                   requestPromptTargetFocus,
