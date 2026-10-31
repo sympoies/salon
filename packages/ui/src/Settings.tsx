@@ -1,6 +1,7 @@
 import { usePhoneLayout } from "./usePhoneLayout.ts";
 import { ExtensionSettingsPanels } from "./extensions.tsx";
 import { HostPreferencesSettings } from "./HostPreferencesSettings.tsx";
+import { SpeechEngineSettings } from "./SpeechEngineSettings.tsx";
 import { useEffect, useRef, useState } from "react";
 import { AsyncButton } from "./AsyncButton.tsx";
 import { BrandTitle } from "./BrandTitle.tsx";
@@ -522,6 +523,7 @@ export function Settings({
               {attentionAlerts ? "on" : "off"}
             </button>
           </div>
+          <SpeechEngineSettings />
           <ExtensionSettingsPanels />
         </section>
 
