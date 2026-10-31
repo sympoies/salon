@@ -424,7 +424,6 @@
 }
 
 .session-notice-meta > span { min-width: 0; }
-.session-notice-copy { flex: none; }
 
 .history-message > .agent-badge {
   align-self: flex-start;

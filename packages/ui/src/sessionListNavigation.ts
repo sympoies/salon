@@ -208,6 +208,32 @@ export function stepSessionListPage({
   return ((current - 1 + direction + pageCount) % pageCount) + 1;
 }
 
+// A focused session has no visible pager, so a page step lands on the first
+// session of the adjacent page, counted from the page holding that session.
+export function resolveFocusedPageStep({
+  orderedSessionKeys,
+  focusedKey,
+  fallbackPage,
+  pageSize,
+  direction,
+}: {
+  readonly orderedSessionKeys: readonly string[];
+  readonly focusedKey: string;
+  readonly fallbackPage: number;
+  readonly pageSize: number;
+  readonly direction: -1 | 1;
+}): { readonly page: number; readonly sessionKey: string } | null {
+  const pageCount = Math.ceil(orderedSessionKeys.length / pageSize);
+  if (pageCount <= 1) return null;
+  const index = orderedSessionKeys.indexOf(focusedKey);
+  const page = stepSessionListPage({
+    page: index < 0 ? fallbackPage : Math.floor(index / pageSize) + 1,
+    pageCount,
+    direction,
+  });
+  return { page, sessionKey: orderedSessionKeys[(page - 1) * pageSize]! };
+}
+
 export function resolveOverviewPromptTargetForPage({
   promptTargetKey,
   pageSessionKeys,
