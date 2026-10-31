@@ -1,3 +1,4 @@
+import { AppIconContext, DEFAULT_APP_ICON, type AppIcon } from "./appIcon.ts";
 import { AppNameContext } from "./appName.ts";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -11,6 +12,8 @@ import "./styles.css";
 export interface MountAppOptions {
   /** Name displayed in the application title. Defaults to Agent Console. */
   readonly appName?: string;
+  /** Header mark: `dark` for dark surfaces, `light` for light and Paper surfaces. Defaults to the Salon mark. */
+  readonly appIcon?: AppIcon;
   /** Extensions from the distribution entry; core's own entry passes none. */
   readonly extensions?: readonly UiExtension[];
 }
@@ -28,10 +31,12 @@ export function mountApp(root: HTMLElement | null, options: MountAppOptions = {}
   createRoot(root).render(
     <StrictMode>
       <AppNameContext.Provider value={options.appName ?? "Agent Console"}>
-        <MacTitleBar />
-        <UiExtensionsProvider registry={registry}>
-          <App />
-        </UiExtensionsProvider>
+        <AppIconContext.Provider value={options.appIcon ?? DEFAULT_APP_ICON}>
+          <MacTitleBar />
+          <UiExtensionsProvider registry={registry}>
+            <App />
+          </UiExtensionsProvider>
+        </AppIconContext.Provider>
       </AppNameContext.Provider>
     </StrictMode>,
   );
