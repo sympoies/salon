@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.20 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.21 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -144,13 +144,12 @@ the resolved canvas colour. A consumer overlay can style its own markers with
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.20`; its release is a GitHub
-prerelease with `latest=false`. It stops rewriting the persisted debug event
-ring on routine idle polling: routine traffic is saved only when the page hides
-or unloads, and failure rows are written at most once every two minutes and otherwise
-deferred until the next debug event or page hide, so an idle client's
-localStorage writes stay bounded. Existing
-`v0.1.0` through `v0.1.19` tags and assets stay immutable. The visibility transition does not
+merge. The checked-in SDK version is `0.1.21`; its release is a GitHub
+prerelease with `latest=false`. The edge accepts admitted service session
+creates and service-scoped board scans: a deployment-declared admission binds
+the relay machine, service id and generation to allowed owners and machines,
+refusals are typed, and an operation id is an idempotency key (#180). Existing
+`v0.1.0` through `v0.1.20` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
