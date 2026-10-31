@@ -284,7 +284,7 @@ test("speech upload carries audio while debug events retain no recording or tran
   });
 
   assert.equal((await getSpeechProviders())[0]?.label, "Summit GPU");
-  assert.deepEqual(await transcribeSpeechAudio("summit", audio), { text: transcript, language: "Chinese", provider: "summit" });
+  assert.deepEqual(await transcribeSpeechAudio("summit", audio), { text: transcript, language: "Chinese", provider: "summit", engine: null });
   assert.equal(uploaded, audio);
   assert.doesNotMatch(JSON.stringify(debugEvents()), /private-audio-canary|不要刪除/);
 });

@@ -111,7 +111,7 @@ import {
 } from "@agent-console/shared/session-retitle";
 import { sessionRetitlePath } from "./sessionRetitle.ts";
 
-import type { SpeechProviderSummary, SpeechTranscription } from "@agent-console/shared/speech";
+import type { SpeechEngineList, SpeechProviderSummary, SpeechTranscription } from "@agent-console/shared/speech";
 
 // Classify a rejected or aborted switch only after the edge had time to return
 // its authoritative outcome.
@@ -161,7 +161,20 @@ export async function getSpeechProviders(): Promise<readonly SpeechProviderSumma
       && typeof item.max_duration_seconds === "number" && typeof item.max_bytes === "number");
 }
 
-export async function transcribeSpeechAudio(provider: string, audio: Blob, signal?: AbortSignal): Promise<SpeechTranscription> {
+/** The provider's engine list, or null for an older speech server without one. */
+export async function getSpeechEngines(provider: string): Promise<SpeechEngineList | null> {
+  const response = await req(`/api/speech/${encodeURIComponent(provider)}/engines`);
+  if (response.status === 404) return null;
+  if (!resultOf(response).ok) throw new Error("Speech engines are unavailable");
+  const data = (response.body as { data?: Partial<SpeechEngineList> } | undefined)?.data;
+  if (!Array.isArray(data?.engines) || typeof data.default !== "string") throw new Error("Speech engines returned an invalid response");
+  return {
+    default: data.default,
+    engines: data.engines.filter((item) => typeof item?.id === "string" && typeof item.label === "string" && typeof item.available === "boolean"),
+  };
+}
+
+export async function transcribeSpeechAudio(provider: string, audio: Blob, signal?: AbortSignal, engine?: string | null): Promise<SpeechTranscription> {
   const route = `/api/speech/${encodeURIComponent(provider)}/transcriptions`;
   const requestId = createDebugRequestId();
   const started = performance.now();
@@ -169,7 +182,11 @@ export async function transcribeSpeechAudio(provider: string, audio: Blob, signa
   try {
     const response = await appFetch(route, {
       method: "POST",
-      headers: { "content-type": audio.type || "application/octet-stream", "x-agent-console-request-id": requestId },
+      headers: {
+        "content-type": audio.type || "application/octet-stream",
+        "x-agent-console-request-id": requestId,
+        ...(engine ? { "x-speech-engine": engine } : {}),
+      },
       body: audio,
       signal,
     });
@@ -182,7 +199,7 @@ export async function transcribeSpeechAudio(provider: string, audio: Blob, signa
     if (typeof data?.text !== "string" || typeof data.provider !== "string") {
       throw new Error("Speech service returned an invalid response");
     }
-    return { text: data.text, language: typeof data.language === "string" ? data.language : null, provider: data.provider };
+    return { text: data.text, language: typeof data.language === "string" ? data.language : null, provider: data.provider, engine: typeof data.engine === "string" ? data.engine : null };
   } finally {
     // Speech and transcript contents never enter the persisted debug event ring.
     recordDebugEvent({

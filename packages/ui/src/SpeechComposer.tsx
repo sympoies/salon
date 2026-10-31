@@ -4,6 +4,7 @@ import type { SpeechProviderSummary } from "@agent-console/shared/speech";
 import { getSpeechProviders, submitSessionPrompt, transcribeSpeechAudio } from "./api.ts";
 import { Modal } from "./Modal.tsx";
 import { isAndroidTauri } from "./runtime.ts";
+import { loadSpeechEngine } from "./speechEngine.ts";
 import { VOICE_PROMPT_TAG } from "./voicePrompt.ts";
 
 const UNKNOWN_PROMPT_OUTCOME = "The prompt may have been sent. A busy session shows it as a queued message; check the session before trying again.";
@@ -45,6 +46,9 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   const [replyRetained, setReplyRetained] = useState(false);
   const [language, setLanguage] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [answeredBy, setAnsweredBy] = useState<string | null>(null);
+  const [retryable, setRetryable] = useState(false);
+  const retained = useRef<{ blob: Blob; provider: SpeechProviderSummary } | null>(null);
   const active = useRef<ActiveRecording | null>(null);
   const starting = useRef<number | null>(null);
   const transcription = useRef<AbortController | null>(null);
@@ -70,6 +74,8 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     openRef.current = false;
     transcription.current?.abort();
     transcription.current = null;
+    retained.current = null;
+    setRetryable(false);
     stopTracks();
     setOpen(false);
     setPhase("ready");
@@ -116,6 +122,33 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     if (openRequestToken > 0) show();
   }, [openRequestToken]);
 
+  const transcribe = (provider: SpeechProviderSummary, blob: Blob, currentGeneration: number) => {
+    retained.current = { blob, provider };
+    setRetryable(false);
+    setError("");
+    setAnsweredBy(null);
+    setPhase("transcribing");
+    const controller = new AbortController();
+    transcription.current = controller;
+    const chosen = loadSpeechEngine();
+    void transcribeSpeechAudio(provider.id, blob, controller.signal, chosen).then((result) => {
+      if (transcription.current === controller) transcription.current = null;
+      if (generation.current !== currentGeneration) return;
+      retained.current = null;
+      setText(result.text);
+      setLanguage(result.language);
+      setAnsweredBy(chosen && result.engine && result.engine !== chosen ? result.engine : null);
+      setPhase("review");
+      if (!result.text.trim()) setError("No speech was detected. Record again.");
+    }).catch((cause: unknown) => {
+      if (transcription.current === controller) transcription.current = null;
+      if (generation.current !== currentGeneration) return;
+      setPhase("ready");
+      setRetryable(true);
+      setError(cause instanceof Error ? cause.message : "Transcription failed. Try again.");
+    });
+  };
+
   const start = async () => {
     const currentGeneration = generation.current;
     const provider = providers.find((item) => item.id === providerId);
@@ -125,6 +158,9 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
       return;
     }
     starting.current = currentGeneration;
+    retained.current = null;
+    setRetryable(false);
+    setAnsweredBy(null);
     setPhase("starting");
     setError("");
     setText("");
@@ -175,22 +211,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
         setError("Recording is too large. Keep it shorter and try again.");
         return;
       }
-      setPhase("transcribing");
-      const controller = new AbortController();
-      transcription.current = controller;
-      void transcribeSpeechAudio(provider.id, blob, controller.signal).then((result) => {
-        if (transcription.current === controller) transcription.current = null;
-        if (generation.current !== currentGeneration) return;
-        setText(result.text);
-        setLanguage(result.language);
-        setPhase("review");
-        if (!result.text.trim()) setError("No speech was detected. Record again.");
-      }).catch((cause: unknown) => {
-        if (transcription.current === controller) transcription.current = null;
-        if (generation.current !== currentGeneration) return;
-        setPhase("ready");
-        setError(cause instanceof Error ? cause.message : "Transcription failed. Try again.");
-      });
+      transcribe(provider, blob, currentGeneration);
     };
     recorder.onerror = () => {
       recorder.onstop = null;
@@ -323,10 +344,12 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
             </label>
           ) : null}
           {phase === "review" ? <p className="speech-hint">Check negation, commands, filenames, and paths before sending. A voice-input tag is added so the agent knows this came from speech.</p> : null}
+          {phase === "review" && answeredBy ? <p className="speech-hint">Answered by {answeredBy}.</p> : null}
           {error ? <p className="speech-error" role="alert">{error}</p> : null}
           <div className="modal-actions">
             <button type="button" className="btn ghost" onClick={close} disabled={phase === "sending"}>{replyRetained ? "Return to draft" : "Cancel"}</button>
             {phase === "recording" ? <button type="button" className="btn" onClick={stopTracks}>Stop recording</button> : null}
+            {phase === "ready" && retryable ? <button type="button" className="btn" onClick={() => { const kept = retained.current; if (kept) transcribe(kept.provider, kept.blob, generation.current); }}>Retry transcription</button> : null}
             {phase === "ready" || (phase === "review" && !replyRetained) ? <button type="button" className="btn" onClick={() => void start()} disabled={!providerId}>Record{phase === "review" ? " again" : ""}</button> : null}
             {phase === "review" && !replyRetained && onTranscript ? <button type="button" className="btn" onClick={insert} disabled={!text.trim()}>Insert to edit</button> : null}
             {phase === "review" && !replyRetained ? <button type="button" className="btn primary" onClick={() => void send()} disabled={!text.trim()}>{onTranscript && !onSendTranscript ? "Use transcript" : "Send"}</button> : null}

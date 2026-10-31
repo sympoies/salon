@@ -122,7 +122,7 @@ import { boardViewForRequest } from "./board/routes.ts";
 import { sessionViewerAccess } from "./crossOwnerSessionAccess.ts";
 import { openBoardService, type BoardServiceOptions } from "./board/service.ts";
 import { normalizeActivityTurnState } from "@agent-console/shared/activity";
-import { MAX_SPEECH_BYTES, MAX_SPEECH_DURATION_SECONDS, readSpeechAudio, SpeechRequestError, transcribeSpeech } from "./speech.ts";
+import { listSpeechEngines, MAX_SPEECH_BYTES, MAX_SPEECH_DURATION_SECONDS, readSpeechAudio, readSpeechEngine, SpeechRequestError, transcribeSpeech } from "./speech.ts";
 import {
   normalizeSessionRetitleRequest,
   normalizeSessionRetitleV3Request,
@@ -1017,6 +1017,23 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         });
         return;
 
+      case "speech-engines": {
+        const provider = config.speechProviders.find((candidate) => candidate.id === routeParam(route, "provider"));
+        if (!provider || (config.multiUser && provider.machine && !principalCanAccessMachine(_principal, provider.machine))) {
+          sendJson(res, 404, { ok: false, error: { message: "speech provider not found" } });
+          return;
+        }
+        try {
+          const engines = await listSpeechEngines(provider);
+          if (engines) sendJson(res, 200, { ok: true, data: engines });
+          else sendJson(res, 404, { ok: false, error: { message: "speech engines are not offered" } });
+        } catch (error) {
+          if (!(error instanceof SpeechRequestError)) throw error;
+          sendJson(res, error.status, { ok: false, error: { message: error.message } });
+        }
+        return;
+      }
+
       case "speech-transcription": {
         if (!csrfExempt(req)) return forbidCrossOrigin(res);
         const provider = config.speechProviders.find((candidate) => candidate.id === routeParam(route, "provider"));
@@ -1026,6 +1043,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         }
         armRequestDeadline(req, res, 15_000);
         try {
+          const engine = readSpeechEngine(req);
           const { audio, contentType } = await readSpeechAudio(req);
           armRequestDeadline(req, res, 125_000);
           const disconnect = new AbortController();
@@ -1034,7 +1052,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           };
           res.once("close", abortOnClose);
           try {
-            const result = await transcribeSpeech(provider, audio, contentType, disconnect.signal);
+            const result = await transcribeSpeech(provider, audio, contentType, engine, disconnect.signal);
             if (!res.destroyed) sendJson(res, 200, { ok: true, data: { ...result, provider: provider.id } });
           } finally {
             res.off("close", abortOnClose);

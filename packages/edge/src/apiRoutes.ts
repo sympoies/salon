@@ -17,6 +17,7 @@ const API_ROUTES = [
   { id: "machine-preference", pattern: "/api/machine-preferences/:machine", methods: ["PUT"], params: ["machine"] },
   { id: "runtime-health", pattern: "/api/machines/:machine/runtime/health", methods: ["GET"], params: ["machine"] },
   { id: "speech-providers", pattern: "/api/speech/providers", methods: ["GET"], params: [] },
+  { id: "speech-engines", pattern: "/api/speech/:provider/engines", methods: ["GET"], params: ["provider"] },
   { id: "speech-transcription", pattern: "/api/speech/:provider/transcriptions", methods: ["POST"], params: ["provider"] },
   { id: "title-summary", pattern: "/api/title-summary", methods: ["POST"], params: [] },
   {
