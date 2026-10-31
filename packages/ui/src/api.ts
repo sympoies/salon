@@ -294,7 +294,11 @@ export interface AuthStatus {
   readonly openAccess: boolean;
   readonly principal: AgentConsolePrincipal | null;
   readonly startupFailure?: "timeout" | "transport";
+  // Why the check did not authenticate, for the native connect screen.
+  readonly connectFailure?: ConnectFailure;
 }
+
+export type ConnectFailure = "rejected" | "unreachable" | "unexpected";
 
 export async function getAuthStatus(options?: { initialStartup?: boolean }): Promise<AuthStatus> {
   const started = performance.now();
@@ -319,19 +323,22 @@ export async function getAuthStatus(options?: { initialStartup?: boolean }): Pro
     }
     // Startup must leave the boot screen even if native HTTP rejects or stays
     // pending after abort. Connection settings/login provide the retry path.
-    return { authenticated: false, openAccess: false, principal: null, startupFailure };
+    return { authenticated: false, openAccess: false, principal: null, startupFailure, connectFailure: "unreachable" };
   }
   const b = r.body as { authenticated?: boolean; openAccess?: boolean; principal?: unknown } | undefined;
   if (isTauri() && generation !== nativeConnectionConfigGeneration()) {
-    return { authenticated: false, openAccess: false, principal: null, startupFailure: "transport" };
+    return { authenticated: false, openAccess: false, principal: null, startupFailure: "transport", connectFailure: "unreachable" };
   }
   const authenticated = r.status >= 200 && r.status < 300 && b?.authenticated === true;
   const principal = normalizeAgentConsolePrincipal(b?.principal);
   recordNativeAuthentication(generation, authenticated, principal?.id ?? null);
+  const rejected = r.status === 401 || r.status === 403 ||
+    (r.status >= 200 && r.status < 300 && !r.malformed && b?.authenticated === false);
   return {
     authenticated,
     openAccess: Boolean(b?.openAccess),
     principal,
+    ...(authenticated ? {} : { connectFailure: rejected ? "rejected" as const : "unexpected" as const }),
   };
 }
 

@@ -12,7 +12,7 @@ import {
   normalizeServerUrl,
   isTauri,
 } from "./runtime.ts";
-import { logout, type AuthStatus } from "./api.ts";
+import { logout, type AuthStatus, type ConnectFailure } from "./api.ts";
 import {
   createMachineColorMap,
   machineColorOverride,
@@ -29,7 +29,8 @@ import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 import { THEME_MODES, useTheme, type ThemeMode } from "./theme.ts";
 
 export interface SettingsProps {
-  readonly onSaved: () => void;
+  // The connect variant waits for the returned connection check and shows its outcome.
+  readonly onSaved: () => void | Promise<ConnectFailure | undefined>;
   readonly onCancel?: () => void;
   // "connect" is the native first-run onboarding screen (connection form only).
   // "manage" is the settings hub reached from the header gear (all sections).
@@ -61,6 +62,12 @@ export interface SettingsProps {
   readonly onSignedOut: () => void;
   readonly onHostPreferenceMigrationDone?: () => void;
 }
+
+const CONNECT_FAILURE_MESSAGE: Record<ConnectFailure, string> = {
+  rejected: "The token was rejected. Check the access token and try again.",
+  unreachable: "The server could not be reached. Check the server URL and your connection.",
+  unexpected: "The server gave an unexpected response. Try again later.",
+};
 
 // The device console settings. Connection secrets (server URL + token) are never
 // baked into the app — they live only in device-local storage. On web the
@@ -103,6 +110,7 @@ export function Settings({
   const serverInput = useRef<HTMLInputElement>(null);
   const tokenInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
   // The stored token is never rendered into the DOM: Android WebView accessibility
   // reports input values and attributes. The field only ever holds a replacement.
   const [tokenSaved, setTokenSaved] = useState(() => loadToken() !== "");
@@ -149,6 +157,17 @@ export function Settings({
     setTokenSaved(false);
   };
 
+  const connect = async () => {
+    if (checking || !saveConnection()) return;
+    setChecking(true);
+    const failure = await onSaved();
+    setChecking(false);
+    if (!failure) return;
+    // A rejected token must not keep looking like a valid saved one.
+    if (failure === "rejected") clearSavedToken();
+    setError(CONNECT_FAILURE_MESSAGE[failure]);
+  };
+
   const savedTokenStatus = tokenSaved ? (
     <div className="settings-actions">
       <span className="settings-hint" role="status">Access token saved on this device.</span>
@@ -166,7 +185,7 @@ export function Settings({
           className="login-card"
           onSubmit={(e) => {
             e.preventDefault();
-            if (saveConnection()) onSaved();
+            void connect();
           }}
         >
           <BrandTitle />
@@ -216,8 +235,8 @@ export function Settings({
                 Cancel
               </button>
             ) : null}
-            <button data-testid="console-sign-in" className="btn primary" type="submit">
-              Connect
+            <button data-testid="console-sign-in" className="btn primary" type="submit" disabled={checking}>
+              {checking ? "Connecting…" : "Connect"}
             </button>
           </div>
         </form>
