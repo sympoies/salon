@@ -1032,8 +1032,9 @@ export const ACCOUNT_CREATE_TIMEOUT_MS: Readonly<Record<AccountProvider, number>
 // A create that carries a prompt returns only after the daemon pasted it, which
 // can take over a minute. Coordination clients allow a create request up to
 // 120 s, so the edge waits that long plus a response margin and a create that
-// succeeds inside that window is not reported as an unknown outcome. This does
-// not extend any caller's own request ceiling.
+// succeeds inside that window is not reported as an unknown outcome. The 120 s
+// coordination and CLI ceiling is unchanged; the browser timeout follows this
+// budget plus its own margin.
 export const PROMPT_CREATE_TIMEOUT_MS = 125_000;
 // A Codex switch applies live; a Claude switch may restart the idle session.
 export const ACCOUNT_SWITCH_TIMEOUT_MS = 40_000;

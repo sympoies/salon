@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { PROMPT_CREATE_TIMEOUT_MS } from "@agent-console/shared/api";
 import { AccessStore } from "../src/accessStore.ts";
 import { createEdgeServer, type EdgeServerOptions } from "../src/server.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
@@ -15,6 +16,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
   // `createFailure` makes a create keep its session but answer with an error
   // (`status`) or drop the connection (`"drop"`), as a create that outlives a
   // serve-side or edge-side budget does. `createNothing` fails without creating.
+  // `createHold` keeps the session but holds its answer until the promise settles.
   const state: {
     echoLineage?: boolean;
     failList: boolean;
@@ -22,6 +24,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
     stallList?: boolean;
     createFailure?: { status: number; code: string } | "drop" | "drop-then-appear";
     createNothing?: { status: number; code: string };
+    createHold?: Promise<void>;
   } = { failList: false };
   const history: Array<Record<string, unknown>> = [];
   let listCalls = 0;
@@ -90,6 +93,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
         res.end(JSON.stringify({ ok: false, error: { code: state.createFailure.code, message: "unknown" } }));
         return;
       }
+      if (state.createHold) await state.createHold;
       res.writeHead(201);
       res.end(JSON.stringify({ ok: true, data: { session } }));
       return;
@@ -712,6 +716,68 @@ for (const [name, failure] of [
     } finally { await f.cleanup(); }
   });
 }
+
+// Timers are mocked, so the loopback sockets advance only on real event-loop turns.
+async function eventLoopTurns(count = 50) {
+  for (let turn = 0; turn < count; turn += 1) await new Promise(resolve => setImmediate(resolve));
+}
+
+async function createReachedDaemon(f: Awaited<ReturnType<typeof fixture>>) {
+  while (f.source.creates.length === 0) await eventLoopTurns(1);
+}
+
+// A Claude create without an account carries only the prompt budget.
+const promptCreate = { ...caller, session: { agent: "claude", cwd: "/w", prompt: "go" } };
+
+test("a held prompt create against the mocked edge request deadline", async (t) => {
+  // One mock for both cases: fetch keeps timers across requests, and clearing a
+  // timer from an earlier mock removes an unrelated timer from a later mock's queue.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+
+  await t.test("answered after 31 s it reaches the origin as created", async () => {
+    const f = await fixture();
+    try {
+      let answer = () => {};
+      f.source.state.createHold = new Promise<void>((resolve) => { answer = resolve; });
+      const pending = create(f.base, promptCreate);
+      await createReachedDaemon(f);
+      t.mock.timers.tick(31_000);
+      await eventLoopTurns();
+      answer();
+      const result = await pending;
+      const id = String(f.source.creates[0]?.id);
+      assert.equal(result.status, 201);
+      assert.equal(result.body.data.session.id, id);
+      assert.equal(f.source.creates.length, 1);
+      const child = (await listSessions(f.base, "browser-tess", "summit")).find((s: any) => s.id === id);
+      assert.deepEqual(child?.dispatched_by, { machine: "summit", session_id: "dispatcher", repo_name: "legacy-root" });
+      assert.deepEqual(await listIds(f.base, "browser-dana", "summit"), []);
+    } finally { await f.cleanup(); }
+  });
+
+  await t.test("never answered it stays unknown at the deadline, without a second create", async () => {
+    const f = await fixture();
+    try {
+      f.source.state.createHold = new Promise<void>(() => {});
+      let settled = false;
+      const pending = create(f.base, promptCreate).finally(() => { settled = true; });
+      await createReachedDaemon(f);
+      t.mock.timers.tick(PROMPT_CREATE_TIMEOUT_MS - 1);
+      await eventLoopTurns();
+      assert.equal(settled, false);
+      t.mock.timers.tick(1);
+      const result = await pending;
+      const id = String(f.source.creates[0]?.id);
+      assert.equal(result.status, 502);
+      assert.equal(result.body.error.code, "create-outcome-unknown");
+      assert.match(result.body.error.message, new RegExp(`session ${id} `));
+      assert.equal(f.source.creates.length, 1);
+      const child = (await listSessions(f.base, "browser-tess", "summit")).find((s: any) => s.id === id);
+      assert.deepEqual(child?.dispatched_by, { machine: "summit", session_id: "dispatcher", repo_name: "legacy-root" });
+      assert.deepEqual(await listIds(f.base, "browser-dana", "summit"), []);
+    } finally { await f.cleanup(); }
+  });
+});
 
 test("a create that fails without a session keeps the daemon's failure", async () => {
   const f = await fixture();
