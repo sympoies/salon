@@ -52,6 +52,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   const active = useRef<ActiveRecording | null>(null);
   const starting = useRef<number | null>(null);
   const transcription = useRef<AbortController | null>(null);
+  const attempt = useRef(0);
   const draftIncarnation = useRef(sessionIncarnation);
   const openRef = useRef(false);
   const generation = useRef(0);
@@ -130,6 +131,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     setPhase("transcribing");
     const controller = new AbortController();
     transcription.current = controller;
+    const mine = ++attempt.current;
     const chosen = loadSpeechEngine(provider.id);
     void transcribeSpeechAudio(provider.id, blob, controller.signal, chosen).then((result) => {
       if (transcription.current === controller) transcription.current = null;
@@ -143,7 +145,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
         // No engine was chosen: the server default is the reference. An
         // unavailable list shows nothing.
         void getSpeechEngines(provider.id).then((list) => {
-          if (list && list.default !== answered && generation.current === currentGeneration) setAnsweredBy(answered);
+          if (list && list.default !== answered && generation.current === currentGeneration && attempt.current === mine) setAnsweredBy(answered);
         }).catch(() => {});
       }
       setPhase("review");
@@ -167,6 +169,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     }
     starting.current = currentGeneration;
     retained.current = null;
+    attempt.current += 1;
     setRetryable(false);
     setAnsweredBy(null);
     setPhase("starting");

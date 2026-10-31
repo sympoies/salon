@@ -196,3 +196,39 @@ test("engine choices are bound to their own provider and retry follows the selec
     await dom.restore();
   }
 });
+
+test("a late engine-list reply for an earlier recording cannot change the latest answering-engine note", async () => {
+  const { SpeechComposer } = await ssr.loadModule<{ SpeechComposer: ComponentType<{ machine: string; id: string; sessionIncarnation: string; onBeforeOpen: () => void }> }>("/src/SpeechComposer.tsx");
+  const dom = installDom();
+  installMedia(dom.window);
+  let engineCalls = 0;
+  let releaseFirst: (() => void) | undefined;
+  const answers = ["gpt-transcribe", "qwen"];
+  let uploads = 0;
+  setFetchMock(async (url) => {
+    if (url === "/api/speech/providers") return jsonResponse(PROVIDERS);
+    if (url === "/api/speech/summit/engines") {
+      engineCalls += 1;
+      if (engineCalls === 1) await new Promise<void>((resolve) => { releaseFirst = resolve; });
+      return jsonResponse(ENGINES);
+    }
+    if (url === "/api/speech/summit/transcriptions") {
+      return jsonResponse({ ok: true, data: { text: "hi", language: null, provider: "summit", engine: answers[uploads++] } });
+    }
+    throw new Error(`unexpected URL ${url}`);
+  });
+  try {
+    await act(async () => dom.root.render(createElement(SpeechComposer, { machine: "mesa", id: "s1", sessionIncarnation: "inc", onBeforeOpen: () => {} })));
+    await dom.click("Voice");
+    await dom.click("Record");
+    const stop = async () => act(async () => [...dom.window.document.querySelectorAll("button")].find((b) => b.textContent === "Stop recording")?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+    await stop();
+    await dom.click("Record again");
+    await stop();
+    assert.equal(engineCalls, 2);
+    await act(async () => releaseFirst?.());
+    assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Answered by/);
+  } finally {
+    await dom.restore();
+  }
+});
