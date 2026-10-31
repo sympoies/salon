@@ -28,10 +28,20 @@ export const DEBUG_SIGNAL_TTL_MS = 12 * 60 * 60 * 1000;
 
 export const DEBUG_EVENTS_STORAGE_KEY = "agent-console:debug-events:v1";
 
+// Every write replaces the whole payload, and a storage engine may keep each
+// replacement in a log it does not reclaim while the page runs. Writes are
+// therefore bounded in bytes, not only in rows: traffic is saved only when the
+// page hides or goes away, and signal at most once per interval. An abrupt
+// crash can lose traffic and the last interval of signal.
+const DEBUG_SIGNAL_PERSIST_INTERVAL_MS = 2 * 60 * 1000;
+
 let seq = 0;
 let traffic: DebugEvent[] = [];
 let signal: DebugEvent[] = [];
 let pendingFlush: ReturnType<typeof setTimeout> | null = null;
+let unsavedTraffic = false;
+let unsavedSignal = false;
+let lastSignalPersistAt = Number.NEGATIVE_INFINITY;
 const subscribers = new Set<(events: readonly DebugEvent[]) => void>();
 
 export function createDebugRequestId(): string {
@@ -118,6 +128,11 @@ export function recordDebugEvent(input: DebugEventInput): DebugEvent {
     ...normalizeDebugErrorEnvelope(input.errorEnvelope),
   };
   appendEvent(event);
+  if (classifyDebugEvent(event) === "signal") {
+    unsavedSignal = true;
+  } else {
+    unsavedTraffic = true;
+  }
   scheduleDebugEventFlush();
   return event;
 }
@@ -133,11 +148,8 @@ function appendEvent(event: DebugEvent): void {
 export function debugEvents(): readonly DebugEvent[] {
   const prunedTraffic = pruneExpiredEvents(traffic, DEBUG_TRAFFIC_TTL_MS);
   const prunedSignal = pruneExpiredEvents(signal, DEBUG_SIGNAL_TTL_MS);
-  if (prunedTraffic.length !== traffic.length || prunedSignal.length !== signal.length) {
-    traffic = prunedTraffic;
-    signal = prunedSignal;
-    persistDebugEvents();
-  }
+  traffic = prunedTraffic;
+  signal = prunedSignal;
   return [...traffic, ...signal].sort((a, b) => a.seq - b.seq);
 }
 
@@ -151,6 +163,9 @@ export function clearDebugEvents(): void {
   }
   traffic = [];
   signal = [];
+  unsavedTraffic = false;
+  unsavedSignal = false;
+  lastSignalPersistAt = Number.NEGATIVE_INFINITY;
   removePersistedDebugEvents();
   notifySubscribers();
 }
@@ -195,16 +210,18 @@ function scheduleDebugEventFlush(): void {
   if (pendingFlush !== null) return;
   pendingFlush = setTimeout(() => {
     pendingFlush = null;
-    persistDebugEvents();
+    if (unsavedSignal && Date.now() - lastSignalPersistAt >= DEBUG_SIGNAL_PERSIST_INTERVAL_MS) {
+      persistSignalEvents();
+    }
     notifySubscribers();
   }, 0);
 }
 
 export function flushDebugEvents(): void {
+  if (unsavedTraffic || unsavedSignal) persistDebugEvents();
   if (pendingFlush === null) return;
   clearTimeout(pendingFlush);
   pendingFlush = null;
-  persistDebugEvents();
   notifySubscribers();
 }
 
@@ -322,7 +339,16 @@ function pruneExpiredEvents(snapshot: readonly DebugEvent[], ttlMs: number): Deb
 }
 
 function persistDebugEvents(): void {
+  unsavedTraffic = false;
+  unsavedSignal = false;
   safeSetItem(resolveLocalStorage(), DEBUG_EVENTS_STORAGE_KEY, JSON.stringify(debugEventsSnapshot()));
+}
+
+function persistSignalEvents(): void {
+  unsavedTraffic = traffic.length > 0;
+  unsavedSignal = false;
+  lastSignalPersistAt = Date.now();
+  safeSetItem(resolveLocalStorage(), DEBUG_EVENTS_STORAGE_KEY, JSON.stringify(signal));
 }
 
 function debugEventsSnapshot(): readonly DebugEvent[] {
@@ -335,3 +361,4 @@ function removePersistedDebugEvents(): void {
 
 hydrateDebugEventsFromStorage();
 globalThis.addEventListener?.("pagehide", flushDebugEvents);
+globalThis.addEventListener?.("visibilitychange", flushDebugEvents);

@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { afterEach, test } from "node:test";
+import { afterEach, mock, test } from "node:test";
 import {
   DEBUG_EVENTS_STORAGE_KEY,
   clearDebugEvents,
@@ -245,7 +245,7 @@ test("debug events persist recent entries and drop expired entries on hydration"
   assert.deepEqual(debugEvents().map((event) => event.route), ["/api/recent"]);
 
   recordDebugEvent({ source: "client", route: "/api/next", ok: true });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  flushDebugEvents();
   const persisted = JSON.parse(storage.getItem(DEBUG_EVENTS_STORAGE_KEY) ?? "[]") as Array<{ route?: string }>;
   assert.deepEqual(persisted.map((event) => event.route), ["/api/recent", "/api/next"]);
 });
@@ -260,6 +260,67 @@ test("a termination flush persists a pending diagnostic batch", () => {
     outcome?: string;
   }>;
   assert.equal(persisted.at(-1)?.outcome, "retry_exhausted");
+});
+
+const IDLE_MINUTES = 30;
+const IDLE_WRITE_BUDGET_BYTES = 10_000_000;
+
+// localStorage values cost two bytes per character in a UTF-16 storage engine.
+function measureIdleWrites(storage: Storage, record: (second: number) => void): { writes: number; bytes: number } {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  try {
+    let writes = 0;
+    let bytes = 0;
+    const setItem = storage.setItem;
+    storage.setItem = (key, value) => {
+      writes += 1;
+      bytes += value.length * 2;
+      setItem(key, value);
+    };
+    for (let second = 0; second < IDLE_MINUTES * 60; second += 1) {
+      record(second);
+      mock.timers.tick(1000);
+    }
+    return { writes, bytes };
+  } finally {
+    mock.timers.reset();
+  }
+}
+
+test("routine polling on an idle console writes nothing to storage", () => {
+  const storage = installMemoryStorage();
+  const { writes } = measureIdleWrites(storage, () => {
+    recordDebugEvent({ source: "client", request_id: "acreq_idle", method: "GET", route: "/api/sessions", status: 200, ok: true });
+  });
+  assert.equal(writes, 0);
+});
+
+test("a host failing every poll stays inside the idle storage budget", () => {
+  const storage = installMemoryStorage();
+  const { bytes } = measureIdleWrites(storage, (second) => {
+    recordDebugEvent({
+      source: "client", request_id: "acreq_failure", method: "GET", route: "/api/machines/alpha/runtime/health",
+      status: 502, ok: false, error: `upstream unavailable ${"x".repeat(240)}`.slice(0, 240 - String(second).length) + second,
+    });
+  });
+  assert.ok(bytes < IDLE_WRITE_BUDGET_BYTES, `wrote ${bytes} bytes in ${IDLE_MINUTES} minutes`);
+});
+
+test("the first failure after a quiet period is persisted without waiting for a flush", async () => {
+  const storage = installMemoryStorage();
+  recordDebugEvent({ source: "client", route: "/api/routine", ok: true });
+  recordDebugEvent({ source: "client", route: "/api/broken", ok: false, status: 500 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const persisted = JSON.parse(storage.getItem(DEBUG_EVENTS_STORAGE_KEY) ?? "[]") as Array<{ route?: string }>;
+  assert.ok(persisted.some((event) => event.route === "/api/broken"));
+});
+
+test("a termination flush also persists routine traffic", () => {
+  const storage = installMemoryStorage();
+  recordDebugEvent({ source: "client", route: "/api/routine", ok: true });
+  flushDebugEvents();
+  const persisted = JSON.parse(storage.getItem(DEBUG_EVENTS_STORAGE_KEY) ?? "[]") as Array<{ route?: string }>;
+  assert.deepEqual(persisted.map((event) => event.route), ["/api/routine"]);
 });
 
 test("debug events stay isolated when the authenticated principal changes", () => {
