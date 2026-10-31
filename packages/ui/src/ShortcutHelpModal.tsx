@@ -9,7 +9,7 @@ const SHORTCUT_GROUPS = [
     rows: [
       ["⌘I", "Voice prompt"],
       ["⌘Y", "Show / hide conversation"],
-      ["⌘T", "New session"],
+      ["⌘T", "New session / close"],
       ["⌘R", "Reconnect selected session"],
       ["⌘E", "Rename selected session"],
       ["⌘P", "Regenerate selected title"],
