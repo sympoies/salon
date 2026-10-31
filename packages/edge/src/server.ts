@@ -545,7 +545,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // Daemon-only authentication is separate from browser/device auth, including
     // open-access mode. Relay traffic bypasses browser debug projections.
     if (isCoordinationRoute(path)) {
-      await handleCoordinationRelay(config, accessStore, req, res, url, board, async (principal, machine, body, startMark, lineage) => {
+      await handleCoordinationRelay(config, accessStore, req, res, url, board, async (principal, machine, body, startMark, lineage, reserve) => {
         const projectedBody = projectCreateSessionBody(body);
         if (!projectedBody) return false;
         if (body.resume !== undefined) {
@@ -559,11 +559,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           projectedBody.resume_account_explicit = body.resume_account_explicit;
         }
         Object.assign(projectedBody, lineage);
+        const sessionId = reserve?.();
+        if (sessionId === null) return true;
         // The dispatcher lookup runs alongside the create and is awaited only
         // when the grant is recorded; it never rejects.
         const create = async () => {
           if (typeof projectedBody.resume === "string" && accessStore) assertResumeOwnership(accessStore, principal, machine, projectedBody);
-          await createClaimedSession(res, principal, machine, projectedBody, typeof projectedBody.resume === "string" ? projectedBody.resume : undefined, undefined, startMark());
+          await createClaimedSession(res, principal, machine, projectedBody, typeof projectedBody.resume === "string" ? projectedBody.resume : undefined, undefined, startMark(), sessionId);
         };
         if (typeof projectedBody.resume === "string") {
           await serializeSessionMutation(`${machine.name}\u0000provider\u0000${String(projectedBody.agent)}\u0000${projectedBody.resume}`, create);
@@ -2744,10 +2746,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     providerResumeId: string | undefined,
     requestId?: string,
     startMark?: Promise<SessionStartMark>,
+    sessionId: string = randomUUID(),
   ): Promise<void> {
     const debug = requestId ? daemonDebug(requestId) : undefined;
     const requestBody = projectedBody;
-    if (config.multiUser) requestBody.id = randomUUID();
+    if (config.multiUser) requestBody.id = sessionId;
     const requestedAgentProfile = requestBody.agent_profile;
     if (typeof requestedAgentProfile === "string") {
       let advertised = false;
