@@ -298,7 +298,7 @@ test("Settings supports a connect variant and a manage variant", () => {
 test("Settings connect variant keeps the server onboarding form", () => {
   assert.match(settingsSource, /Connect to your server\./);
   assert.match(settingsSource, /normalizeServerUrl\(server\)/);
-  assert.match(settingsSource, />\s*Connect\s*<\/button>/);
+  assert.match(settingsSource, /Connecting…"\s*:\s*"Connect"/);
 });
 
 test("Settings manage page shows Connection only in the native app", () => {

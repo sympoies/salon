@@ -332,6 +332,7 @@ test("getAuthStatus fails closed when native startup authentication rejects", as
       openAccess: false,
       principal: null,
       startupFailure: "transport",
+      connectFailure: "unreachable",
     });
   });
 });
@@ -356,6 +357,7 @@ test("getAuthStatus settles a native startup request that ignores cancellation",
       openAccess: false,
       principal: null,
       startupFailure: "timeout",
+      connectFailure: "unreachable",
     }, "the initial auth read must finish even when native HTTP ignores abort");
     const events = debugEvents().filter(event => event.route === "/api/auth/status");
     assert.equal(events.length, 1, "a transport that never settles still records its startup deadline");

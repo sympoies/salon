@@ -2,7 +2,7 @@ import { ShellPage } from "./ShellPage.tsx";
 import { resolveDashboardShortcutAction } from "./dashboardShortcuts.ts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { getAuthStatus, listMachineNames, type AuthStatus } from "./api.ts";
+import { getAuthStatus, listMachineNames, type AuthStatus, type ConnectFailure } from "./api.ts";
 import { Login } from "./Login.tsx";
 import { Settings } from "./Settings.tsx";
 import { loadPhoneSessionOpen, savePhoneSessionOpen } from "./phoneSessionOpen.ts";
@@ -198,7 +198,7 @@ export default function App() {
     setMachines(await listMachineNames().catch(() => []));
   }, []);
 
-  const recheck = useCallback(async () => {
+  const recheck = useCallback(async (): Promise<ConnectFailure | undefined> => {
     // On device without a server URL + token, no request can succeed yet.
     const initialStartup = initialAuthCheck.current;
     initialAuthCheck.current = false;
@@ -213,7 +213,7 @@ export default function App() {
       activatePrincipalStorage(null);
       setPrincipal(null);
       setAuthed(false);
-      return;
+      return undefined;
     }
     const status = await runStartupAuthCheck({
       initialStartup,
@@ -235,8 +235,10 @@ export default function App() {
         });
       },
     });
-    if (status === null) return;
-    setStartupFailure(status.startupFailure);
+    if (status === null) return undefined;
+    // Only the first check on app start speaks of startup; later checks report
+    // their outcome to the caller.
+    setStartupFailure(initialStartup ? status.startupFailure : undefined);
     activatePrincipalStorage(status.principal?.id ?? null);
     setPrincipal(status.principal);
     setAuthed(status.authenticated);
@@ -254,6 +256,7 @@ export default function App() {
       setTerminalSelectedPaneRealtime(loadTerminalSelectedPaneRealtime());
       void loadMachines();
     }
+    return status.authenticated ? undefined : status.connectFailure;
   }, [loadMachines]);
 
   useEffect(() => {
@@ -321,7 +324,7 @@ export default function App() {
         onSignedOut={onSignedOut}
         onSaved={() => {
           setView({ kind: "dashboard" });
-          void recheck();
+          return recheck();
         }}
         onCancel={undefined}
       />
