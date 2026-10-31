@@ -1029,10 +1029,13 @@ export const ACCOUNT_CREATE_TIMEOUT_MS: Readonly<Record<AccountProvider, number>
   // before tmux starts.
   claude: 45_000,
 };
-// A create that carries a prompt returns only after the daemon pasted it: the
-// launch delay, up to 15 s waiting for the pane to draw, and the
-// paste settle time.
-export const PROMPT_CREATE_TIMEOUT_MS = 30_000;
+// A create that carries a prompt returns only after the daemon pasted it, which
+// can take over a minute. Coordination clients allow a create request up to
+// 120 s, so the edge waits that long plus a response margin and a create that
+// succeeds inside that window is not reported as an unknown outcome. The 120 s
+// coordination and CLI ceiling is unchanged; the browser timeout follows this
+// budget plus its own margin.
+export const PROMPT_CREATE_TIMEOUT_MS = 125_000;
 // A Codex switch applies live; a Claude switch may restart the idle session.
 export const ACCOUNT_SWITCH_TIMEOUT_MS = 40_000;
 
