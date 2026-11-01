@@ -6,6 +6,8 @@ import { normalizeActivityTurnState } from "@agent-console/shared/activity";
 import { listHistoryMessages } from "./api.ts";
 import { AgentBadge } from "./AgentBadge.tsx";
 import { SessionNotice } from "./SessionNotice.tsx";
+import { MailboxEventRow } from "./MailboxEventRow.tsx";
+import { boundHistoryMessages, mergeOlderHistoryMessages } from "./historyMessageWindow.ts";
 import { parseSessionNotice } from "@agent-console/shared";
 import { uploadedFilePaths } from "./attachmentPaths.ts";
 import { MessageMarkdown } from "./MessageMarkdown.tsx";
@@ -171,7 +173,7 @@ export function useHistoryConversation(onError: (message: string | undefined) =>
     }
     if (latestPaging) scrollAdjustmentRef.current = { kind: "bottom" };
     setMessagesLoaded(true);
-    setMessages(result.messages.slice(0, HISTORY_PAGE_SIZE));
+    setMessages(boundHistoryMessages(result.messages, HISTORY_PAGE_SIZE));
     setMessageCursor(result.nextCursor);
     setOlderCursor(result.olderCursor);
   }, [clear, fetchMessages, onError]);
@@ -209,7 +211,7 @@ export function useHistoryConversation(onError: (message: string | undefined) =>
       };
     }
     setMessagesLoaded(true);
-    setMessages((current) => [...result.messages, ...current].slice(0, HISTORY_MESSAGE_WINDOW));
+    setMessages((current) => mergeOlderHistoryMessages(current, result.messages, HISTORY_MESSAGE_WINDOW));
     setOlderCursor(result.olderCursor);
     setBrowsingOlder(true);
   }, [fetchMessages, loading, messages, olderCursor, onError, session]);
@@ -228,7 +230,7 @@ export function useHistoryConversation(onError: (message: string | undefined) =>
       return false;
     }
     setMessagesLoaded(true);
-    setMessages(result.messages.slice(0, HISTORY_PAGE_SIZE));
+    setMessages(boundHistoryMessages(result.messages, HISTORY_PAGE_SIZE));
     setMessageCursor(result.nextCursor);
     setMessagePage(page);
     setMessagePageCursors(cursors);
@@ -261,7 +263,7 @@ export function useHistoryConversation(onError: (message: string | undefined) =>
       || viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= FOLLOW_LATEST_SLACK_PX;
     if (following) scrollAdjustmentRef.current = { kind: "bottom" };
     setMessagesLoaded(true);
-    setMessages(result.messages.slice(0, HISTORY_PAGE_SIZE));
+    setMessages(boundHistoryMessages(result.messages, HISTORY_PAGE_SIZE));
     setOlderCursor(result.olderCursor);
   }, [
     browsingOlder,
@@ -401,9 +403,9 @@ export function HistoryConversationView({
             <Fragment key={message.id}>
               {newDay && date ? <div className="history-day-separator"><span>{messageDayLabel(date)}</span></div> : null}
               <article data-history-message-id={message.id}
-                aria-label={notice ? "System notice" : user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
+                aria-label={notice ? message.mailbox ? "Mailbox read" : "System notice" : user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
                 className={notice ? "history-message is-notice" : `history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
-                {notice ? <SessionNotice notice={notice} raw={message.text} time={time} suppressImages={Boolean(message.images?.length)}>
+                {notice && message.mailbox ? <MailboxEventRow event={message.mailbox} body={notice.body} time={time} /> : notice ? <SessionNotice notice={notice} raw={message.text} time={time} suppressImages={Boolean(message.images?.length)}>
                   {message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}
                 </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}

@@ -174,7 +174,8 @@ import { useAndroidBackEntry } from "./useAndroidBackEntry.ts";
 import { useExpiringValue } from "./useExpiringValue.ts";
 import { useLayoutSync } from "./useLayoutSync.ts";
 import { useSlotDrag } from "./useSlotDrag.ts";
-import { CloseIcon, MachineIcon, PlusIcon, SelectChevronIcon, StarIcon, TrashIcon } from "./icons.tsx";
+import { CloseIcon, PlusIcon, StarIcon, TrashIcon } from "./icons.tsx";
+import { MachineFilter } from "./MachineFilter.tsx";
 import { HeaderMenu } from "./HeaderMenu.tsx";
 import { HistoryPanel } from "./HistoryPanel.tsx";
 import { LiveConversationPanel } from "./LiveConversationPanel.tsx";
@@ -580,7 +581,7 @@ export function Dashboard({
   phoneSessionOpen = "conversation",
   phoneFocusCounts = true,
   sessionListDisplay = "terminal",
-  androidLayout = "list",
+  androidLayout = "mobile",
   cardPreview = "latest-message",
   operatorCapabilities = DEFAULT_OPERATOR_CAPABILITIES,
   onDebug,
@@ -656,15 +657,22 @@ export function Dashboard({
   const [autoLayout, setAutoLayout] = useState<boolean>(() => readAutoLayout());
   const [slots, setSlots] = useState<SlotKey[]>(() => readSlots());
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const androidTileMode = isAndroidTauri() && androidLayout !== "list" ? androidLayout : null;
+  const androidDesktop = isAndroidTauri() && androidLayout === "desktop";
+  // Choosing Desktop in Settings may have just set the grid's stored count or Auto.
   useEffect(() => {
-    if (androidTileMode === null) return;
-    setLayoutMode(androidTileMode);
-    setAutoLayout(false);
-  }, [androidTileMode]);
+    if (!androidDesktop) return;
+    setLayoutMode(readLayoutMode());
+    setAutoLayout(readAutoLayout());
+  }, [androidDesktop]);
+  // The list screen uses the desktop grid; an opened session is the phone view.
   useEffect(() => {
-    setAndroidTileGridState(androidTileMode !== null && focusedKey === null && conversationKey === null);
-  }, [androidTileMode, focusedKey, conversationKey]);
+    const onList = androidDesktop && focusedKey === null && conversationKey === null;
+    setAndroidTileGridState(onList);
+    // Lets the phone-width header keep its layout trigger on the Android Desktop list.
+    if (onList) document.documentElement.dataset.androidDesktop = "true";
+    else delete document.documentElement.dataset.androidDesktop;
+    return () => { delete document.documentElement.dataset.androidDesktop; };
+  }, [androidDesktop, focusedKey, conversationKey]);
   const pollingMachinesKey = permittedMachines.join("\0");
   const pollingMachines = useMemo(() => pollingMachinesKey ? pollingMachinesKey.split("\0") : [], [pollingMachinesKey]);
   // Keep all permitted hosts available for creation and host-specific pages;
@@ -2918,29 +2926,14 @@ export function Dashboard({
             {/* Focused terminals keep their host control; overview filters live
                 together in SessionListNavigator. */}
             {focusedKey !== null && enabledMachines.length > 1 ? (
-              <label className="machine-filter">
-                <MachineIcon />
-                <select
-                  className="machine-filter-select"
-                  aria-label="Filter sessions by machine"
-                  value={machineFilter}
-                  onChange={(e) => {
-                    cancelPendingCreatedFocus();
-                    setMachineFilter(e.target.value);
-                    setSessionListPage(1);
-                  }}
-                >
-                  <option value={ALL}>All machines</option>
-                  {enabledMachines.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-                <SelectChevronIcon />
-              </label>
+              <MachineFilter value={machineFilter} machines={enabledMachines} allValue={ALL}
+                onChange={(next) => {
+                  cancelPendingCreatedFocus();
+                  setMachineFilter(next);
+                  setSessionListPage(1);
+                }} />
             ) : null}
-            {/* The Android app sets its layout in Settings (#238). */}
+            {/* The Android app shows the grid layout control only in Desktop (#252). */}
             {isAndroidTauri() ? null : <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
               onToggleAuto={() => setAutoLayout(current => !current)}
               onSelect={mode => { setAutoLayout(false); setLayoutMode(mode); }} />}
@@ -2976,6 +2969,10 @@ export function Dashboard({
             >
               <PlusIcon />
             </IconButton>
+            {/* The Android Desktop list keeps its layout control beside New and More (#252). */}
+            {androidDesktop ? <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
+              onToggleAuto={() => setAutoLayout(current => !current)}
+              onSelect={mode => { setAutoLayout(false); setLayoutMode(mode); }} /> : null}
           </div>
         </div>
         {repairToastMessage ? (

@@ -5,6 +5,7 @@ import { readEmergencyShell } from "./api.ts";
 import { TerminalPane, type TerminalConnectionStatus } from "./TerminalPane.tsx";
 import { StatusNotice } from "./StatusNotice.tsx";
 import { useStatusNotice } from "./useStatusNotice.ts";
+import { AppSelect } from "./AppSelect.tsx";
 
 export function ShellPage({ machines, onExit }: {
   readonly machines: readonly string[];
@@ -75,9 +76,9 @@ export function ShellPage({ machines, onExit }: {
         <h1>Shell</h1>
       </div>
       <div className="shell-page-controls">
-        <label className="shell-page-machine"><span>Machine</span><select aria-label="Shell machine" value={selectedMachine} disabled={busy} onChange={(event) => setMachine(event.target.value)}>
+        <label className="shell-page-machine"><span>Machine</span><AppSelect aria-label="Shell machine" value={selectedMachine} disabled={busy} onChange={(event) => setMachine(event.target.value)}>
           {machines.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select></label>
+        </AppSelect></label>
         <div className="shell-page-actions">
           {shell?.status === "running" ? <>
             <button type="button" className="btn ghost" disabled={busy} onClick={() => void act("GET")}>Reconnect</button>

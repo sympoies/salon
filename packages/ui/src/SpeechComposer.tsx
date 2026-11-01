@@ -7,6 +7,7 @@ import { useShortcutClose } from "./useShortcutClose.ts";
 import { isAndroidTauri } from "./runtime.ts";
 import { loadSpeechEngine } from "./speechEngine.ts";
 import { plainVoiceOnlyMessage, quoteVoiceTranscript } from "./voicePrompt.ts";
+import { AppSelect } from "./AppSelect.tsx";
 
 const UNKNOWN_PROMPT_OUTCOME = "The prompt may have been sent. A busy session shows it as a queued message; check the session before trying again.";
 
@@ -345,9 +346,9 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
           <p className="speech-hint">Press Enter to start or stop recording, then Enter to {onTranscript && !onSendTranscript ? "use" : "send"} the reviewed transcript. Escape closes this dialog.</p>
           {providers.length > 1 ? (
             <label>Speech service
-              <select value={providerId} disabled={phase === "recording" || phase === "transcribing" || phase === "sending"} onChange={(event) => setProviderId(event.target.value)}>
+              <AppSelect aria-label="Speech service" value={providerId} disabled={phase === "recording" || phase === "transcribing" || phase === "sending"} onChange={(event) => setProviderId(event.target.value)}>
                 {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
-              </select>
+              </AppSelect>
             </label>
           ) : providers.length === 1 ? <p className="speech-provider">Service: {providers[0]?.label}</p> : null}
           {loadingProviders ? <p role="status">Loading speech services…</p> : null}
