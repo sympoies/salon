@@ -125,7 +125,9 @@ test("a host role resolver names roles for the Roles facet and its filter", () =
   assert.deepEqual(filterRecords(facetRows, { ...CLEAR_SESSION_FILTERS, roles: ["lead"] }, roleOf).map(row => row.session_id), ["plain"]);
 });
 
-test("lineage ordering helpers keep their deprecated scope-named aliases", () => {
-  assert.equal(sessionFilters.scopeRecordKey, sessionFilters.lineageRecordKey);
-  assert.equal(sessionFilters.scopeParents, sessionFilters.lineageParents);
+test("the scope-named lineage aliases are gone and the lineage names remain", () => {
+  assert.equal("scopeRecordKey" in sessionFilters, false);
+  assert.equal("scopeParents" in sessionFilters, false);
+  assert.equal(typeof sessionFilters.lineageRecordKey, "function");
+  assert.equal(typeof sessionFilters.lineageParents, "function");
 });

@@ -160,8 +160,9 @@ merge. The checked-in SDK version is `0.1.26`; its release is a GitHub
 prerelease with `latest=false`. The Scope session filter is removed and Workspace
 is the only grouping facet. The `sessionScopes` UI extension is gone; a host names
 roles with the new `sessionRole` hook, and `LineageRecord`, `lineageRecordKey` and
-`lineageParents` replace the scope-named helpers, which stay as deprecated aliases
-for this release only (#188, #211). Existing
+`lineageParents` replace the scope-named helpers. The deprecated `ScopeRecord`,
+`scopeRecordKey` and `scopeParents` aliases are removed from the next SDK release, `0.1.27`; import the
+lineage names instead (#188, #211). Existing
 `v0.1.0` through `v0.1.25` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
