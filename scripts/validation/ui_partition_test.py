@@ -90,6 +90,42 @@ with open(os.environ["CALLS"], "a") as output:
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("Invalid UI_TEST_CONCURRENCY", result.stderr)
 
+    def test_package_test_entrypoint_validates_the_concurrency_value(self):
+        package = json.loads((Path(__file__).resolve().parents[2] / "packages/ui/package.json").read_text())
+        with tempfile.TemporaryDirectory(prefix="salon-ui-package-", dir="/tmp") as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            shutil.copyfile(Path(__file__).resolve().parents[1] / "test-ui.sh", root / "scripts/test-ui.sh")
+            ui = root / "packages/ui"
+            (ui / "test").mkdir(parents=True)
+            (ui / "test/domAssertSafety.test.ts").touch()
+            (ui / "test/worker.test.ts").touch()
+            (ui / "test/layout.browser.test.ts").touch()
+            (root / "bin").mkdir()
+            node = root / "bin/node"
+            node.write_text('''#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ["CALLS"], "a") as output:
+    print(json.dumps(sys.argv[1:]), file=output)
+''')
+            node.chmod(0o755)
+            env = dict(os.environ, PATH=f"{root / 'bin'}:{os.environ['PATH']}", CALLS=str(root / "calls"))
+
+            def run_package_test(value):
+                (root / "calls").write_text("")
+                result = subprocess.run(["sh", "-c", package["scripts"]["test"]], cwd=ui, text=True, capture_output=True,
+                                        env=env | {"UI_TEST_CONCURRENCY": value}, timeout=60)
+                calls = [json.loads(line) for line in (root / "calls").read_text().splitlines()]
+                return result, calls
+
+            result, calls = run_package_test("2")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(["--test-reporter=tap", "--test-concurrency=2"], [call[1:3] for call in calls if len(call) > 2])
+            result, calls = run_package_test("1 --test-name-pattern=^$")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Invalid UI_TEST_CONCURRENCY", result.stderr)
+            self.assertFalse(any("--test-name-pattern=^$" in call for call in calls))
+
     def test_node_shards_cover_each_partition_once(self):
         with tempfile.TemporaryDirectory(prefix="salon-ui-shards-", dir="/tmp") as directory, \
                 tempfile.TemporaryDirectory(prefix="salon-node-scope-", dir="/tmp") as scope_directory:
