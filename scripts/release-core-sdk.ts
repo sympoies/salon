@@ -13,7 +13,7 @@ type TagRef = { object?: { type: string; sha: string } };
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const repository = "sympoies/salon";
-const version = "0.1.28";
+const version = "0.1.29";
 const tag = `v${version}`;
 const names = ["shared", "edge", "ui"];
 const assets = [...names.map(name => `${name}.tgz`), "manifest.json"];

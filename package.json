@@ -1,6 +1,6 @@
 {
   "name": "salon",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "private": true,
   "description": "Core packages for a self-hosted coding-agent workspace.",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "build:packages": "pnpm -r run build:package",
     "build": "pnpm run build:packages && pnpm --filter @salon/workspace run build",
     "test": "pnpm run build:packages && pnpm -r --workspace-concurrency=1 run test",
-    "check:core": "node --test scripts/test/*.test.ts && node scripts/check-case-collisions.ts && node scripts/check-core-boundary.ts && node scripts/privacy-scan.ts",
+    "check:core": "node --test scripts/test/*.test.ts && node scripts/check-case-collisions.ts && node scripts/check-core-boundary.ts && node scripts/check-source-language.ts && node scripts/privacy-scan.ts",
     "pack:core": "pnpm run build:packages && node scripts/pack-core.ts",
     "test:package-consumption": "pnpm run build:packages && node --test scripts/package-consumption.test.ts",
     "validate:core": "bash scripts/validate-core-packages.sh",

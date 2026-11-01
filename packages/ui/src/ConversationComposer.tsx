@@ -5,6 +5,7 @@ import { conversationOutbox, queuedReplyDeliverablePhase, queuedReplyTargetAllow
 import { uploadAttachment } from "./api.ts";
 import { ConversationAttachIcon, ConversationMicIcon, ConversationSendIcon } from "./icons.tsx";
 import { shellQuotePathForTerminal } from "./shellQuote.ts";
+import { plainVoiceOnlyMessage } from "./voicePrompt.ts";
 import { isMacTauri } from "./runtime.ts";
 import { filesFromTerminalClipboardData, terminalClipboardActionErrorMessage, terminalPasteEventAction } from "./terminalClipboard.ts";
 import { isMacosFilePasteCandidate, readMacosClipboardFiles } from "./terminalNativeClipboard.ts";
@@ -275,7 +276,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     const incarnation = currentDraft.incarnation;
     updateReply({ sending: true, error: "" });
     try {
-      await shared.enqueue(session, content.trim());
+      await shared.enqueue(session, plainVoiceOnlyMessage(content.trim()));
       if (currentIncarnation.current === incarnation) updateReply({ text: "", error: "", outcomeUnknown: false });
       return true;
     } catch (cause) {
