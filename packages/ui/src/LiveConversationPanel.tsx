@@ -1,8 +1,8 @@
 import { SharedOutgoingReplies } from "./SharedOutgoingReplies.tsx";
 import { IconButton } from "./IconButton.tsx";
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentBadge } from "./AgentBadge.tsx";
-import { resolveDashboardShortcutAction } from "./dashboardShortcuts.ts";
+import { useShortcutClose } from "./useShortcutClose.ts";
 import { sessionLabel } from "./format.ts";
 import { conversationTurnWorking, HistoryConversationView } from "./HistoryConversation.tsx";
 import { OutgoingReplies } from "./OutgoingReplies.tsx";
@@ -11,7 +11,6 @@ import { CloseIcon, PinIcon, RefreshIcon, ReplyIcon } from "./icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { ConversationComposer, type ConversationRecovery, type ConversationReplyDrafts } from "./ConversationComposer.tsx";
 import { sessionKey } from "./layout.ts";
-import { isMacTauri } from "./runtime.ts";
 import type { Session } from "./types.ts";
 
 /**
@@ -92,24 +91,7 @@ export function LiveConversationPanel({ session, onClose, machineReachable = tru
     if (historySession) void openConversation(historySession, latestMessagePaging);
   }, [historySession, latestMessagePaging, openConversation]);
 
-  // The dashboard shortcut layer ignores keys from inside a dialog, so the
-  // panel answers the Cmd+Y that opened it itself.
-  const onDialogKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const action = resolveDashboardShortcutAction({
-      key: event.key,
-      code: event.code,
-      metaKey: event.metaKey,
-      ctrlKey: event.ctrlKey,
-      altKey: event.altKey,
-      shiftKey: event.shiftKey,
-      isMacTauri: isMacTauri(),
-      editableTarget: false,
-    });
-    if (action !== "conversation") return;
-    event.preventDefault();
-    event.stopPropagation();
-    close();
-  }, [close]);
+  useShortcutClose("conversation", close);
 
   const outgoing = <><OutgoingReplies session={session} messages={conversation.messages} /><SharedOutgoingReplies session={session} messages={conversation.messages} /></>;
   return (
@@ -122,7 +104,6 @@ export function LiveConversationPanel({ session, onClose, machineReachable = tru
       ariaLabelledby="conversation-title"
       onClose={close}
       busy={sending}
-      onDialogKeyDown={onDialogKeyDown}
     >
       <header className="history-head conversation-head">
         <div>

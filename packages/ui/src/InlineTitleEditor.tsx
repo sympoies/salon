@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useShortcutClose } from "./useShortcutClose.ts";
 import { MAX_SESSION_TITLE_LEN, normalizeSessionTitle } from "./sessionTitle.ts";
 
 export interface InlineTitleEditorProps {
@@ -19,6 +20,7 @@ export function InlineTitleEditor({
   stopClickPropagation = false,
 }: InlineTitleEditorProps) {
   const [draft, setDraft] = useState(initialValue);
+  useShortcutClose("rename", onCancel);
 
   useEffect(() => {
     setDraft(initialValue);

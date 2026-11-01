@@ -1,3 +1,5 @@
+import { unwrapPastedContent } from "./pastedContent.ts";
+
 /** Display hint only. These fields never identify an actor or grant authority. */
 export interface SessionNotice {
   readonly kind: string;
@@ -11,7 +13,10 @@ export interface SessionNotice {
 // The draft token limits are 48 bytes for kind, 64 for source, 96 for id.
 const HEADER = /^<!-- agent-notice:v1 kind=([a-z][a-z0-9]*(?:[._-][a-z0-9]+)*) source=([a-z][a-z0-9]*(?:[._-][a-z0-9]+)*)(?: id=([A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*))? -->$/;
 
-export function parseSessionNotice(raw: string): SessionNotice | null {
+// A prompt long enough to be pasted reaches the transcript inside one Claude
+// paste wrapper (#224); the notice is then the wrapper's inner text.
+export function parseSessionNotice(wrapped: string): SessionNotice | null {
+  const raw = unwrapPastedContent(wrapped);
   const end = raw.indexOf("\n");
   if (end < 0 || end > 513) return null;
   const line = raw.slice(0, end).replace(/\r$/, "");

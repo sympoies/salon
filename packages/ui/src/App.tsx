@@ -12,7 +12,7 @@ import { loadSessionListDisplay, saveSessionListDisplay, type SessionListDisplay
 import { Dashboard } from "./Dashboard.tsx";
 import { DebugPanel } from "./DebugPanel.tsx";
 import { UsagePanel } from "./UsagePanel.tsx";
-import { appBootElapsedMs, isAndroidTauri, isTauri, needsDeviceConfig } from "./runtime.ts";
+import { appBootElapsedMs, isAndroidTauri, isMacTauri, isTauri, needsDeviceConfig } from "./runtime.ts";
 import { hostVisibilityMigrationPending, acknowledgeHostVisibilityMigration, resolveEnabledMachines } from "./enabledMachines.ts";
 import { loadMachineColors, resetMachineColor, saveMachineColors, setMachineColor, type MachineColorMap } from "./machineColors.ts";
 import { loadDefaultAutoResume, saveDefaultAutoResume } from "./autoResumeDefault.ts";
@@ -102,22 +102,26 @@ export default function App() {
       positionObserver?.disconnect();
     };
   }, [usageAnchor]);
+  const shellOpen = view.kind === "shell";
   useEffect(() => {
     if (!authed) return;
     const handle = (event: KeyboardEvent) => {
       const element = event.target instanceof Element ? event.target : null;
       const terminal = Boolean(element?.closest(".terminal-pane"));
+      // A second press closes the Shell in the macOS app only.
+      const closeShell = shellOpen && isMacTauri();
       const editable = !terminal && Boolean(element?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]'));
       // Modal editors/confirmations take priority even when a terminal is under them.
       if (document.querySelector('.modal-backdrop, .modal-overlay')) return;
       if (resolveDashboardShortcutAction({ key:event.key, code:event.code, metaKey:event.metaKey,
         ctrlKey:event.ctrlKey, shiftKey:event.shiftKey, altKey:event.altKey,
-        isMacTauri:false, editableTarget:editable }) !== "shell") return;
-      event.preventDefault(); event.stopImmediatePropagation(); openShell();
+        isMacTauri:false, editableTarget:editable && !closeShell }) !== "shell") return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (closeShell) closeOverlay(); else openShell();
     };
     window.addEventListener("keydown", handle, true);
     return () => window.removeEventListener("keydown", handle, true);
-  }, [authed, openShell]);
+  }, [authed, closeOverlay, openShell, shellOpen]);
 
   const [hostMigrationNotice, setHostMigrationNotice] = useState(false);
   // Host color defaults come from the distribution's extensions (#918).
