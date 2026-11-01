@@ -9,8 +9,20 @@ export function isCoarsePointer(): boolean {
   return window.matchMedia?.("(pointer: coarse)").matches ?? false;
 }
 
+// The Android app shows its session tiles on the wide (non-phone) layout while
+// a layout is chosen and no session is open; Dashboard sets this (#219).
+let androidTileGrid = false;
+
+export function setAndroidTileGrid(on: boolean): void {
+  androidTileGrid = on;
+  syncPhoneTier();
+}
+
 export function isPhoneTier(): boolean {
-  return typeof window !== "undefined" && isPhoneWidth(window.innerWidth, isCoarsePointer(), isAndroidTauri());
+  if (typeof window === "undefined") return false;
+  // A chosen tile layout overrides every width and pointer fallback of the phone tier.
+  if (androidTileGrid && isAndroidTauri()) return false;
+  return isPhoneWidth(window.innerWidth, isCoarsePointer(), isAndroidTauri());
 }
 
 /**
@@ -19,6 +31,7 @@ export function isPhoneTier(): boolean {
  */
 export function syncPhoneTier(): void {
   document.documentElement.dataset.phoneTier = String(isPhoneTier());
+  document.documentElement.dataset.androidApp = String(isAndroidTauri());
 }
 
 export function watchPhoneTier(): () => void {

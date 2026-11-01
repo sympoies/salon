@@ -33,8 +33,12 @@ for tool in git python3 shellcheck devlog; do
   }
 done
 
+# A step that prints nothing for VALIDATION_STALL_SECONDS (default 900, 0 = off)
+# is stopped and named instead of hanging the gate.
+step() { python3 scripts/stall-timeout.py "$@"; }
+
 python3 scripts/validation/check-scaffold.py
-python3 -m unittest discover -s scripts/validation -p '*_test.py'
+step "validation unit tests" python3 -m unittest discover -s scripts/validation -p '*_test.py'
 while IFS= read -r -d '' script; do
   bash -n "$script"
   shellcheck "$script"
@@ -45,9 +49,9 @@ if [[ "$scope" == docs ]]; then
   printf 'Documentation checks passed; full validation marker not written.\n'
   exit 0
 fi
-bash scripts/validate-core-packages.sh "$scope"
-node --test docker/start.test.ts
-pnpm --filter @salon/workspace run build
+step "core package validation" bash scripts/validate-core-packages.sh "$scope"
+step "docker start test" node --test docker/start.test.ts
+step "workspace build" pnpm --filter @salon/workspace run build
 
 if [[ "$scope" != full ]]; then
   printf 'Scoped package validation passed; full validation marker not written.\n'
