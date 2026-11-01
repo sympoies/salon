@@ -130,7 +130,7 @@ import { SessionMaintenanceDrawer } from "./SessionMaintenanceDrawer.tsx";
 import { StatusNotice } from "./StatusNotice.tsx";
 import { useStatusNotice } from "./useStatusNotice.ts";
 import { TRANSIENT_NOTICE_MS, TransientNoticeContext, type TransientNoticeControl } from "./transientNotice.ts";
-import { retitleStatusNotice, transientStatusNotice, type StatusNotice as StatusNoticeState } from "./statusNoticeModel.ts";
+import { resultStatusNotice, type StatusNotice as StatusNoticeState } from "./statusNoticeModel.ts";
 import {
   buildMaintenanceActionRequest,
   createSessionMaintenanceIncident,
@@ -1149,9 +1149,9 @@ export function Dashboard({
     setFocusedKeyFromUser(next);
   }, [focusedKey, historyMachineNames, openConversation, phoneSessionOpen, sessionsByKey, setFocusedKeyFromUser, viewport.mobile, viewport.touchPrimary]);
   // Hook notices have higher severity than the phone history fallback (info).
-  const resultNotice: StatusNoticeState | null = transientNotice
-    ?? (retitleFeedback ? retitleStatusNotice(retitleFeedback.state, retitleFeedback.detail) : null)
-    ?? (shortcutFeedback ? transientStatusNotice(shortcutFeedback.text) : null);
+  const resultNotice = resultStatusNotice({
+    transient: transientNotice, retitle: retitleFeedback, shortcut: shortcutFeedback, isLive: (key) => liveSessionKeys.has(key),
+  });
   const visibleStatusNotice = statusNotice ?? resultNotice ?? (viewport.mobile && phoneConversationNotice
     ? { kind: "info" as const, message: phoneConversationNotice } : null);
   const connectionNotice = visibleStatusNotice !== null;

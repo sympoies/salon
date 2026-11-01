@@ -70,3 +70,21 @@ export function statusNoticeAutoDismissDelay(notice: StatusNotice | null): numbe
   if (notice?.kind === "host-offline") return HOST_OFFLINE_DISMISS_MS;
   return notice?.kind === "restored" ? 3_000 : null;
 }
+
+/**
+ * The short-lived result to show in the shared layer: an announced result first, then retitle progress or
+ * result, then the shortcut hint. Keyed feedback of a session that has left the list is dropped, so a
+ * retitle still pending for a removed session never leaves "Retitling…" on screen.
+ */
+export function resultStatusNotice(input: {
+  readonly transient: StatusNotice | null;
+  readonly retitle: { readonly key: string; readonly state: RetitleFeedbackState; readonly detail?: string } | null;
+  readonly shortcut: { readonly key: string; readonly text: string } | null;
+  readonly isLive: (key: string) => boolean;
+}): StatusNotice | null {
+  const { transient, retitle, shortcut, isLive } = input;
+  if (transient) return transient;
+  if (retitle && isLive(retitle.key)) return retitleStatusNotice(retitle.state, retitle.detail);
+  if (shortcut && isLive(shortcut.key)) return transientStatusNotice(shortcut.text);
+  return null;
+}

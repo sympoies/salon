@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { retitleStatusNotice, transientStatusNotice, type StatusNotice } from "../src/statusNoticeModel.ts";
+import { resultStatusNotice, retitleStatusNotice, transientStatusNotice, type StatusNotice } from "../src/statusNoticeModel.ts";
 import { TransientNoticeContext } from "../src/transientNotice.ts";
 import { SessionRefreshContext, useSessionRefresh, type SessionRefreshOutcome } from "../src/useSessionRefresh.ts";
 import { createUiSsrHarness, renderComponent } from "./support/ssr.ts";
@@ -70,4 +70,17 @@ test("no transient result is rendered inside the session header; the dashboard o
   assert.doesNotMatch(slot, /retitle-feedback|shortcutHint|Session info updated/);
   assert.match(dashboard, /<TransientNoticeContext\.Provider value=\{transientNoticeControl\}>/);
   assert.match(dashboard, /const visibleStatusNotice = statusNotice \?\? resultNotice \?\?/);
+  assert.match(dashboard, /isLive: \(key\) => liveSessionKeys\.has\(key\)/);
+});
+
+test("a retitle still pending for a session that left the list leaves no stale progress behind", () => {
+  const live = new Set(["host:a", "host:b"]);
+  const pick = (retitle: { key: string; state: "working" | "updated" } | null, shortcut: { key: string; text: string } | null) =>
+    resultStatusNotice({ transient: null, retitle, shortcut, isLive: key => live.has(key) });
+  assert.equal(pick({ key: "host:a", state: "working" }, null)?.message, "Retitling…");
+  live.delete("host:a");
+  assert.equal(pick({ key: "host:a", state: "working" }, null), null, "the removed session's pending retitle is dropped");
+  assert.equal(pick({ key: "host:a", state: "working" }, { key: "host:b", text: "Open a session" })?.message, "Open a session", "the next notice is not masked");
+  assert.equal(pick({ key: "host:a", state: "updated" }, null), null, "a result resolving after removal shows nothing");
+  assert.equal(resultStatusNotice({ transient: transientStatusNotice("Session info updated", "ok"), retitle: { key: "host:a", state: "working" }, shortcut: null, isLive: () => false })?.message, "Session info updated");
 });
