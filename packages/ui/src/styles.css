@@ -411,6 +411,33 @@
   color: var(--fg-2);
 }
 
+.mailbox-event-disclosure > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  cursor: pointer;
+  text-align: center;
+  color: var(--conversation-meta);
+}
+
+.mailbox-event-from {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mailbox-event-plain {
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.mailbox-event-body {
+  margin-top: var(--space-sm);
+  overflow-wrap: anywhere;
+}
+
 .session-notice-meta {
   padding-inline: var(--space-md);
   display: flex;

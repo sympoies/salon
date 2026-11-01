@@ -36,7 +36,7 @@ test("HistoryPanel exposes metadata-only discovery, transcript browsing, and res
   assert.match(conversation, /Jump to latest/);
   assert.match(conversation, /scrollTop/);
   assert.match(source, /setSessions\(result\.sessions\.slice\(0, HISTORY_PAGE_SIZE\)\)/);
-  assert.match(conversation, /setMessages\(result\.messages\.slice\(0, HISTORY_PAGE_SIZE\)\)/);
+  assert.match(conversation, /setMessages\(boundHistoryMessages\(result\.messages, HISTORY_PAGE_SIZE\)\)/);
   assert.match(source, /sessionPageCursors/);
   assert.match(conversation, /messagePageCursors/);
   // A page replaces the list; it never accumulates. The one functional update is
@@ -46,7 +46,7 @@ test("HistoryPanel exposes metadata-only discovery, transcript browsing, and res
     source,
     /setSessions\(\(current\) => applyHistoryStar\(current, session\.id, result\.starredAt\)\)/,
   );
-  assert.match(conversation, /setMessages\(\(current\) => \[\.\.\.result\.messages, \.\.\.current\]\.slice\(0, HISTORY_MESSAGE_WINDOW\)\)/);
+  assert.match(conversation, /setMessages\(\(current\) => mergeOlderHistoryMessages\(current, result\.messages, HISTORY_MESSAGE_WINDOW\)\)/);
   assert.match(source, />Resume<|"Resuming…" : "Resume"/);
   assert.match(
     source,

@@ -170,6 +170,8 @@ export interface HistoryMessage {
   readonly role: "user" | "assistant" | "goal" | "notice";
   readonly text: string;
   readonly timestamp?: string;
+  /** Set on a notice that is a mailbox read event (#223); the row shows sender, category and time. */
+  readonly mailbox?: import("@agent-console/shared").MailboxEvent;
 }
 
 export interface HistorySessionsResponse {
