@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.25 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.26 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -156,12 +156,13 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.25`; its release is a GitHub
-prerelease with `latest=false`. The Android app counts as touch-primary even
-when its WebView reports a fine pointer, and the debug log records the live
-pointer values (#207). Each device can choose the transcription engine for
-dictation from the engines the server lists (#204). Existing
-`v0.1.0` through `v0.1.24` tags and assets stay immutable. The visibility transition does not
+merge. The checked-in SDK version is `0.1.26`; its release is a GitHub
+prerelease with `latest=false`. The Scope session filter is removed and Workspace
+is the only grouping facet. The `sessionScopes` UI extension is gone; a host names
+roles with the new `sessionRole` hook, and `LineageRecord`, `lineageRecordKey` and
+`lineageParents` replace the scope-named helpers, which stay as deprecated aliases
+for this release only (#188, #211). Existing
+`v0.1.0` through `v0.1.25` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
