@@ -102,6 +102,7 @@ export default function App() {
       positionObserver?.disconnect();
     };
   }, [usageAnchor]);
+  const shellOpen = view.kind === "shell";
   useEffect(() => {
     if (!authed) return;
     const handle = (event: KeyboardEvent) => {
@@ -112,12 +113,13 @@ export default function App() {
       if (document.querySelector('.modal-backdrop, .modal-overlay')) return;
       if (resolveDashboardShortcutAction({ key:event.key, code:event.code, metaKey:event.metaKey,
         ctrlKey:event.ctrlKey, shiftKey:event.shiftKey, altKey:event.altKey,
-        isMacTauri:false, editableTarget:editable }) !== "shell") return;
-      event.preventDefault(); event.stopImmediatePropagation(); openShell();
+        isMacTauri:false, editableTarget:editable && !shellOpen }) !== "shell") return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (shellOpen) closeOverlay(); else openShell();
     };
     window.addEventListener("keydown", handle, true);
     return () => window.removeEventListener("keydown", handle, true);
-  }, [authed, openShell]);
+  }, [authed, closeOverlay, openShell, shellOpen]);
 
   const [hostMigrationNotice, setHostMigrationNotice] = useState(false);
   // Host color defaults come from the distribution's extensions (#918).

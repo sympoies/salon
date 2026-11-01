@@ -69,22 +69,21 @@ export function resolveDashboardShortcutAction(
 ): DashboardShortcutAction | null {
   if (input.key.toLowerCase() === "s" && input.shiftKey && !input.altKey
     && !input.editableTarget && input.metaKey !== input.ctrlKey) return "shell";
-  if (
-    !input.isMacTauri ||
-    !input.metaKey ||
-    input.ctrlKey ||
-    input.altKey ||
-    input.editableTarget
-  ) {
+  if (!input.isMacTauri || !input.metaKey || input.ctrlKey || input.altKey) {
+    return null;
+  }
+
+  // The page keys work from a reply composer too; they type nothing.
+  if (!input.shiftKey && input.key === ",") return "page-prev";
+  if (!input.shiftKey && input.key === ".") return "page-next";
+
+  if (input.editableTarget) {
     return null;
   }
 
   if (input.key === "`" || input.key === "~") {
     return "back";
   }
-
-  if (input.key === "<" || (input.shiftKey && input.code === "Comma")) return "page-prev";
-  if (input.key === ">" || (input.shiftKey && input.code === "Period")) return "page-next";
 
   if (input.shiftKey) {
     return null;

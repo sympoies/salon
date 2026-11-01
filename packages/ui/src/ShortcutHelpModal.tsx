@@ -1,6 +1,6 @@
 import { CloseIcon } from "./icons.tsx";
 import { IconButton } from "./IconButton.tsx";
-import { useEffect } from "react";
+import { useShortcutClose } from "./useShortcutClose.ts";
 import { Modal } from "./Modal.tsx";
 
 const SHORTCUT_GROUPS = [
@@ -21,7 +21,7 @@ const SHORTCUT_GROUPS = [
     title: "Navigation",
     rows: [
       ["⌘H / ⌘L", "Previous / next session"],
-      ["⌘< / ⌘>", "Previous / next page"],
+      ["⌘, / ⌘.", "Previous / next page"],
       ["⌘1–4 / ⌘6", "Open session in shortcut order"],
       ["⌘F", "Toggle focused session"],
       ["⌘` / ⌘~", "Back to session list"],
@@ -47,17 +47,7 @@ const SHORTCUT_GROUPS = [
 ] as const;
 
 export function ShortcutHelpModal({ onClose }: { readonly onClose: () => void }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      if (event.key !== "/" && event.code !== "Slash") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  useShortcutClose("shortcut-help", onClose);
 
   return (
     <Modal androidBackEntry="shortcut-help" onClose={onClose} className="shortcut-help-modal" ariaLabelledby="shortcut-help-title">
