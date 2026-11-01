@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 import re
 
 
@@ -51,8 +52,20 @@ if os.environ.get("FAIL_GUARD") == "1":
             self.assertEqual(len((root / "calls").read_text().splitlines()), 1)
 
     def test_node_shards_cover_each_partition_once(self):
-        with tempfile.TemporaryDirectory(prefix="salon-ui-shards-", dir="/tmp") as directory:
+        with tempfile.TemporaryDirectory(prefix="salon-ui-shards-", dir="/tmp") as directory, \
+                tempfile.TemporaryDirectory(prefix="salon-node-scope-", dir="/tmp") as scope_directory:
             root = Path(directory)
+            # A memory-scope wrapper first on PATH re-resolves `node` by name,
+            # like the host's wrapper: the self-test's own node must not re-enter it.
+            scope = Path(scope_directory) / "node"
+            scope.write_text('''#!/bin/bash
+PATH="${PATH//${BASH_SOURCE[0]%/*}:/}"
+exec node "$@"
+''')
+            scope.chmod(0o755)
+            patched = mock.patch.dict(os.environ, {"PATH": f"{scope_directory}:{os.environ['PATH']}"})
+            patched.start()
+            self.addCleanup(patched.stop)
             (root / "scripts").mkdir()
             shutil.copyfile(Path(__file__).resolve().parents[1] / "test-ui.sh", root / "scripts/test-ui.sh")
             test_dir = root / "packages/ui/test"
@@ -73,6 +86,9 @@ import os, sys
 args = sys.argv[1:]
 if not any(arg.startswith("--test-reporter=") for arg in args):
     args.insert(0, "--test-reporter=tap")
+# Leave this directory so a wrapper that resolves `node` by name finds the real one.
+here = os.path.dirname(os.path.abspath(__file__))
+os.environ["PATH"] = os.pathsep.join(p for p in os.environ["PATH"].split(os.pathsep) if p != here)
 os.execv({node_bin!r}, [{node_bin!r}, *args])
 ''')
             wrapper.chmod(0o755)
@@ -80,7 +96,7 @@ os.execv({node_bin!r}, [{node_bin!r}, *args])
             def run(kind, shard=""):
                 result = subprocess.run(["bash", str(root / "scripts/test-ui.sh"), kind],
                                         env=dict(os.environ, UI_TEST_SHARD=shard, PATH=f"{bin_dir}:{os.environ['PATH']}"),
-                                        capture_output=True, text=True)
+                                        capture_output=True, text=True, timeout=120)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 tests = re.findall(r"^# Subtest: (.+)$", result.stdout, re.MULTILINE)
                 self.assertEqual(tests.pop(0), "domAssertSafety.test.ts")
