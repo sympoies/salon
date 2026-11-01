@@ -696,22 +696,6 @@ test("SessionSlot keeps mobile focused header focus order aligned with the visua
   );
 });
 
-test("SessionSlot renders shortcut hints in the retitle feedback position", async () => {
-  const SessionSlot = await loadSessionSlot();
-  const activeSession = makeSession({ title: "Hinted session" });
-  const html = renderComponent(
-    SessionSlot,
-    makeSessionSlotProps({
-      session: activeSession,
-      options: [activeSession],
-      shortcutHint: "Open a session to use Cmd-H/L",
-    }),
-  );
-
-  assert.match(html, /retitle-feedback unchanged/);
-  assert.match(html, /Open a session to use Cmd-H\/L/);
-});
-
 test("SessionSlot forwards terminal display props to TerminalPane", async () => {
   const SessionSlot = await loadSessionSlot();
   const activeSession = makeSession({ title: "Terminal display" });
@@ -903,7 +887,6 @@ test("read-only slot-header status elements use the default cursor, not the head
   for (const selector of [
     ".auto-resume-status",
     ".slot-ordinal",
-    ".retitle-feedback",
     ".copy-feedback",
     ".slot-session-nav",
   ]) {
@@ -1929,27 +1912,6 @@ test("SessionSlot offers copied diagnostic feedback and uses Copy diagnostics wh
 
   assert.match(html, />Diagnostics copied</);
   assert.doesNotMatch(html, />Retry</);
-});
-
-test("SessionSlot explains a failed retitle on hover instead of only marking it failed", async () => {
-  const SessionSlot = await loadSessionSlot();
-  const activeSession = makeSession({ title: "Busy session" });
-  const html = renderComponent(
-    SessionSlot,
-    makeSessionSlotProps({
-      session: activeSession,
-      options: [activeSession],
-      retitleState: "terminal_failure",
-      retitleDetail: "The session history moved while the title was being produced. Try again.",
-    }),
-  );
-
-  assert.match(html, /retitle-feedback terminal_failure/);
-  assert.match(html, /Retitle failed/);
-  assert.match(
-    html,
-    /title="The session history moved while the title was being produced\. Try again\."/,
-  );
 });
 
 function claudeSession(claudeAccount: Session["claude_account"], overrides: Partial<Session> = {}): Session {

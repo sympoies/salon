@@ -373,11 +373,6 @@ interface SessionSlotView {
   readonly sessionNavGridKeys?: readonly string[];
   readonly onFocusPrevious: () => void;
   readonly onFocusNext: () => void;
-  readonly shortcutHint: string | null;
-  // Transient manual-retitle progress for this slot's session (null = idle).
-  readonly retitleState: "working" | "updated" | "failed" | "updating" | "committed" | "unchanged" | "degraded_cached" | "terminal_failure" | null;
-  // Why a retitle failed, in the daemon's own bounded vocabulary.
-  readonly retitleDetail: string | null;
   readonly onRetitle: (session: Session) => void;
   readonly repairingSessions: boolean;
   readonly viewport: { readonly mobile: boolean };
@@ -506,9 +501,6 @@ export function SessionSlot({
     sessionNavGridKeys = sessionNavList.map(sessionKey),
     onFocusPrevious,
     onFocusNext,
-    shortcutHint,
-    retitleState,
-    retitleDetail,
     onRetitle,
     repairingSessions,
     activityDeliveryState,
@@ -793,28 +785,6 @@ export function SessionSlot({
       <CloseIcon />
     </IconButton>
   ) : null;
-  const headerFeedback = s ? (
-    <>
-      {retitleState ? (
-        <span className={`retitle-feedback ${retitleState}`} role="status" title={retitleDetail ?? undefined}>
-          {retitleState === "working" || retitleState === "updating"
-            ? "Retitling…"
-            : retitleState === "updated" || retitleState === "committed"
-              ? "Title updated"
-              : retitleState === "unchanged"
-                ? "No change"
-                : retitleState === "degraded_cached"
-                  ? "Cached title kept"
-                  : "Retitle failed"}
-        </span>
-      ) : null}
-      {shortcutHint ? (
-        <span className="retitle-feedback unchanged" role="status">
-          {shortcutHint}
-        </span>
-      ) : null}
-    </>
-  ) : null;
   const resumeButton = s && resumeAvailable ? (
     <AsyncButton
       className="slot-action slot-resume"
@@ -946,8 +916,7 @@ export function SessionSlot({
         <div className={mobileFocused ? "slot-session-details slot-focus-row-two" : "slot-session-details"}>
           {s && mobileFocused ? (
             <>
-              {headerFeedback}
-              {agentRetitleButton}
+                            {agentRetitleButton}
               <SessionAccountBadge
                 session={s}
                 accounts={accounts}
@@ -985,14 +954,12 @@ export function SessionSlot({
                 {autoResumeBadge}
                 {activityBadge}
                 {refreshButton}
-                {headerFeedback}
-                {resumeButton}
+                                {resumeButton}
               </div>
             </div>
           ) : (
             <>
-              {headerFeedback}
-              {resumeButton}
+                            {resumeButton}
               {titleControlFor(false)}
               {agentRetitleButton}
               {s ? (

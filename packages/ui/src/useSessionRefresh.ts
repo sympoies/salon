@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { SessionRefreshOutcome } from "./sessionRefresh.ts";
+import { attentionStatusNotice, transientStatusNotice } from "./statusNoticeModel.ts";
+import { TransientNoticeContext } from "./transientNotice.ts";
 
 export type { SessionRefreshOutcome } from "./sessionRefresh.ts";
 
@@ -37,6 +39,7 @@ export function useSessionRefresh(): {
   refresh(target: SessionRefreshTarget): Promise<SessionRefreshState>;
 } {
   const control = useContext(SessionRefreshContext);
+  const transient = useContext(TransientNoticeContext);
   const [state, setState] = useState<SessionRefreshState>({ status: "idle" });
   const running = useRef<Promise<SessionRefreshState> | null>(null);
   const mounted = useRef(true);
@@ -51,11 +54,13 @@ export function useSessionRefresh(): {
       const done: SessionRefreshState = outcome.ok
         ? { status: "updated", message: SESSION_REFRESHED_MESSAGE, changed: outcome.changed }
         : { status: "failed", message: outcome.message };
+      // The result is announced in the shared top-right layer, never inside the session header.
+      transient.show(done.status === "updated" ? transientStatusNotice(done.message, "ok") : attentionStatusNotice(done.message));
       if (mounted.current) setState(done);
       return done;
     }).finally(() => { running.current = null; });
     running.current = run;
     return run;
-  }, [control]);
+  }, [control, transient]);
   return { state, refresh };
 }
