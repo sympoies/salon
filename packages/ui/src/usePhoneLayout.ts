@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
+import { isPhoneTier } from "./phoneTier.ts";
 
-function phoneLayout(): boolean {
-  return typeof window !== "undefined" && (window.innerWidth <= 760
-    || (window.innerWidth <= 1024 && (window.matchMedia?.("(pointer: coarse)").matches ?? false)));
-}
-/** Same phone tier as the dashboard, including narrow web and touch tablets. */
+/** Same phone tier as the dashboard. */
 export function usePhoneLayout(): boolean {
-  const [phone, setPhone] = useState(phoneLayout);
+  const [phone, setPhone] = useState(isPhoneTier);
   useEffect(() => {
-    const update = () => setPhone(phoneLayout());
+    const update = () => setPhone(isPhoneTier());
     const pointer = window.matchMedia?.("(pointer: coarse)");
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);

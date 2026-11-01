@@ -1,3 +1,4 @@
+import { phoneTierScript } from "./support/browserLayout.ts";
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -73,7 +74,7 @@ function measure(markup: string, width: number, native: boolean, name: string) {
   const temp = mkdtempSync(join(tmpdir(), "status-placement-"));
   const evidence = process.env.AGENT_CONSOLE_UI_SCREENSHOT_DIR;
   try {
-    const frame = `<!doctype html><meta charset="utf-8"><html ${native ? 'data-mac-titlebar="true"' : ""}><style>${css}</style>${markup}<script>
+    const frame = `<!doctype html><meta charset="utf-8"><html ${native ? 'data-mac-titlebar="true"' : ""}><style>${css}</style>${phoneTierScript}${markup}<script>
       const pill=document.querySelector('.connection-notice'),layer=pill?.parentElement;
       const row=pill?.closest('${native ? ".mac-titlebar" : width <= 760 ? ".slot-focus-strip, .session-filter-status-row" : ".session-filter-trigger-row, .slot-head"}');
       const p=pill?.getBoundingClientRect(),r=row?.getBoundingClientRect();

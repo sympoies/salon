@@ -9,13 +9,13 @@ export function chooseHeaderCompactStage(fits: (stage: HeaderCompactStage) => bo
 /**
  * Measure the same controls that CSS compacts, including headers without Usage.
  * The phone layout (Dashboard's single-column tier: up to 760px, or a touch
- * pointer up to 1024px) keeps the two-row header without the layout picker;
+ * pointer up to 1024px, or the Android app) keeps the two-row header without the layout picker;
  * its status counts take the longest label that fits: full, short, then none
  * (#968). Narrow macOS windows keep the measured desktop row (title-bar counts).
  */
 export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage | null {
-  // Keep this query identical to the phone header media queries in styles.css.
-  if (window.matchMedia("(max-width: 760px), (pointer: coarse) and (max-width: 1024px)").matches
+  // The tier published by syncPhoneTier, the same one the phone header rules in styles.css use.
+  if (document.documentElement.dataset.phoneTier === "true"
     && document.documentElement.dataset.macTitlebar !== "true") {
     header.removeAttribute("data-header-compact");
     // Count buttons shrink and clip before they overlap, so both are checked.

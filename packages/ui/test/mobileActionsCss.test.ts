@@ -18,7 +18,7 @@ test("mobile focused header uses exactly two full-width rows", () => {
   );
   assert.match(
     styles,
-    /\.session-workspace\.mobile\.is-focused\s+\.terminal-slot\.is-focused\s+\.slot-focus-toolbar,\s*\.session-workspace\.mobile\.is-focused\s+\.terminal-slot\.is-focused\s+\.slot-session-details\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;/s,
+    /\.session-workspace\.mobile\.is-focused\s+\.terminal-slot\.is-focused\s+\.slot-focus-toolbar,\s*:where\(:root\[data-phone-tier="true"\]\) \.session-workspace\.mobile\.is-focused\s+\.terminal-slot\.is-focused\s+\.slot-session-details\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;/s,
   );
   assert.doesNotMatch(
     styles,
@@ -55,19 +55,18 @@ test("coarse-pointer overview controls share the same 44px toolbar geometry", ()
 test("narrow overview controls share the same 44px toolbar geometry regardless of pointer type", () => {
   assert.match(
     styles,
-    /@media \(max-width: 760px\), \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.workspace-head:has\(\.session-list-navigator\) \.session-list-group-trigger,\s*\.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions \.header-menu-trigger,\s*\.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions > \.btn \{[^}]*height:\s*44px;[^}]*min-height:\s*44px;/s,
+    /:where\(:root\[data-phone-tier="true"\]\) [\s\S]*?\.workspace-head:has\(\.session-list-navigator\) \.session-list-group-trigger,\s*:where\(:root\[data-phone-tier="true"\]\) \.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions \.header-menu-trigger,\s*:where\(:root\[data-phone-tier="true"\]\) \.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions > \.btn \{[^}]*height:\s*44px;[^}]*min-height:\s*44px;/s,
   );
   assert.match(
     styles,
-    /@media \(max-width: 760px\), \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions \.header-menu-trigger \{[^}]*width:\s*44px;/s,
+    /:where\(:root\[data-phone-tier="true"\]\) [\s\S]*?\.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions \.header-menu-trigger \{[^}]*width:\s*44px;/s,
   );
 });
 
 test("coarse-pointer picker and filter controls keep mobile touch targets through 1024px", () => {
   const mobilePanel = styles.indexOf(".session-filter-panel.is-mobile {");
-  const breakpoint = "@media (max-width: 760px), (pointer: coarse) and (max-width: 1024px) {";
-  const start = styles.indexOf(breakpoint, mobilePanel);
-  const end = styles.indexOf("\n}", start);
+  const start = styles.indexOf(':where(:root[data-phone-tier="true"]) .session-filter-panel.is-mobile .session-filter-panel-fields {', mobilePanel);
+  const end = styles.indexOf("/* One workspace row on desktop", start);
   assert.ok(mobilePanel >= 0 && start > mobilePanel && end > start, "popover touch overrides use the app mobile breakpoint");
   const rules = styles.slice(start, end);
   assert.match(styles, /--control-menu-height:\s*48px;/);
