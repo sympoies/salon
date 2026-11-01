@@ -250,8 +250,8 @@ test("the phone tier published for a browser at 900px with a fine pointer is des
   } finally { await h.close(); }
 });
 
-// #219, #238: the Android app keeps its phone list until Settings picks a layout,
-// then lists that layout's conversation tiles; opening a tile enters the phone conversation.
+// #219, #252: the Android app keeps its phone list in Mobile; Desktop lists the desktop grid's
+// conversation tiles with the layout control; opening a tile enters the phone conversation.
 async function renderDashboard(h: H, androidLayout: AndroidLayout) {
   const { Dashboard } = await h.ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
   await act(async () => h.root.render(createElement(Dashboard, { phoneSessionOpen: "conversation", androidLayout, active: true, machines: ["fixture"], enabledMachines: ["fixture"], machineColors: {}, defaultAutoResume: false, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true, onDebug() {}, onUsage() {}, onSettings() {} })));
@@ -261,10 +261,10 @@ const tier = (h: H) => h.window.document.documentElement.dataset.phoneTier;
 const headerTier = (h: H) => h.window.document.documentElement.dataset.phoneHeader;
 const tiles = (h: H) => [...h.container.querySelectorAll(".terminal-slot")].filter(slot => slot.querySelector('[aria-label="Reply to session"]'));
 
-test("the Android app keeps the phone list when Settings chooses the list", async () => {
+test("the Android app keeps the phone list when Settings chooses Mobile", async () => {
   const h = await harness(900, false, true);
   try {
-    await renderDashboard(h, "list");
+    await renderDashboard(h, "mobile");
     assert.equal(tier(h), "true");
     assertNoElement(h.container, ".session-workspace.desktop", "the wide layout is not shown");
     assert.equal(tiles(h).length, 0);
@@ -272,14 +272,14 @@ test("the Android app keeps the phone list when Settings chooses the list", asyn
 });
 
 for (const [width, coarse] of [[900, false], [360, false], [900, true]] as const) {
-  test(`a Settings layout lists conversation tiles in the Android app at ${width}px${coarse ? " with a coarse pointer" : ""}, keeps the phone header and a tile opens the phone conversation`, async () => {
+  test(`Desktop lists conversation tiles in the Android app at ${width}px${coarse ? " with a coarse pointer" : ""}, keeps the phone header and a tile opens the phone conversation`, async () => {
     const h = await harness(width, coarse, true);
     try {
-      await renderDashboard(h, 2);
+      await renderDashboard(h, "desktop");
       assert.equal(tier(h), "false");
       assert.equal(headerTier(h), "true", "the header keeps following the raw width");
-      assert.equal(tiles(h).length, 2);
-      assertNoElement(h.container, ".layout-picker", "the Android header has no layout control");
+      assert.ok(tiles(h).length >= 1, "the desktop grid lists tiles");
+      assert.ok(h.container.querySelector(".layout-picker"), "the Android desktop list has the layout control");
       await act(async () => h.container.querySelector<HTMLButtonElement>('[aria-label="Open First work"]')!.click());
       await waitFor(() => phonePane(h), "the tile opens the full-screen conversation");
       assert.equal(tier(h), "true");
@@ -291,7 +291,7 @@ for (const [width, coarse] of [[900, false], [360, false], [900, true]] as const
 test("the Android phone list has no layout control either", async () => {
   const h = await harness(360, false, true);
   try {
-    await renderDashboard(h, "list");
+    await renderDashboard(h, "mobile");
     assertNoElement(h.container, ".layout-picker", "no layout control");
   } finally { await h.close(); }
 });
@@ -299,7 +299,7 @@ test("the Android phone list has no layout control either", async () => {
 test("a browser at 900px ignores the Android layout choice and keeps terminal tiles", async () => {
   const h = await harness(900, false);
   try {
-    await renderDashboard(h, 2);
+    await renderDashboard(h, "desktop");
     assert.equal(tier(h) ?? "false", "false");
     assert.equal(tiles(h).length, 0);
   } finally { await h.close(); }

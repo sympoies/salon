@@ -40,7 +40,7 @@ for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024]) {
   for (const mode of ["browser", "android", "grid"] as const) for (const focused of [false, true]) {
     if (mode === "grid" && focused) continue;
     const android = mode !== "browser", grid = mode === "grid";
-    test(`the ${focused ? "focused" : "list"} header at ${width}px${grid ? " in the Android tile grid" : android ? " in the Android app" : ""} has no overlaps, keeps menu and New session and equal button sizes`, async t => {
+    test(`the ${focused ? "focused" : "list"} header at ${width}px${grid ? " in the Android desktop list" : android ? " in the Android app" : ""} has no overlaps, keeps menu and New session and equal button sizes`, async t => {
       if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
       const fixture = await headerFixture();
       try {
@@ -51,6 +51,7 @@ for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024]) {
         assert.deepEqual(m.outside, [], `every component stays inside the header: ${detail}`);
         assert.deepEqual(m.missing, [], `the logo, New session and More stay visible: ${detail}`);
         assert.equal(new Set(Object.values(m.sizes)).size, 1, `header buttons share one size: ${detail}`);
+        if (grid) assert.ok(m.sizes.layout, `the Android desktop list keeps its layout control at any width: ${detail}`);
       } finally { await fixture.close(); }
     });
   }

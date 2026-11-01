@@ -182,6 +182,7 @@ import { projectFocusedGridSlots } from "./focusedGridProjection.ts";
 import { useShortcutClose } from "./useShortcutClose.ts";
 import { ShortcutHelpModal } from "./ShortcutHelpModal.tsx";
 import { SpeechComposer } from "./SpeechComposer.tsx";
+import { AppSelect } from "./AppSelect.tsx";
 import {
   browserNotificationPermission,
   createAlertChime,
@@ -578,7 +579,7 @@ export function Dashboard({
   phoneSessionOpen = "conversation",
   phoneFocusCounts = true,
   sessionListDisplay = "terminal",
-  androidLayout = "list",
+  androidLayout = "mobile",
   cardPreview = "latest-message",
   operatorCapabilities = DEFAULT_OPERATOR_CAPABILITIES,
   onDebug,
@@ -654,15 +655,17 @@ export function Dashboard({
   const [autoLayout, setAutoLayout] = useState<boolean>(() => readAutoLayout());
   const [slots, setSlots] = useState<SlotKey[]>(() => readSlots());
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const androidTileMode = isAndroidTauri() && androidLayout !== "list" ? androidLayout : null;
+  const androidDesktop = isAndroidTauri() && androidLayout === "desktop";
+  // Choosing Desktop in Settings may have just set the grid's stored count or Auto.
   useEffect(() => {
-    if (androidTileMode === null) return;
-    setLayoutMode(androidTileMode);
-    setAutoLayout(false);
-  }, [androidTileMode]);
+    if (!androidDesktop) return;
+    setLayoutMode(readLayoutMode());
+    setAutoLayout(readAutoLayout());
+  }, [androidDesktop]);
+  // The list screen uses the desktop grid; an opened session is the phone view.
   useEffect(() => {
-    setAndroidTileGridState(androidTileMode !== null && focusedKey === null && conversationKey === null);
-  }, [androidTileMode, focusedKey, conversationKey]);
+    setAndroidTileGridState(androidDesktop && focusedKey === null && conversationKey === null);
+  }, [androidDesktop, focusedKey, conversationKey]);
   const pollingMachinesKey = permittedMachines.join("\0");
   const pollingMachines = useMemo(() => pollingMachinesKey ? pollingMachinesKey.split("\0") : [], [pollingMachinesKey]);
   // Keep all permitted hosts available for creation and host-specific pages;
@@ -2911,7 +2914,7 @@ export function Dashboard({
             {focusedKey !== null && enabledMachines.length > 1 ? (
               <label className="machine-filter">
                 <MachineIcon />
-                <select
+                <AppSelect
                   className="machine-filter-select"
                   aria-label="Filter sessions by machine"
                   value={machineFilter}
@@ -2927,12 +2930,12 @@ export function Dashboard({
                       {m}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
                 <SelectChevronIcon />
               </label>
             ) : null}
-            {/* The Android app sets its layout in Settings (#238). */}
-            {isAndroidTauri() ? null : <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
+            {/* The Android app shows the grid layout control only in Desktop (#252). */}
+            {isAndroidTauri() && !androidDesktop ? null : <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
               onToggleAuto={() => setAutoLayout(current => !current)}
               onSelect={mode => { setAutoLayout(false); setLayoutMode(mode); }} />}
           </div>

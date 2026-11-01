@@ -31,6 +31,7 @@ import { browserNotificationPermission } from "./attentionAlerts.ts";
 import { clientVersionInfo, versionCopyText } from "./clientVersion.ts";
 import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 import { THEME_MODES, useTheme, type ThemeMode } from "./theme.ts";
+import { AppSelect } from "./AppSelect.tsx";
 
 export interface SettingsProps {
   // The connect variant waits for the returned connection check and shows its outcome.
@@ -97,7 +98,7 @@ export function Settings({
   phoneFocusCounts = true,
   onPhoneFocusCountsChange,
   sessionListDisplay = "terminal",
-  androidLayout = "list",
+  androidLayout = "mobile",
   onAndroidLayoutChange,
   cardPreview = "latest-message",
   onCardPreviewChange,
@@ -405,7 +406,8 @@ export function Settings({
           <h2 className="settings-section-title">Terminal</h2>
           <label className="settings-field">
             Output rendering
-            <select
+            <AppSelect
+              aria-label="Output rendering"
               value={terminalRenderMode}
               onChange={(event) => onTerminalRenderModeChange(event.currentTarget.value as TerminalRenderMode)}
             >
@@ -413,7 +415,7 @@ export function Settings({
               <option value="focus-aware-smooth">Focus-aware · Smooth (100 ms)</option>
               <option value="focus-aware-balanced">Focus-aware · Balanced (250 ms)</option>
               <option value="focus-aware-efficient">Focus-aware · Efficient (500 ms)</option>
-            </select>
+            </AppSelect>
           </label>
           <p className="settings-hint">
             Focused sessions always stay realtime. Other panes render at the selected interval.
@@ -442,9 +444,9 @@ export function Settings({
           <h2 className="settings-section-title">Appearance</h2>
           <label className="settings-field">
             Theme
-            <select value={theme.mode} onChange={(event) => theme.setMode(event.currentTarget.value as ThemeMode)}>
+            <AppSelect aria-label="Theme" value={theme.mode} onChange={(event) => theme.setMode(event.currentTarget.value as ThemeMode)}>
               {THEME_MODES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-            </select>
+            </AppSelect>
           </label>
           <p className="settings-hint">
             System follows the device appearance. Paper is the light theme. The choice stays on this device.
@@ -455,33 +457,33 @@ export function Settings({
           <h2 className="settings-section-title">Sessions</h2>
           <label className="settings-field">
             Card preview
-            <select aria-label="Card preview" value={cardPreview}
+            <AppSelect aria-label="Card preview" value={cardPreview}
               onChange={event => onCardPreviewChange?.(event.currentTarget.value as CardPreview)}>
               <option value="latest-message">Latest message</option>
               <option value="last-prompt">My last prompt</option>
-            </select>
+            </AppSelect>
           </label>
           <p className="settings-hint">Choose the session card preview on this device.</p>
           <label className="settings-field">
             {phone ? "Open session as" : "Session list display"}
-            <select aria-label={phone ? "Open session as" : "Session list display"}
+            <AppSelect aria-label={phone ? "Open session as" : "Session list display"}
               value={phone ? phoneSessionOpen : sessionListDisplay}
               onChange={event => (phone ? onPhoneSessionOpenChange : onSessionListDisplayChange)?.(event.currentTarget.value as SessionListDisplay)}>
               {phone ? <option value="conversation">Conversation (default)</option> : <option value="terminal">Terminal</option>}
               {phone ? <option value="terminal">Terminal</option> : <option value="conversation">Conversation</option>}
-            </select>
+            </AppSelect>
           </label>
           <p className="settings-hint">{phone ? "Choose what opens when you tap a session." : "Choose what desktop session tiles show."}</p>
           {isAndroidTauri() && onAndroidLayoutChange ? <>
             <label className="settings-field">
-              Session layout
-              <select aria-label="Session layout" value={String(androidLayout)}
+              Layout
+              <AppSelect aria-label="Layout" value={androidLayout}
                 onChange={event => onAndroidLayoutChange(parseAndroidLayout(event.currentTarget.value))}>
-                <option value="list">Phone list (default)</option>
-                {LAYOUT_MODES.map(mode => <option key={mode} value={String(mode)}>{mode} pane{mode === 1 ? "" : "s"}</option>)}
-              </select>
+                <option value="mobile">Mobile (default)</option>
+                <option value="desktop">Desktop</option>
+              </AppSelect>
             </label>
-            <p className="settings-hint">Choose how sessions are laid out on this device. Phone list shows one list; a layout shows that many session tiles.</p>
+            <p className="settings-hint">Desktop shows the desktop grid on the session list. An opened session always uses the mobile view.</p>
           </> : null}
           {phone ? <div className="settings-preference-row">
             <div className="settings-preference-copy">

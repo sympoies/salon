@@ -21,6 +21,7 @@ import { isTauri } from "./runtime.ts";
 import { useAndroidBackEntry } from "./useAndroidBackEntry.ts";
 import { compactPromptPreview } from "./voicePrompt.ts";
 import { createAsyncPoller, type AsyncPollTick } from "./useAsyncPoll.ts";
+import { AppSelect } from "./AppSelect.tsx";
 
 const HISTORY_PAGE_SIZE = 50;
 const HISTORY_CATALOG_REFRESH_MS = 30_000;
@@ -388,17 +389,17 @@ export function HistoryPanel({ machines, liveSessions = [], onClose, onResumed }
         <div className="history-filters">
           <label>
             <span>Machine</span>
-            <select aria-label="History machine" value={machine} onChange={(event) => setMachine(event.target.value)}>
+            <AppSelect aria-label="History machine" value={machine} onChange={(event) => setMachine(event.target.value)}>
               {machines.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
+            </AppSelect>
           </label>
           <label>
             <span>Provider</span>
-            <select aria-label="History provider" value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)}>
+            <AppSelect aria-label="History provider" value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)}>
               <option value="">All</option>
               <option value="codex">Codex</option>
               <option value="claude">Claude</option>
-            </select>
+            </AppSelect>
           </label>
           <label className="history-search">
             <span>Metadata search</span>

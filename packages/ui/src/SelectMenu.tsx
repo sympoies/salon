@@ -17,6 +17,8 @@ export interface SelectMenuOption {
   readonly value: string;
   readonly label: string;
   readonly meta?: string;
+  /** Shown but not selectable, like a disabled native option. */
+  readonly disabled?: boolean;
   /**
    * Decorative leading mark (an agent badge, a machine dot). Rendered
    * aria-hidden inside a fixed-size slot, so pass presentation only — the
@@ -118,10 +120,9 @@ export function SelectMenu({ ariaLabel, value, options, disabled = false, onChan
   const { style: floatingStyle } = useAnchoredFloating(triggerRef, open, { maxHeight: 260 });
 
   const focusOption = (index: number) => {
-    listboxRef.current
-      ?.querySelectorAll<HTMLButtonElement>('[role="option"]')
-      .item(index)
-      .focus();
+    const items = listboxRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]');
+    const target = items?.item(index);
+    (target && !target.disabled ? target : listboxRef.current?.querySelector<HTMLButtonElement>('[role="option"]:not(:disabled)'))?.focus();
   };
 
   function setMenuOpen(next: boolean) {
@@ -194,7 +195,7 @@ export function SelectMenu({ ariaLabel, value, options, disabled = false, onChan
   };
 
   const onListboxKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const items = [...(listboxRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [])];
+    const items = [...(listboxRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)') ?? [])];
     const currentIndex = document.activeElement instanceof HTMLElement
       ? items.indexOf(document.activeElement as HTMLButtonElement)
       : -1;
@@ -300,6 +301,7 @@ export function SelectMenu({ ariaLabel, value, options, disabled = false, onChan
                 role="option"
                 aria-label={optionAccessibleName(option)}
                 aria-selected={option.value === value}
+                disabled={option.disabled}
                 tabIndex={-1}
                 onClick={() => choose(option)}
               >

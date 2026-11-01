@@ -11,6 +11,7 @@ import {
 } from "./api.ts";
 import { AsyncButton } from "./AsyncButton.tsx";
 import { createDebugAgentBundle, debugAgentBundleMarkdown } from "./debugBundle.ts";
+import { AppSelect } from "./AppSelect.tsx";
 import {
   DEBUG_FILTER_ALL,
   EMPTY_DEBUG_FILTER,
@@ -226,7 +227,7 @@ export function DebugPanel({ onExit }: DebugPanelProps) {
 
       <FilterDisclosure id="debug-filters" summary={describeDebugFilter(filter) ?? "All events"} className="debug-filter-panel">
         <div className="debug-toolbar debug-filters">
-          <select
+          <AppSelect
             value={filter.source}
             onChange={(event) => setFilter({ ...filter, source: event.target.value as DebugSourceFilter })}
             aria-label="Debug source"
@@ -236,8 +237,8 @@ export function DebugPanel({ onExit }: DebugPanelProps) {
             <option value="edge">edge</option>
             <option value="daemon">daemon</option>
             <option value="ws">ws</option>
-          </select>
-          <select
+          </AppSelect>
+          <AppSelect
             value={filter.family}
             onChange={(event) => setFilter({ ...filter, family: event.target.value })}
             aria-label="Debug route"
@@ -248,8 +249,8 @@ export function DebugPanel({ onExit }: DebugPanelProps) {
                 {family}
               </option>
             ))}
-          </select>
-          <select
+          </AppSelect>
+          <AppSelect
             value={filter.outcome}
             onChange={(event) => setFilter({ ...filter, outcome: event.target.value as DebugOutcomeFilter })}
             aria-label="Debug outcome"
@@ -258,8 +259,8 @@ export function DebugPanel({ onExit }: DebugPanelProps) {
             <option value="signal">failures and lifecycle</option>
             <option value="failures">failures</option>
             <option value="lifecycle">lifecycle</option>
-          </select>
-          <select
+          </AppSelect>
+          <AppSelect
             value={filter.session}
             onChange={(event) => setFilter({ ...filter, session: event.target.value })}
             aria-label="Debug session"
@@ -270,7 +271,7 @@ export function DebugPanel({ onExit }: DebugPanelProps) {
                 {key}
               </option>
             ))}
-          </select>
+          </AppSelect>
           <input
             className="debug-search"
             type="search"
@@ -310,7 +311,7 @@ export function DebugPanel({ onExit }: DebugPanelProps) {
 
         <section className="debug-performance" aria-label="Performance capture">
           <strong>Performance capture</strong>
-          <select
+          <AppSelect
             aria-label="Performance scenario"
             value={scenario}
             disabled={capture !== null}
@@ -319,7 +320,7 @@ export function DebugPanel({ onExit }: DebugPanelProps) {
             <option value="normal">Normal network</option>
             <option value="slow-network">Slow network</option>
             <option value="offline-recovery">Offline recovery</option>
-          </select>
+          </AppSelect>
           {capture ? (
             <>
               <span className="debug-receipts-hint">Started {new Date(capture.started_at).toLocaleTimeString()}</span>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { SpeechEngineList, SpeechProviderSummary } from "@agent-console/shared/speech";
 import { getSpeechEngines, getSpeechProviders } from "./api.ts";
 import { loadSpeechEngine, saveSpeechEngine } from "./speechEngine.ts";
+import { AppSelect } from "./AppSelect.tsx";
 
 interface ProviderEngines {
   readonly provider: SpeechProviderSummary;
@@ -45,7 +46,7 @@ export function SpeechEngineSettings() {
         return (
           <label key={provider.id}>
             {rows.length > 1 ? provider.label : "Engine"}
-            <select
+            <AppSelect
               aria-label={name}
               value={selected[provider.id] ?? ""}
               onChange={(event) => {
@@ -60,7 +61,7 @@ export function SpeechEngineSettings() {
                   {engine.label}{engine.available ? "" : " (unavailable)"}
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </label>
         );
       })}
