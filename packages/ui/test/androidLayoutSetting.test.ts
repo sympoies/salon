@@ -4,6 +4,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { loadAndroidLayout, saveAndroidLayout } from "../src/androidLayout.ts";
+import { assertNoElement } from "./support/domAssert.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 
 // #252: the Android app picks Mobile or Desktop per device in Settings.
@@ -66,7 +67,7 @@ async function settingsSelect(android: boolean, androidLayout: "mobile" | "deskt
       onMachineColorChange() {}, onMachineColorReset() {}, onDefaultAutoResumeChange() {}, onAttentionAlertsChange() {},
       onTerminalRenderModeChange() {}, onTerminalSelectedPaneRealtimeChange() {}, openAccess: false, onSignedOut() {},
     })));
-    assert.equal(container.querySelector('select[aria-label="Layout"]'), null, "no native Layout select on either runtime path");
+    assertNoElement(container, 'select[aria-label="Layout"]');
     const trigger = [...container.querySelectorAll<HTMLButtonElement>(".select-menu button[aria-haspopup]")].find(button => button.getAttribute("aria-label")?.startsWith("Layout:"));
     let options: string[] | null = null;
     const value = trigger?.getAttribute("aria-label") ?? null;
