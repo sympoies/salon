@@ -119,7 +119,7 @@ for (const width of [1180, 1366]) {
 }
 
 // #207: the Android app is always a touch client, even when its WebView reports a fine pointer (stylus).
-// The Android app also takes the phone layout up to 1024px, like a coarse pointer.
+// The Android app takes the phone layout at any width; browsers keep the width and pointer tiers.
 const noGrid = (h: H) => h.container.querySelector(".terminal-pane") === null && h.container.querySelector(".conversation-modal") === null;
 
 test("the Android app at 900px with a fine pointer uses the phone layout and opens a session in conversation", async () => {
@@ -162,21 +162,23 @@ test("a browser at 900px with a fine pointer stays in the desktop tier", async (
   } finally { await h.close(); }
 });
 
-test("the Android app at 1180px with a fine pointer opens a session in the wide conversation panel", async () => {
-  const h = await harness(1180, false, true);
-  try {
-    await openFirst(h);
-    await waitFor(() => panel(h), "the conversation panel shows the session");
-    assert.equal(terminal(h), false);
-  } finally { await h.close(); }
-});
+for (const width of [1180, 1400]) {
+  test(`the Android app at ${width}px uses the phone layout and opens a session in conversation`, async () => {
+    const h = await harness(width, false, true);
+    try {
+      await openFirst(h);
+      await waitFor(() => phonePane(h), "the phone conversation shows the session");
+      assert.equal(noGrid(h), true);
+    } finally { await h.close(); }
+  });
+}
 
-test("the Android app at 1180px with a fine pointer honors the terminal preference", async () => {
-  const h = await harness(1180, false, true);
+test("the Android app at 1400px honors the terminal preference", async () => {
+  const h = await harness(1400, false, true);
   try {
     await openFirst(h, "terminal");
-    await waitFor(() => terminal(h), "the terminal opens");
-    assert.equal(panel(h), false);
+    await waitFor(() => h.container.querySelector('.terminal-pane[data-session="one"]') !== null, "the terminal opens");
+    assert.equal(phonePane(h), false);
   } finally { await h.close(); }
 });
 
@@ -224,3 +226,25 @@ for (const [width, shows] of [[1024, phonePane], [1025, panel]] as const) {
     } finally { await h.close(); }
   });
 }
+
+// styles.css follows the same tier decision through data-phone-tier on the root.
+test("the phone tier published for styles.css is true for the Android app at any width", async () => {
+  const h = await harness(900, false, true);
+  try {
+    const { watchPhoneTier } = await h.ssr.loadModule<typeof import("../src/phoneTier.ts")>("/src/phoneTier.ts");
+    const stop = watchPhoneTier();
+    assert.equal(h.window.document.documentElement.dataset.phoneTier, "true");
+    await h.resize(1400);
+    assert.equal(h.window.document.documentElement.dataset.phoneTier, "true");
+    stop();
+  } finally { await h.close(); }
+});
+
+test("the phone tier published for a browser at 900px with a fine pointer is desktop", async () => {
+  const h = await harness(900, false);
+  try {
+    const { watchPhoneTier } = await h.ssr.loadModule<typeof import("../src/phoneTier.ts")>("/src/phoneTier.ts");
+    watchPhoneTier()();
+    assert.equal(h.window.document.documentElement.dataset.phoneTier, "false");
+  } finally { await h.close(); }
+});

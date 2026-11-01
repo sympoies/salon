@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { hasHeadlessChrome, measureUiMarkup } from "./support/browserLayout.ts";
 import { headerFixture } from "./support/headerFixture.ts";
 import { uiSource, uiStyles } from "./support/source.ts";
+import { isPhoneWidth } from "../src/phoneTier.ts";
 
 // #968: the header follows the phone layout tier that Dashboard uses (width up
 // to 760px, or a touch pointer up to 1024px). The layout button is hidden
@@ -98,21 +99,38 @@ for (const [width, coarse] of [[761, false], [1024, false], [1025, true], [1500,
   });
 }
 
-// One rule (#968): the header's media queries and its measurement use the same
-// phone tier as Dashboard's single-column layout.
+// One rule (#968): the header's CSS and measurement use the phone tier that
+// Dashboard's single-column layout uses, published as data-phone-tier.
 test("the header CSS and measurement share Dashboard's phone tier", () => {
-  const phone = "(max-width: 760px), (pointer: coarse) and (max-width: 1024px)";
-  const desktop = "(min-width: 1025px), (min-width: 761px) and (not (pointer: coarse))";
-  assert.match(uiSource("Dashboard.tsx"), /mobile: width <= 760 \|\| \(\(coarse \|\| isAndroidTauri\(\)\) && width <= 1024\)/);
-  assert.ok(uiSource("headerResponsive.ts").includes(`matchMedia("${phone}")`), "the measurement uses the phone tier");
+  const desktop = ':where(:root:not([data-phone-tier="true"]))';
+  const dashboard = uiSource("Dashboard.tsx");
+  assert.match(dashboard, /mobile: isPhoneTier\(\)/);
+  assert.ok(uiSource("headerResponsive.ts").includes("dataset.phoneTier"), "the measurement uses the published phone tier");
   const css = uiStyles();
-  const queryOf = (rule: string) => {
-    const at = css.indexOf(rule);
-    assert.ok(at >= 0, `missing rule: ${rule}`);
-    return css.slice(css.lastIndexOf("@media", at), at).match(/^@media ([^{]+?) \{/)?.[1];
+  const hasRule = (prefix: string, rule: string) => {
+    const at = css.indexOf(`${prefix} ${rule}`);
+    assert.ok(at >= 0, `missing rule: ${prefix} ${rule}`);
   };
-  assert.equal(queryOf('grid-template-areas: "brand status actions" "pages pages pages" "filters filters filters";'), phone, "the two-row phone header");
-  assert.equal(queryOf(".workspace-head .layout-picker { display: none; }"), phone, "no layout button in the phone layout");
-  assert.equal(queryOf(".workspace-head .session-status-count-label,.workspace-head .session-status-count-short-label { display:none; }"), desktop,
-    "the measured desktop row");
+  assert.doesNotMatch(css, /@media[^{]*\(pointer: coarse\) and \(max-width: 1024px\)/, "no media query repeats the phone tier");
+  hasRule(':where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"]))', ".workspace-head .layout-picker { display: none; }");
+  hasRule(desktop, ".workspace-head .session-status-count-label");
+});
+
+// The Android app reports a fine pointer with a stylus; it publishes the phone
+// tier (data-phone-tier) from the shared rule, and styles.css follows it.
+test("the Android app at 900px with a fine pointer gets the computed phone header", async t => {
+  if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
+  assert.equal(isPhoneWidth(900, false, true), true, "the shared rule gives the Android app the phone tier at 900px");
+  assert.equal(isPhoneWidth(1400, false, true), true, "and at any other width");
+  assert.equal(isPhoneWidth(900, false, false), false, "a browser with a fine pointer stays desktop");
+  const fixture = await headerFixture();
+  try {
+    const m = measureUiMarkup<TierMeasure & { areas: string }>(fixture.markup(900, false, false, false, BUSY_COUNTS), 900,
+      `document.documentElement.dataset.phoneTier="true";${measure}result.areas=getComputedStyle(header).gridTemplateAreas;`);
+    const detail = JSON.stringify(m);
+    assert.equal(m.coarse, false, `the pointer is fine: ${detail}`);
+    assert.equal(m.picker, false, `no layout button in the phone layout: ${detail}`);
+    assert.match(m.areas, /"brand status actions"\s+"pages pages pages"/, `the two-row phone header grid applies: ${detail}`);
+    assert.ok(m.overflow <= 1, `no horizontal overflow: ${detail}`);
+  } finally { await fixture.close(); }
 });

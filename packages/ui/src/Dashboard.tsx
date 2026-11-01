@@ -37,7 +37,8 @@ import { loadPerformanceCapture } from "./performanceSummary.ts";
 import { orderForCreatedSession } from "./layoutOrder.ts";
 import { updateHeaderCompaction } from "./headerResponsive.ts";
 import { LayoutPicker } from "./LayoutPicker.tsx";
-import { isAndroidTauri, isMacTauri } from "./runtime.ts";
+import { isMacTauri } from "./runtime.ts";
+import { isCoarsePointer, isPhoneTier, watchPhoneTier } from "./phoneTier.ts";
 import { pruneAutoTitleStates } from "./autoTitle.ts";
 import {
   createdSessionAutoTitleState,
@@ -287,9 +288,8 @@ function currentViewport(): Viewport {
   }
   const width = window.innerWidth;
   const height = window.innerHeight;
-  const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
-  // The Android app is always a touch client, even when a stylus makes its WebView report a fine pointer.
-  return { width, height, mobile: width <= 760 || ((coarse || isAndroidTauri()) && width <= 1024), touchPrimary: coarse || isAndroidTauri() };
+  const touchPrimary = isCoarsePointer();
+  return { width, height, mobile: isPhoneTier(), touchPrimary };
 }
 
 function isTerminalShortcutTarget(target: EventTarget | null): boolean {
@@ -497,6 +497,7 @@ function useViewport(): Viewport {
   const [viewport, setViewport] = useState<Viewport>(() => currentViewport());
 
   useEffect(() => {
+    const stopPhoneTier = watchPhoneTier();
     const update = () => {
       setViewport(currentViewport());
     };
@@ -508,6 +509,7 @@ function useViewport(): Viewport {
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
       pointer?.removeEventListener("change", update);
+      stopPhoneTier();
     };
   }, []);
 

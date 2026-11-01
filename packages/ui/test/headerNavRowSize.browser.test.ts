@@ -41,7 +41,7 @@ test("the pager and filter row uses the header type size and a compact height at
           const px=(el)=>parseFloat(getComputedStyle(el).fontSize);
           // The phone layout keeps the pre-#915 --text-md row (#930), touch tablets included (#968);
           // desktop uses the compact row tokens.
-          const phone=matchMedia('(max-width: 760px), (pointer: coarse) and (max-width: 1024px)').matches;
+          const phone=document.documentElement.dataset.phoneTier==='true';
           const probe=document.createElement('span');probe.style.fontSize=phone?'var(--text-md)':'var(--text-sm)';document.body.append(probe);
           const chip=document.querySelector('.session-filter-searchbar .session-filter-chip');
           const placeholder=document.querySelector('.session-filter-placeholder');
