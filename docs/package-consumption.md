@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.29 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.30 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -156,15 +156,12 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.29`; its release is a GitHub
-prerelease with `latest=false`. The Android app offers a per-device Session
-layout in Settings and the phone header fits its parts to the available width
-(#238). Voice-only messages are sent plain, voice beside typed text stays quoted,
-and the voice tag is a language-neutral microphone marker; `VOICE_PROMPT_TAG` now
-holds that marker and earlier tags still show in previews (#243). Upload chips
-show short labels with a copyable path (#222). The Harness filter is multi-select
-(#220). A refused Claude account switch shows its typed cause (#240). Existing
-`v0.1.0` through `v0.1.28` tags and assets stay immutable. The visibility transition does not
+merge. The checked-in SDK version is `0.1.30`; its release is a GitHub
+prerelease with `latest=false`. The macOS app replaces the conversation image
+context menu with working actions, including Copy file path for an attached image
+(#237). A running live session not yet in cached history shows a waiting state
+instead of a miss error (#248). Existing
+`v0.1.0` through `v0.1.29` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
