@@ -56,6 +56,7 @@ package tests, boundary/privacy checks and isolated packed-package consumption. 
 provider acceptance remain separate.
 It removes any stale success marker before checking and writes
 `.cache/agent-validation/project-dev.ok` only after every check passes.
+A validation step that prints nothing for `VALIDATION_STALL_SECONDS` seconds (default 900, `0` disables) is stopped, named on stderr and fails the gate with status 124; steps that keep printing are never stopped. A failed or killed step is named too. `UI_TEST_CONCURRENCY` (default 3) sets how many UI test files run at once; lower it in a tight memory scope.
 [VALIDATION.toml](VALIDATION.toml) declares the finish-line command and marker;
 [the pre-PR dispatcher](.agents/scripts/pre-pr.sh) invokes that command.
 
