@@ -1,4 +1,4 @@
-import { shortenUploadedFiles } from "./attachmentPaths.ts";
+import { isUploadedPathLine, shortenUploadedFiles } from "./attachmentPaths.ts";
 
 /** Language-neutral marker prepended to voice-transcribed prompts so previews keep the transcript visible. */
 export const VOICE_PROMPT_TAG = "🎙️ ";
@@ -40,18 +40,22 @@ function dropVoiceQuoteMarkers(text: string): string {
 }
 
 /**
- * A message made only of voice blocks is sent without the quote markers; any
- * other text beside voice keeps every voice block quoted.
+ * A message made only of voice blocks (and attached upload paths, which are not
+ * typed text) is sent without the quote markers; any other text beside voice
+ * keeps every voice block quoted.
  */
 export function plainVoiceOnlyMessage(text: string): string {
   const message = text.trim();
   if (!message) return text;
   const blocks = message.split(/\n{2,}/);
-  const voiceOnly = blocks.every((block) => {
+  const isVoice = (block: string) => {
     const lines = block.split("\n");
     return QUOTED_VOICE_TAG.test(lines[0]!) && lines.every((line) => /^>( |$)/.test(line));
-  });
-  return voiceOnly ? blocks.map((block) => block.split("\n").map((line) => line.slice(2)).join("\n")).join("\n\n") : text;
+  };
+  const isAttachment = (block: string) => block.split("\n").every(isUploadedPathLine);
+  const voice = blocks.filter(isVoice).length;
+  if (voice === 0 || voice + blocks.filter(isAttachment).length !== blocks.length) return text;
+  return blocks.map((block) => isVoice(block) ? block.split("\n").map((line) => line.slice(2)).join("\n") : block).join("\n\n");
 }
 
 /** A stored prompt as the Session list and History previews show it. */

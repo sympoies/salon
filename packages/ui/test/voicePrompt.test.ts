@@ -70,3 +70,24 @@ test("compactPromptPreview shortens upload paths and keeps the voice tag and tex
   assert.equal(compactPromptPreview("'/s/sessions/a1/attachments/my '\\''x.txt'\n\n> [語音] hi\n> there"), "[File my 'x.txt]\n\n[語音] hi\nthere");
   assert.equal(compactPromptPreview("'/data/file.txt' and \"plain\""), "'/data/file.txt' and \"plain\"");
 });
+
+const IMAGE = "'/state/sessions/s-1/attachments/shot.png'";
+const FILE = "'/state/sessions/s-1/attachments/my '\\''notes.txt'";
+
+test("uploaded attachment paths are not typed text: attachments plus voice send the voice plain", () => {
+  assert.equal(plainVoiceOnlyMessage(`${IMAGE}\n\n> 🎙️ one\n> two`), `${IMAGE}\n\n🎙️ one\ntwo`);
+  assert.equal(plainVoiceOnlyMessage(`${IMAGE}\n${FILE}\n\n> 🎙️ (Fast) one`), `${IMAGE}\n${FILE}\n\n🎙️ (Fast) one`);
+  assert.equal(plainVoiceOnlyMessage(`> 🎙️ one\n\n${IMAGE}`), `🎙️ one\n\n${IMAGE}`);
+  assert.equal(plainVoiceOnlyMessage(`${IMAGE}\n\n> 🎙️ a\n\n> 🎙️ b`), `${IMAGE}\n\n🎙️ a\n\n🎙️ b`);
+});
+
+test("typed text, another path or a bare attachment keeps the message as it is", () => {
+  for (const text of [
+    `typed\n\n${IMAGE}\n\n> 🎙️ one`,
+    `${IMAGE}\n\nlook at this\n\n> 🎙️ one`,
+    `'/data/other.txt'\n\n> 🎙️ one`,
+    `${IMAGE} extra words\n\n> 🎙️ one`,
+    `${IMAGE}\n\n> typed quote\n\n> 🎙️ one`,
+    IMAGE,
+  ]) assert.equal(plainVoiceOnlyMessage(text), text);
+});
