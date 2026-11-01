@@ -142,7 +142,8 @@ for (const view of ["panel", "tile", "phone"] as const) {
     const userRow = mounted.container.querySelector(".history-outgoing-reply");
     assert.ok(userRow);
     assert.match(userRow.textContent ?? "", /first user request/);
-    assert.match(mounted.container.textContent ?? "", /No Codex session with ID provider-7/);
+    assert.match(mounted.container.textContent ?? "", /Finding this session in history/);
+    assertNoElement(mounted.container, '[role="alert"]', "a running session's first miss is a waiting state, not an error");
     assert.equal(reads.length, 0);
     assert.equal(searches.length, 1);
 
@@ -353,7 +354,7 @@ test("the live panel explains a session that has no provider session id yet", as
   assert.match(mounted.container.textContent ?? "", /has not reported a provider session ID yet/);
 });
 
-test("the live panel reports a history miss instead of an empty conversation", async () => {
+test("the live panel reports a true history miss (a stopped session) instead of an empty conversation", async () => {
   const mounted = installDom();
   cleanups.push(mounted.cleanup);
   const ssr = createUiSsrHarness([conversationApiMockPlugin()]);
@@ -367,7 +368,7 @@ test("the live panel reports a history miss instead of an empty conversation", a
   );
 
   await act(async () => {
-    mounted.root.render(createElement(LiveConversationPanel, { session: liveSession(), onClose: () => {} }));
+    mounted.root.render(createElement(LiveConversationPanel, { session: liveSession({ status: "stopped" }), onClose: () => {} }));
     await flush();
   });
   await act(async () => flush());
@@ -1486,4 +1487,61 @@ for (const view of ["panel", "tile", "phone"] as const) test(`${view} refresh ho
   viewport.dispatchEvent(new mounted.window.Event("scroll"));
   await act(async()=>{pending.resolve({ok:true,messages:[{id:"a1",role:"assistant",text:"old conversation"},{id:"a2",role:"assistant",text:"new conversation"}]});await flush();});
   assert.equal(viewport.scrollTop,300,"a refresh must not undo the reader's manual scroll");
+});
+
+// A just-created session can be missing from the service's cached history snapshot for a while.
+test("a running session still missing after the waiting window reports the history miss", async () => {
+  const mounted = installDom(); cleanups.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([conversationApiMockPlugin()]); cleanups.push(ssr.close);
+  globalThis.__agentConsoleConversationApiMock = {
+    listHistorySessions: async () => ({ ok: true, truncated: false, sessions: [] }),
+    listHistoryMessages: async () => ({ ok: true, messages: [] }),
+  };
+  const realNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+  cleanups.push(() => { Date.now = realNow; });
+  const { LiveConversationPanel } = await loadPanel(ssr);
+  await act(async () => {
+    mounted.root.render(createElement(LiveConversationPanel, { session: liveSession(), onClose() {} }));
+    await flush();
+  });
+  await act(async () => flush());
+  assert.match(mounted.container.textContent ?? "", /Finding this session in history/);
+  assertNoElement(mounted.container, '[role="alert"]', "inside the window the miss is a waiting state");
+  now += 120_000;
+  await act(async () => { mounted.window.dispatchEvent(new mounted.window.Event("focus")); await flush(); });
+  await act(async () => flush());
+  assert.match(mounted.container.textContent ?? "", /No Codex session with ID provider-7 is in maple history\./);
+});
+
+test("a miss on a session that is not running recovers once it runs again, without a focus change", async () => {
+  const mounted = installDom(); cleanups.push(mounted.cleanup);
+  let tick!: () => void;
+  const schedule = mounted.window.setTimeout.bind(mounted.window);
+  Reflect.set(mounted.window, "setTimeout", (callback: () => void, ms: number) => {
+    if (ms !== 3000) return schedule(callback, ms);
+    tick = callback;
+    return 539;
+  });
+  const ssr = createUiSsrHarness([conversationApiMockPlugin()]); cleanups.push(ssr.close);
+  let available = false;
+  globalThis.__agentConsoleConversationApiMock = {
+    listHistorySessions: async () => ({ ok: true, truncated: false, latestMessagePaging: true, sessions: available ? [historyEntry()] : [] }),
+    listHistoryMessages: async () => ({ ok: true, messages: [{ id: "reply", role: "assistant", text: "the provider reply" }] }),
+  };
+  const { LiveConversationPanel } = await loadPanel(ssr);
+  const render = (status: Session["status"]) => act(async () => {
+    mounted.root.render(createElement(LiveConversationPanel, { session: liveSession({ status }), onClose() {} }));
+    await flush();
+  });
+  await render("stopped");
+  await act(async () => flush());
+  assert.match(mounted.container.textContent ?? "", /No Codex session with ID provider-7 is in maple history\./);
+  available = true;
+  await render("running");
+  await act(async () => { tick(); await flush(); });
+  await act(async () => flush());
+  assert.match(mounted.container.textContent ?? "", /the provider reply/);
+  assertNoElement(mounted.container, '[role="alert"]', "the miss clears once the session runs again");
 });

@@ -165,8 +165,17 @@ test("missing or unsupported tile history is explicit and never falls back to te
   const h = await harness();
   try {
     h.fixture.missing = true;
-    await h.render("conversation");
-    await h.waitFor(() => h.container.querySelector('[role="alert"]') !== null);
+    const realNow = Date.now;
+    let now = 1_000_000;
+    Date.now = () => now;
+    try {
+      await h.render("conversation");
+      await h.waitFor(() => /Finding this session in history/.test(h.container.textContent ?? ""));
+      assertNoElement(h.container, '[role="alert"]', "a running tile's first miss is a waiting state");
+      now += 120_000;
+      await act(async () => { window.dispatchEvent(new window.Event("focus")); });
+      await h.waitFor(() => h.container.querySelector('[role="alert"]') !== null);
+    } finally { Date.now = realNow; }
     assert.match(h.container.textContent ?? "", /history|conversation/i);
     assert.equal(h.fixture.mounts, 0);
     assert.equal(h.fixture.reads, 0);

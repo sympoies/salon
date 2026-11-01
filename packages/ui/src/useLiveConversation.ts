@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { listHistorySessions } from "./api.ts";
-import { findHistoryEntry } from "./historyResumeById.ts";
+import { findHistoryEntry, type HistoryEntryResolution } from "./historyResumeById.ts";
 import { useHistoryConversation } from "./HistoryConversation.tsx";
 import { createAsyncPoller } from "./useAsyncPoll.ts";
 import { useResourceEvents } from "./useResourceEvents.ts";
 import { RESOURCE_RECONCILE_MS } from "./resourceEvents.ts";
 import { resourceKey } from "@agent-console/shared/resources";
 import type { Session } from "./types.ts";
+
+/**
+ * The service's history snapshot is cached, so a just-created session can be missing from it for a
+ * while. A running session that has not matched yet shows a waiting state for this long before the
+ * miss is reported as an error.
+ */
+const HISTORY_WAIT_MS = 60_000;
 
 function providerLabel(session: Session): string {
   const provider = session.provider_resume?.provider ?? session.agent;
@@ -19,6 +26,9 @@ export function useLiveConversation(session: Session, {
 }: { readonly machineReachable?: boolean; readonly paused?: boolean } = {}) {
   const [error, setError] = useState<string>();
   const [resolving, setResolving] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const statusRef = useRef(session.status);
+  statusRef.current = session.status;
   const conversation = useHistoryConversation(setError);
   const openConversation = conversation.open;
   const resetConversation = conversation.reset;
@@ -31,9 +41,11 @@ export function useLiveConversation(session: Session, {
   useEffect(() => {
     resetConversation();
     setResolving(false);
+    setWaiting(false);
     setError(undefined);
     if (!providerSessionId) return;
     let cancelled = false;
+    let firstMissAt: number | undefined;
     let searching = false;
     let bound = false;
     // The first transcript may appear after this view opens. Reuse ordinary
@@ -46,13 +58,24 @@ export function useLiveConversation(session: Session, {
       setResolving(true);
       try {
         const found = await findHistoryEntry(session.machine, { providerSessionId, label }, listHistorySessions)
-          .catch((cause: Error) => ({ ok: false as const, error: cause.message }));
+          .catch((cause: Error): HistoryEntryResolution => ({ ok: false, error: cause.message }));
         if (cancelled) return;
         if (!found.ok) {
+          // A running session's first transcript can lag the cached history snapshot: wait and keep
+          // retrying instead of reporting a miss. A true miss (not running, past the window, or a
+          // failed or limited search) keeps the error.
+          firstMissAt ??= Date.now();
+          if (found.notFound && statusRef.current === "running" && Date.now() - firstMissAt < HISTORY_WAIT_MS) {
+            setWaiting(true);
+            setError(undefined);
+            return;
+          }
+          setWaiting(false);
           setError(found.error);
           return;
         }
         bound = true;
+        setWaiting(false);
         await openConversation(found.session, found.latestMessagePaging);
       } finally {
         searching = false;
@@ -113,5 +136,5 @@ export function useLiveConversation(session: Session, {
     void refreshRef.current();
   }, [completedAt]);
 
-  return { conversation, providerSessionId, label, error, resolving };
+  return { conversation, providerSessionId, label, error, resolving: resolving || waiting };
 }
