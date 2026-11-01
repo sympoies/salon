@@ -435,10 +435,16 @@ export function projectHistoryMessagesDaemonData(value: unknown): Record<string,
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   if (!Array.isArray(raw.messages)) return null;
-  // Mailbox read events come in addition to the 100-row page limit.
-  const messages = raw.messages.slice(0, 200).flatMap((message) => {
+  // Provider rows are bounded at 100; mailbox read events ride in addition to them, so count rows apart from events.
+  let rows = 0;
+  const messages = raw.messages.flatMap((message) => {
     const projected = projectHistoryMessage(message);
-    return projected ? [projected] : [];
+    if (!projected) return [];
+    if (projected.mailbox === undefined) {
+      if (rows === 100) return [];
+      rows += 1;
+    }
+    return [projected];
   });
   const projected: Record<string, unknown> = { messages };
   const nextCursor = boundedHistoryString(raw.next_cursor, 256);

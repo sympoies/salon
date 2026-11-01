@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { normalizeMailboxEvent } from "@agent-console/shared";
 import {
   projectArchiveDaemonData,
   projectHistoryMessagesDaemonData,
@@ -81,15 +82,12 @@ const mailbox = {
 
 test("history projection forwards a valid mailbox read event with display fields only", () => {
   const event = { id: "h-abc-m-1-mailbox", role: "notice", text: mailboxText, timestamp: "2026-11-02T01:02:03.456Z" };
-  assert.deepEqual(projectHistoryMessagesDaemonData({
+  const projected = projectHistoryMessagesDaemonData({
     messages: [{ ...event, mailbox: { ...mailbox, path: "/private", sender: { ...mailbox.sender, incarnation: "i-1" } } }],
-  }), {
-    messages: [{ ...event, mailbox: {
-      message_id: "m-1",
-      sender: { kind: "session", machine: "machine-a", id: "sender-1" },
-      category: "handoff", state: "read", read_at: "2026-11-02T01:02:03.456Z", acknowledged_at: null, revision: 1,
-    } }],
-  });
+  }) as { messages: Array<{ mailbox?: unknown }> };
+  assert.deepEqual(projected, { messages: [{ ...event, mailbox }] }, "the wire shape, minus every field outside the allow-list");
+  // The browser parses the edge's output with the same normalizer; it must keep the metadata.
+  assert.deepEqual(normalizeMailboxEvent(projected.messages[0]!.mailbox), mailbox);
 });
 
 test("a malformed mailbox object leaves a plain notice, and only notices may carry one", () => {
@@ -98,11 +96,15 @@ test("a malformed mailbox object leaves a plain notice, and only notices may car
   assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [{ id: "a-1", role: "assistant", text: "hi", mailbox }] }), { messages: [{ id: "a-1", role: "assistant", text: "hi" }] });
 });
 
-test("mailbox events do not count against the provider row limit", () => {
+test("mailbox events do not count against the provider row limit, however many ride with a page", () => {
   const rows = Array.from({ length: 100 }, (_, index) => ({ id: `row-${index}`, role: "assistant", text: `row ${index}` }));
-  const events = Array.from({ length: 3 }, (_, index) => ({ id: `h-abc-m-${index}-mailbox`, role: "notice", text: mailboxText, mailbox: { ...mailbox, message_id: `m-${index}` } }));
-  const projected = projectHistoryMessagesDaemonData({ messages: [...rows.slice(0, 50), ...events, ...rows.slice(50)] }) as { messages: unknown[] };
-  assert.equal(projected.messages.length, 103);
+  const events = Array.from({ length: 151 }, (_, index) => ({ id: `h-abc-m-${index}-mailbox`, role: "notice", text: mailboxText, mailbox: { ...mailbox, message_id: `m-${index}` } }));
+  const page = [...rows.slice(0, 50), ...events, ...rows.slice(50)];
+  const projected = projectHistoryMessagesDaemonData({ messages: page }) as { messages: Array<{ id: string }> };
+  assert.equal(projected.messages.length, 251, "all 100 rows and all 151 events");
+  assert.equal(projected.messages.at(-1)?.id, "row-99", "the last element of the page is kept");
+  const over = projectHistoryMessagesDaemonData({ messages: [...page, { id: "row-100", role: "assistant", text: "one more" }] }) as { messages: Array<{ id: string }> };
+  assert.equal(over.messages.filter((message) => message.id.startsWith("row-")).length, 100, "provider rows stay bounded at 100");
 });
 
 test("archive projection requires matching delete acknowledgement and strips private fields", () => {

@@ -10,7 +10,7 @@ export function MailboxEventRow({ event, body, time }: { readonly event: Mailbox
     <details className="mailbox-event-disclosure" open={loadMailboxRowsExpanded()}>
       <summary>
         <span className="session-notice-label">Mailbox</span>
-        <span className="mailbox-event-from">{event.sender.id} · {event.sender.machine}</span>
+        <span className="mailbox-event-from">{event.sender.kind === "service" ? event.sender.service_id : event.sender.session_id} · {event.sender.machine}</span>
         <span className="mailbox-event-category">{event.category}</span>
         <span className="mailbox-event-state">{state}</span>
         {time}

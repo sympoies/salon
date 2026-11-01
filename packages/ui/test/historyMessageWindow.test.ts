@@ -6,7 +6,7 @@ import type { HistoryMessage } from "../src/types.ts";
 const row = (id: string): HistoryMessage => ({ id, role: "assistant", text: id });
 const event = (id: string, revision = 1): HistoryMessage => ({
   id, role: "notice", text: `<!-- agent-notice:v1 kind=mailbox.read source=agent-session id=${id} -->\n\nbody ${revision}`,
-  mailbox: { message_id: id, sender: { kind: "session", machine: "m", id: "s" }, category: "report", state: "read", read_at: null, acknowledged_at: null, revision },
+  mailbox: { schema_version: "agent-session.mailbox-read-event.v1", message_id: id, sender: { kind: "session", machine: "m", session_id: "s" }, category: "report", state: "read", read_at: null, acknowledged_at: null, revision, availability: "complete" },
 });
 const ids = (messages: readonly HistoryMessage[]) => messages.map(message => message.id);
 

@@ -310,8 +310,9 @@ test("history messages keep a valid mailbox read event and drop anything unknown
   const result = await listHistoryMessages("maple", "h-1");
   assert.deepEqual(result.messages, [
     { id: "e1", role: "notice", text, mailbox: {
-      message_id: "m-1", sender: { kind: "session", machine: "machine-a", id: "s-1" }, category: "report",
-      state: "acknowledged", read_at: null, acknowledged_at: "2026-11-02T01:05:00.000Z", revision: 2 } },
+      schema_version: "agent-session.mailbox-read-event.v1", message_id: "m-1",
+      sender: { kind: "session", machine: "machine-a", session_id: "s-1" }, category: "report",
+      state: "acknowledged", read_at: null, acknowledged_at: "2026-11-02T01:05:00.000Z", revision: 2, availability: "complete" } },
     { id: "e2", role: "notice", text },
     { id: "e3", role: "notice", text },
   ]);

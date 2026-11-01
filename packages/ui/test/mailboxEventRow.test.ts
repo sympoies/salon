@@ -10,9 +10,11 @@ const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 
 const mailbox = (overrides: Record<string, unknown> = {}) => ({
+  schema_version: "agent-session.mailbox-read-event.v1",
   message_id: "m-1",
-  sender: { kind: "session", machine: "machine-a", id: "sender-1" },
+  sender: { kind: "session", machine: "machine-a", session_id: "sender-1" },
   category: "handoff", state: "read", read_at: "2026-11-02T01:02:03.456Z", acknowledged_at: null, revision: 1,
+  availability: "complete",
   ...overrides,
 });
 const eventText = (body: string) => `<!-- agent-notice:v1 kind=mailbox.read source=agent-session id=m-1 -->\n\n${body}`;

@@ -15,20 +15,20 @@ const wire = {
 };
 
 test("a v1 mailbox read event keeps only its display fields", () => {
-  assert.deepEqual(normalizeMailboxEvent({ ...wire, path: "/private", sender: { ...wire.sender, incarnation: "i-1" } }), {
-    message_id: wire.message_id,
-    sender: { kind: "session", machine: "machine-a", id: "sender-session-1" },
-    category: "handoff",
-    state: "read",
-    read_at: "2026-11-02T01:02:03.456Z",
-    acknowledged_at: null,
-    revision: 1,
-  });
+  const normalized = normalizeMailboxEvent({ ...wire, path: "/private", sender: { ...wire.sender, incarnation: "i-1" } });
+  assert.deepEqual(normalized, wire);
+});
+
+test("normalizing an already normalized event returns it unchanged, so every hop agrees on one shape", () => {
+  const once = normalizeMailboxEvent({ ...wire, path: "/private" });
+  assert.deepEqual(normalizeMailboxEvent(once), once);
+  const service = normalizeMailboxEvent({ ...wire, sender: { kind: "service", machine: "machine-a", service_id: "dispatcher" } });
+  assert.deepEqual(normalizeMailboxEvent(service), service);
 });
 
 test("service senders, acknowledged state and an ack before the first read are accepted", () => {
   const service = normalizeMailboxEvent({ ...wire, sender: { kind: "service", machine: "machine-a", service_id: "dispatcher" }, category: "uncategorized" });
-  assert.deepEqual(service?.sender, { kind: "service", machine: "machine-a", id: "dispatcher" });
+  assert.deepEqual(service?.sender, { kind: "service", machine: "machine-a", service_id: "dispatcher" });
   const acked = normalizeMailboxEvent({ ...wire, state: "acknowledged", read_at: null, acknowledged_at: "2026-11-02T01:05:00.000Z", revision: 2 });
   assert.equal(acked?.state, "acknowledged");
   assert.equal(acked?.read_at, null);
