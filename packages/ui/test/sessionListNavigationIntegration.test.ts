@@ -229,7 +229,7 @@ test("identifier search inputs disable native spelling and capitalization transf
 test("mobile group picker still presents a bottom sheet", () => {
   assert.match(
     styles,
-    /@media \(max-width: 760px\), \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.session-list-group-trigger[\s\S]*?min-height: 44px;/s,
+    /:where\(:root\[data-phone-tier="true"\]\) [\s\S]*?\.session-list-group-trigger[\s\S]*?min-height: 44px;/s,
   );
   assert.match(
     styles,

@@ -13,6 +13,7 @@ import { parseTurnStateV1 } from "./sessionActivity.ts";
 import { isSessionResumeAvailable, sessionLabel } from "./format.ts";
 import { sessionKey } from "./layout.ts";
 import { SILENT_TURN_MS, silentTurnMinutes, stuckTurn } from "./stuckTurn.ts";
+import { isPhoneTier } from "./phoneTier.ts";
 import type { HistoryMessage, Session } from "./types.ts";
 
 // A working session queues replies; the message list shows Working (#942).
@@ -321,7 +322,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
             // Keep the phone keyboard newline behavior aligned with Dashboard's layout.
-            if (window.matchMedia("(max-width: 760px), (pointer: coarse) and (max-width: 1024px)").matches) return;
+            if (isPhoneTier()) return;
             event.preventDefault();
             void send();
           }} />

@@ -569,7 +569,7 @@ test("Dashboard ⌘F toggles between the list and the selected session", () => {
   assert.match(sessionSlotSource, /readonly cmdFocusTarget: boolean;/);
   assert.match(sessionSlotSource, /\$\{cmdFocusTarget \? "is-cmd-focus-target" : ""\}/);
   assert.match(sessionSlotSource, /rememberSessionInteraction\(slot\);/);
-  assert.match(source, /mobile: width <= 760 \|\| \(coarse && width <= 1024\)/);
+  assert.match(source, /mobile: isPhoneTier\(\)/);
   const cmdFocusTargetOverlayRule = cssRuleFor(".session-workspace.desktop .terminal-slot.is-cmd-focus-target::after,\n.session-workspace.desktop .terminal-slot.is-grid-focus::after");
   assert.doesNotMatch(css, /\.terminal-slot\.is-cmd-focus-target \{/);
   assert.doesNotMatch(css, /(^|\n)\.terminal-slot\.is-cmd-focus-target::after/);

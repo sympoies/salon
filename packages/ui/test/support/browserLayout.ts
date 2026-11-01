@@ -3,12 +3,16 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isPhoneWidth } from "../../src/phoneTier.ts";
 
 const chrome = process.env.CHROME_BIN ?? "google-chrome";
 export function hasHeadlessChrome(): boolean {
   const probe = spawnSync(chrome, ["--version"], { encoding: "utf8" });
   return !probe.error && probe.status === 0;
 }
+
+/** Publishes the tier the way the app does (phoneTier.ts), for pages that load styles.css directly. */
+export const phoneTierScript = `<script>document.documentElement.dataset.phoneTier=String((${isPhoneWidth.toString()})(innerWidth,matchMedia('(pointer: coarse)').matches,false));</script>`;
 
 /** Chrome clamps its window width; an iframe gives phone tests the exact viewport. */
 export function measureUiMarkup<T>(markup: string, width: number, script: string, reducedMotion = false, height = 800, chromeArgs: readonly string[] = [], hideScrollbars = true): T {
@@ -17,7 +21,7 @@ export function measureUiMarkup<T>(markup: string, width: number, script: string
   try {
     const path = join(temp, "layout.html");
     const frameHtml = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>
-      <style>:root{--ac-safe-area-top:24px}</style>${markup}<script>
+      <style>:root{--ac-safe-area-top:24px}</style>${phoneTierScript}${markup}<script>
         try {${script};result.viewportWidth=innerWidth;parent.document.querySelector('#measurement').textContent=JSON.stringify(result);}
         catch(error){parent.document.querySelector('#measurement').textContent=JSON.stringify({error:String(error)});}
       </script>`;
