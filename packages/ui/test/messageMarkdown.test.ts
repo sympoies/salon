@@ -12,7 +12,7 @@ afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()?.();
 });
 
-async function renderMarkdown(text: string) {
+async function renderMarkdown(text: string, props: { readonly uploadSessionId?: string } = {}) {
   const window = new Window({ url: "http://localhost" });
   const previous = {
     window: globalThis.window,
@@ -31,7 +31,7 @@ async function renderMarkdown(text: string) {
     window.close();
   });
   const { MessageMarkdown } = await ssr.loadModule<typeof import("../src/MessageMarkdown.tsx")>("/src/MessageMarkdown.tsx");
-  await act(async () => root.render(createElement(MessageMarkdown, { text })));
+  await act(async () => root.render(createElement(MessageMarkdown, { text, ...props })));
   return { window, container: container as unknown as HTMLElement };
 }
 
@@ -111,4 +111,58 @@ test("message Markdown renders a quoted voice transcript as one blockquote after
   assert.equal(quotes.length, 2);
   assert.match(quotes[0]?.textContent ?? "", /^\[語音·Fast\] line one\s*line two$/);
   assert.doesNotMatch(container.textContent ?? "", /^>|\n>/);
+});
+
+const OWN_DIR = "/state/sessions/s-1/attachments";
+
+test("an owned quoted upload path renders as a short chip and hides the full path", async () => {
+  const { container } = await renderMarkdown(`look at\n'${OWN_DIR}/shot.png'\n'${OWN_DIR}/notes.txt'`, { uploadSessionId: "s-1" });
+  const chips = [...container.querySelectorAll<HTMLButtonElement>("button.attachment-chip")];
+  assert.deepEqual(chips.map((chip) => chip.textContent), ["[圖片 shot.png]", "[檔案 notes.txt]"]);
+  assert.doesNotMatch(container.textContent ?? "", /\/state\/sessions/);
+});
+
+test("selecting a chip copies the exact full path and shows feedback", async () => {
+  const copied: string[] = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (value: string) => { copied.push(value); } } } });
+  cleanups.push(() => { if (previous) Object.defineProperty(globalThis, "navigator", previous); else Reflect.deleteProperty(globalThis, "navigator"); });
+  const { window, container } = await renderMarkdown(`'${OWN_DIR}/my shot it'\\''s.png'`, { uploadSessionId: "s-1" });
+  const chip = container.querySelector<HTMLButtonElement>("button.attachment-chip");
+  assert.equal(chip?.textContent, "[圖片 my shot it's.png]");
+  await act(async () => { chip?.dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
+  assert.deepEqual(copied, [`${OWN_DIR}/my shot it's.png`]);
+  assert.match(container.querySelector("button.attachment-chip")?.textContent ?? "", /Copied/);
+});
+
+test("paths outside the session upload directory, code and unowned messages stay plain text", async () => {
+  const other = "'/state/sessions/s-2/attachments/a.png'";
+  const elsewhere = "'/data/file.txt'";
+  const text = `${other} ${elsewhere}\n\n\`'${OWN_DIR}/c.png'\`\n\n\`\`\`\n'${OWN_DIR}/d.png'\n\`\`\``;
+  const owned = await renderMarkdown(text, { uploadSessionId: "s-1" });
+  assertNoElement(owned.container, "button.attachment-chip");
+  assert.match(owned.container.textContent ?? "", /s-2\/attachments\/a\.png/);
+  assert.match(owned.container.textContent ?? "", /\/data\/file\.txt/);
+  assert.match(owned.container.textContent ?? "", /c\.png/);
+  assert.match(owned.container.textContent ?? "", /d\.png/);
+  const unowned = await renderMarkdown(`'${OWN_DIR}/shot.png'`);
+  assertNoElement(unowned.container, "button.attachment-chip");
+});
+
+test("a chip sits inside a mixed message with a quoted voice transcript", async () => {
+  const { container } = await renderMarkdown(`'${OWN_DIR}/shot.png'\n\n> [語音·Fast] line one\n> line two`, { uploadSessionId: "s-1" });
+  assert.equal(container.querySelectorAll("button.attachment-chip").length, 1);
+  assert.match(container.querySelector("blockquote")?.textContent ?? "", /^\[語音·Fast\] line one\s*line two$/);
+});
+
+test("quoted upload paths inside tilde-fenced and indented code stay literal code", async () => {
+  const path = `'${OWN_DIR}/c.png'`;
+  const text = `~~~sh\ncat ${path}\n~~~\n\n    run ${path}\n\n\`\`\`\`\n\`\`\`\n${path}\n\`\`\`\n\`\`\`\`\n\nafter ${path}`;
+  const { container } = await renderMarkdown(text, { uploadSessionId: "s-1" });
+  const chips = [...container.querySelectorAll("button.attachment-chip")];
+  assert.deepEqual(chips.map((chip) => chip.textContent), ["[圖片 c.png]"], "only the paragraph after the code becomes a chip");
+  const code = [...container.querySelectorAll("pre")].map((pre) => pre.textContent ?? "");
+  assert.equal(code.length, 3);
+  for (const block of code) assert.ok(block.includes(path), `code keeps the original quoted path: ${block}`);
+  assert.doesNotMatch(container.textContent ?? "", /salon-attachment|\[file\]/);
 });

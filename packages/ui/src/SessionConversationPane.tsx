@@ -37,7 +37,7 @@ export function SessionConversationPane({ session, machineReachable, replyDrafts
         </>) : conversation.session ? (
           <>
             {!conversation.loading && conversation.messages.length === 0 ? <p className="history-empty">No conversation messages yet.</p> : null}
-            <HistoryConversationView conversation={conversation} working={conversationTurnWorking(session.turn_state)} outgoing={outgoing} onJumpToLatest={() => {
+            <HistoryConversationView conversation={conversation} uploadSessionId={session.id} working={conversationTurnWorking(session.turn_state)} outgoing={outgoing} onJumpToLatest={() => {
               if (conversation.session) void conversation.open(conversation.session, conversation.latestMessagePaging);
             }} />
           </>
