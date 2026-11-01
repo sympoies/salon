@@ -11,7 +11,7 @@ afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 const imageId = (index: number) => `${"a".repeat(16)}.0.${index}.${"b".repeat(32)}`;
 
 async function mountImages(responseFor?: (path: string) => Response, nested = false,
-  images: Array<{id:string}> = [{id:imageId(0)},{id:imageId(1)}], messages?: unknown[]) {
+  images: Array<{id:string}> = [{id:imageId(0)},{id:imageId(1)}], messages?: unknown[], uploadSessionId?: string) {
   const window = new Window({ url: "http://localhost" });
   const saved = { window: globalThis.window, document: globalThis.document, HTMLElement: globalThis.HTMLElement,
     IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT, fetch: globalThis.fetch };
@@ -30,7 +30,7 @@ async function mountImages(responseFor?: (path: string) => Response, nested = fa
   const conversation = { session:{ id:"history",machine:"fixture",provider:"codex" },messages:messages ?? [
     {id:"message",role:"user",text:"Look at these",images}
   ],latestMessagePaging:true,loading:false,viewportRef:{current:null} };
-  const content = createElement(HistoryConversationView,{conversation:conversation as never,onJumpToLatest(){}});
+  const content = createElement(HistoryConversationView,{conversation:conversation as never,onJumpToLatest(){},...(uploadSessionId ? {uploadSessionId} : {})});
   const { Modal } = await ssr.loadModule<typeof import("../src/Modal.tsx")>("/src/Modal.tsx");
   await act(async () => root.render(nested ? createElement(Modal,{onClose(){},ariaLabel:"Conversation panel",children:content}) : content));
   return {window,requests};
@@ -295,4 +295,95 @@ test("images without provenance render in the bubble as before", async () => {
     assert.equal(article.querySelectorAll(".history-bubble .conversation-image-thumbnail").length,1);
     assertNoElement(article,".history-tool-output");
   }
+});
+
+// macOS image context menu (#237)
+const PNG = new Uint8Array([137,80,78,71,13,10,26,10]);
+const pngResponse = (name?: string, mime = "image/png") => new Response(PNG,{headers:{"content-type":mime,...(name ? {"content-disposition":`inline; filename="${name}"`} : {})}});
+
+async function macMenu(options: {name?: string; text?: string; owner?: string; saveFails?: boolean; mime?: string} = {}) {
+  const id = imageId(0);
+  const {window} = await mountImages(() => pngResponse(options.name,options.mime),false,[{id}],[
+    {id:"message",role:"user",text:options.text ?? "Look at this",images:[{id}]},
+  ],options.owner);
+  const invoked: Array<[string,unknown]> = [];
+  const written: Array<{type: string}[]> = [];
+  Object.assign(window,{__TAURI_INTERNALS__:{async invoke(command: string,args: unknown) {
+    invoked.push([command,args]);
+    if (command === "save_conversation_image" && options.saveFails) throw new Error("denied");
+  }}});
+  Object.defineProperty(window,"__TAURI__",{value:{},configurable:true});
+  class FakeClipboardItem { items: Record<string,Blob>; constructor(items: Record<string,Blob>) { this.items = items; } }
+  Object.assign(globalThis,{ClipboardItem:FakeClipboardItem});
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis,"navigator");
+  cleanups.push(() => { if (previousNavigator) Object.defineProperty(globalThis,"navigator",previousNavigator); else Reflect.deleteProperty(globalThis,"navigator"); });
+  Object.defineProperty(globalThis,"navigator",{configurable:true,value:{userAgent:window.navigator.userAgent,clipboard:{async write(items: FakeClipboardItem[]) { written.push(items.map(item => ({type:Object.keys(item.items)[0]!}))); }}}});
+  const thumbnail = window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!;
+  const event = new window.MouseEvent("contextmenu",{bubbles:true,cancelable:true,clientX:20,clientY:30});
+  await act(async () => { thumbnail.dispatchEvent(event); });
+  const menu = () => window.document.querySelector<HTMLElement>('[role="menu"]');
+  const items = () => [...(menu()?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])].map(item => item.textContent);
+  const choose = (label: string) => act(async () => {
+    [...menu()!.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === label)!.click();
+    await new Promise(resolve => setTimeout(resolve,0));
+  });
+  return {window,event,menu,items,choose,invoked,written};
+}
+
+test("the browser keeps its native image menu",async () => {
+  const {window} = await mountImages(() => pngResponse());
+  const event = new window.MouseEvent("contextmenu",{bubbles:true,cancelable:true});
+  await act(async () => { window.document.querySelector('[aria-label="Open image 1"]')!.dispatchEvent(event); });
+  assert.equal(event.defaultPrevented,false);
+  assertNoElement(window.document,'[role="menu"]');
+});
+
+test("the macOS app replaces the native image menu with working actions",async () => {
+  const {event,items,menu} = await macMenu();
+  assert.equal(event.defaultPrevented,true);
+  assert.deepEqual(items(),["Copy image","Save image","Open in image viewer"]);
+  assert.ok(menu());
+});
+
+test("each macOS image menu item runs its action and closes the menu",async () => {
+  const saved = await macMenu({name:"plot.png"});
+  await saved.choose("Save image");
+  assert.deepEqual(saved.invoked.filter(([command]) => command === "save_conversation_image").map(([,args]) => (args as {name:string;mime:string}).name + " " + (args as {mime:string}).mime),["plot.png image/png"]);
+  assertNoElement(saved.window.document,'[role="menu"]');
+  const copied = await macMenu();
+  await copied.choose("Copy image");
+  assert.deepEqual(copied.written,[[{type:"image/png"}]]);
+  const opened = await macMenu();
+  await opened.choose("Open in image viewer");
+  assert.ok(opened.window.document.querySelector('[role="dialog"][aria-label="Conversation images"]'));
+});
+
+test("copying a JPEG starts the clipboard write inside the click, before conversion finishes",async () => {
+  // WebKit rejects a clipboard write started after an await; the PNG
+  // conversion therefore travels as a pending item value.
+  Object.assign(globalThis,{createImageBitmap: () => new Promise(() => {})});
+  cleanups.push(() => { Reflect.deleteProperty(globalThis,"createImageBitmap"); });
+  const jpeg = await macMenu({mime:"image/jpeg"});
+  await jpeg.choose("Copy image");
+  assert.deepEqual(jpeg.written,[[{type:"image/png"}]],"the write began while the conversion was still pending");
+});
+
+test("a failed macOS image save or copy shows visible feedback",async () => {
+  const failed = await macMenu({saveFails:true});
+  await failed.choose("Save image");
+  assert.match(failed.window.document.querySelector('.conversation-images [role="status"].conversation-image-menu-error')?.textContent ?? "",/Image could not be saved/);
+});
+
+test("Copy file path copies the exact upload path only for a known attached image",async () => {
+  const path = "/state/sessions/s-1/attachments/shot.png";
+  const known = await macMenu({name:"shot.png",text:`look\n'${path}'`,owner:"s-1"});
+  assert.deepEqual(known.items(),["Copy image","Save image","Open in image viewer","Copy file path"]);
+  await known.choose("Copy file path");
+  assert.deepEqual(known.invoked.filter(([command]) => command === "write_macos_clipboard_text"),[["write_macos_clipboard_text",{text:path}]]);
+  const otherName = await macMenu({name:"other.png",text:`'${path}'`,owner:"s-1"});
+  assert.ok(!otherName.items().includes("Copy file path"),"a path for a different file is not offered");
+  const foreign = await macMenu({name:"shot.png",text:`'/state/sessions/s-2/attachments/shot.png'`,owner:"s-1"});
+  assert.ok(!foreign.items().includes("Copy file path"),"another session's upload is not offered");
+  const none = await macMenu({name:"shot.png",text:"no path here",owner:"s-1"});
+  assert.ok(!none.items().includes("Copy file path"),"an image without a known path does not offer it");
 });

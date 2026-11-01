@@ -69,3 +69,8 @@ export function linkUploadedFiles(text: string, owner: string): { readonly text:
 export function shortenUploadedFiles(text: string): string {
   return editOutsideCode(text, (quoted, whole) => uploadedFile(quoted, undefined)?.label ?? whole);
 }
+
+/** The owner's quoted upload paths in a message, in order. */
+export function uploadedFilePaths(text: string, owner: string): readonly string[] {
+  return linkUploadedFiles(text, owner).files.map((file) => file.path);
+}
