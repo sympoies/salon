@@ -6,7 +6,9 @@ Usage: stall-timeout.py <label> <command> [args...]
 A step that keeps printing is never stopped, however long it runs. The silence
 limit is VALIDATION_STALL_SECONDS (default 900; 0 disables it). On a stall the
 step's whole process group is stopped, the step is named on stderr and the exit
-status is 124. A step that fails or is killed is named on stderr as well.
+status is 124. A step that fails or is killed is named on stderr as well. If this
+script is interrupted (SIGINT, SIGTERM, SIGHUP) it stops the step's group and exits
+128 plus the signal number.
 """
 
 import os
@@ -19,17 +21,36 @@ import time
 STALL_STATUS = 124
 
 
+def group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
 def stop(process: subprocess.Popen) -> None:
+    """Stop every member of the step's process group: TERM, then KILL, then reap."""
+    pgid = process.pid
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
-            os.killpg(process.pid, sig)
+            os.killpg(pgid, sig)
         except ProcessLookupError:
-            return
-        try:
-            process.wait(timeout=5)
-            return
-        except subprocess.TimeoutExpired:
-            continue
+            break
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            process.poll()  # reap the leader so only live members keep the group
+            if not group_alive(pgid):
+                break
+            time.sleep(0.05)
+        if not group_alive(pgid):
+            break
+    process.wait()
+
+
+def cancel(process: subprocess.Popen, signum: int) -> None:
+    stop(process)
+    sys.exit(128 + signum)
 
 
 def main() -> int:
@@ -40,6 +61,8 @@ def main() -> int:
     limit = int(os.environ.get("VALIDATION_STALL_SECONDS", "900"))
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                start_new_session=True)
+    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, lambda received, _frame: cancel(process, received))
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
     last_output = time.monotonic()

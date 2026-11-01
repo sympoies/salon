@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -57,6 +58,35 @@ class StallTimeoutTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertLess(time.monotonic() - started, 20)
         self.assertIn("closed output step", result.stderr)
+
+    def test_term_resistant_child_in_the_group_is_killed_when_a_stall_stops_the_step(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = Path(directory) / "pid"
+            script = f"(trap '' TERM; exec sleep 60) & echo $! > {pid_file}; wait"
+            result = run(1, "resistant step", "bash", "-c", script)
+            self.assertEqual(result.returncode, 124)
+            child = int(pid_file.read_text())
+            time.sleep(0.5)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child, 0)
+
+    def test_cancelling_the_watchdog_stops_the_step_and_exits_conventionally(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = Path(directory) / "pid"
+            watchdog = subprocess.Popen(
+                [sys.executable, str(WATCHDOG), "cancelled step", "bash", "-c", f"sleep 60 & echo $! > {pid_file}; wait"],
+                env=dict(os.environ, VALIDATION_STALL_SECONDS="30"), stderr=subprocess.PIPE)
+            for _ in range(100):
+                if pid_file.exists() and pid_file.read_text().strip():
+                    break
+                time.sleep(0.1)
+            child = int(pid_file.read_text())
+            watchdog.send_signal(signal.SIGTERM)
+            self.assertEqual(watchdog.wait(timeout=20), 128 + signal.SIGTERM)
+            time.sleep(0.5)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child, 0)
+            watchdog.stderr.close()
 
 
 if __name__ == "__main__":
