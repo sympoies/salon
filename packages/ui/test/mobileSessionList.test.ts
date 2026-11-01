@@ -508,3 +508,12 @@ test("card previews choose either side, mark assistant replies and preserve prom
     {...item, last_prompt: undefined, last_prompt_state: "pending", last_prompt_continuity: "fixture-epoch"});
   assert.equal(await preview(pending, "last-prompt"), "Review the change", "pending prompt continuity still applies");
 });
+
+test("mobile session cards show an upload path as a short chip label", async () => {
+  const html = await renderMobileSessions([makeSession({
+    agent: "claude",
+    last_prompt: { text: "'/state/sessions/s-1/attachments/shot.png' check it", truncated: false },
+  })]);
+  assert.match(html, /class="mobile-session-card-prompt">\[圖片 shot\.png\] check it<\/span>/);
+  assert.doesNotMatch(html, /\/state\/sessions/);
+});

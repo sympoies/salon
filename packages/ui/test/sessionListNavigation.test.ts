@@ -210,8 +210,8 @@ test("old-daemon dsh sessions use raw unknown-agent navigation and filters", asy
   assert.deepEqual(filtered, [session]);
   assert.deepEqual(paginateSessionList({ sessions: filtered, requestedPage: 1, pageSize: 1 }).sessionKeys, ["host-a/retired"]);
   const row = { ...session, session_id: session.id, provider: session.agent };
-  assert.deepEqual(filterRecords([row], { ...CLEAR_SESSION_FILTERS, harness: "dsh" }), [row]);
-  assert.deepEqual(filterRecords([row], { ...CLEAR_SESSION_FILTERS, harness: "codex" }), []);
+  assert.deepEqual(filterRecords([row], { ...CLEAR_SESSION_FILTERS, harnesses: ["dsh"] }), [row]);
+  assert.deepEqual(filterRecords([row], { ...CLEAR_SESSION_FILTERS, harnesses: ["codex"] }), []);
 });
 
 test("preferred full layout order survives page-sized projections and appends new sessions", async () => {

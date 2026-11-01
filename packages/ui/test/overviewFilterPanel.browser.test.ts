@@ -25,7 +25,7 @@ test("overview filters open on demand with expanded toggleable facets and staged
         React.createElement('header',{className:'workspace-head'},
           React.createElement('div',{className:'workspace-head-start'},
             React.createElement('div',{className:'brand-title'},React.createElement('button',{className:'brand-title-mark'}),React.createElement('h1',{},'Agent Console')),
-            React.createElement(SessionListNavigator,{filters,mobile:innerWidth<=760,machines:['host-a','host-b'],roles:['role-a','role-b'],harnesses:[{id:'codex',label:'Codex'}],resultCount:4,countsAvailable:true,
+            React.createElement(SessionListNavigator,{filters,mobile:innerWidth<=760,machines:['host-a','host-b'],roles:['role-a','role-b'],harnesses:[{id:'codex',label:'Codex'},{id:'claude',label:'Claude'}],resultCount:4,countsAvailable:true,
               page:1,pageCount:2,onPageChange(){},onChange(next){window.commits.push(next);setFilters(next);}})),
           React.createElement('div',{className:'dash-actions'},React.createElement('button',{className:'btn'},'New'))),
         React.createElement('section',{className:'fixture-grid'},'Session grid'));
@@ -71,7 +71,7 @@ test("overview filters open on demand with expanded toggleable facets and staged
             check(section.open,dimension+' can expand again');
           }
           check(query('.fixture-grid').getBoundingClientRect().top===gridTop,'opening panel does not move session grid');
-          await select('Filter sessions by harness','codex');
+          await click(query('[data-filter-dimension="harnesses"] input[value="codex"]'));
           await click(query('[data-filter-dimension="hosts"] input[value="host-a"]'));
           await click(query('[data-filter-dimension="roles"] input[value="role-b"]'));
           const repo=query('input[aria-label="Repository"]');
@@ -79,14 +79,14 @@ test("overview filters open on demand with expanded toggleable facets and staged
           repo.dispatchEvent(new Event('input',{bubbles:true}));await wait();
           check(window.commits.length===0,'field edits remain staged');
           window.refreshFilters();await wait();
-          check(repo.value===' staged-repo '&&query('select[aria-label="Filter sessions by harness"]').value==='codex','unchanged polling preserves staged values');
+          check(repo.value===' staged-repo '&&query('[data-filter-dimension="harnesses"] input[value="codex"]').checked,'unchanged polling preserves staged values');
           await click(query('[data-status-group="working"]'));
           check(repo.value===' staged-repo ','immediate status change preserves staged repository');
           const actions=()=>query('.session-filter-panel-actions');
           await click(actions().querySelector('.primary'));
           check(!panel(),'Apply closes panel');
           const applied=window.commits.at(-1);
-          check(applied.harness==='codex'&&applied.repo==='staged-repo'&&applied.hosts.join()==='host-a'&&applied.roles.join()==='role-b'&&applied.statusGroup==='working','Apply commits complete preserved draft');
+          check(applied.harnesses.join()==='codex'&&applied.repo==='staged-repo'&&applied.hosts.join()==='host-a'&&applied.roles.join()==='role-b'&&applied.statusGroup==='working','Apply commits complete preserved draft');
           check(document.querySelectorAll('.session-filter-search-chips .session-filter-chip').length===5,'closed control shows compact active-filter chips');
           await click(trigger);
           check(query('input[aria-label="Repository"]').value==='staged-repo','reopening shows applied values');
@@ -95,17 +95,17 @@ test("overview filters open on demand with expanded toggleable facets and staged
           await click(actions().querySelector('.primary'));
           check(window.commits.at(-1).hosts===null,'All hosts reset stays staged through cloned arrays and Apply');
           await click(trigger);
-          await select('Filter sessions by harness','');
+          await click(query('[data-filter-dimension="harnesses"] .session-filter-facet-all'));
           await click(actions().querySelector('.btn'));
           check(!panel(),'Clear closes panel');
           const cleared=window.commits.at(-1);
-          check(cleared.hosts===null&&cleared.roles===null&&cleared.harness===null&&cleared.repo===''&&cleared.statusGroup===null,'Clear resets every applied dimension');
+          check(cleared.hosts===null&&cleared.roles===null&&cleared.harnesses===null&&cleared.repo===''&&cleared.statusGroup===null,'Clear resets every applied dimension');
           check(document.querySelectorAll('.session-filter-search-chips .session-filter-chip').length===0,'Clear removes active indication');
           await click(trigger);
-          await select('Filter sessions by harness','codex');
+          await click(query('[data-filter-dimension="harnesses"] input[value="codex"]'));
           await click(actions().querySelector('.btn'));
           await click(trigger);
-          check(query('select[aria-label="Filter sessions by harness"]').value==='','Clear discards draft even when applied filters already clear');
+          check(!query('[data-filter-dimension="harnesses"] input[value="codex"]').checked,'Clear discards draft even when applied filters already clear');
           await click(query('.session-filter-panel-heading button'));
           check(!panel(),'close control dismisses panel');
           check(document.documentElement.scrollWidth<=innerWidth,'overview has no horizontal overflow');

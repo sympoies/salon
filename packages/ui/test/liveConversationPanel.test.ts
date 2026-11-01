@@ -297,6 +297,30 @@ test("the live panel finds the session's history entry and opens its latest mess
   assert.match(text, /fixed and tested/);
 });
 
+test("the live panel shows chips for the live session's own uploads in user messages (#222)", async () => {
+  const mounted = installDom();
+  cleanups.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([conversationApiMockPlugin()]);
+  cleanups.push(ssr.close);
+  globalThis.__agentConsoleConversationApiMock = {
+    listHistorySessions: async () => ({ ok: true, truncated: false, latestMessagePaging: true, sessions: [historyEntry()] }),
+    listHistoryMessages: async () => ({
+      ok: true,
+      messages: [
+        { id: "u1", role: "user", text: "'/state/sessions/hs-7/attachments/shot.png'\n\n> [語音] see this" },
+        { id: "u2", role: "user", text: "'/state/sessions/other/attachments/old.png'" },
+      ],
+    }),
+  };
+  const { LiveConversationPanel } = await ssr.loadModule<typeof import("../src/LiveConversationPanel.tsx")>("/src/LiveConversationPanel.tsx");
+  await act(async () => { mounted.root.render(createElement(LiveConversationPanel, { session: liveSession(), onClose: () => {} })); await flush(); });
+  await act(async () => flush());
+  const chips = [...mounted.container.querySelectorAll('button.attachment-chip')].map(chip => chip.textContent);
+  assert.deepEqual(chips, ['[圖片 shot.png]']);
+  assert.match(mounted.container.textContent ?? '', /other\/attachments\/old\.png/);
+  assert.match(mounted.container.textContent ?? '', /\[語音\] see this/);
+});
+
 test("the live panel explains a session that has no provider session id yet", async () => {
   const mounted = installDom();
   cleanups.push(mounted.cleanup);

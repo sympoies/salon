@@ -64,18 +64,27 @@ const facetRows = [
   { machine: "host-a", session_id: "elsewhere", created_at: "2030-01-01T00:00:00Z", provider: "other-provider", repo_name: "other", status: "running" },
 ];
 test("facet options replace their dimension and respect all other selected dimensions", () => {
-  const filters = { ...CLEAR_SESSION_FILTERS, hosts: ["host-a"], harness: "claude", repo: "console" };
-  assert.equal(sessionFilters.sessionFacetCount(facetRows, filters, { harness: "codex" }), 1);
+  const filters = { ...CLEAR_SESSION_FILTERS, hosts: ["host-a"], harnesses: ["claude"], repo: "console" };
+  assert.equal(sessionFilters.sessionFacetCount(facetRows, filters, { harnesses: ["codex"] }), 1);
   assert.equal(sessionFilters.sessionFacetCount(facetRows, filters, { hosts: ["host-b"] }), 1);
   assert.equal(sessionFilters.sessionFacetCount(facetRows, filters, { roles: ["reviewer"] }), 0);
-  assert.equal(sessionFilters.sessionFacetCount(facetRows, { ...filters, harness: "codex" }, { roles: ["reviewer"] }), 1);
+  assert.equal(sessionFilters.sessionFacetCount(facetRows, { ...filters, harnesses: ["codex"] }, { roles: ["reviewer"] }), 1);
+});
+test("two selected harnesses show the sessions of both and count like Hosts", () => {
+  const both = { ...CLEAR_SESSION_FILTERS, harnesses: ["codex", "claude"] };
+  assert.deepEqual(filterRecords(facetRows, both).map(row => row.session_id), ["review", "plain", "worker"]);
+  assert.equal(sessionFilters.sessionFacetCount(facetRows, both, { harnesses: ["claude"] }), 1);
+  assert.equal(sessionFilters.sessionFacetCount(facetRows, both, {}), 3);
+  assert.equal(hasActiveSessionFilters(both), true);
+  assert.equal(hasActiveSessionFilters({ ...both, harnesses: null }), false);
+  assert.equal(sessionFilters.toggleFacetSelection(["codex"], ["codex", "claude", "other-provider"], "claude")?.join(), "codex,claude");
 });
 test("zero-count facets and each all option agree with the corresponding list", () => {
-  for (const option of [{ hosts: null }, { roles: null }, { harness: null }, { statusGroup: null }] as const) {
+  for (const option of [{ hosts: null }, { roles: null }, { harnesses: null }, { statusGroup: null }] as const) {
     assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, option), filterRecords(facetRows, CLEAR_SESSION_FILTERS).length);
   }
   assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, { hosts: ["empty-host"] }), 0);
-  assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, { harness: "other-provider" }), 1);
+  assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, { harnesses: ["other-provider"] }), 1);
   assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, { roles: [null] }), 2);
 });
 test("the first host pick isolates that value; the all state is null", () => {
