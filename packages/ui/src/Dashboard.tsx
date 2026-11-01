@@ -289,18 +289,7 @@ function currentViewport(): Viewport {
   const height = window.innerHeight;
   const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
   // The Android app is always a touch client, even when a stylus makes its WebView report a fine pointer.
-  return { width, height, mobile: width <= 760 || (coarse && width <= 1024), touchPrimary: coarse || isAndroidTauri() };
-}
-
-// The live values behind the touch-primary decision, readable in the debug log
-// on a device that has no debug socket.
-function recordViewportProbe(viewport: Viewport): void {
-  const matches = (query: string) => (window.matchMedia?.(query).matches ? 1 : 0);
-  recordDebugEvent({
-    source: "client", method: "GET",
-    route: `/client/viewport/width-${viewport.width}/pointer-coarse-${matches("(pointer: coarse)")}/any-pointer-coarse-${matches("(any-pointer: coarse)")}/touch-primary-${viewport.touchPrimary ? 1 : 0}`,
-    ok: true,
-  });
+  return { width, height, mobile: width <= 760 || ((coarse || isAndroidTauri()) && width <= 1024), touchPrimary: coarse || isAndroidTauri() };
 }
 
 function isTerminalShortcutTarget(target: EventTarget | null): boolean {
@@ -508,18 +497,8 @@ function useViewport(): Viewport {
   const [viewport, setViewport] = useState<Viewport>(() => currentViewport());
 
   useEffect(() => {
-    let probed = "";
-    const probe = (next: Viewport) => {
-      const key = `${next.width}:${next.touchPrimary}`;
-      if (key === probed) return;
-      probed = key;
-      recordViewportProbe(next);
-    };
-    probe(currentViewport());
     const update = () => {
-      const next = currentViewport();
-      probe(next);
-      setViewport(next);
+      setViewport(currentViewport());
     };
     const pointer = window.matchMedia?.("(pointer: coarse)");
     window.addEventListener("resize", update);

@@ -103,7 +103,7 @@ for (const [width, coarse] of [[761, false], [1024, false], [1025, true], [1500,
 test("the header CSS and measurement share Dashboard's phone tier", () => {
   const phone = "(max-width: 760px), (pointer: coarse) and (max-width: 1024px)";
   const desktop = "(min-width: 1025px), (min-width: 761px) and (not (pointer: coarse))";
-  assert.match(uiSource("Dashboard.tsx"), /mobile: width <= 760 \|\| \(coarse && width <= 1024\)/);
+  assert.match(uiSource("Dashboard.tsx"), /mobile: width <= 760 \|\| \(\(coarse \|\| isAndroidTauri\(\)\) && width <= 1024\)/);
   assert.ok(uiSource("headerResponsive.ts").includes(`matchMedia("${phone}")`), "the measurement uses the phone tier");
   const css = uiStyles();
   const queryOf = (rule: string) => {

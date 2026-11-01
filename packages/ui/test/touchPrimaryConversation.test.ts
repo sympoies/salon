@@ -119,16 +119,57 @@ for (const width of [1180, 1366]) {
 }
 
 // #207: the Android app is always a touch client, even when its WebView reports a fine pointer (stylus).
-for (const width of [900, 1180]) {
-  test(`the Android app at ${width}px with a fine pointer opens a session in conversation`, async () => {
-    const h = await harness(width, false, true);
-    try {
-      await openFirst(h);
-      await waitFor(() => panel(h), "the conversation panel shows the session");
-      assert.equal(terminal(h), false);
-    } finally { await h.close(); }
-  });
-}
+// The Android app also takes the phone layout up to 1024px, like a coarse pointer.
+const noGrid = (h: H) => h.container.querySelector(".terminal-pane") === null && h.container.querySelector(".conversation-modal") === null;
+
+test("the Android app at 900px with a fine pointer uses the phone layout and opens a session in conversation", async () => {
+  const h = await harness(900, false, true);
+  try {
+    await openFirst(h);
+    await waitFor(() => phonePane(h), "the phone conversation shows the session");
+    assert.equal(noGrid(h), true);
+  } finally { await h.close(); }
+});
+
+test("the Android app at 900px with a fine pointer honors the terminal preference", async () => {
+  const h = await harness(900, false, true);
+  try {
+    await openFirst(h, "terminal");
+    await waitFor(() => h.container.querySelector('.terminal-pane[data-session="one"]') !== null, "the terminal opens");
+    assert.equal(phonePane(h), false);
+  } finally { await h.close(); }
+});
+
+test("rotating the Android app between 677px and 902px keeps the session in conversation", async () => {
+  const h = await harness(677, false, true);
+  try {
+    await openFirst(h);
+    await waitFor(() => phonePane(h), "phone conversation open");
+    await h.resize(902);
+    await waitFor(() => phonePane(h), "still the phone conversation at 902px");
+    assert.equal(noGrid(h), true);
+    await h.resize(677);
+    await waitFor(() => phonePane(h), "still the phone conversation at 677px");
+  } finally { await h.close(); }
+});
+
+test("a browser at 900px with a fine pointer stays in the desktop tier", async () => {
+  const h = await harness(900, false);
+  try {
+    await openFirst(h);
+    await waitFor(() => terminal(h), "the terminal opens");
+    assert.equal(phonePane(h), false);
+  } finally { await h.close(); }
+});
+
+test("the Android app at 1180px with a fine pointer opens a session in the wide conversation panel", async () => {
+  const h = await harness(1180, false, true);
+  try {
+    await openFirst(h);
+    await waitFor(() => panel(h), "the conversation panel shows the session");
+    assert.equal(terminal(h), false);
+  } finally { await h.close(); }
+});
 
 test("the Android app at 1180px with a fine pointer honors the terminal preference", async () => {
   const h = await harness(1180, false, true);
@@ -136,18 +177,6 @@ test("the Android app at 1180px with a fine pointer honors the terminal preferen
     await openFirst(h, "terminal");
     await waitFor(() => terminal(h), "the terminal opens");
     assert.equal(panel(h), false);
-  } finally { await h.close(); }
-});
-
-test("the debug log records the live values behind the touch-primary decision", async () => {
-  const h = await harness(1180, false, true);
-  try {
-    await openFirst(h);
-    const { debugEvents } = await h.ssr.loadModule<typeof import("../src/debugLog.ts")>("/src/debugLog.ts");
-    const routes = debugEvents().map(event => event.route).filter(route => route.startsWith("/client/viewport/"));
-    assert.deepEqual(routes, ["/client/viewport/width-1180/pointer-coarse-0/any-pointer-coarse-0/touch-primary-1"]);
-    await h.resize(1366);
-    assert.equal(debugEvents().filter(event => event.route.startsWith("/client/viewport/")).length, 2);
   } finally { await h.close(); }
 });
 
