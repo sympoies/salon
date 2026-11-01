@@ -54,7 +54,7 @@ async function checkSubmittedUi(base: string) {
   const profile = mkdtempSync(join(tmpdir(), "packed-ui-chrome-"));
   const chrome = spawn(process.env.CHROME_BIN ?? "google-chrome", ["--headless", "--no-sandbox", "--disable-gpu",
     "--no-first-run", "--password-store=basic", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"],
-  { stdio: ["ignore", "ignore", "pipe"] });
+  { stdio: ["ignore", "ignore", "pipe"], detached: true });
   let socket: WebSocket | undefined;
   try {
     const endpoint = await new Promise<string>((resolve, reject) => {
@@ -175,7 +175,9 @@ async function checkSubmittedUi(base: string) {
       const escalate = setTimeout(() => chrome.kill("SIGKILL"), 5_000);
       await exited; clearTimeout(escalate);
     }
-    rmSync(profile, { recursive: true, force: true });
+    // Chrome helper processes outlive the main process and can still write into the profile.
+    if (chrome.pid !== undefined) try { process.kill(-chrome.pid, "SIGKILL"); } catch { /* group already gone */ }
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 try {
