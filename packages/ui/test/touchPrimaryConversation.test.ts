@@ -284,6 +284,11 @@ for (const [width, coarse] of [[900, false], [360, false], [900, true]] as const
       await waitFor(() => phonePane(h), "the tile opens the full-screen conversation");
       assert.equal(tier(h), "true");
       assert.equal(noGrid(h), true);
+      // Android Back (a history pop) returns to the Desktop list the setting chose, not the phone list.
+      await act(async () => { h.window.history.back(); });
+      await waitFor(() => tiles(h).length >= 1 && h.container.querySelector(".phone-conversation-pane") === null, "Back returns to the Desktop list");
+      assert.equal(tier(h), "false");
+      assert.ok(h.container.querySelector(".layout-picker"), "the layout control is back with the list");
     } finally { await h.close(); }
   });
 }

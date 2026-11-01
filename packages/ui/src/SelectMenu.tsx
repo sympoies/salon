@@ -32,6 +32,8 @@ export interface SelectMenuProps {
   readonly value: string;
   readonly options: readonly SelectMenuOption[];
   readonly disabled?: boolean;
+  /** Extra class on the root, for a caller that sizes or positions the control. */
+  readonly className?: string;
   readonly onChange: (value: string) => void;
 }
 
@@ -102,7 +104,7 @@ function triggerNavigationIndex(key: string, selectedIndex: number, optionCount:
   return (selectedIndex - 1 + optionCount) % optionCount;
 }
 
-export function SelectMenu({ ariaLabel, value, options, disabled = false, onChange }: SelectMenuProps) {
+export function SelectMenu({ ariaLabel, value, options, disabled = false, className, onChange }: SelectMenuProps) {
   const group = useContext(SelectMenuGroupContext);
   const [localOpen, setLocalOpen] = useState(false);
   const listboxId = useId();
@@ -227,7 +229,7 @@ export function SelectMenu({ ariaLabel, value, options, disabled = false, onChan
   return (
     <div
       ref={rootRef}
-      className="select-menu"
+      className={className ? `select-menu ${className}` : "select-menu"}
       onBlur={(event) => {
         const preservesGroupedSwitch = group
           && group.pointerSwitchPrepared()

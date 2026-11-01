@@ -172,7 +172,8 @@ import { useAndroidBackEntry } from "./useAndroidBackEntry.ts";
 import { useExpiringValue } from "./useExpiringValue.ts";
 import { useLayoutSync } from "./useLayoutSync.ts";
 import { useSlotDrag } from "./useSlotDrag.ts";
-import { CloseIcon, MachineIcon, PlusIcon, SelectChevronIcon, StarIcon, TrashIcon } from "./icons.tsx";
+import { CloseIcon, PlusIcon, StarIcon, TrashIcon } from "./icons.tsx";
+import { MachineFilter } from "./MachineFilter.tsx";
 import { HeaderMenu } from "./HeaderMenu.tsx";
 import { HistoryPanel } from "./HistoryPanel.tsx";
 import { LiveConversationPanel } from "./LiveConversationPanel.tsx";
@@ -2917,27 +2918,12 @@ export function Dashboard({
             {/* Focused terminals keep their host control; overview filters live
                 together in SessionListNavigator. */}
             {focusedKey !== null && enabledMachines.length > 1 ? (
-              <label className="machine-filter">
-                <MachineIcon />
-                <AppSelect
-                  className="machine-filter-select"
-                  aria-label="Filter sessions by machine"
-                  value={machineFilter}
-                  onChange={(e) => {
-                    cancelPendingCreatedFocus();
-                    setMachineFilter(e.target.value);
-                    setSessionListPage(1);
-                  }}
-                >
-                  <option value={ALL}>All machines</option>
-                  {enabledMachines.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </AppSelect>
-                <SelectChevronIcon />
-              </label>
+              <MachineFilter value={machineFilter} machines={enabledMachines} allValue={ALL}
+                onChange={(next) => {
+                  cancelPendingCreatedFocus();
+                  setMachineFilter(next);
+                  setSessionListPage(1);
+                }} />
             ) : null}
             {/* The Android app shows the grid layout control only in Desktop (#252). */}
             {isAndroidTauri() ? null : <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}

@@ -2198,6 +2198,9 @@ textarea {
   white-space: nowrap;
   cursor: pointer;
 }
+/* The Android themed menu replaces the select in the same slot: same box, icon clearance and no second chevron. */
+.machine-filter > .select-menu.machine-filter-select { grid-column: 1 / -1; grid-row: 1; z-index: 1; width: 100%; min-width: 9rem; max-width: 11rem; }
+.machine-filter .select-menu-trigger { min-height: 36px; border: 0; border-radius: inherit; padding: 0 var(--space-md) 0 var(--space-2xl); background: transparent; box-shadow: none; font-size: var(--text-md); font-weight: var(--weight-medium); }
 .machine-filter-select:focus-visible {
   outline: none;
 }
@@ -7017,6 +7020,7 @@ textarea {
   background-position: right 0.5rem center;
   text-overflow: ellipsis;
 }
+.shell-page-machine > .select-menu { flex: 1 1 0; min-width: 0; }
 .shell-page-actions { display: flex; flex: none; gap: var(--space-sm); }
 .shell-page-actions .btn { white-space: nowrap; }
 .shell-page-status {

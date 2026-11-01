@@ -43,5 +43,5 @@ export function AppSelect({ children, value, onChange, disabled, ...rest }: Sele
     onChange?.({ target, currentTarget: target } as unknown as ChangeEvent<HTMLSelectElement>);
   };
   return <SelectMenu ariaLabel={rest["aria-label"] ?? ""} value={String(value ?? "")} options={optionsOf(children)}
-    disabled={disabled} onChange={choose} />;
+    disabled={disabled} className={rest.className} onChange={choose} />;
 }
