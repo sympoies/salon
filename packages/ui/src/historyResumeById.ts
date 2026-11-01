@@ -10,7 +10,8 @@ export interface HistoryEntryTarget {
 
 export type HistoryEntryResolution =
   | { readonly ok: true; readonly session: HistorySession; readonly latestMessagePaging: boolean }
-  | { readonly ok: false; readonly error: string };
+  /** `notFound` marks a clean miss: the search finished and no entry matched. */
+  | { readonly ok: false; readonly error: string; readonly notFound?: true };
 
 export type HistorySessionLister = (
   machine: string,
@@ -71,6 +72,7 @@ export async function findHistoryEntry(
     return {
       ok: false,
       error: `No ${target.label} session with ID ${target.providerSessionId} is in ${machine} history.`,
+      notFound: true,
     };
   }
   return { ok: true, session: match, latestMessagePaging };
