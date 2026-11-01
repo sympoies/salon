@@ -106,7 +106,14 @@ test("installed compiled core starts an authenticated edge and composes a generi
     assert.match(files, /node_modules\/@agent-console\/edge\/dist-package\/.*\.d\.ts/);
     console.log(`consumer typecheck: PASS (${coreFiles.length} installed declaration modules)`);
     run("pnpm", ["exec", "vite", "build"]);
-    const evidence = run(process.execPath, ["probe.ts"]);
+    // Chrome profile and helper files live under this directory, so they are removed with the
+    // consumer even when the probe is killed before its own cleanup runs.
+    const probeTmp = mkdtempSync(join(temporary, "probe-tmp-"));
+    const evidence = execFileSync(process.execPath, ["probe.ts"], {
+      cwd: consumer, env: { ...env, TMPDIR: probeTmp }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000,
+    });
+    assert.deepEqual(readdirSync(probeTmp).filter(name => name.startsWith("packed-ui-chrome-")), [],
+      "the probe removes its Chrome profile directory");
     assert.match(evidence, /packed edge and generic UI: PASS/);
     assert.match(evidence, /packed public UI: PASS/);
     console.log(evidence.trim());

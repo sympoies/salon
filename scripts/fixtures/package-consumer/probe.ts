@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { startEdge } from "@agent-console/edge/start";
 import type { EdgeExtension } from "@agent-console/edge/extensions";
 import { normalizeOrder, projectPublicAgentSession } from "@agent-console/shared/api";
@@ -49,9 +51,9 @@ const server = startEdge({
 }, { extensions: [extension] });
 
 async function checkSubmittedUi(base: string) {
-  const profile = mkdtempSync("/tmp/packed-ui-chrome-");
+  const profile = mkdtempSync(join(tmpdir(), "packed-ui-chrome-"));
   const chrome = spawn(process.env.CHROME_BIN ?? "google-chrome", ["--headless", "--no-sandbox", "--disable-gpu",
-    "--no-first-run", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"],
+    "--no-first-run", "--password-store=basic", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"],
   { stdio: ["ignore", "ignore", "pipe"] });
   let socket: WebSocket | undefined;
   try {
@@ -169,7 +171,9 @@ async function checkSubmittedUi(base: string) {
   } finally {
     socket?.close();
     if (chrome.exitCode === null && chrome.signalCode === null) {
-      const exited = once(chrome, "exit"); chrome.kill("SIGTERM"); await exited;
+      const exited = once(chrome, "exit"); chrome.kill("SIGTERM");
+      const escalate = setTimeout(() => chrome.kill("SIGKILL"), 5_000);
+      await exited; clearTimeout(escalate);
     }
     rmSync(profile, { recursive: true, force: true });
   }
