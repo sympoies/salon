@@ -6,6 +6,7 @@ import { getAuthStatus, listMachineNames, type AuthStatus, type ConnectFailure }
 import { Login } from "./Login.tsx";
 import { Settings } from "./Settings.tsx";
 import { loadPhoneSessionOpen, savePhoneSessionOpen } from "./phoneSessionOpen.ts";
+import { loadAndroidLayout, saveAndroidLayout, type AndroidLayout } from "./androidLayout.ts";
 import { loadPhoneFocusCounts, savePhoneFocusCounts } from "./phoneFocusCounts.ts";
 import { loadCardPreview, saveCardPreview, type CardPreview } from "./cardPreview.ts";
 import { loadSessionListDisplay, saveSessionListDisplay, type SessionListDisplay } from "./sessionListDisplay.ts";
@@ -133,6 +134,7 @@ export default function App() {
   const [phoneFocusCounts, setPhoneFocusCounts] = useState(() => loadPhoneFocusCounts());
   const [cardPreview, setCardPreview] = useState<CardPreview>(() => loadCardPreview());
   const [sessionListDisplay, setSessionListDisplay] = useState<SessionListDisplay>(() => loadSessionListDisplay());
+  const [androidLayout, setAndroidLayout] = useState<AndroidLayout>(() => loadAndroidLayout());
   const [terminalRenderMode, setTerminalRenderMode] = useState<TerminalRenderMode>(() => loadTerminalRenderMode());
   const [terminalSelectedPaneRealtime, setTerminalSelectedPaneRealtime] = useState(
     () => loadTerminalSelectedPaneRealtime(),
@@ -170,6 +172,9 @@ export default function App() {
       // Still inside the switch's click, so the browser accepts the prompt.
       if (enabled) void requestBrowserNotificationPermission();
     }
+  }, []);
+  const updateAndroidLayout = useCallback((layout: AndroidLayout) => {
+    if (saveAndroidLayout(layout)) setAndroidLayout(layout);
   }, []);
   const updateTerminalRenderMode = useCallback((mode: TerminalRenderMode) => {
     if (saveTerminalRenderMode(mode)) {
@@ -256,6 +261,7 @@ export default function App() {
       setCardPreview(loadCardPreview());
       setPhoneSessionOpen(loadPhoneSessionOpen());
       setPhoneFocusCounts(loadPhoneFocusCounts());
+      setAndroidLayout(loadAndroidLayout());
       setTerminalRenderMode(loadTerminalRenderMode());
       setTerminalSelectedPaneRealtime(loadTerminalSelectedPaneRealtime());
       void loadMachines();
@@ -363,6 +369,7 @@ export default function App() {
         phoneFocusCounts={phoneFocusCounts}
         sessionListDisplay={sessionListDisplay}
         cardPreview={cardPreview}
+        androidLayout={androidLayout}
         terminalRenderMode={terminalRenderMode}
         terminalSelectedPaneRealtime={terminalSelectedPaneRealtime}
         operatorCapabilities={operatorCapabilities}
@@ -414,6 +421,8 @@ export default function App() {
           phoneFocusCounts={phoneFocusCounts}
           sessionListDisplay={sessionListDisplay}
           cardPreview={cardPreview}
+          androidLayout={androidLayout}
+          onAndroidLayoutChange={updateAndroidLayout}
           onPhoneSessionOpenChange={updatePhoneSessionOpen}
           onPhoneFocusCountsChange={updatePhoneFocusCounts}
           onSessionListDisplayChange={updateSessionListDisplay}

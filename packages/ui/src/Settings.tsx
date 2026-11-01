@@ -23,6 +23,9 @@ import {
 import { useUiExtensions } from "./extensions.tsx";
 import type { TerminalRenderMode } from "./terminalRenderMode.ts";
 import type { CardPreview } from "./cardPreview.ts";
+import { parseAndroidLayout, type AndroidLayout } from "./androidLayout.ts";
+import { LAYOUT_MODES } from "./layout.ts";
+import { isAndroidTauri } from "./runtime.ts";
 import type { SessionListDisplay } from "./sessionListDisplay.ts";
 import { browserNotificationPermission } from "./attentionAlerts.ts";
 import { clientVersionInfo, versionCopyText } from "./clientVersion.ts";
@@ -50,6 +53,8 @@ export interface SettingsProps {
   readonly phoneFocusCounts?: boolean;
   readonly onPhoneFocusCountsChange?: (shown: boolean) => void;
   readonly sessionListDisplay?: SessionListDisplay;
+  readonly androidLayout?: AndroidLayout;
+  readonly onAndroidLayoutChange?: (layout: AndroidLayout) => void;
   readonly cardPreview?: CardPreview;
   readonly onCardPreviewChange?: (preview: CardPreview) => void;
   readonly onSessionListDisplayChange?: (display: SessionListDisplay) => void;
@@ -92,6 +97,8 @@ export function Settings({
   phoneFocusCounts = true,
   onPhoneFocusCountsChange,
   sessionListDisplay = "terminal",
+  androidLayout = "list",
+  onAndroidLayoutChange,
   cardPreview = "latest-message",
   onCardPreviewChange,
   onSessionListDisplayChange,
@@ -465,6 +472,17 @@ export function Settings({
             </select>
           </label>
           <p className="settings-hint">{phone ? "Choose what opens when you tap a session." : "Choose what desktop session tiles show."}</p>
+          {isAndroidTauri() && onAndroidLayoutChange ? <>
+            <label className="settings-field">
+              Session layout
+              <select aria-label="Session layout" value={String(androidLayout)}
+                onChange={event => onAndroidLayoutChange(parseAndroidLayout(event.currentTarget.value))}>
+                <option value="list">Phone list (default)</option>
+                {LAYOUT_MODES.map(mode => <option key={mode} value={String(mode)}>{mode} pane{mode === 1 ? "" : "s"}</option>)}
+              </select>
+            </label>
+            <p className="settings-hint">Choose how sessions are laid out on this device. Phone list shows one list; a layout shows that many session tiles.</p>
+          </> : null}
           {phone ? <div className="settings-preference-row">
             <div className="settings-preference-copy">
               <span className="settings-preference-label">Single-session count row</span>
