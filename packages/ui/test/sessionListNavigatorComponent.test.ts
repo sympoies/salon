@@ -216,6 +216,12 @@ test("closed filters signal pending notices on the trigger",async()=>{
 const pickHarness = (dom: { container: ParentNode }, id: string) => act(async () => {
   (dom.container.querySelector(`[data-filter-dimension="harnesses"] input[value="${id}"]`) as HTMLInputElement).click();
 });
+test("opening the filter panel moves focus to its first enabled field",async()=>{
+ const dom=await mount();await click(dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!);
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});
+ const active=dom.window.document.activeElement;
+ assert.equal(Boolean(active&&dom.container.querySelector(".session-filter-panel-fields")?.contains(active)),true,"focus enters the panel fields");
+});
 test("drafts wait for Apply filters; Escape discards and restores focus",async()=>{
  const dom=await mount();const trigger=dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!;await click(trigger);
  await pickHarness(dom,"codex");

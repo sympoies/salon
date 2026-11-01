@@ -100,7 +100,7 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     setDraft(initial);
     draftBaseRef.current = initial;
     appliedFiltersRef.current = filters;
-    const timer = window.setTimeout(() => panelRef.current?.querySelector<HTMLElement>("select")?.focus(), 0);
+    const timer = window.setTimeout(() => panelRef.current?.querySelector<HTMLElement>(".session-filter-panel-fields :is(select, input):not(:disabled)")?.focus(), 0);
     return () => {
       window.clearTimeout(timer);
       if (panelRef.current?.contains(document.activeElement) || document.activeElement === document.body) triggerRef.current?.focus();
