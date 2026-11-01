@@ -560,7 +560,7 @@ test("Dashboard opens the live panel from the session menu and closes it with An
   assert.match(dashboard, /useAndroidBackEntry\("session-conversation-dock", active && conversationSession !== undefined && viewport.width >= 1100/);
   assert.match(uiSource("LiveConversationPanel.tsx"), /androidBackEntry="session-conversation"/);
   assert.match(dashboard, /<LiveConversationPanel[\s\S]*?session=\{conversationSession\}/);
-  assert.match(dashboard, /onConversation: s && \(historyMachineNames\.has\(s\.machine\) \|\| \(!viewport\.mobile && sessionListDisplay === "conversation"\)\)/);
+  assert.match(dashboard, /onConversation: s && \(historyMachineNames\.has\(s\.machine\) \|\| \(!viewport\.mobile && tileListDisplay === "conversation"\)\)/);
   assert.match(dashboard, /\? openConversation : undefined/);
 });
 

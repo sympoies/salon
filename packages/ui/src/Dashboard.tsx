@@ -37,8 +37,8 @@ import { loadPerformanceCapture } from "./performanceSummary.ts";
 import { orderForCreatedSession } from "./layoutOrder.ts";
 import { updateHeaderCompaction } from "./headerResponsive.ts";
 import { LayoutPicker } from "./LayoutPicker.tsx";
-import { isMacTauri } from "./runtime.ts";
-import { isCoarsePointer, isPhoneTier, watchPhoneTier } from "./phoneTier.ts";
+import { isAndroidTauri, isMacTauri } from "./runtime.ts";
+import { isCoarsePointer, isPhoneTier, setAndroidTileGrid, watchPhoneTier } from "./phoneTier.ts";
 import { pruneAutoTitleStates } from "./autoTitle.ts";
 import {
   createdSessionAutoTitleState,
@@ -205,6 +205,8 @@ const ALL = "__all__";
 const NEW_SESSION = "__new__";
 const MODE_STORAGE = "agent-console.layout.mode";
 const AUTO_STORAGE = "agent-console.layout.auto";
+// Set once the layout control is used; the Android app keeps its phone list until then (#219).
+const CHOSEN_STORAGE = "agent-console.layout.chosen";
 const SLOTS_STORAGE = "agent-console.layout.slots";
 const SESSION_LIST_NAVIGATION_HINT = "Selected session · Cmd-F to open";
 
@@ -288,7 +290,8 @@ function currentViewport(): Viewport {
   }
   const width = window.innerWidth;
   const height = window.innerHeight;
-  const touchPrimary = isCoarsePointer();
+  // The Android app is always a touch client, even when a stylus reports a fine pointer.
+  const touchPrimary = isCoarsePointer() || isAndroidTauri();
   return { width, height, mobile: isPhoneTier(), touchPrimary };
 }
 
@@ -493,8 +496,13 @@ function CloseSessionDialog({
   );
 }
 
-function useViewport(): Viewport {
+function useViewport(androidTileGrid: boolean): Viewport {
   const [viewport, setViewport] = useState<Viewport>(() => currentViewport());
+
+  useEffect(() => {
+    setAndroidTileGrid(androidTileGrid);
+    setViewport(currentViewport());
+  }, [androidTileGrid]);
 
   useEffect(() => {
     const stopPhoneTier = watchPhoneTier();
@@ -641,6 +649,14 @@ export function Dashboard({
   const [autoLayout, setAutoLayout] = useState<boolean>(() => readAutoLayout());
   const [slots, setSlots] = useState<SlotKey[]>(() => readSlots());
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [layoutChosen, setLayoutChosen] = useState(() => localStorageGetItem(CHOSEN_STORAGE) === "1");
+  const chooseLayout = useCallback(() => {
+    setLayoutChosen(true);
+    localStorageSetItem(CHOSEN_STORAGE, "1");
+  }, []);
+  useEffect(() => {
+    setAndroidTileGridState(isAndroidTauri() && layoutChosen && focusedKey === null && conversationKey === null);
+  }, [layoutChosen, focusedKey, conversationKey]);
   const pollingMachinesKey = permittedMachines.join("\0");
   const pollingMachines = useMemo(() => pollingMachinesKey ? pollingMachinesKey.split("\0") : [], [pollingMachinesKey]);
   // Keep all permitted hosts available for creation and host-specific pages;
@@ -817,7 +833,11 @@ export function Dashboard({
   // A reply in flight keeps its mounted surface: the phone tier only changes
   // once it is accepted.
   const [conversationBusy, setConversationBusy] = useState(false);
-  const measuredViewport = useViewport();
+  // The Android app lists sessions as the chosen layout's conversation tiles
+  // while a layout is chosen and no session is open; otherwise it keeps the
+  // phone layout (#219).
+  const [androidTileGrid, setAndroidTileGridState] = useState(false);
+  const measuredViewport = useViewport(androidTileGrid);
   const [appliedMobile, setAppliedMobile] = useState(measuredViewport.mobile);
   useEffect(() => {
     if (!conversationBusy) setAppliedMobile(measuredViewport.mobile);
@@ -1013,6 +1033,9 @@ export function Dashboard({
     : autoLayout
       ? autoDesktopMode
       : layoutMode;
+
+  // The Android app's tiles are conversation tiles, whatever the list preference.
+  const tileListDisplay: SessionListDisplay = androidTileGrid ? "conversation" : sessionListDisplay;
 
   const sessionsByKey = useMemo(() => {
     return new Map(visible.map((s) => [sessionKey(s), s] as const));
@@ -2899,8 +2922,8 @@ export function Dashboard({
               </label>
             ) : null}
             <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
-              onToggleAuto={() => setAutoLayout(current => !current)}
-              onSelect={mode => { setAutoLayout(false); setLayoutMode(mode); }} />
+              onToggleAuto={() => { chooseLayout(); setAutoLayout(current => !current); }}
+              onSelect={mode => { chooseLayout(); setAutoLayout(false); setLayoutMode(mode); }} />
           </div>
           <div className="dash-group dash-create-actions">
             <HeaderMenu
@@ -3151,7 +3174,7 @@ export function Dashboard({
                   options,
                   machineColors,
                   focused,
-                  sessionListDisplay,
+                  sessionListDisplay: tileListDisplay,
                   conversationActive: active && conversationKey === null,
                   phoneConversation: Boolean(focused && viewport.mobile && phoneConversationMode && s
                     && historyMachineNames.has(s.machine)),
@@ -3212,7 +3235,7 @@ export function Dashboard({
                   beginTitleEdit,
                   saveTitleEdit,
                   cancelTitleEdit,
-                  onConversation: s && (historyMachineNames.has(s.machine) || (!viewport.mobile && sessionListDisplay === "conversation"))
+                  onConversation: s && (historyMachineNames.has(s.machine) || (!viewport.mobile && tileListDisplay === "conversation"))
                     ? openConversation : undefined,
                   onTerminal: openPhoneTerminal,
                   onConversationBusyChange: setConversationBusy,

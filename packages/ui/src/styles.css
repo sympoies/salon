@@ -7423,7 +7423,13 @@ textarea {
   :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-searchbar .session-filter-chip { display: inline-flex; align-items: center; }
   :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip > span:last-child { flex: none; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head .layout-picker { display: none; }
+  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"]):not([data-android-app="true"])) .workspace-head .layout-picker { display: none; }
+  /* The Android app keeps the layout control in its phone header (#219); on a narrow screen it collapses to its menu. */
+  :where(:root[data-phone-tier="true"][data-android-app="true"]) .workspace-head .layout-picker { order: 5; }
+  @media (max-width: 600px) {
+    :where(:root[data-phone-tier="true"][data-android-app="true"]) .workspace-head .layout-picker-inline { display: none; }
+    :where(:root[data-phone-tier="true"][data-android-app="true"]) .workspace-head .layout-picker-trigger { display: inline-flex; }
+  }
 
 
  :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions > .dashboard-new-session, :where(:root[data-phone-tier="true"]) .workspace-head .session-status-count, :where(:root[data-phone-tier="true"]) .workspace-head .session-list-pagination, :where(:root[data-phone-tier="true"]) .workspace-head .session-filter-searchbar, :where(:root[data-phone-tier="true"]) .workspace-head .dashboard-new-session, :where(:root[data-phone-tier="true"]) .workspace-head .header-menu-trigger { height:40px; min-height:40px; }
