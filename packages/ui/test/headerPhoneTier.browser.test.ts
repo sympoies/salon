@@ -112,7 +112,7 @@ test("the header CSS and measurement share Dashboard's phone tier", () => {
     assert.ok(at >= 0, `missing rule: ${prefix} ${rule}`);
   };
   assert.doesNotMatch(css, /@media[^{]*\(pointer: coarse\) and \(max-width: 1024px\)/, "no media query repeats the phone tier");
-  hasRule(':where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"]))', ".workspace-head .layout-picker { display: none; }");
+  hasRule(':where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"]):not([data-android-app="true"]))', ".workspace-head .layout-picker { display: none; }");
   hasRule(desktop, ".workspace-head .session-status-count-label");
 });
 
@@ -134,3 +134,21 @@ test("the Android app at 900px with a fine pointer gets the computed phone heade
     assert.ok(m.overflow <= 1, `no horizontal overflow: ${detail}`);
   } finally { await fixture.close(); }
 });
+
+// #219: the Android app keeps the layout control in its phone header; below 600px it collapses to the menu button.
+for (const [width, inline, trigger] of [[900, true, false], [360, false, true]] as const) {
+  test(`the Android phone header offers the layout control at ${width}px`, async t => {
+    if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
+    const fixture = await headerFixture();
+    try {
+      const m = measureUiMarkup<TierMeasure & { inline: boolean; trigger: boolean }>(fixture.markup(width, false, false, false, OWNER_COUNTS), width,
+        `document.documentElement.dataset.phoneTier="true";document.documentElement.dataset.androidApp="true";${measure}`
+        + `const shownOf=s=>{const e=header.querySelector(s);return !!e&&visible(e)};result.inline=shownOf('.layout-picker-inline');result.trigger=shownOf('.layout-picker-trigger');`);
+      const detail = JSON.stringify(m);
+      assert.equal(m.picker, true, `the layout control is visible: ${detail}`);
+      assert.equal(m.inline, inline, `inline layout buttons: ${detail}`);
+      assert.equal(m.trigger, trigger, `layout menu button: ${detail}`);
+      assert.ok(m.overflow <= 1, `no horizontal overflow: ${detail}`);
+    } finally { await fixture.close(); }
+  });
+}
