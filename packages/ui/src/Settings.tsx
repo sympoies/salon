@@ -24,7 +24,6 @@ import { useUiExtensions } from "./extensions.tsx";
 import type { TerminalRenderMode } from "./terminalRenderMode.ts";
 import type { CardPreview } from "./cardPreview.ts";
 import { parseAndroidLayout, type AndroidLayout } from "./androidLayout.ts";
-import { LAYOUT_MODES } from "./layout.ts";
 import { isAndroidTauri } from "./runtime.ts";
 import type { SessionListDisplay } from "./sessionListDisplay.ts";
 import { browserNotificationPermission } from "./attentionAlerts.ts";
