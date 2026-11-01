@@ -4,6 +4,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { CLEAR_SESSION_FILTERS, type SessionFilters } from "../src/sessionFilters.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
+import { assertNoElement } from "./support/domAssert.ts";
 
 test("desktop filter panel preserves staged edits across unchanged refreshes and follow external changes", async () => {
   const window = new Window({ url: "http://localhost", width: 1280 });
@@ -18,7 +19,7 @@ test("desktop filter panel preserves staged edits across unchanged refreshes and
     let filters: SessionFilters = CLEAR_SESSION_FILTERS;
     let open = false;
     const changes: SessionFilters[] = [];
-    const render = () => root.render(createElement(SessionFiltersBar, { filters, scopes: { options: [{ id: "trees", label: "Sample scope", includes: () => true }] }, mobile: false, compactHeader: true, open, onOpenChange(value) { open = value; render(); },
+    const render = () => root.render(createElement(SessionFiltersBar, { filters, mobile: false, compactHeader: true, open, onOpenChange(value) { open = value; render(); },
       machines: ["host-a", "host-b"], roles: ["steward", "reviewer"], harnesses: [{ id: "codex", label: "Codex" }], resultCount: 2,
       onChange(next) { changes.push(next); filters = next; render(); } }));
     await act(render);
@@ -26,9 +27,8 @@ test("desktop filter panel preserves staged edits across unchanged refreshes and
     const openPanel = () => act(() => container.querySelector<HTMLButtonElement>('.session-filters-trigger')!.click());
     await openPanel();
     assert.ok(container.querySelector('.session-filter-panel[role="dialog"]'));
-    const scope = container.querySelector<HTMLSelectElement>('select[aria-label="Scope"]')!;
+    assertNoElement(container, 'select[aria-label="Scope"]', "no Scope field is offered");
     let harnessSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Filter sessions by harness"]')!;
-    await act(() => { scope.value = "trees"; scope.dispatchEvent(new window.Event("change", { bubbles: true })); });
     await act(() => { harnessSelect.value = "codex"; harnessSelect.dispatchEvent(new window.Event("change", { bubbles: true })); });
     await act(() => container.querySelector<HTMLInputElement>('[data-filter-dimension="hosts"] input[value="host-a"]')!.click());
     const repository = container.querySelector<HTMLInputElement>('input[aria-label="Repository"]')!;
@@ -37,13 +37,13 @@ test("desktop filter panel preserves staged edits across unchanged refreshes and
       repository.dispatchEvent(new window.Event("input", { bubbles: true }));
     });
     assert.equal(changes.length, 0, "editing visible controls leaves the applied filter unchanged");
-    // Dashboard coordination refreshes clone the applied filters even when scope is unchanged.
-    await act(() => { filters = { ...filters, scope: filters.scope }; render(); });
+    // Dashboard coordination refreshes clone the applied filters even when nothing changed.
+    await act(() => { filters = { ...filters }; render(); });
     assert.equal(harnessSelect.value, "codex", "an equal-value poll leaves the staged Harness visible");
     assert.equal(repository.value, "staged-repo", "an equal-value poll leaves the staged Repository visible");
     await act(() => container.querySelector<HTMLButtonElement>('.session-filter-panel-actions .primary')!.click());
     assert.equal(changes.length, 1);
-    assert.equal(filters.scope, "trees"); assert.equal(filters.harness, "codex"); assert.deepEqual(filters.hosts, ["host-a"]);
+    assert.equal(filters.harness, "codex"); assert.deepEqual(filters.hosts, ["host-a"]);
     assert.equal(filters.repo, "staged-repo", "Apply submits the draft preserved through the refresh");
     assert.equal(Boolean(container.querySelector('.session-filter-panel')), false, "Apply closes desktop filters");
     await openPanel();

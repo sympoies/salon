@@ -1,16 +1,16 @@
 import { CardStatusIcon } from "./CardStatusIcon.tsx";
 import { HeaderCountsNotice } from "./HeaderCountsNotice.tsx";
 import type { OfflineCountMachine } from "./headerCountAvailability.ts";
-import { sessionFacetCount, type SessionScopeModel, type FilterRecord, type SessionFilters } from "./sessionFilters.ts";
+import { sessionFacetCount, type SessionRoleResolver, type FilterRecord, type SessionFilters } from "./sessionFilters.ts";
 import { SESSION_STATUS_GROUPS, SESSION_STATUS_LABELS, type SessionStatusGroup } from "./sessionStatusGroups.ts";
 
 export type SessionStatusCountValues = Readonly<Record<SessionStatusGroup, number | "–">>;
 
 /** Each group's count under the other filters; "–" until the hosts have answered. */
 export function sessionStatusCountValues(records: readonly FilterRecord[], filters: SessionFilters, available: boolean,
-  scopes?: SessionScopeModel): SessionStatusCountValues {
+  roleOf?: SessionRoleResolver): SessionStatusCountValues {
   return Object.fromEntries(SESSION_STATUS_GROUPS.map(group => [group,
-    available ? sessionFacetCount(records, filters, { statusGroup: group }, scopes) : "–"])) as SessionStatusCountValues;
+    available ? sessionFacetCount(records, filters, { statusGroup: group }, roleOf) : "–"])) as SessionStatusCountValues;
 }
 
 export interface SessionStatusCountButtonsProps {

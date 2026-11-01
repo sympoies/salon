@@ -71,7 +71,7 @@ test("facet options replace their dimension and respect all other selected dimen
   assert.equal(sessionFilters.sessionFacetCount(facetRows, { ...filters, harness: "codex" }, { roles: ["reviewer"] }), 1);
 });
 test("zero-count facets and each all option agree with the corresponding list", () => {
-  for (const option of [{ scope: "all" }, { hosts: null }, { roles: null }, { harness: null }, { statusGroup: null }] as const) {
+  for (const option of [{ hosts: null }, { roles: null }, { harness: null }, { statusGroup: null }] as const) {
     assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, option), filterRecords(facetRows, CLEAR_SESSION_FILTERS).length);
   }
   assert.equal(sessionFilters.sessionFacetCount(facetRows, CLEAR_SESSION_FILTERS, { hosts: ["empty-host"] }), 0);
@@ -110,4 +110,22 @@ test("role selections keep the no-role value in universe order and normalize lik
 
 test("an unknown host inventory never collapses a selection to all", () => {
   assert.deepEqual(sessionFilters.normalizeFacetSelection(["a"], []), ["a"]);
+});
+
+test("a scope value saved by an earlier version never hides sessions or counts as an active filter", () => {
+  const saved = { ...CLEAR_SESSION_FILTERS, scope: "center:control" } as typeof CLEAR_SESSION_FILTERS;
+  assert.equal(filterRecords(facetRows, saved).length, facetRows.length);
+  assert.equal(sessionFilters.sessionFacetCount(facetRows, saved, { statusGroup: null }), facetRows.length);
+  assert.equal(hasActiveSessionFilters(saved), false);
+});
+
+test("a host role resolver names roles for the Roles facet and its filter", () => {
+  const roleOf = (row: { session_id: string }) => row.session_id === "plain" ? "lead" : null;
+  assert.deepEqual(sessionRoleOptions(facetRows, roleOf), ["lead", "reviewer", "worker"]);
+  assert.deepEqual(filterRecords(facetRows, { ...CLEAR_SESSION_FILTERS, roles: ["lead"] }, roleOf).map(row => row.session_id), ["plain"]);
+});
+
+test("lineage ordering helpers keep their deprecated scope-named aliases", () => {
+  assert.equal(sessionFilters.scopeRecordKey, sessionFilters.lineageRecordKey);
+  assert.equal(sessionFilters.scopeParents, sessionFilters.lineageParents);
 });

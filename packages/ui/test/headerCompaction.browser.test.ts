@@ -22,7 +22,7 @@ test("complete headers keep primary controls in one row with fresh two-provider 
         const m = measureUiMarkup<Record<string, number | boolean | null>>(fixture.markup(width, coarse)
           + (wideFont ? "<style>body{font-family:'DejaVu Sans',sans-serif}</style>" : ""), width, fixture.compact + headerMeasure,
           false, 982, coarse ? ["--blink-settings=primaryPointerType=2,availablePointerTypes=2"] : []);
-        assert.equal(m.counts, 4); assert.ok(m.semanticCounts, "named status counts retain their semantic colors"); assert.ok(m.scope && m.newVisible, "active scope and New stay visible");
+        assert.equal(m.counts, 4); assert.ok(m.semanticCounts, "named status counts retain their semantic colors"); assert.ok(m.chip && m.newVisible, "active filter chip and New stay visible");
         // Touch tablets up to 1024px use the phone layout and its header (#968).
         if (width <= 760 || (coarse && width <= 1024)) { assertPhoneHeader(m); return; }
         assert.ok(m.bounded && !m.overlap && Number(m.rowSpread) <= 1 && Number(m.overflow) <= 1, JSON.stringify(m));
