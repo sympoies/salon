@@ -2,6 +2,7 @@ import { usePhoneLayout } from "./usePhoneLayout.ts";
 import { ExtensionSettingsPanels } from "./extensions.tsx";
 import { HostPreferencesSettings } from "./HostPreferencesSettings.tsx";
 import { SpeechEngineSettings } from "./SpeechEngineSettings.tsx";
+import { MailboxRowSettings } from "./MailboxRowSettings.tsx";
 import { useEffect, useRef, useState } from "react";
 import { AsyncButton } from "./AsyncButton.tsx";
 import { BrandTitle } from "./BrandTitle.tsx";
@@ -438,6 +439,8 @@ export function Settings({
             </button>
           </div>
         </section>
+
+        <MailboxRowSettings />
 
         <section className="settings-section">
           <h2 className="settings-section-title">Appearance</h2>

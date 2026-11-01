@@ -22,3 +22,15 @@ test("a notice never proves a queued reply delivered", () => {
   assert.equal(transcriptProof([reply], [notice("2026-01-01T00:00:01Z")]).size, 0);
   assert.equal(transcriptProof([reply], [{ ...notice("2026-01-01T00:00:01Z"), role: "user" }]).size, 1);
 });
+
+test("a mailbox read event is not an agent turn: stuck-turn detection and reply proof ignore it", () => {
+  const event: HistoryMessage = {
+    ...notice("2026-01-01T00:00:20Z"),
+    mailbox: { schema_version: "agent-session.mailbox-read-event.v1", message_id: "m-1", sender: { kind: "session", machine: "m", session_id: "s" }, category: "report", state: "read", read_at: null, acknowledged_at: null, revision: 1, availability: "complete", body_prefix: "none" },
+  };
+  const user: HistoryMessage = { id: "u1", role: "user", text: "Do the work", timestamp: "2026-01-01T00:00:00Z" };
+  const assistant: HistoryMessage = { id: "a1", role: "assistant", text: "Started", timestamp: "2026-01-01T00:00:05Z" };
+  assert.deepEqual(stuckTurn(failed, null, [user, assistant, event]), stuckTurn(failed, null, [user, assistant]));
+  const reply = { id: "r1", text: "x", incarnation: "inc-1", requestId: "req-1", state: "delivered", attemptedAt: Date.parse("2026-01-01T00:00:00Z") } as QueuedReply;
+  assert.equal(transcriptProof([reply], [event]).size, 0);
+});
