@@ -4813,68 +4813,68 @@ textarea {
   :where(:root[data-phone-tier="true"]) .workspace-shell {
     padding-top: calc(var(--space-sm) + var(--ac-safe-area-top));
   }
-  :where(:root[data-phone-tier="true"]) .workspace-head {
+  :where(:root[data-phone-header="true"]) .workspace-head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "brand actions";
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+    grid-template-areas: "brand usage actions";
     align-items: center;
     gap: var(--space-sm) var(--space-md);
     margin-bottom: var(--space-sm);
   }
-  :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) {
+  :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
       "brand brand brand"
       "pages filter actions";
     column-gap: var(--space-xs);
   }
-  :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) .brand-title {
+  :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .brand-title {
     grid-area: brand;
   }
-  :where(:root[data-phone-tier="true"]) .session-list-navigator {
+  :where(:root[data-phone-header="true"]) .session-list-navigator {
     display: contents;
   }
-  :where(:root[data-phone-tier="true"]) .session-list-pagination {
+  :where(:root[data-phone-header="true"]) .session-list-pagination {
     grid-area: pages;
     min-height: 44px;
   }
-  :where(:root[data-phone-tier="true"]) .session-list-group-picker {
+  :where(:root[data-phone-header="true"]) .session-list-group-picker {
     display: contents;
   }
-  :where(:root[data-phone-tier="true"]) .session-list-group-trigger {
+  :where(:root[data-phone-header="true"]) .session-list-group-trigger {
     grid-area: filter;
     min-height: 44px;
     max-width: 100%;
     justify-self: start;
   }
-  :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) .session-list-group-trigger, :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions > .btn {
+  :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .session-list-group-trigger, :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions > .btn {
     height: 44px;
     min-height: 44px;
   }
-  :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger {
+  :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger {
     width: 44px;
   }
-  :where(:root[data-phone-tier="true"]) .workspace-head h1 {
+  :where(:root[data-phone-header="true"]) .workspace-head h1 {
     line-height: 40px;
   }
   /* The brand and navigator share the first mobile row; actions retain the
      existing full-width row below it. */
-  :where(:root[data-phone-tier="true"]) .workspace-head-start {
+  :where(:root[data-phone-header="true"]) .workspace-head-start {
     display: contents;
   }
-  :where(:root[data-phone-tier="true"]) .workspace-head > .dash-actions {
+  :where(:root[data-phone-header="true"]) .workspace-head > .dash-actions {
     grid-area: actions;
     min-width: 0;
     justify-self: end;
     flex-wrap: wrap;
   }
-  :where(:root[data-phone-tier="true"]) .dash-actions {
+  :where(:root[data-phone-header="true"]) .dash-actions {
     flex: 1 1 100%;
   }
-  :where(:root[data-phone-tier="true"]) .workspace-head .dash-create-actions {
+  :where(:root[data-phone-header="true"]) .workspace-head .dash-create-actions {
     margin-left: auto;
   }
-  :where(:root[data-phone-tier="true"]) .session-list-group-scrim {
+  :where(:root[data-phone-header="true"]) .session-list-group-scrim {
     display: block;
     position: fixed;
     inset: 0;
@@ -4884,7 +4884,7 @@ textarea {
     border: 0;
     background: rgba(var(--scrim-alt-rgb), calc(0.5 * var(--scrim-strength)));
   }
-  :where(:root[data-phone-tier="true"]) .session-list-group-sheet {
+  :where(:root[data-phone-header="true"]) .session-list-group-sheet {
     display: flex;
     position: fixed;
     right: 0;
@@ -4897,10 +4897,10 @@ textarea {
     border-radius: var(--r-xl) var(--r-xl) 0 0;
     box-shadow: 0 -12px 40px rgba(var(--shadow-rgb), calc(0.45 * var(--shadow-strength)));
   }
-  :where(:root[data-phone-tier="true"]) .session-list-group-sheet .session-list-group-option, :where(:root[data-phone-tier="true"]) .session-list-group-sheet .session-list-group-scope label {
+  :where(:root[data-phone-header="true"]) .session-list-group-sheet .session-list-group-option, :where(:root[data-phone-header="true"]) .session-list-group-sheet .session-list-group-scope label {
     min-height: 44px;
   }
-  :where(:root[data-phone-tier="true"]) .session-list-group-sheet-handle {
+  :where(:root[data-phone-header="true"]) .session-list-group-sheet-handle {
     width: 2.6rem;
     height: 0.25rem;
     margin: 0 auto var(--space-2xs);
@@ -4908,7 +4908,7 @@ textarea {
     border-radius: var(--r-full);
     background: var(--line);
   }
-  :where(:root[data-phone-tier="true"]) .session-list-group-heading {
+  :where(:root[data-phone-header="true"]) .session-list-group-heading {
     padding: var(--space-xs) var(--space-sm) var(--space-xs);
     color: var(--fg);
     font-size: var(--text-base);
@@ -4916,20 +4916,28 @@ textarea {
   }
   /* Groups wrap on narrow screens; drop the vertical divider so a wrapped
      cluster doesn't show a stray left border. */
-  :where(:root[data-phone-tier="true"]) .dash-group + .dash-group {
+  :where(:root[data-phone-header="true"]) .dash-group + .dash-group {
     padding-left: 0;
     border-left: none;
   }
-  :where(:root[data-phone-tier="true"]) .layout-seg {
+  :where(:root[data-phone-header="true"]) .layout-seg {
     display: none;
   }
-  :where(:root[data-phone-tier="true"]) .header-usage {
-    display: none;
+  /* The quota strip takes the room left after the logo, New, More and the counts; headerResponsive.ts
+     drops accounts and detail until it fits, and hides it only when no room remains (#238). */
+  :where(:root[data-phone-header="true"]) .workspace-head > .header-usage {
+    position: static; transform: none; max-width: 100%; min-width: 0; overflow: hidden; flex-wrap: nowrap;
+    justify-self: end; gap: var(--space-sm); height: var(--icon-standard-size); padding-block: 0;
   }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="0"] > .header-usage { display: none; }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="compact"] > .header-usage :is(.hu-name, .hu-reset) { display: none; }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="1"] > .header-usage > .hu-provider:nth-child(n+3),
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="2"] > .header-usage > .hu-provider:nth-child(n+4),
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="3"] > .header-usage > .hu-provider:nth-child(n+5) { display: none; }
   /* The header menu becomes a bottom sheet: the trigger stays in the row, but
      the panel pins to the viewport bottom behind a full-width scrim — easier to
      reach one-handed than a top-right dropdown, and it can't overflow the edge. */
-  :where(:root[data-phone-tier="true"]) .header-menu[open] .header-menu-scrim {
+  :where(:root[data-phone-header="true"]) .header-menu[open] .header-menu-scrim {
     display: block;
     position: fixed;
     inset: 0;
@@ -4941,7 +4949,7 @@ textarea {
     background: rgba(var(--scrim-alt-rgb), calc(0.5 * var(--scrim-strength)));
     cursor: default;
   }
-  :where(:root[data-phone-tier="true"]) .header-menu[open] .header-menu-dropdown {
+  :where(:root[data-phone-header="true"]) .header-menu[open] .header-menu-dropdown {
     position: fixed;
     top: auto;
     right: 0;
@@ -4954,7 +4962,7 @@ textarea {
     padding: var(--space-sm) var(--space-sm) calc(var(--space-sm) + var(--ac-safe-area-bottom));
     box-shadow: 0 -12px 40px rgba(var(--shadow-rgb), calc(0.45 * var(--shadow-strength)));
   }
-  :where(:root[data-phone-tier="true"]) .header-menu-item {
+  :where(:root[data-phone-header="true"]) .header-menu-item {
     font-size: var(--text-lg);
   }
   :where(:root[data-phone-tier="true"]) .session-workspace {
@@ -7247,60 +7255,60 @@ textarea {
    keeps the two-row header below (#930, #968). */
 
  /* Equal side columns keep the quota group at the exact row center (#932). */
- :where(:root:not([data-phone-tier="true"])) .workspace-head, :where(:root:not([data-phone-tier="true"])) .workspace-head:has(.session-list-navigator) { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); grid-template-areas:none; align-items:center; gap:8px; width:100%; min-width:0; margin-inline:0; margin-bottom:var(--space-sm); padding:0; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head, :where(:root:not([data-phone-header="true"])) .workspace-head:has(.session-list-navigator) { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); grid-template-areas:none; align-items:center; gap:8px; width:100%; min-width:0; margin-inline:0; margin-bottom:var(--space-sm); padding:0; }
  /* Without visible Usage the left group takes the free space, as in #915. */
- :where(:root:not([data-phone-tier="true"])) .workspace-head:not(:has(> .header-usage)), :where(:root:not([data-phone-tier="true"])) .workspace-head:is([data-header-compact="4"],[data-header-compact="5"]) { grid-template-columns:minmax(0,1fr) 0 auto; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-list-navigator, :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filters-bar.is-compact-header, :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filters-summary.is-compact-header, :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-controls-row, :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-status-row, :where(:root:not([data-phone-tier="true"])) .workspace-head .dash-group { display:contents; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .workspace-head-start { grid-area:1 / 1; display:flex; align-items:center; gap:8px; min-width:0; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .dash-actions { grid-area:1 / 3; display:flex; align-items:center; justify-content:flex-end; flex-wrap:nowrap; gap:8px; min-width:0; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .brand-title { order:0; flex:none; gap:4px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head:not(:has(> .header-usage)), :where(:root:not([data-phone-header="true"])) .workspace-head:is([data-header-compact="4"],[data-header-compact="5"]) { grid-template-columns:minmax(0,1fr) 0 auto; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-list-navigator, :where(:root:not([data-phone-header="true"])) .workspace-head .session-filters-bar.is-compact-header, :where(:root:not([data-phone-header="true"])) .workspace-head .session-filters-summary.is-compact-header, :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-controls-row, :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-status-row, :where(:root:not([data-phone-header="true"])) .workspace-head .dash-group { display:contents; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .workspace-head-start { grid-area:1 / 1; display:flex; align-items:center; gap:8px; min-width:0; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .dash-actions { grid-area:1 / 3; display:flex; align-items:center; justify-content:flex-end; flex-wrap:nowrap; gap:8px; min-width:0; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .brand-title { order:0; flex:none; gap:4px; }
  /* The row leads with the logo; the title stays as the page heading for assistive tech only (#932). */
- :where(:root:not([data-phone-tier="true"])) .workspace-head .brand-title h1 { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-status-counts { order:1; display:flex; flex:none; gap:0; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-status-count { min-width:0; width:auto; height:34px; min-height:34px; padding:0 4px; gap:3px; font-size:var(--text-sm); }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-status-count-label, :where(:root:not([data-phone-tier="true"])) .workspace-head .session-status-count-short-label { display:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-list-pagination { order:2; display:inline-flex; flex:none; height:34px; min-height:34px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-list-page-label { font-size:var(--text-sm); min-width:28px; padding:0 2px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-list-page-button { min-width:24px; width:24px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filters-summary.is-compact-header .session-filter-trigger-row { order:3; flex:0 1 var(--session-filter-panel-width); min-width:78px; width:var(--session-filter-panel-width); align-items:center; position:relative; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-searchbar { display:flex; flex:1 1 auto; width:100%; min-width:0; max-width:none; height:34px; min-height:34px; padding:0 12px 0 0; font-size:var(--text-sm); }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-search-open { min-width:28px; width:auto; min-height:0; height:100%; flex:none; padding:0 4px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-search-chips { display:flex; flex:1 1 auto; min-width:0; overflow:hidden; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-chip { display:inline-flex; min-width:0; flex:0 1 auto; max-width:160px; height:24px; min-height:24px; padding:0 3px; font-size:var(--text-sm); }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-chip-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-chip > span:last-child { flex:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-chip[data-filter-chip="scope"] { max-width:100%; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head > .header-usage { grid-area:1 / 2; display:inline-flex; position:static; transform:none; flex:none; max-width:none; overflow:visible; flex-wrap:nowrap; padding:4px; gap:8px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .layout-picker { order:5; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .header-menu { order:6; flex:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .dashboard-new-session { order:7; display:inline-flex; flex:none; width:34px; min-width:34px; height:34px; min-height:34px; padding:0; align-items:center; justify-content:center; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root:not([data-phone-tier="true"])) .workspace-head .header-menu-trigger { width:34px; min-width:34px; height:34px; min-height:34px; padding:0; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .machine-filter { order:3; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .header-menu-compact-action { display:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-trigger-row:has(> .connection-notice-layer.is-inline) { min-width:182px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head .session-filter-trigger-row:has(> .connection-notice-layer.is-inline) > .session-filter-searchbar { width:auto; min-width:0; flex:1 1 auto; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .session-filters-summary.is-compact-header .session-filter-trigger-row:has(> .connection-notice-layer.is-inline) { min-width:154px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .session-filter-trigger-row > .connection-notice-layer.is-inline { flex:0 0 76px; min-width:76px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .connection-notice-layer.is-inline .connection-notice-retrying { display:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head:not([data-header-compact="0"]) .layout-picker-inline { display:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head:not([data-header-compact="0"]) .layout-picker-trigger { display:inline-flex; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head:is([data-header-compact="2"],[data-header-compact="3"],[data-header-compact="4"],[data-header-compact="5"]) :is(.hu-name,.hu-reset,.hu-win-label) { display:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head:is([data-header-compact="3"],[data-header-compact="4"],[data-header-compact="5"]) .session-list-page-button { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .brand-title h1 { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-status-counts { order:1; display:flex; flex:none; gap:0; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-status-count { min-width:0; width:auto; height:34px; min-height:34px; padding:0 4px; gap:3px; font-size:var(--text-sm); }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-status-count-label, :where(:root:not([data-phone-header="true"])) .workspace-head .session-status-count-short-label { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-list-pagination { order:2; display:inline-flex; flex:none; height:34px; min-height:34px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-list-page-label { font-size:var(--text-sm); min-width:28px; padding:0 2px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-list-page-button { min-width:24px; width:24px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filters-summary.is-compact-header .session-filter-trigger-row { order:3; flex:0 1 var(--session-filter-panel-width); min-width:78px; width:var(--session-filter-panel-width); align-items:center; position:relative; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-searchbar { display:flex; flex:1 1 auto; width:100%; min-width:0; max-width:none; height:34px; min-height:34px; padding:0 12px 0 0; font-size:var(--text-sm); }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-search-open { min-width:28px; width:auto; min-height:0; height:100%; flex:none; padding:0 4px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-search-chips { display:flex; flex:1 1 auto; min-width:0; overflow:hidden; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-chip { display:inline-flex; min-width:0; flex:0 1 auto; max-width:160px; height:24px; min-height:24px; padding:0 3px; font-size:var(--text-sm); }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-chip-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-chip > span:last-child { flex:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-chip[data-filter-chip="scope"] { max-width:100%; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head > .header-usage { grid-area:1 / 2; display:inline-flex; position:static; transform:none; flex:none; max-width:none; overflow:visible; flex-wrap:nowrap; padding:4px; gap:8px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .layout-picker { order:5; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .header-menu { order:6; flex:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .dashboard-new-session { order:7; display:inline-flex; flex:none; width:34px; min-width:34px; height:34px; min-height:34px; padding:0; align-items:center; justify-content:center; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root:not([data-phone-header="true"])) .workspace-head .header-menu-trigger { width:34px; min-width:34px; height:34px; min-height:34px; padding:0; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .machine-filter { order:3; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .header-menu-compact-action { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-trigger-row:has(> .connection-notice-layer.is-inline) { min-width:182px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-trigger-row:has(> .connection-notice-layer.is-inline) > .session-filter-searchbar { width:auto; min-width:0; flex:1 1 auto; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .session-filters-summary.is-compact-header .session-filter-trigger-row:has(> .connection-notice-layer.is-inline) { min-width:154px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .session-filter-trigger-row > .connection-notice-layer.is-inline { flex:0 0 76px; min-width:76px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .connection-notice-layer.is-inline .connection-notice-retrying { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head:not([data-header-compact="0"]) .layout-picker-inline { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head:not([data-header-compact="0"]) .layout-picker-trigger { display:inline-flex; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head:is([data-header-compact="2"],[data-header-compact="3"],[data-header-compact="4"],[data-header-compact="5"]) :is(.hu-name,.hu-reset,.hu-win-label) { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head:is([data-header-compact="3"],[data-header-compact="4"],[data-header-compact="5"]) .session-list-page-button { display:none; }
  /* On the narrowest row, full quota data remains in More > Usage. */
- :where(:root:not([data-phone-tier="true"])) .workspace-head:is([data-header-compact="4"],[data-header-compact="5"]) > .header-usage { display:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .brand-title { display:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head:is([data-header-compact="3"],[data-header-compact="4"]) .session-filters-summary.is-compact-header .session-filter-trigger-row { min-width:160px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] { gap:2px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .session-filter-placeholder { display:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .session-status-count { padding-inline:0; gap:1px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .session-status-count .card-status-icon { width:6px; height:6px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .session-filters-summary.is-compact-header .session-filter-trigger-row { min-width:56px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .session-filter-search-open { min-width:22px; padding:0 2px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .layout-picker-trigger { width:32px; min-width:32px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .header-menu-trigger, :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .dashboard-new-session { width:28px; min-width:28px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .session-list-page-label { font-size:var(--text-xs); padding:0; min-width:26px; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .layout-picker > .is-auto { display:none; }
- :where(:root:not([data-phone-tier="true"])) .workspace-head[data-header-compact="5"] .header-menu-compact-action[role="menuitemcheckbox"] { display:flex; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head:is([data-header-compact="4"],[data-header-compact="5"]) > .header-usage { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .brand-title { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head:is([data-header-compact="3"],[data-header-compact="4"]) .session-filters-summary.is-compact-header .session-filter-trigger-row { min-width:160px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] { gap:2px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .session-filter-placeholder { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .session-status-count { padding-inline:0; gap:1px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .session-status-count .card-status-icon { width:6px; height:6px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .session-filters-summary.is-compact-header .session-filter-trigger-row { min-width:56px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .session-filter-search-open { min-width:22px; padding:0 2px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .layout-picker-trigger { width:32px; min-width:32px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .header-menu-trigger, :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .dashboard-new-session { width:28px; min-width:28px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .session-list-page-label { font-size:var(--text-xs); padding:0; min-width:26px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .layout-picker > .is-auto { display:none; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head[data-header-compact="5"] .header-menu-compact-action[role="menuitemcheckbox"] { display:flex; }
 
 /* macOS windows can be as narrow as 390px; their counts live in the title bar,
    so they keep the desktop row instead of the phone header (#933). */
@@ -7368,44 +7376,44 @@ textarea {
    row; the pager and the filter take their own rows. Phones have no layout picker. The tier is
    Dashboard's phone layout, touch tablets included (#968); headerResponsive.ts uses the same query. */
 
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) {
-    grid-template-columns: var(--icon-identity-size) minmax(0, 1fr) auto;
-    grid-template-areas: "brand status actions" "pages pages pages" "filters filters filters";
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) {
+    grid-template-columns: var(--icon-identity-size) auto minmax(0, 1fr) auto;
+    grid-template-areas: "brand status usage actions" "pages pages pages pages" "filters filters filters filters";
     align-items: center;
     column-gap: 4px;
     row-gap: 4px;
   }
   /* A phone with one page renders no pager, so its row would only add a row gap. */
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator):not(:has(.session-list-pagination)) {
-    grid-template-areas: "brand status actions" "filters filters filters";
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator):not(:has(.session-list-pagination)) {
+    grid-template-areas: "brand status usage actions" "filters filters filters filters";
   }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .brand-title { grid-area: brand; min-width: 0; gap: 0; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-controls-row { display: contents; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .brand-title h1 { display: none; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .brand-title-mark { width: var(--icon-identity-size); height: var(--icon-identity-size); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head-start:has(.session-list-navigator) { display: contents; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-navigator, :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filters-bar.is-compact-header, :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filters-summary.is-compact-header, :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-status-row { display: contents; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-trigger-row { grid-area: filters; width: 100%; min-width: 0; align-items: flex-start; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-status-counts { grid-area: status; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-filter-notice-indicator { position: absolute; top: 1px; right: 1px; width: 12px; height: 12px; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-filter-searchbar { width: 100%; max-width: none; min-height: 48px; flex: none; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-filter-search-open { flex: 0 1 auto; width: auto; min-width: 36px; max-width: 100%; height: auto; min-height: 44px; justify-content: flex-start; gap: var(--space-sm); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-filter-placeholder { white-space: nowrap; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-status-counts { flex: none; gap: 0; justify-content: flex-start; min-height: var(--icon-standard-size); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-status-count { width: auto; min-width: 40px; height: var(--icon-standard-size); min-height: var(--icon-standard-size); gap: 3px; padding: 0 var(--space-2xs); font-size: var(--text-xs); font-weight: var(--weight-normal); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-status-count .card-status-icon { width: var(--card-status-icon-size); height: var(--card-status-icon-size); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-status-count > span { flex: none; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-status-count-label { display: none; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-status-count-short-label { display: inline; white-space: nowrap; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .brand-title { grid-area: brand; min-width: 0; gap: 0; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-controls-row { display: contents; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .brand-title h1 { display: none; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .brand-title-mark { width: var(--icon-identity-size); height: var(--icon-identity-size); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head-start:has(.session-list-navigator) { display: contents; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-navigator, :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filters-bar.is-compact-header, :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filters-summary.is-compact-header, :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-status-row { display: contents; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-trigger-row { grid-area: filters; width: 100%; min-width: 0; align-items: flex-start; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-status-counts { grid-area: status; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-filter-notice-indicator { position: absolute; top: 1px; right: 1px; width: 12px; height: 12px; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-filter-searchbar { width: 100%; max-width: none; min-height: 48px; flex: none; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-filter-search-open { flex: 0 1 auto; width: auto; min-width: 36px; max-width: 100%; height: auto; min-height: 44px; justify-content: flex-start; gap: var(--space-sm); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-filter-placeholder { white-space: nowrap; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-status-counts { flex: none; gap: 0; justify-content: flex-start; min-height: var(--icon-standard-size); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-status-count { width: auto; min-width: 40px; height: var(--icon-standard-size); min-height: var(--icon-standard-size); gap: 3px; padding: 0 var(--space-2xs); font-size: var(--text-xs); font-weight: var(--weight-normal); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-status-count .card-status-icon { width: var(--card-status-icon-size); height: var(--card-status-icon-size); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-status-count > span { flex: none; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-status-count-label { display: none; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-status-count-short-label { display: inline; white-space: nowrap; }
   /* Measured labels (#968): the longest form that fits; short until measured. */
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head[data-count-labels="full"] .is-compact-header .session-status-count-label { display: inline; white-space: nowrap; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:is([data-count-labels="full"],[data-count-labels="none"]) .is-compact-header .session-status-count-short-label { display: none; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-status-count { min-width: var(--icon-standard-size); height: var(--icon-standard-size); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-pagination { display: inline-flex; grid-area: pages; align-self: center; justify-self: start; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .header-usage { display: none; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .dash-actions { grid-area: actions; flex: none; flex-wrap: nowrap; justify-self: end; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions { gap: 4px; margin-left: 0; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions > .btn {
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head[data-count-labels="full"] .is-compact-header .session-status-count-label { display: inline; white-space: nowrap; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:is([data-count-labels="full"],[data-count-labels="none"]) .is-compact-header .session-status-count-short-label { display: none; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-status-count { min-width: var(--icon-standard-size); height: var(--icon-standard-size); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-pagination { display: inline-flex; grid-area: pages; align-self: center; justify-self: start; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .header-usage { grid-area: usage; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .dash-actions { grid-area: actions; flex: none; flex-wrap: nowrap; justify-self: end; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions { gap: 4px; margin-left: 0; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions > .btn {
     box-sizing: border-box;
     width: var(--icon-standard-size);
     min-width: var(--icon-standard-size);
@@ -7413,7 +7421,7 @@ textarea {
     min-height: var(--icon-standard-size);
     padding: 0;
   }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-label { display: none; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-label { display: none; }
 
 @media (max-width: 390px) {
   :where(:root:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) {
@@ -7430,24 +7438,18 @@ textarea {
 }
 
   /* Pager and filter rows (#765) use the shared phone touch height. */
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) { --session-nav-row-height: var(--icon-standard-size); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-pagination { height: var(--session-nav-row-height); min-height: var(--session-nav-row-height); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-page-label { font-size: var(--text-md); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-searchbar { height: var(--session-nav-row-height); min-height: var(--session-nav-row-height); font-size: var(--text-md); }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-search-open { height: 100%; min-height: 0; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-searchbar .session-filter-chip { display: inline-flex; align-items: center; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip > span:last-child { flex: none; }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"]):not([data-android-app="true"])) .workspace-head .layout-picker { display: none; }
-  /* The Android app keeps the layout control in its phone header (#219); on a narrow screen it collapses to its menu. */
-  :where(:root[data-phone-tier="true"][data-android-app="true"]) .workspace-head .layout-picker { order: 5; }
-  @media (max-width: 600px) {
-    :where(:root[data-phone-tier="true"][data-android-app="true"]) .workspace-head .layout-picker-inline { display: none; }
-    :where(:root[data-phone-tier="true"][data-android-app="true"]) .workspace-head .layout-picker-trigger { display: inline-flex; }
-  }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) { --session-nav-row-height: var(--icon-standard-size); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-pagination { height: var(--session-nav-row-height); min-height: var(--session-nav-row-height); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-page-label { font-size: var(--text-md); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-searchbar { height: var(--session-nav-row-height); min-height: var(--session-nav-row-height); font-size: var(--text-md); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-search-open { height: 100%; min-height: 0; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-searchbar .session-filter-chip { display: inline-flex; align-items: center; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head .session-filter-chip > span:last-child { flex: none; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head .layout-picker { display: none; }
 
 
- :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-tier="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions > .dashboard-new-session, :where(:root[data-phone-tier="true"]) .workspace-head .session-status-count, :where(:root[data-phone-tier="true"]) .workspace-head .session-list-pagination, :where(:root[data-phone-tier="true"]) .workspace-head .session-filter-searchbar, :where(:root[data-phone-tier="true"]) .workspace-head .dashboard-new-session, :where(:root[data-phone-tier="true"]) .workspace-head .header-menu-trigger { height:40px; min-height:40px; }
+ :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions > .dashboard-new-session, :where(:root[data-phone-header="true"]) .workspace-head .session-status-count, :where(:root[data-phone-header="true"]) .workspace-head .session-list-pagination, :where(:root[data-phone-header="true"]) .workspace-head .session-filter-searchbar, :where(:root[data-phone-header="true"]) .workspace-head .dashboard-new-session, :where(:root[data-phone-header="true"]) .workspace-head .header-menu-trigger { height:40px; min-height:40px; }
 
 /* Web and phone single-session status counts (#938): their own strip above the
    session toolbar, so the title, quota and model keep their width. Desktop gets
@@ -7506,7 +7508,7 @@ textarea {
     position: absolute; right: calc(var(--space-sm) + var(--ac-safe-area-right));
     top: var(--ac-safe-area-top); bottom: 0; max-width: calc(100% - 2 * var(--space-sm)); z-index: 1;
   }
-  :where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-status-row {
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-status-row {
     display: flex; position: relative; grid-area: status;
   }
   :where(:root[data-phone-tier="true"]) .session-filter-status-row > .connection-notice-layer.is-inline {
