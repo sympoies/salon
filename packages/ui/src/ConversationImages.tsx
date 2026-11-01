@@ -57,9 +57,10 @@ function ImageMenu({menu,paths,onOpen,onClose,onError}: {
     window.addEventListener("blur",onClose);
     return () => { document.removeEventListener("pointerdown",away,true); document.removeEventListener("keydown",key,true); window.removeEventListener("blur",onClose); };
   },[onClose]);
+  // Run the action inside the click itself: the clipboard needs the user gesture.
   const run = (action: () => Promise<void> | void, failure: string) => () => {
     onClose();
-    void Promise.resolve().then(action).catch(() => onError(failure));
+    try { void Promise.resolve(action()).catch(() => onError(failure)); } catch { onError(failure); }
   };
   const items: Array<[string,() => void]> = [
     ["Copy image",run(() => copyConversationImage(menu.image.blob),"Image could not be copied")],

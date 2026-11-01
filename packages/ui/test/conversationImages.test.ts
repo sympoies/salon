@@ -299,11 +299,11 @@ test("images without provenance render in the bubble as before", async () => {
 
 // macOS image context menu (#237)
 const PNG = new Uint8Array([137,80,78,71,13,10,26,10]);
-const pngResponse = (name?: string) => new Response(PNG,{headers:{"content-type":"image/png",...(name ? {"content-disposition":`inline; filename="${name}"`} : {})}});
+const pngResponse = (name?: string, mime = "image/png") => new Response(PNG,{headers:{"content-type":mime,...(name ? {"content-disposition":`inline; filename="${name}"`} : {})}});
 
-async function macMenu(options: {name?: string; text?: string; owner?: string; saveFails?: boolean} = {}) {
+async function macMenu(options: {name?: string; text?: string; owner?: string; saveFails?: boolean; mime?: string} = {}) {
   const id = imageId(0);
-  const {window} = await mountImages(() => pngResponse(options.name),false,[{id}],[
+  const {window} = await mountImages(() => pngResponse(options.name,options.mime),false,[{id}],[
     {id:"message",role:"user",text:options.text ?? "Look at this",images:[{id}]},
   ],options.owner);
   const invoked: Array<[string,unknown]> = [];
@@ -356,6 +356,16 @@ test("each macOS image menu item runs its action and closes the menu",async () =
   const opened = await macMenu();
   await opened.choose("Open in image viewer");
   assert.ok(opened.window.document.querySelector('[role="dialog"][aria-label="Conversation images"]'));
+});
+
+test("copying a JPEG starts the clipboard write inside the click, before conversion finishes",async () => {
+  // WebKit rejects a clipboard write started after an await; the PNG
+  // conversion therefore travels as a pending item value.
+  Object.assign(globalThis,{createImageBitmap: () => new Promise(() => {})});
+  cleanups.push(() => { Reflect.deleteProperty(globalThis,"createImageBitmap"); });
+  const jpeg = await macMenu({mime:"image/jpeg"});
+  await jpeg.choose("Copy image");
+  assert.deepEqual(jpeg.written,[[{type:"image/png"}]],"the write began while the conversion was still pending");
 });
 
 test("a failed macOS image save or copy shows visible feedback",async () => {

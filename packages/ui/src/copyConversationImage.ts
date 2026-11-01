@@ -1,9 +1,14 @@
-/** Put the image on the system clipboard as PNG, the one image type every clipboard accepts. */
-export async function copyConversationImage(blob: Blob): Promise<void> {
+/**
+ * Put the image on the system clipboard as PNG, the one image type every
+ * clipboard accepts. WebKit rejects a clipboard write that starts after an
+ * await, so the write begins at once and a converted image travels as a
+ * pending item value.
+ */
+export function copyConversationImage(blob: Blob): Promise<void> {
   const clipboard = navigator.clipboard;
-  if (!clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("Image copy unavailable");
-  const png = blob.type === "image/png" ? blob : await convertToPng(blob);
-  await clipboard.write([new ClipboardItem({ "image/png": png })]);
+  if (!clipboard?.write || typeof ClipboardItem === "undefined") return Promise.reject(new Error("Image copy unavailable"));
+  const png = blob.type === "image/png" ? blob : convertToPng(blob);
+  return clipboard.write([new ClipboardItem({ "image/png": png })]);
 }
 
 async function convertToPng(blob: Blob): Promise<Blob> {
