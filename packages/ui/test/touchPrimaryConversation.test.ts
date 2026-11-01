@@ -274,18 +274,20 @@ test("the Android app keeps the phone list when no layout is chosen", async () =
   } finally { await h.close(); }
 });
 
-test("a chosen layout lists that many conversation tiles and a tile opens the phone conversation", async () => {
-  const h = await harness(900, false, true);
-  try {
-    await renderDashboard(h, true);
-    assert.equal(tier(h), "false");
-    assert.equal(tiles(h).length, 2);
-    await act(async () => h.container.querySelector<HTMLButtonElement>('[aria-label="Open First work"]')!.click());
-    await waitFor(() => phonePane(h), "the tile opens the full-screen conversation");
-    assert.equal(tier(h), "true");
-    assert.equal(noGrid(h), true);
-  } finally { await h.close(); }
-});
+for (const [width, coarse] of [[900, false], [360, false], [900, true]] as const) {
+  test(`a chosen layout lists conversation tiles in the Android app at ${width}px${coarse ? " with a coarse pointer" : ""} and a tile opens the phone conversation`, async () => {
+    const h = await harness(width, coarse, true);
+    try {
+      await renderDashboard(h, true);
+      assert.equal(tier(h), "false");
+      assert.equal(tiles(h).length, 2);
+      await act(async () => h.container.querySelector<HTMLButtonElement>('[aria-label="Open First work"]')!.click());
+      await waitFor(() => phonePane(h), "the tile opens the full-screen conversation");
+      assert.equal(tier(h), "true");
+      assert.equal(noGrid(h), true);
+    } finally { await h.close(); }
+  });
+}
 
 test("choosing a layout in the Android app persists and shows the tiles", async () => {
   const h = await harness(900, false, true);

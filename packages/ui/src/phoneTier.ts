@@ -19,7 +19,10 @@ export function setAndroidTileGrid(on: boolean): void {
 }
 
 export function isPhoneTier(): boolean {
-  return typeof window !== "undefined" && isPhoneWidth(window.innerWidth, isCoarsePointer(), isAndroidTauri() && !androidTileGrid);
+  if (typeof window === "undefined") return false;
+  // A chosen tile layout overrides every width and pointer fallback of the phone tier.
+  if (androidTileGrid && isAndroidTauri()) return false;
+  return isPhoneWidth(window.innerWidth, isCoarsePointer(), isAndroidTauri());
 }
 
 /**
