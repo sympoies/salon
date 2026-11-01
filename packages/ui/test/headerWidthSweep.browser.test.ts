@@ -31,12 +31,12 @@ const script = () => `
   const outside=seen.filter(c=>c.r.left<h.left-1||c.r.right>h.right+1||c.r.top<h.top-1||c.r.bottom>h.bottom+1).map(c=>c.n);
   const present=s=>{const e=header.querySelector(s);return !!e&&e.getBoundingClientRect().width>0};
   const missing=[['.brand-title-mark','logo'],['.dashboard-new-session','new'],['.header-menu-trigger','more']].filter(([s])=>!present(s)).map(([,n])=>n);
-  const buttons={more:'.header-menu-trigger',new:'.dashboard-new-session',layout:'.layout-picker-trigger',auto:'.layout-picker .is-auto',pane:'.layout-picker-inline button'};
-  const sizes={};for(const [k,s] of Object.entries(buttons)){const e=header.querySelector(s);const r=e&&e.getBoundingClientRect();if(r&&r.width>0)sizes[k]=r.width.toFixed(0)+'x'+r.height.toFixed(0);}
+  const buttons={more:'.header-menu-trigger',new:'.dashboard-new-session',layout:'.layout-picker-trigger',auto:'.layout-picker .is-auto',pane:'.layout-picker-inline button',pager:'.session-list-page-button'};
+  const sizes={};for(const [k,s] of Object.entries(buttons)){const found=[...new Set([...header.querySelectorAll(s)].map(e=>e.getBoundingClientRect()).filter(r=>r.width>0).map(r=>r.width.toFixed(0)+'x'+r.height.toFixed(0)))];if(found.length)sizes[k]=found.join('/');}
   const quota=[...header.querySelectorAll('.header-usage .hu-provider')].filter(e=>e.getBoundingClientRect().width>0).length;const result={overlaps,outside,missing,sizes,quota,detail:header.getAttribute('data-quota-detail')};
 `;
 
-for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024]) {
+for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024, 1280]) {
   for (const mode of ["browser", "android", "grid"] as const) for (const focused of [false, true]) {
     if (mode === "grid" && focused) continue;
     const android = mode !== "browser", grid = mode === "grid";
@@ -71,6 +71,22 @@ for (const focused of [false, true]) {
       assert.ok(shown.every((count, i) => i === 0 || count >= shown[i - 1]), `a narrower header never shows more accounts: ${detail}`);
       assert.equal(shown.at(-1), 2, `both accounts show where they fit: ${detail}`);
       assert.ok(shown.includes(1), `it reduces to fewer accounts before it disappears: ${detail}`);
+    } finally { await fixture.close(); }
+  });
+}
+
+// #259: with room to spare (no filter chips, a very wide window) the pager arrows and every pane layout button
+// are on screen; they share the size of More, New and the layout trigger too.
+for (const width of [2400, 3000]) {
+  test(`the roomy header at ${width}px shows the pager arrows and every pane button at one size`, async t => {
+    if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
+    const fixture = await headerFixture();
+    try {
+      const m = measureHeaderMarkup<Sweep>(fixture.markup(width, false, false, false), width, script(), false, 800, [], tierScript(false, false));
+      const detail = JSON.stringify(m);
+      assert.deepEqual(m.overlaps, [], `no component overlaps another: ${detail}`);
+      assert.ok(m.sizes.pager && m.sizes.pane, `the pager arrows and pane buttons are on screen: ${detail}`);
+      assert.equal(new Set(Object.values(m.sizes)).size, 1, `header buttons share one size: ${detail}`);
     } finally { await fixture.close(); }
   });
 }

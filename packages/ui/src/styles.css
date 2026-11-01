@@ -7300,7 +7300,7 @@ textarea {
  :where(:root:not([data-phone-header="true"])) .workspace-head .session-status-count-label, :where(:root:not([data-phone-header="true"])) .workspace-head .session-status-count-short-label { display:none; }
  :where(:root:not([data-phone-header="true"])) .workspace-head .session-list-pagination { order:2; display:inline-flex; flex:none; height:34px; min-height:34px; }
  :where(:root:not([data-phone-header="true"])) .workspace-head .session-list-page-label { font-size:var(--text-sm); min-width:28px; padding:0 2px; }
- :where(:root:not([data-phone-header="true"])) .workspace-head .session-list-page-button { min-width:24px; width:24px; }
+ :where(:root:not([data-phone-header="true"])) .workspace-head .session-list-page-button { min-width:var(--icon-standard-size); width:var(--icon-standard-size); }
  :where(:root:not([data-phone-header="true"])) .workspace-head .session-filters-summary.is-compact-header .session-filter-trigger-row { order:3; flex:0 1 var(--session-filter-panel-width); min-width:78px; width:var(--session-filter-panel-width); align-items:center; position:relative; }
  :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-searchbar { display:flex; flex:1 1 auto; width:100%; min-width:0; max-width:none; height:34px; min-height:34px; padding:0 12px 0 0; font-size:var(--text-sm); }
  :where(:root:not([data-phone-header="true"])) .workspace-head .session-filter-search-open { min-width:28px; width:auto; min-height:0; height:100%; flex:none; padding:0 4px; }
@@ -7353,7 +7353,7 @@ textarea {
  :where(:root[data-mac-titlebar="true"]) .workspace-head .session-status-count-label, :where(:root[data-mac-titlebar="true"]) .workspace-head .session-status-count-short-label { display:none; }
  :where(:root[data-mac-titlebar="true"]) .workspace-head .session-list-pagination { order:2; display:inline-flex; flex:none; height:34px; min-height:34px; }
  :where(:root[data-mac-titlebar="true"]) .workspace-head .session-list-page-label { font-size:var(--text-sm); min-width:28px; padding:0 2px; }
- :where(:root[data-mac-titlebar="true"]) .workspace-head .session-list-page-button { min-width:24px; width:24px; }
+ :where(:root[data-mac-titlebar="true"]) .workspace-head .session-list-page-button { min-width:var(--icon-standard-size); width:var(--icon-standard-size); }
  :where(:root[data-mac-titlebar="true"]) .workspace-head .session-filters-summary.is-compact-header .session-filter-trigger-row { order:3; flex:1 1 160px; min-width:78px; width:auto; align-items:center; position:relative; }
  :where(:root[data-mac-titlebar="true"]) .workspace-head .session-filter-searchbar { display:flex; flex:1 1 auto; width:100%; min-width:0; max-width:none; height:34px; min-height:34px; padding:0 12px 0 0; font-size:var(--text-sm); }
  :where(:root[data-mac-titlebar="true"]) .workspace-head .session-filter-search-open { min-width:28px; width:auto; min-height:0; height:100%; flex:none; padding:0 4px; }
@@ -7492,7 +7492,9 @@ textarea {
   }
 
 
- :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions > .dashboard-new-session, :where(:root[data-phone-header="true"]) .workspace-head .session-status-count, :where(:root[data-phone-header="true"]) .workspace-head .session-list-pagination, :where(:root[data-phone-header="true"]) .workspace-head .session-filter-searchbar, :where(:root[data-phone-header="true"]) .workspace-head .dashboard-new-session, :where(:root[data-phone-header="true"]) .workspace-head .header-menu-trigger { height:40px; min-height:40px; }
+ :where(:root[data-phone-header="true"]) .workspace-head .session-status-count, :where(:root[data-phone-header="true"]) .workspace-head .session-list-pagination, :where(:root[data-phone-header="true"]) .workspace-head .session-filter-searchbar { height:40px; min-height:40px; }
+ /* Header buttons follow the one control size at every width (#259), not a fixed phone height. */
+ :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions > .dashboard-new-session, :where(:root[data-phone-header="true"]) .workspace-head .dashboard-new-session, :where(:root[data-phone-header="true"]) .workspace-head .header-menu-trigger { height:var(--icon-standard-size); min-height:var(--icon-standard-size); }
 
 /* Web and phone single-session status counts (#938): their own strip above the
    session toolbar, so the title, quota and model keep their width. Desktop gets

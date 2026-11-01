@@ -33,7 +33,7 @@ export function LayoutPicker({ auto, mode, displayedMode, onToggleAuto, onSelect
       <AutoLayoutIcon />
     </IconButton>
     <div className="layout-seg layout-picker-inline">
-      {LAYOUT_MODES.map(value => <IconButton preset="compact" key={value} type="button"
+      {LAYOUT_MODES.map(value => <IconButton preset="standard" key={value} type="button"
         className={`layout-seg-btn ${!auto && mode === value ? "is-active" : ""} ${auto ? "is-dimmed" : ""} ${auto && displayedMode === value ? "is-auto-current" : ""}`}
         aria-pressed={!auto && mode === value} aria-label={label(value)} title={label(value)} onClick={() => onSelect(value)}>
         <LayoutModeIcon mode={value} />

@@ -71,7 +71,7 @@ test("the desktop header without Usage keeps the uncompacted row", async t => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
   const fixture = await headerFixture();
   try {
-    for (const width of [1100, 1280, 1500]) await t.test(`${width}px web without Usage`, () => {
+    for (const width of [1200, 1280, 1500]) await t.test(`${width}px web without Usage`, () => {
       const m = measureUiMarkup<Record<string, number | boolean | string | null>>(fixture.markup(width, false, false, true), width,
         withoutUsage + fixture.compact + measure, false, 982);
       const detail = JSON.stringify(m);
