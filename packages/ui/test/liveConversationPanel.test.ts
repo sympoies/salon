@@ -859,9 +859,9 @@ test('a failed voice reply keeps the tagged transcript in the reply composer for
   await act(async () => { findButton(panel.window.document, 'Stop recording').click(); await flush(); });
   await act(async () => flush());
   await act(async () => { findButton(panel.window.document, 'Send').click(); await flush(); });
-  assert.equal(panel.textarea().value, "'report.txt'\n[語音] reviewed voice reply");
+  assert.equal(panel.textarea().value, "'report.txt'\n\n> [語音] reviewed voice reply");
   assert.match(panel.container.textContent ?? '', /Local storage unavailable/);
-  assert.deepEqual(requests[0], ['maple', 'hs-7', { text: "'report.txt'\n[語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
+  assert.deepEqual(requests[0], ['maple', 'hs-7', { text: "'report.txt'\n\n> [語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
   const dialog = panel.window.document.querySelector('[role="dialog"][aria-label="Voice prompt"]');
   assert.ok(dialog, 'failed admission keeps the review dialog open');
   assert.match(dialog.textContent ?? '', /not sent.*remains in your reply draft/i);
@@ -871,7 +871,7 @@ test('a failed voice reply keeps the tagged transcript in the reply composer for
   await panel.send();
   assert.equal(panel.textarea().value, '');
   assert.equal(attempts, 2);
-  assert.deepEqual(requests[1], ['maple', 'hs-7', { text: "'report.txt'\n[語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
+  assert.deepEqual(requests[1], ['maple', 'hs-7', { text: "'report.txt'\n\n> [語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
 });
 
 test('a voice reply stays fenced to the session incarnation where its dialog opened', async () => {
@@ -917,7 +917,7 @@ test('a voice reply stays fenced to the session incarnation where its dialog ope
   await act(async () => flush());
   await act(async () => { findButton(panel.window.document, 'Send').click(); await flush(); });
   assert.deepEqual(requests, [], 'a reviewed voice command is not admitted to the replacement session');
-  assert.equal(panel.textarea().value, '[語音] reviewed voice reply');
+  assert.equal(panel.textarea().value, '> [語音] reviewed voice reply');
   assert.match(panel.container.textContent ?? '', /session restarted/i);
 });
 test('restarting the session fences an existing reply draft until it is explicitly discarded', async () => {
@@ -963,6 +963,17 @@ test('a late submission acknowledgement cannot erase a draft belonging to a rest
   await act(async () => { pending.resolve({ ok: true }); await flush(); });
   assert.equal(panel.textarea().value, 'old draft');
   assert.match(panel.container.textContent ?? '', /session restarted/i);
+});
+
+test('Voice stays beside Send once the draft has text', async () => {
+  const panel = await replyPanel(async () => ({ ok: true }));
+  const buttons = () => [...panel.container.querySelectorAll<HTMLButtonElement>('.conversation-voice, .conversation-send')].map(button => button.className);
+  assert.deepEqual(buttons(), ['conversation-voice']);
+  await panel.write('see attached');
+  assert.deepEqual(buttons(), ['conversation-voice', 'conversation-send']);
+  await act(async () => { panel.container.querySelector<HTMLButtonElement>('.conversation-voice')!.click(); await flush(); });
+  assert.ok(panel.window.document.querySelector('[aria-label="Voice prompt"]'), 'Voice opens dictation with text in the draft');
+  assert.equal(panel.textarea().value, 'see attached');
 });
 
 test('voice opens from an empty composer over a hidden conversation and cancelling restores the composer and focus (#942)', async () => {

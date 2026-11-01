@@ -223,6 +223,14 @@ test("mounted mobile cards shorten the legacy voice prompt note", async () => {
   assert.doesNotMatch(html, /語音轉寫/);
 });
 
+test("mobile session cards show a quoted voice prompt without its quote markers", async () => {
+  const html = await renderMobileSessions([makeSession({
+    agent: "claude",
+    last_prompt: { text: "typed text > [語音·Fast] 已經 commit 了 > 第二行", truncated: false },
+  })]);
+  assert.match(html, /class="mobile-session-card-prompt">typed text \[語音·Fast\] 已經 commit 了 第二行<\/span>/);
+});
+
 test("status pill and auto-resume sit with the harness metadata in row two", () => {
   assert.match(mobileSource, /mobile-session-card-status/);
   assert.match(mobileSource, /mobile-session-card-row-two[\s\S]*AutoResumeBadge[\s\S]*SessionActivityPopover/);

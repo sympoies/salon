@@ -135,7 +135,7 @@ test("errors remain visible as a single line", async () => {
 });
 
 const button = (container: HTMLElement, label: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
-test("#942 an empty composer shows the paperclip and the mic; text swaps the mic for send", async () => {
+test("#942 an empty composer shows the paperclip and the mic; text adds send beside the mic", async () => {
   const h = await mount();
   try {
     await h.render("idle");
@@ -145,9 +145,9 @@ test("#942 an empty composer shows the paperclip and the mic; text swaps the mic
     await h.write("next task");
     assert.ok(button(h.container, "Attach files"), "the paperclip stays while typing");
     assert.ok(button(h.container, "Send reply"));
-    assert.equal(button(h.container, "Voice"), null, "send replaces the mic");
+    assert.ok(button(h.container, "Voice"), "the mic stays beside send");
     await h.write("   ");
-    assert.ok(button(h.container, "Voice"), "blank text counts as empty");
+    assert.equal(button(h.container, "Send reply"), null, "blank text counts as empty");
   } finally { await h.close(); }
 });
 test("#942 attaching files uploads them to the session host and adds their quoted paths to the draft", async () => {

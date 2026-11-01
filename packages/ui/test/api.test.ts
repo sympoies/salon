@@ -284,9 +284,14 @@ test("speech upload carries audio while debug events retain no recording or tran
   });
 
   assert.equal((await getSpeechProviders())[0]?.label, "Summit GPU");
-  assert.deepEqual(await transcribeSpeechAudio("summit", audio), { text: transcript, language: "Chinese", provider: "summit", engine: null });
+  assert.deepEqual(await transcribeSpeechAudio("summit", audio), { text: transcript, language: "Chinese", provider: "summit", engine: null, label: null });
   assert.equal(uploaded, audio);
   assert.doesNotMatch(JSON.stringify(debugEvents()), /private-audio-canary|不要刪除/);
+});
+
+test("speech transcription returns the optional response label unchanged", async () => {
+  setFetchMock(async () => jsonResponse({ ok: true, data: { text: "hello", language: null, provider: "summit", label: " Fast · local " } }));
+  assert.equal((await transcribeSpeechAudio("summit", new Blob(["audio"], { type: "audio/webm" }))).label, " Fast · local ");
 });
 
 test("cancelling speech transcription aborts its network request", async () => {

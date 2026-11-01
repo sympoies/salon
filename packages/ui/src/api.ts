@@ -199,7 +199,7 @@ export async function transcribeSpeechAudio(provider: string, audio: Blob, signa
     if (typeof data?.text !== "string" || typeof data.provider !== "string") {
       throw new Error("Speech service returned an invalid response");
     }
-    return { text: data.text, language: typeof data.language === "string" ? data.language : null, provider: data.provider, engine: typeof data.engine === "string" ? data.engine : null };
+    return { text: data.text, language: typeof data.language === "string" ? data.language : null, provider: data.provider, engine: typeof data.engine === "string" ? data.engine : null, label: typeof data.label === "string" && data.label ? data.label : null };
   } finally {
     // Speech and transcript contents never enter the persisted debug event ring.
     recordDebugEvent({

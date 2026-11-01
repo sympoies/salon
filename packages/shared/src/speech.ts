@@ -11,6 +11,8 @@ export interface SpeechTranscription {
   readonly provider: string;
   /** The engine that answered; null when the server does not report one. */
   readonly engine: string | null;
+  /** Server-provided text naming what produced the transcript; shown verbatim, null when absent. */
+  readonly label: string | null;
 }
 
 export interface SpeechEngine {
