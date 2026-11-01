@@ -28,7 +28,7 @@ test("modal Settings and mobile Session filters have equal computed label-to-fie
       }>(`<div class="modal">${settings}<label class="generic-modal-field"><span>Generic</span><input></label></div><div class="modal speech-modal"><label><span>Language</span><select><option>Automatic</option></select></label></div>${filters}`, width, `
         const settings=document.querySelector('.settings-field');
         const filter=document.querySelector('.session-filter-panel-fields > label');
-        const settingsControl=settings.querySelector('select'),filterControl=filter.querySelector('select');
+        const settingsControl=settings.querySelector('select'),filterControl=filter.querySelector('input[type="search"]');
         const range=document.createRange();range.selectNodeContents(settings.firstChild);
         const settingsLabel=range.getBoundingClientRect(),filterLabel=filter.querySelector('span').getBoundingClientRect();
         const result={settingsGap:parseFloat(getComputedStyle(settings).rowGap),filterGap:parseFloat(getComputedStyle(filter).rowGap),

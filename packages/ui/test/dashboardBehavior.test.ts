@@ -386,7 +386,7 @@ test("the macOS title bar counts keep the applied filters while a session is ope
     await flushPromises();
   });
   await openSessionFilters(mounted);
-  await setSessionFilter(mounted, "Filter sessions by harness", "codex");
+  await chooseHarness(mounted, "codex");
   await act(async () => {
     [...mounted.container.querySelectorAll<HTMLButtonElement>(".session-filter-panel-actions button")]
       .find(button => button.textContent === "Apply filters")!.click();
@@ -1201,6 +1201,13 @@ async function openSessionFilters(mounted: Awaited<ReturnType<typeof installDom>
     const trigger = mounted.container.querySelector<HTMLButtonElement>(".session-filters-trigger");
     if (trigger) trigger.click();
     else assert.ok(mounted.container.querySelector(".session-filter-inline"), "desktop filters are already expanded");
+    await flushPromises();
+  });
+}
+
+async function chooseHarness(mounted: Awaited<ReturnType<typeof installDom>>, id: string): Promise<void> {
+  await act(async () => {
+    mounted.container.querySelector<HTMLInputElement>(`[data-filter-dimension="harnesses"] input[value="${id}"]`)!.click();
     await flushPromises();
   });
 }
@@ -2196,7 +2203,7 @@ test("shared host and harness filters compose and clear together", async () => {
   await setVisibleHosts(mounted, ["host-a"]);
   assert.deepEqual(slotKeys(mounted.container), ["host-a/control-1"]);
   await openSessionFilters(mounted);
-  await setSessionFilter(mounted, "Filter sessions by harness", "codex");
+  await chooseHarness(mounted, "codex");
   await act(async () => {
     [...mounted.container.querySelectorAll<HTMLButtonElement>(".session-filter-panel-actions button")]
       .find(button => button.textContent === "Apply filters")!.click();
@@ -6333,7 +6340,7 @@ for (const width of [390, 1200]) for (const entrypoint of ["menu", "icon"] as co
       await flushPromises();
     });
     await openSessionFilters(mounted);
-    await setSessionFilter(mounted, "Filter sessions by harness", "codex");
+    await chooseHarness(mounted, "codex");
     await act(async () => {
       const repo = mounted.container.querySelector<HTMLInputElement>('input[aria-label="Repository"]')!;
       repo.focus();

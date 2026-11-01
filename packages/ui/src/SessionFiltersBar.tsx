@@ -45,11 +45,12 @@ function sameFacetSelection<T>(left: readonly T[] | null | undefined, right: rea
     || Boolean(left && right && left.length === right.length && left.every(value => right.includes(value)));
 }
 function sameAppliedFilters(left: SessionFilters, right: SessionFilters): boolean {
-  return left.harness === right.harness && left.repo === right.repo
+  return left.repo === right.repo
     && left.statusGroup === right.statusGroup
     && sameFacetSelection(left.workspaces, right.workspaces)
     && sameFacetSelection(left.excludedWorkspaces, right.excludedWorkspaces)
-    && sameFacetSelection(left.hosts, right.hosts) && sameFacetSelection(left.roles, right.roles);
+    && sameFacetSelection(left.hosts, right.hosts) && sameFacetSelection(left.roles, right.roles)
+    && sameFacetSelection(left.harnesses, right.harnesses);
 }
 function rebaseDraft(draft: SessionFilters, previous: SessionFilters, next: SessionFilters): SessionFilters {
   const workspaceUntouched = sameFacetSelection(draft.workspaces, previous.workspaces)
@@ -58,7 +59,7 @@ function rebaseDraft(draft: SessionFilters, previous: SessionFilters, next: Sess
     ...draft,
     hosts: sameFacetSelection(draft.hosts, previous.hosts) ? next.hosts : draft.hosts,
     roles: sameFacetSelection(draft.roles, previous.roles) ? next.roles : draft.roles,
-    harness: draft.harness === previous.harness ? next.harness : draft.harness,
+    harnesses: sameFacetSelection(draft.harnesses, previous.harnesses) ? next.harnesses : draft.harnesses,
     repo: draft.repo === previous.repo ? next.repo : draft.repo,
     statusGroup: draft.statusGroup === previous.statusGroup ? next.statusGroup : draft.statusGroup,
     ...(workspaceUntouched ? { workspaces: next.workspaces, excludedWorkspaces: next.excludedWorkspaces } : {}),
@@ -122,6 +123,7 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     ...next,
     workspaces: next.excludedWorkspaces?.length ? null : normalizeWorkspaces(next.workspaces),
     hosts: normalizeFacetSelection(next.hosts, machines),
+    harnesses: normalizeFacetSelection(next.harnesses, harnessIds),
     ...(next.roles === undefined ? {} : { roles: normalizeFacetSelection(next.roles, [null, ...(roles ?? [])]) }),
   });
   const commit = (next: SessionFilters) => {
@@ -130,6 +132,9 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     onChange(applied);
     close();
   };
+  const harnessIds = harnesses.map(harness => harness.id);
+  const harnessLabel = (id: string) => harnesses.find(harness => harness.id === id)?.label ?? sessionListHarnessLabel(id);
+  const restrictedHarnesses = filters.harnesses === null ? 0 : harnessIds.filter(id => !filters.harnesses!.includes(id)).length;
   const restrictedHosts = filters.hosts === null ? 0 : machines.filter(machine => !filters.hosts!.includes(machine)).length;
   const roleChoices: readonly (string | null)[] = [null, ...(roles ?? [])];
   const selectedRoleCount = filters.roles == null || roleChoices.every(role => filters.roles!.includes(role))
@@ -147,13 +152,12 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     ...(workspaceChip ? [{ key: "workspace", ...workspaceChip, reset: { workspaces: null, excludedWorkspaces: null } }] : []),
     ...(filters.hosts !== null && restrictedHosts > 0 ? [{ key: "hosts", ...dimension("Hosts", [...machines.filter(machine => filters.hosts!.includes(machine)), ...filters.hosts!.filter(host => !machines.includes(host))]), reset: { hosts: null } }] : []),
     ...(roles !== undefined && rolesNarrowed ? [{ key: "roles", ...dimension("Roles", roleChoices.filter(role => filters.roles!.includes(role)).map(role => role ?? "No role")), reset: { roles: null } }] : []),
-    ...(filters.harness ? [{ key: "harness", ...single(`Harness: ${sessionListHarnessLabel(filters.harness)}`), reset: { harness: null } }] : []),
+    ...(filters.harnesses !== null && restrictedHarnesses > 0 ? [{ key: "harnesses", ...dimension("Harness", [...harnessIds.filter(id => filters.harnesses!.includes(id)), ...filters.harnesses!.filter(id => !harnessIds.includes(id))].map(harnessLabel)), reset: { harnesses: null } }] : []),
     ...(filters.repo ? [{ key: "repo", ...single(`Repository: ${filters.repo}`), reset: { repo: "" } }] : []),
     ...(filters.statusGroup ? [{ key: "status", ...single(`Status: ${SESSION_STATUS_LABELS[filters.statusGroup][0]}`), reset: { statusGroup: null } }] : []),
   ];
   const summaryEntries = [
     filters.hosts === null ? "All machines" : `${machines.length - restrictedHosts} of ${machines.length} machines`,
-    filters.harness ? sessionListHarnessLabel(filters.harness) : undefined,
     filters.repo || undefined,
     workspaceChip,
   ].flatMap(entry => !entry ? [] : typeof entry === "string" ? [{ label: entry, compact: entry }] : [entry]);
@@ -224,9 +228,12 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
             <fieldset className="session-filter-options"><legend className="sr-only">Roles</legend>{roleChoices.map(role => <label className="session-filter-choice" key={role ?? "no-role"}>
               <input type="checkbox" value={role ?? ""} checked={draft.roles?.includes(role) ?? false} onChange={() => update({ roles: toggleFacetSelection(draft.roles ?? null, roleChoices, role) })} />{role ?? "No role"} ({count({ roles: [role] })})</label>)}</fieldset></div>
           </details> : null}
-        <label><span>Harness</span><select aria-label="Filter sessions by harness" value={draft.harness ?? ""} onChange={event => update({ harness: event.currentTarget.value || null })}>
-          <option value="">All harnesses ({count({ harness: null })})</option>{harnesses.map(harness => <option key={harness.id} value={harness.id}>{harness.label} ({count({ harness: harness.id })})</option>)}
-        </select></label>
+          <details open className="session-filter-multi-select" data-filter-dimension="harnesses">
+            <summary>Harness <span>{draft.harnesses === null ? `All harnesses (${count({ harnesses: null })})` : `${harnessIds.filter(id => draft.harnesses!.includes(id)).length} of ${harnessIds.length}`}</span></summary>
+            <div className="session-filter-facet-body"><button type="button" className="btn ghost session-filter-facet-all" disabled={draft.harnesses === null} onClick={() => update({ harnesses: null })}>All harnesses</button>
+            <fieldset className="session-filter-options"><legend className="sr-only">Harness</legend>{harnesses.map(harness => <label className="session-filter-choice" key={harness.id}>
+          <input type="checkbox" value={harness.id} checked={draft.harnesses?.includes(harness.id) ?? false} onChange={() => update({ harnesses: toggleFacetSelection(draft.harnesses, harnessIds, harness.id) })} />{harness.label} ({count({ harnesses: [harness.id] })})</label>)}</fieldset></div>
+          </details>
         <label><span>Repository</span><input type="search" aria-label="Repository" autoCorrect="off" autoCapitalize="none" spellCheck={false} placeholder="Exact repository name" value={draft.repo} onChange={event => update({ repo: event.currentTarget.value })} /></label>
 
       </div>

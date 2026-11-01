@@ -6,7 +6,7 @@ import { CLEAR_SESSION_FILTERS } from "../src/sessionFilters.ts";
 
 // Issue #765 item 5: the pager and filter row matches the rest of the header in
 // type size and height, on desktop (1200 px) and phone (384 px, 360 px).
-const CHIP_FILTERS = { ...CLEAR_SESSION_FILTERS, hosts: ["summit"], harness: "codex", repo: "agent-console" };
+const CHIP_FILTERS = { ...CLEAR_SESSION_FILTERS, hosts: ["summit"], harnesses: ["codex"], repo: "agent-console" };
 
 interface RowMeasure {
   textMd: number; pageExpected: number; pagerHeight: number; pageLabelFont: number; arrowFont: number;
