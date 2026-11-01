@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.24 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.25 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -156,14 +156,12 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.24`; its release is a GitHub
-prerelease with `latest=false`. Conversation images keep their bytes on
-Chromium 116 (#197). Touch-primary devices open sessions in conversation at any
-width (#198). Session notice titles follow the kind family, bodies render as
-Markdown and the raw-copy button is gone (#194, #201). The native connect screen
-shows the actual result and a pending state (#196). macOS page shortcuts work
-from a focused session and Cmd+T toggles New session (#191). Existing
-`v0.1.0` through `v0.1.23` tags and assets stay immutable. The visibility transition does not
+merge. The checked-in SDK version is `0.1.25`; its release is a GitHub
+prerelease with `latest=false`. The Android app counts as touch-primary even
+when its WebView reports a fine pointer, and the debug log records the live
+pointer values (#207). Each device can choose the transcription engine for
+dictation from the engines the server lists (#204). Existing
+`v0.1.0` through `v0.1.24` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
