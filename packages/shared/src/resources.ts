@@ -1,4 +1,5 @@
 import { normalizeConversationImages, type ConversationImage } from "./conversationImages.ts";
+import { normalizeMailboxEvent, type MailboxEvent } from "./mailboxEvent.ts";
 import { NormalizedSseDecoder } from "./sse.ts";
 import { parseSessionNotice } from "./parseSessionNotice.ts";
 
@@ -16,7 +17,7 @@ export function resourceKey(subscription: ResourceSubscription): string {
 // pages stay on HTTP so an eight-conversation stream remains bounded.
 export const CONVERSATION_SNAPSHOT_MAX_BYTES = 60 * 1024;
 export interface ConversationSnapshot {
-  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly images?: readonly ConversationImage[]; readonly timestamp?: string }>;
+  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly images?: readonly ConversationImage[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent }>;
   readonly next_cursor?: string;
   readonly older_cursor?: string;
 }
@@ -37,8 +38,9 @@ export function normalizeConversationSnapshot(value: unknown): ConversationSnaps
     // A notice is display-only machine text: it must parse as an envelope and carry no images.
     if (item.role === "notice" && (images.length || !parseSessionNotice(item.text))) continue;
     ids.add(item.id);
+    const mailbox = item.role === "notice" ? normalizeMailboxEvent(item.mailbox) : undefined;
     messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal" | "notice", text: item.text, ...(images.length ? { images } : {}),
-      ...(typeof item.timestamp === "string" ? { timestamp: item.timestamp } : {}) });
+      ...(typeof item.timestamp === "string" ? { timestamp: item.timestamp } : {}), ...(mailbox ? { mailbox } : {}) });
   }
   const snapshot: ConversationSnapshot = { messages };
   for (const key of ["next_cursor", "older_cursor"] as const) {

@@ -66,6 +66,45 @@ test("history projection admits the notice role only for a valid envelope withou
   }), { messages: [{ id: "n1", role: "notice", text, timestamp: "2026-01-01T00:00:00Z" }] });
 });
 
+const mailboxText = "<!-- agent-notice:v1 kind=mailbox.read source=agent-session id=m-1 -->\n\nPlease review the synthetic change.\n";
+const mailbox = {
+  schema_version: "agent-session.mailbox-read-event.v1",
+  message_id: "m-1",
+  sender: { kind: "session", machine: "machine-a", session_id: "sender-1" },
+  category: "handoff",
+  state: "read",
+  read_at: "2026-11-02T01:02:03.456Z",
+  acknowledged_at: null,
+  revision: 1,
+  availability: "complete",
+};
+
+test("history projection forwards a valid mailbox read event with display fields only", () => {
+  const event = { id: "h-abc-m-1-mailbox", role: "notice", text: mailboxText, timestamp: "2026-11-02T01:02:03.456Z" };
+  assert.deepEqual(projectHistoryMessagesDaemonData({
+    messages: [{ ...event, mailbox: { ...mailbox, path: "/private", sender: { ...mailbox.sender, incarnation: "i-1" } } }],
+  }), {
+    messages: [{ ...event, mailbox: {
+      message_id: "m-1",
+      sender: { kind: "session", machine: "machine-a", id: "sender-1" },
+      category: "handoff", state: "read", read_at: "2026-11-02T01:02:03.456Z", acknowledged_at: null, revision: 1,
+    } }],
+  });
+});
+
+test("a malformed mailbox object leaves a plain notice, and only notices may carry one", () => {
+  const event = { id: "n-1", role: "notice", text: mailboxText };
+  assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [{ ...event, mailbox: { ...mailbox, availability: "truncated" } }] }), { messages: [event] });
+  assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [{ id: "a-1", role: "assistant", text: "hi", mailbox }] }), { messages: [{ id: "a-1", role: "assistant", text: "hi" }] });
+});
+
+test("mailbox events do not count against the provider row limit", () => {
+  const rows = Array.from({ length: 100 }, (_, index) => ({ id: `row-${index}`, role: "assistant", text: `row ${index}` }));
+  const events = Array.from({ length: 3 }, (_, index) => ({ id: `h-abc-m-${index}-mailbox`, role: "notice", text: mailboxText, mailbox: { ...mailbox, message_id: `m-${index}` } }));
+  const projected = projectHistoryMessagesDaemonData({ messages: [...rows.slice(0, 50), ...events, ...rows.slice(50)] }) as { messages: unknown[] };
+  assert.equal(projected.messages.length, 103);
+});
+
 test("archive projection requires matching delete acknowledgement and strips private fields", () => {
   const archived = {
     history_id: "h-abc",

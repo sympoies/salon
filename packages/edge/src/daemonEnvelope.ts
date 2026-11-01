@@ -1,5 +1,5 @@
 import { normalizeConversationImages } from "@agent-console/shared/conversation-images";
-import { parseSessionNotice } from "@agent-console/shared";
+import { normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
 import type { ServerResponse } from "node:http";
 import { sendJson } from "./http.ts";
 import type { DaemonResult } from "./upstream.ts";
@@ -396,6 +396,9 @@ function projectHistoryMessage(value: unknown): Record<string, unknown> | null {
   const projected: Record<string, unknown> = { id, role, text, ...(images.length ? { images } : {}) };
   const timestamp = boundedHistoryString(raw.timestamp, 64);
   if (timestamp) projected.timestamp = timestamp;
+  // A mailbox read event is a notice with display metadata; unknown or malformed metadata leaves a plain notice.
+  const mailbox = role === "notice" ? normalizeMailboxEvent(raw.mailbox) : undefined;
+  if (mailbox) projected.mailbox = mailbox;
   return projected;
 }
 
@@ -432,7 +435,8 @@ export function projectHistoryMessagesDaemonData(value: unknown): Record<string,
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   if (!Array.isArray(raw.messages)) return null;
-  const messages = raw.messages.slice(0, 100).flatMap((message) => {
+  // Mailbox read events come in addition to the 100-row page limit.
+  const messages = raw.messages.slice(0, 200).flatMap((message) => {
     const projected = projectHistoryMessage(message);
     return projected ? [projected] : [];
   });

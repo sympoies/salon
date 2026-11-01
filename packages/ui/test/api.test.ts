@@ -294,6 +294,29 @@ test("speech transcription returns the optional response label unchanged", async
   assert.equal((await transcribeSpeechAudio("summit", new Blob(["audio"], { type: "audio/webm" }))).label, " Fast · local ");
 });
 
+test("history messages keep a valid mailbox read event and drop anything unknown", async () => {
+  const text = "<!-- agent-notice:v1 kind=mailbox.read source=agent-session id=m-1 -->\n\nBody";
+  const mailbox = {
+    schema_version: "agent-session.mailbox-read-event.v1", message_id: "m-1",
+    sender: { kind: "session", machine: "machine-a", session_id: "s-1", incarnation: "private" },
+    category: "report", state: "acknowledged", read_at: null, acknowledged_at: "2026-11-02T01:05:00.000Z",
+    revision: 2, availability: "complete", path: "/private",
+  };
+  setFetchMock(async () => jsonResponse({ ok: true, data: { messages: [
+    { id: "e1", role: "notice", text, mailbox },
+    { id: "e2", role: "notice", text, mailbox: { ...mailbox, schema_version: "future" } },
+    { id: "e3", role: "notice", text },
+  ] } }));
+  const result = await listHistoryMessages("maple", "h-1");
+  assert.deepEqual(result.messages, [
+    { id: "e1", role: "notice", text, mailbox: {
+      message_id: "m-1", sender: { kind: "session", machine: "machine-a", id: "s-1" }, category: "report",
+      state: "acknowledged", read_at: null, acknowledged_at: "2026-11-02T01:05:00.000Z", revision: 2 } },
+    { id: "e2", role: "notice", text },
+    { id: "e3", role: "notice", text },
+  ]);
+});
+
 test("cancelling speech transcription aborts its network request", async () => {
   const controller = new AbortController();
   let observedSignal: AbortSignal | undefined;
