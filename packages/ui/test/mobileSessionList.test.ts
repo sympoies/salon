@@ -228,7 +228,7 @@ test("mobile session cards show a quoted voice prompt without its quote markers"
     agent: "claude",
     last_prompt: { text: "typed text > [語音·Fast] 已經 commit 了 > 第二行", truncated: false },
   })]);
-  assert.match(html, /class="mobile-session-card-prompt">typed text \[語音·Fast\] 已經 commit 了 第二行<\/span>/);
+  assert.match(html, /class="mobile-session-card-prompt">typed text \[語音·Fast\] 已經 commit 了 &gt; 第二行<\/span>/);
 });
 
 test("status pill and auto-resume sit with the harness metadata in row two", () => {

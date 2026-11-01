@@ -31,6 +31,12 @@ test("quoteVoiceTranscript carries the response label verbatim", () => {
 
 test("compactVoicePromptNote drops quote markers from voice previews", () => {
   assert.equal(compactVoicePromptNote("> [語音] one\n> two"), "[語音] one\ntwo");
-  assert.equal(compactVoicePromptNote("typed > [語音·Fast] one > two"), "typed [語音·Fast] one two");
+  assert.equal(compactVoicePromptNote("typed > [語音·Fast] one > two"), "typed [語音·Fast] one > two");
   assert.equal(compactVoicePromptNote("a > b"), "a > b");
+});
+
+test("compactVoicePromptNote keeps typed and literal angle brackets around a voice block", () => {
+  assert.equal(compactVoicePromptNote("a > b\n\n> [語音] hello"), "a > b\n\n[語音] hello");
+  assert.equal(compactVoicePromptNote("> [語音] x > y\n> z > w\n\nafter > it"), "[語音] x > y\nz > w\n\nafter > it");
+  assert.equal(compactVoicePromptNote("a > b > [語音] hello"), "a > b [語音] hello");
 });

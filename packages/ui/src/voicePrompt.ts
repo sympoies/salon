@@ -15,10 +15,19 @@ export function quoteVoiceTranscript(text: string, label: string | null): string
   return `${tag}${text}`.split("\n").map((line) => (line ? `> ${line}` : ">")).join("\n");
 }
 
-// Quoted voice prompts keep "> " markers; a preview collapses newlines into
-// spaces, so markers follow whitespace as well as line starts.
-const VOICE_QUOTE_MARKER = /(^|\s)>(?: |$)/g;
+// Only the markers this app generated come off: the one before the tag and, on
+// a multi-line text, the quoted lines that follow it. A collapsed preview cannot
+// tell later markers from typed ">", so those stay.
+const VOICE_QUOTE_TAG = /> \[語音[\]·]/;
 
 function dropVoiceQuoteMarkers(text: string): string {
-  return /(?:^|\s)> \[語音[\]·]/.test(text) ? text.replace(VOICE_QUOTE_MARKER, "$1") : text;
+  if (!VOICE_QUOTE_TAG.test(text)) return text;
+  if (!text.includes("\n")) return text.replace(/(^|\s)> (?=\[語音[\]·])/g, "$1");
+  let quoted = false;
+  return text.split("\n").map((line) => {
+    if (/^> \[語音[\]·]/.test(line)) { quoted = true; return line.slice(2); }
+    if (quoted && /^>( |$)/.test(line)) return line.slice(2);
+    quoted = false;
+    return line;
+  }).join("\n");
 }
