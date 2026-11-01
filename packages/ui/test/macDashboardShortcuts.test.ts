@@ -77,10 +77,26 @@ async function mountDashboard(macTauri = true) {
   };
 }
 
-const NEXT = { key: ">", code: "Period", shiftKey: true };
-const PREVIOUS = { key: "<", code: "Comma", shiftKey: true };
+const NEXT = { key: ".", code: "Period" };
+const PREVIOUS = { key: ",", code: "Comma" };
 
-test("Command-> and Command-< move a focused session view across list pages and keep the list in step", async () => {
+test("Command-Period and Command-Comma move the list pager like its arrows, also from the reply composer", async () => {
+  const h = await mountDashboard();
+  try {
+    await h.press(NEXT);
+    await h.settle(() => h.pageLabel() === "2 / 2", "Command-Period did not show the next page");
+    await h.press(PREVIOUS);
+    await h.settle(() => h.pageLabel() === "1 / 2", "Command-Comma did not show the previous page");
+    const composer = h.window.document.createElement("textarea");
+    h.container.append(composer);
+    await h.press(NEXT, composer);
+    await h.settle(() => h.pageLabel() === "2 / 2", "Command-Period did nothing from the reply composer");
+    await h.press({ key: ">", code: "Period", shiftKey: true });
+    assert.equal(h.pageLabel(), "2 / 2");
+  } finally { await h.close(); }
+});
+
+test("Command-Period and Command-Comma move a focused session view across list pages and keep the list in step", async () => {
   const h = await mountDashboard();
   try {
     await h.press({ key: "2", code: "Digit2" });
@@ -89,11 +105,17 @@ test("Command-> and Command-< move a focused session view across list pages and 
     assert.match(pageOneSession, /s2$/);
 
     await h.press(NEXT);
-    await h.settle(() => /s5$/.test(h.focusedSlot() ?? ""), "Command-> left the focused session in place");
+    await h.settle(() => /s5$/.test(h.focusedSlot() ?? ""), "Command-Period left the focused session in place");
     await h.press(PREVIOUS);
-    await h.settle(() => /s1$/.test(h.focusedSlot() ?? ""), "Command-< left the focused session in place");
+    await h.settle(() => /s1$/.test(h.focusedSlot() ?? ""), "Command-Comma left the focused session in place");
     await h.press(PREVIOUS);
-    await h.settle(() => /s5$/.test(h.focusedSlot() ?? ""), "Command-< did not wrap like the list pager");
+    await h.settle(() => /s5$/.test(h.focusedSlot() ?? ""), "Command-Comma did not wrap like the list pager");
+    const composer = h.window.document.createElement("textarea");
+    h.container.append(composer);
+    await h.press(NEXT, composer);
+    await h.settle(() => /s1$/.test(h.focusedSlot() ?? ""), "Command-Period did nothing from the reply composer");
+    await h.press(PREVIOUS);
+    await h.settle(() => /s5$/.test(h.focusedSlot() ?? ""), "Command-Comma did not wrap again");
 
     await h.press({ key: "`", code: "Backquote" });
     await h.settle(() => h.pageLabel() === "2 / 2", "the list did not return on the page the shortcut reached");
@@ -130,5 +152,41 @@ test("Command-T leaves the New session dialog open outside the macOS app", async
     await h.settle(() => dialog(h) !== null, "the header button did not open the dialog");
     await h.press(COMMAND_T, dialog(h)!.querySelector("input")!);
     assert.ok(dialog(h));
+  } finally { await h.close(); }
+});
+
+const has = (h: Awaited<ReturnType<typeof mountDashboard>>, selector: string) => h.window.document.querySelector<HTMLElement>(selector);
+
+test("Command-5 closes the Repair sessions confirmation from its buttons", async () => {
+  const h = await mountDashboard();
+  try {
+    await h.press({ key: "5", code: "Digit5" });
+    await h.settle(() => has(h, '[role="dialog"]') !== null, "Command-5 did not open the confirmation");
+    await h.press({ key: "5", code: "Digit5" }, has(h, '[role="dialog"] button')!);
+    await h.settle(() => has(h, '[role="dialog"]') === null, "Command-5 did not close the confirmation");
+  } finally { await h.close(); }
+});
+
+test("Command-E closes the inline rename editor from its input", async () => {
+  const h = await mountDashboard();
+  try {
+    await h.press({ key: "2", code: "Digit2" });
+    await h.settle(() => h.focusedSlot() !== null, "Command-2 did not focus a session");
+    await h.press({ key: "e", code: "KeyE" });
+    await h.settle(() => has(h, ".slot-title-input") !== null, "Command-E did not open the editor");
+    await h.press({ key: "e", code: "KeyE" }, has(h, ".slot-title-input")!);
+    await h.settle(() => has(h, ".slot-title-input") === null, "Command-E did not close the editor");
+  } finally { await h.close(); }
+});
+
+test("Command-I closes the Voice prompt from inside it", async () => {
+  const h = await mountDashboard();
+  try {
+    await h.press({ key: "2", code: "Digit2" });
+    await h.settle(() => h.focusedSlot() !== null, "Command-2 did not focus a session");
+    await h.press({ key: "i", code: "KeyI" });
+    await h.settle(() => has(h, '[aria-label="Voice prompt"]') !== null, "Command-I did not open the prompt");
+    await h.press({ key: "i", code: "KeyI" }, has(h, '[aria-label="Voice prompt"] button')!);
+    await h.settle(() => has(h, '[aria-label="Voice prompt"]') === null, "Command-I did not close the prompt");
   } finally { await h.close(); }
 });

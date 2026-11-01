@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { SpeechProviderSummary } from "@agent-console/shared/speech";
 import { getSpeechEngines, getSpeechProviders, submitSessionPrompt, transcribeSpeechAudio } from "./api.ts";
 import { Modal } from "./Modal.tsx";
+import { useShortcutClose } from "./useShortcutClose.ts";
 import { isAndroidTauri } from "./runtime.ts";
 import { loadSpeechEngine } from "./speechEngine.ts";
 import { VOICE_PROMPT_TAG } from "./voicePrompt.ts";
@@ -84,6 +85,8 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     setReplyRetained(false);
     setError("");
   };
+
+  useShortcutClose("voice", () => { close(); }, open);
 
   useEffect(() => () => {
     generation.current += 1;

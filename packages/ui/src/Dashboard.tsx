@@ -178,6 +178,7 @@ import { LiveConversationPanel } from "./LiveConversationPanel.tsx";
 import { useConversationOutboxDelivery } from "./conversationOutbox.ts";
 import type { ConversationReplyDrafts } from "./ConversationComposer.tsx";
 import { projectFocusedGridSlots } from "./focusedGridProjection.ts";
+import { useShortcutClose } from "./useShortcutClose.ts";
 import { ShortcutHelpModal } from "./ShortcutHelpModal.tsx";
 import { SpeechComposer } from "./SpeechComposer.tsx";
 import {
@@ -2592,11 +2593,24 @@ export function Dashboard({
     [focusedKey, openSessionByShortcutIndex, overviewPage.sessionKeys, rememberSessionInteraction, requestPromptTargetFocus, sessionShortcutTarget, shortcutSessionKeys, showShortcutFeedback, viewport.mobile],
   );
 
-  const stepPageFromShortcut = (direction: -1 | 1) => {
+  // The header arrows ask for 0 / pageCount + 1 to wrap; menu choices are
+  // absolute destinations, including jumps across several pages.
+  const changeOverviewPage = (nextPage: number) => {
+    if (nextPage < 1) {
+      goToPreviousSessionListPage();
+    } else if (nextPage > overviewPage.pageCount) {
+      goToNextSessionListPage();
+    } else if (nextPage !== overviewPage.page) {
+      cancelPendingCreatedFocus();
+      setSessionListPage(nextPage);
+    }
+  };
+
+  // The page keys act like the header arrows. A focused session has no pager,
+  // so there they land on the first session of the adjacent page.
+  const stepPage = (direction: -1 | 1) => {
     if (focusedKey === null) {
-      if (overviewPage.pageCount <= 1) return;
-      if (direction > 0) goToNextSessionListPage();
-      else goToPreviousSessionListPage();
+      if (overviewPage.pageCount > 1) changeOverviewPage((overviewPage.page ?? 1) + direction);
       return;
     }
     if (phoneConversationLockedRef.current) return;
@@ -2692,6 +2706,8 @@ export function Dashboard({
     selectSlot(index, value);
   };
 
+  useShortcutClose("repair-sessions", () => setPendingRepair(null), pendingRepair !== null && !repairingSessions);
+
   useDashboardKeyboard({
     active: active && !showCreate,
     autoLayout,
@@ -2704,8 +2720,8 @@ export function Dashboard({
     isEditableShortcutTarget,
     isTerminalShortcutTarget,
     onUsage,
-    onPagePrevious: () => stepPageFromShortcut(-1),
-    onPageNext: () => stepPageFromShortcut(1),
+    onPagePrevious: () => stepPage(-1),
+    onPageNext: () => stepPage(1),
     onVoice: openFocusedVoicePrompt,
     onConversation: toggleFocusedConversation,
     onShortcutHelp: () => setShowShortcutHelp(true),
@@ -2853,18 +2869,7 @@ export function Dashboard({
               open={mobileOverviewNavOpen}
               mobile={viewport.mobile}
               onOpenChange={setMobileOverviewNavOpen}
-              onPageChange={(nextPage) => {
-                // Arrows ask for 0 / pageCount + 1 to wrap; menu choices are
-                // absolute destinations, including jumps across several pages.
-                if (nextPage < 1) {
-                  goToPreviousSessionListPage();
-                } else if (nextPage > overviewPage.pageCount) {
-                  goToNextSessionListPage();
-                } else if (nextPage !== overviewPage.page) {
-                  cancelPendingCreatedFocus();
-                  setSessionListPage(nextPage);
-                }
-              }}
+              onPageChange={changeOverviewPage}
             />
           ) : null}
           {focusedStatusCounts && nativeCountsTarget ? createPortal(focusedStatusCounts, nativeCountsTarget) : null}

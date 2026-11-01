@@ -7653,8 +7653,8 @@ test("page shortcuts wrap in overview", async () => {
     await act(async () => { mounted.window.dispatchEvent(metaKey(mounted.window, key)); await flushPromises(); });
   };
   assert.equal(pageLabel(), "1 / 2");
-  await press("<");
+  await press(",");
   assert.equal(pageLabel(), "2 / 2");
-  await press(">");
+  await press(".");
   assert.equal(pageLabel(), "1 / 2");
 });
