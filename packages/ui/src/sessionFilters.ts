@@ -3,7 +3,6 @@ import type { SessionDispatchedBy } from "@agent-console/shared/api";
 import { classifySessionStatus, sessionStatusEvidence, type SessionStatusGroup } from "./sessionStatusGroups.ts";
 
 export interface SessionFilters {
-  readonly scope: string; // all, default (unresolved), trees, independent, or center:<id>
   readonly workspaces?: readonly (string | null)[] | null;
   /** Legacy restriction retained until safe migration or an explicit workspace choice. */
   readonly excludedWorkspaces?: readonly (string | null)[] | null;
@@ -13,13 +12,11 @@ export interface SessionFilters {
   readonly repo: string;
   readonly statusGroup: SessionStatusGroup | null;
 }
-export const CLEAR_SESSION_FILTERS: SessionFilters = { scope: "all", workspaces: null, excludedWorkspaces: null, hosts: null, roles: null, harness: null, repo: "", statusGroup: null };
-export const DEFAULT_SESSION_FILTERS: SessionFilters = { ...CLEAR_SESSION_FILTERS, scope: "default" };
-export function hasActiveSessionFilters(filters: SessionFilters, scopes?: SessionScopeModel): boolean {
-  return resolveFilterScope(filters.scope, scopes) !== "all"
-    || Boolean(filters.workspaces?.length) || Boolean(filters.excludedWorkspaces?.length) || filters.hosts !== null || filters.roles != null || filters.harness !== null || filters.repo !== "";
+export const CLEAR_SESSION_FILTERS: SessionFilters = { workspaces: null, excludedWorkspaces: null, hosts: null, roles: null, harness: null, repo: "", statusGroup: null };
+export function hasActiveSessionFilters(filters: SessionFilters): boolean {
+  return Boolean(filters.workspaces?.length) || Boolean(filters.excludedWorkspaces?.length) || filters.hosts !== null || filters.roles != null || filters.harness !== null || filters.repo !== "";
 }
-export interface ScopeRecord {
+export interface LineageRecord {
   readonly machine: string;
   readonly session_id: string;
   readonly created_at: string;
@@ -27,9 +24,9 @@ export interface ScopeRecord {
   readonly lineage_adoption?: import("@agent-console/shared/lineage").SessionLineageAdoption;
   readonly dispatched_by?: SessionDispatchedBy;
 }
-export const scopeRecordKey = (row: ScopeRecord) => boardRefKey({ machine: row.machine, session_id: row.session_id, session_created_at: row.created_at });
-export function scopeParents(records: readonly ScopeRecord[]): Map<string, string | null> {
-  const ids = new Map<string, ScopeRecord[]>();
+export const lineageRecordKey = (row: LineageRecord) => boardRefKey({ machine: row.machine, session_id: row.session_id, session_created_at: row.created_at });
+export function lineageParents(records: readonly LineageRecord[]): Map<string, string | null> {
+  const ids = new Map<string, LineageRecord[]>();
   for (const row of records) {
     const key = JSON.stringify([row.machine, row.session_id]);
     ids.set(key, [...(ids.get(key) ?? []), row]);
@@ -37,28 +34,21 @@ export function scopeParents(records: readonly ScopeRecord[]): Map<string, strin
   return new Map(records.map(row => {
     if (row.lineage) {
       const parent = Object.hasOwn(row.lineage, "effective_parent") ? row.lineage.effective_parent : row.lineage_adoption?.adopted_by ?? row.lineage.parent;
-      return [scopeRecordKey(row), parent ? boardRefKey(parent) : null];
+      return [lineageRecordKey(row), parent ? boardRefKey(parent) : null];
     }
     const candidates = row.dispatched_by ? ids.get(JSON.stringify([row.dispatched_by.machine, row.dispatched_by.session_id])) : undefined;
-    return [scopeRecordKey(row), candidates?.length === 1 ? scopeRecordKey(candidates[0]!) : null];
+    return [lineageRecordKey(row), candidates?.length === 1 ? lineageRecordKey(candidates[0]!) : null];
   }));
 }
-/** A distribution's filter choices; core can run without any extra scopes. */
-export interface SessionScopeModel {
-  readonly options: readonly { readonly id: string; readonly label: string; includes(row: FilterRecord): boolean }[];
-  readonly defaultScope?: string;
-  readonly ready?: boolean;
-  readonly notice?: string;
-  role?(row: FilterRecord): string | null;
-}
-export function resolveFilterScope(scope: string, scopes?: SessionScopeModel): string {
-  if (scope === "default") return scopes?.defaultScope ?? "all";
-  return scope === "all" || scopes?.options.some(option => option.id === scope) ? scope : "all";
-}
-export function scopeLabel(scope: string, scopes?: SessionScopeModel): string {
-  return scopes?.options.find(option => option.id === resolveFilterScope(scope, scopes))?.label ?? "All sessions";
-}
-export interface FilterRecord extends ScopeRecord {
+/** @deprecated Use {@link LineageRecord}; kept for one release so host imports keep working. */
+export type ScopeRecord = LineageRecord;
+/** @deprecated Use {@link lineageRecordKey}; kept for one release so host imports keep working. */
+export const scopeRecordKey = lineageRecordKey;
+/** @deprecated Use {@link lineageParents}; kept for one release so host imports keep working. */
+export const scopeParents = lineageParents;
+/** A host's role names for the Roles facet; core falls back to the record's own role. */
+export type SessionRoleResolver = (row: FilterRecord) => string | null;
+export interface FilterRecord extends LineageRecord {
   readonly workspace?: string | null;
   readonly provider: string;
   readonly repo_name?: string | null;
@@ -72,11 +62,11 @@ export interface FilterRecord extends ScopeRecord {
     readonly last_turn?: { readonly outcome?: string | null } | null;
   } | null;
 }
-function recordRole(row: FilterRecord, scopes?: SessionScopeModel): string | null {
-  return scopes?.role?.(row) ?? row.role ?? null;
+function recordRole(row: FilterRecord, roleOf?: SessionRoleResolver): string | null {
+  return roleOf?.(row) ?? row.role ?? null;
 }
-export function sessionRoleOptions(records: readonly FilterRecord[], scopes?: SessionScopeModel): string[] {
-  return [...new Set(records.map(row => recordRole(row, scopes)).filter((role): role is string => role !== null))]
+export function sessionRoleOptions(records: readonly FilterRecord[], roleOf?: SessionRoleResolver): string[] {
+  return [...new Set(records.map(row => recordRole(row, roleOf)).filter((role): role is string => role !== null))]
     .sort((a, b) => a.localeCompare(b));
 }
 /** A facet selection is null (all) or a non-empty explicit subset; covering every value is all. */
@@ -91,19 +81,17 @@ export function toggleFacetSelection<T>(selected: readonly T[] | null, universe:
   return normalizeFacetSelection([...universe.filter(item => next.includes(item)), ...next.filter(item => !universe.includes(item))], universe);
 }
 
-export function filterRecords<T extends FilterRecord>(records: readonly T[], filters: SessionFilters, scopes?: SessionScopeModel): T[] {
-  const availableRoles = new Set<string | null>(records.map(row => recordRole(row, scopes)));
+export function filterRecords<T extends FilterRecord>(records: readonly T[], filters: SessionFilters, roleOf?: SessionRoleResolver): T[] {
+  const availableRoles = new Set<string | null>(records.map(row => recordRole(row, roleOf)));
   const allRolesSelected = filters.roles == null || [...availableRoles].every(role => filters.roles!.includes(role));
-  const scope = resolveFilterScope(filters.scope, scopes);
   return records.filter(row => {
     return (filters.hosts === null || filters.hosts.includes(row.machine))
       && (!filters.workspaces?.length || filters.workspaces.includes(row.workspace ?? null))
       && !filters.excludedWorkspaces?.includes(row.workspace ?? null)
-      && (allRolesSelected || filters.roles!.includes(recordRole(row, scopes)))
+      && (allRolesSelected || filters.roles!.includes(recordRole(row, roleOf)))
       && (filters.harness === null || row.provider === filters.harness)
       && (!filters.repo || (row.repo_name?.trim() || row.cwd?.replace(/\/+$/, "").split("/").at(-1)) === filters.repo)
-      && (filters.statusGroup === null || classifySessionStatus(sessionStatusEvidence(row)) === filters.statusGroup)
-      && (scope === "all" || scopes?.options.find(option => option.id === scope)?.includes(row) === true);
+      && (filters.statusGroup === null || classifySessionStatus(sessionStatusEvidence(row)) === filters.statusGroup);
   });
 }
 /** Hidden-host filters never disconnect an already attached terminal's metadata. */
@@ -113,9 +101,9 @@ export function filterPollingMachines(permitted: readonly string[], selected: re
 
 /** Count a facet against the same normalized filters as the overview cards. */
 export function sessionFacetCount(records: readonly FilterRecord[], filters: SessionFilters, option: Partial<SessionFilters>,
-  scopes?: SessionScopeModel): number {
+  roleOf?: SessionRoleResolver): number {
   const selected = { ...filters, ...option };
-  return filterRecords(records, { ...selected, repo: selected.repo.trim() }, scopes).length;
+  return filterRecords(records, { ...selected, repo: selected.repo.trim() }, roleOf).length;
 }
 
 // Workspace names are distribution data: a UI extension registers them

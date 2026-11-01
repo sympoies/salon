@@ -157,13 +157,13 @@ test("status controls render four named groups with category counts", async()=>{
 test("default dimensions do not count as filters and narrowed hosts show their names", async()=>{
  const Navigator=await loadNavigator();
  const machines=["moss","cedar","mesa"];
- const defaults=renderComponent(Navigator,{...base,machines,filters:{...CLEAR_SESSION_FILTERS,scope:"default"}});
- assert.doesNotMatch(defaults,/aria-label="Remove (Scope|Hosts):/);
- const allSelected=renderComponent(Navigator,{...base,machines,filters:{...CLEAR_SESSION_FILTERS,scope:"default",hosts:machines}});
- assert.doesNotMatch(allSelected,/aria-label="Remove (Scope|Hosts):/,"default scope and all selected hosts are not active conditions");
- const beforeLoad=renderComponent(Navigator,{...base,machines:[],filters:{...CLEAR_SESSION_FILTERS,scope:"default",hosts:["moss"]}});
+ const defaults=renderComponent(Navigator,{...base,machines,filters:{...CLEAR_SESSION_FILTERS}});
+ assert.doesNotMatch(defaults,/aria-label="Remove Hosts:/);
+ const allSelected=renderComponent(Navigator,{...base,machines,filters:{...CLEAR_SESSION_FILTERS,hosts:machines}});
+ assert.doesNotMatch(allSelected,/aria-label="Remove Hosts:/,"all selected hosts are not an active condition");
+ const beforeLoad=renderComponent(Navigator,{...base,machines:[],filters:{...CLEAR_SESSION_FILTERS,hosts:["moss"]}});
  assert.doesNotMatch(beforeLoad,/aria-label="Remove Hosts:/,"an empty host inventory does not create a misleading chip");
- const narrowed=renderComponent(Navigator,{...base,machines,filters:{...CLEAR_SESSION_FILTERS,scope:"default",hosts:["moss","cedar"]}});
+ const narrowed=renderComponent(Navigator,{...base,machines,filters:{...CLEAR_SESSION_FILTERS,hosts:["moss","cedar"]}});
  assert.match(narrowed,/aria-label="Remove Hosts: moss, cedar"/);
  assert.match(narrowed,/Hosts: moss, cedar/,"narrowing remains visible as a host-group chip");
 });
@@ -237,10 +237,10 @@ test("empty space around the chips opens the same filter panel",async()=>{
  await click(dom.container.querySelector<HTMLElement>(".session-filter-searchbar")!);
  assert.equal(Boolean(dom.container.querySelector('[role="dialog"]')),true);
 });
-test("Clear all removes the default exact scope and every dimension",async()=>{
+test("Clear all removes every dimension",async()=>{
  const birth="2030-01-01T00:00:00Z";
- const dom=await mount({scopes:{ options:[{id:"center:control",label:"Control group",includes:()=>true}] },open:true,filters:{scope:"center:control",hosts:["host-a"],harness:"codex",repo:"repo",state:"closed",since:"7d"}});
- assert.match(dom.container.textContent??"",/Scope: Control group/);await click(button(dom.container,"Clear all"));assert.deepEqual(dom.commits[0],CLEAR_SESSION_FILTERS);
+ const dom=await mount({open:true,filters:{hosts:["host-a"],harness:"codex",repo:"repo",state:"closed",since:"7d"}});
+ assert.match(dom.container.textContent??"",/Hosts: host-a/);await click(button(dom.container,"Clear all"));assert.deepEqual(dom.commits[0],CLEAR_SESSION_FILTERS);
 });
 test("a host chip resets only host coverage and a single host can be isolated",async()=>{
  const dom=await mount({filters:{...CLEAR_SESSION_FILTERS,harness:"codex"}});await click(dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!);
@@ -305,7 +305,7 @@ for (const mobile of [false, true]) {
   const labels = () => [...dom.container.querySelectorAll(".session-filter-choice")].map(el=>el.textContent?.trim());
   const harness = dom.container.querySelector<HTMLSelectElement>('select[aria-label="Filter sessions by harness"]')!;
   assert.deepEqual([...harness.options].map(option=>option.textContent),["All harnesses (2)","Codex (1)","Claude (1)"]);
-  assert.deepEqual([...dom.container.querySelectorAll('select[aria-label="Scope"] option')].map(option=>option.textContent),["All sessions (2)"]);
+  assertNoElement(dom.container,'select[aria-label="Scope"]',"no Scope field is offered");
   assert.deepEqual(labels(),["Lead (0)","Team B (0)","Team A (0)","Unassigned (2)","host-a (1)","host-b (1)","No role (1)","reviewer (1)","tester (0)"]);
   await act(async()=>{harness.value="claude";harness.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
   assert.deepEqual(labels(),["Lead (0)","Team B (0)","Team A (0)","Unassigned (1)","host-a (0)","host-b (1)","No role (1)","reviewer (0)","tester (0)"]);

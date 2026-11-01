@@ -5,7 +5,7 @@
 // role label when the session supplies one.
 import { createContext, Fragment, useContext, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { normalizeSessionWorkspace, type SessionCoordinatorTree, type SessionDispatchedBy, type ProviderUsage } from "@agent-console/shared/api";
-import type { FilterRecord, SessionScopeModel } from "./sessionFilters.ts";
+import type { FilterRecord, SessionRoleResolver } from "./sessionFilters.ts";
 import type { Session } from "./types.ts";
 import type { SessionRole } from "@agent-console/shared/lineage";
 import { createMachineColorMap, normalizeMachineColor } from "./machineColors.ts";
@@ -35,7 +35,6 @@ export interface SessionBadgeItem {
 
 export interface SessionBadgeNavigation {
   readonly session?: { readonly machine: string; readonly id: string };
-  readonly scope?: string;
 }
 export interface SessionBadgeContext {
   readonly surface: SessionBadgeSurface;
@@ -100,7 +99,8 @@ export interface UiExtension {
   readonly diagnosticProbes?: readonly { readonly name: string; readonly route: string }[];
   readonly usageProviders?: (providers: readonly ProviderUsage[]) => ProviderUsage[];
   readonly sessionOrdering?: SessionOrdering;
-  readonly sessionScopes?: (records: readonly FilterRecord[], ext?: Readonly<Record<string, unknown>>) => SessionScopeModel;
+  /** Names the Roles facet roles, overriding the record's own role; core uses the record role. */
+  readonly sessionRole?: (records: readonly FilterRecord[], ext?: Readonly<Record<string, unknown>>) => SessionRoleResolver;
   readonly onSessionList?: (ext?: Readonly<Record<string, unknown>>) => void;
   readonly settingsPanels?: readonly SettingsPanelSlot[];
   readonly appProviders?: readonly ComponentType<{ readonly children?: ReactNode; readonly permissions: ReadonlySet<string> }>[];
@@ -118,7 +118,8 @@ export interface UiExtensionRegistry {
   readonly sessionActions: readonly (SessionActionSlot & { readonly key: string })[];
   readonly usageProviders?: (providers: readonly ProviderUsage[]) => ProviderUsage[];
   readonly sessionOrdering?: SessionOrdering;
-  readonly sessionScopes?: (records: readonly FilterRecord[], ext?: Readonly<Record<string, unknown>>) => SessionScopeModel;
+  /** Names the Roles facet roles, overriding the record's own role; core uses the record role. */
+  readonly sessionRole?: (records: readonly FilterRecord[], ext?: Readonly<Record<string, unknown>>) => SessionRoleResolver;
   readonly onSessionList?: (ext?: Readonly<Record<string, unknown>>) => void;
   readonly settingsPanels: readonly (SettingsPanelSlot & { readonly key: string })[];
   readonly appProviders: readonly ComponentType<{ readonly children?: ReactNode; readonly permissions: ReadonlySet<string> }>[];
@@ -146,7 +147,7 @@ export function createUiExtensionRegistry(extensions: readonly UiExtension[]): U
   const appProviders: ComponentType<{ readonly children?: ReactNode; readonly permissions: ReadonlySet<string> }>[] = [];
   let usageProviders: UiExtension["usageProviders"];
   let sessionOrdering: SessionOrdering | undefined;
-  let sessionScopes: UiExtension["sessionScopes"];
+  let sessionRole: UiExtension["sessionRole"];
   let onSessionList: UiExtension["onSessionList"];
   for (const extension of extensions) {
     if (!EXTENSION_ID.test(extension.id)) throw new Error(`invalid UI extension id "${extension.id}"`);
@@ -157,9 +158,9 @@ export function createUiExtensionRegistry(extensions: readonly UiExtension[]): U
       if (usageProviders) throw new Error("multiple usage presentation policies");
       usageProviders = extension.usageProviders;
     }
-    if (extension.sessionScopes) {
-      if (sessionScopes) throw new Error("multiple session scope policies");
-      sessionScopes = extension.sessionScopes;
+    if (extension.sessionRole) {
+      if (sessionRole) throw new Error("multiple session role policies");
+      sessionRole = extension.sessionRole;
     }
     if (extension.onSessionList) {
       if (onSessionList) throw new Error("multiple session list observers");
@@ -206,7 +207,7 @@ export function createUiExtensionRegistry(extensions: readonly UiExtension[]): U
       copyFormats.push(Object.freeze({ id: format.id, label: format.label, value: format.value.bind(format) }));
     }
   }
-  return Object.freeze({ diagnosticProbes: Object.freeze(diagnosticProbes), usageProviders, sessionActions: Object.freeze(sessionActions), sessionScopes, onSessionList, sessionOrdering, settingsPanels: Object.freeze(settingsPanels), appProviders: Object.freeze(appProviders), extensions: Object.freeze([...extensions]), sessionBadges: Object.freeze(sessionBadges),
+  return Object.freeze({ diagnosticProbes: Object.freeze(diagnosticProbes), usageProviders, sessionActions: Object.freeze(sessionActions), sessionRole, onSessionList, sessionOrdering, settingsPanels: Object.freeze(settingsPanels), appProviders: Object.freeze(appProviders), extensions: Object.freeze([...extensions]), sessionBadges: Object.freeze(sessionBadges),
     workspaceLabels: workspaceLabels as ReadonlyMap<string, string>, machineColorDefaults: Object.freeze(machineColorDefaults),
     copyFormats: Object.freeze(copyFormats) });
 }

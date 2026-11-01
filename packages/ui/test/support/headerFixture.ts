@@ -30,8 +30,7 @@ export async function headerFixture() {
   return { close: harness.close,
     markup(width: number, coarse = false, focused = false, chips = true, statusCounts = { working: 40, waiting: 50, attention: 10, unknown: 0, stopped: 20 }, hostOffline = "") {
       const nav = focused ? "" : renderComponent(SessionListNavigator, {
-        scopes: { options: [{ id: "trees", label: "Sample scope", includes: () => true }] },
-        filters: chips ? { ...CLEAR_SESSION_FILTERS, scope: "trees", repo: "a-long-repository-name" } : CLEAR_SESSION_FILTERS,
+        filters: chips ? { ...CLEAR_SESSION_FILTERS, repo: "a-long-repository-name" } : CLEAR_SESSION_FILTERS,
         machines: ["fixture-a", "fixture-b"], harnesses: [], resultCount: 120,
         statusCounts, countsAvailable: true,
         mobile: width <= 760 || (coarse && width <= 1024), page: 1, pageCount: 5, open: false,
@@ -59,7 +58,7 @@ export const headerMeasure = `
   counts:[...header.querySelectorAll('.session-status-count')].filter(visible).length,
   inline:[...header.querySelectorAll('.layout-picker-inline button')].filter(visible).length,
   picker:visible(header.querySelector('.layout-picker-trigger')),newVisible:visible(header.querySelector('.dashboard-new-session')),
-  scope:visible(header.querySelector('[data-filter-chip="scope"]')), usage:visible(header.querySelector('.header-usage')),
+  chip:visible(header.querySelector('[data-filter-chip="repo"]')), usage:visible(header.querySelector('.header-usage')),
   usageText:[...header.querySelectorAll('.hu-reset')].filter(visible).length, arrows:[...header.querySelectorAll('.session-list-page-button')].filter(visible).length,
   overflow:document.documentElement.scrollWidth-innerWidth};
 `;
