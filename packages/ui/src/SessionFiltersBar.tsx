@@ -1,7 +1,7 @@
 import { IconButton } from "./IconButton.tsx";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { CLEAR_SESSION_FILTERS, sessionWorkspaceOptions, workspaceLabel, scopeLabel, resolveFilterScope, sessionFacetCount, normalizeFacetSelection, toggleFacetSelection, type SessionScopeModel, type FilterRecord, type SessionFilters } from "./sessionFilters.ts";
+import { CLEAR_SESSION_FILTERS, sessionWorkspaceOptions, workspaceLabel, sessionFacetCount, normalizeFacetSelection, toggleFacetSelection, type SessionRoleResolver, type FilterRecord, type SessionFilters } from "./sessionFilters.ts";
 import { sessionListHarnessLabel } from "./sessionListNavigation.ts";
 import { useAndroidBackEntry } from "./useAndroidBackEntry.ts";
 import { useDismissOnOutside } from "./useDismissOnOutside.ts";
@@ -22,7 +22,7 @@ export interface SessionFiltersBarProps {
   readonly machines: readonly string[];
   readonly roles?: readonly string[];
   readonly harnesses: readonly { id: string; label: string }[];
-  readonly scopes?: SessionScopeModel;
+  readonly roleOf?: SessionRoleResolver;
   readonly resultCount: number;
   readonly statusCounts?: SessionStatusCounts;
   readonly compactHeader?: boolean;
@@ -45,7 +45,7 @@ function sameFacetSelection<T>(left: readonly T[] | null | undefined, right: rea
     || Boolean(left && right && left.length === right.length && left.every(value => right.includes(value)));
 }
 function sameAppliedFilters(left: SessionFilters, right: SessionFilters): boolean {
-  return left.scope === right.scope && left.harness === right.harness && left.repo === right.repo
+  return left.harness === right.harness && left.repo === right.repo
     && left.statusGroup === right.statusGroup
     && sameFacetSelection(left.workspaces, right.workspaces)
     && sameFacetSelection(left.excludedWorkspaces, right.excludedWorkspaces)
@@ -56,7 +56,6 @@ function rebaseDraft(draft: SessionFilters, previous: SessionFilters, next: Sess
     && sameFacetSelection(draft.excludedWorkspaces, previous.excludedWorkspaces);
   return {
     ...draft,
-    scope: draft.scope === previous.scope ? next.scope : draft.scope,
     hosts: sameFacetSelection(draft.hosts, previous.hosts) ? next.hosts : draft.hosts,
     roles: sameFacetSelection(draft.roles, previous.roles) ? next.roles : draft.roles,
     harness: draft.harness === previous.harness ? next.harness : draft.harness,
@@ -66,7 +65,7 @@ function rebaseDraft(draft: SessionFilters, previous: SessionFilters, next: Sess
   };
 }
 export function SessionFiltersBar({ records, countRecords, offlineCountMachines = [], countsAvailable = records !== undefined,
-  workspaceChoicesComplete = countsAvailable && offlineCountMachines.length === 0, filters, onChange, machines, roles, harnesses, scopes, resultCount,
+  workspaceChoicesComplete = countsAvailable && offlineCountMachines.length === 0, filters, onChange, machines, roles, harnesses, roleOf, resultCount,
   statusCounts = { working: 0, waiting: 0, attention: 0, unknown: 0, stopped: 0 }, compactHeader = false, mobile, notice, migrationNotice, onDismissMigration, open: controlledOpen,
   onOpenChange, children, statusNotice, noticeInField = false, statusCountsTarget }: SessionFiltersBarProps) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -87,7 +86,7 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
   const selectedWorkspaces = normalizeWorkspaces(filters.workspaces);
   const draftWorkspaces = draft.excludedWorkspaces?.length
     ? workspaceChoices.filter(workspace => !draft.excludedWorkspaces!.includes(workspace)) : draft.workspaces ?? null;
-  const count = (option: Partial<SessionFilters>) => countsAvailable ? sessionFacetCount(snapshot, open ? draft : filters, option, scopes) : "–";
+  const count = (option: Partial<SessionFilters>) => countsAvailable ? sessionFacetCount(snapshot, open ? draft : filters, option, roleOf) : "–";
   const headingId = useId();
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null), panelRef = useRef<HTMLDivElement>(null), triggerRef = useRef<HTMLElement>(null);
@@ -146,7 +145,6 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
   const single = (label: string) => ({ label, compact: label });
   const chips = [
     ...(workspaceChip ? [{ key: "workspace", ...workspaceChip, reset: { workspaces: null, excludedWorkspaces: null } }] : []),
-    ...(resolveFilterScope(filters.scope, scopes) !== "all" ? [{ key: "scope", ...single(`Scope: ${scopeLabel(filters.scope, scopes)}`), reset: { scope: "all" } }] : []),
     ...(filters.hosts !== null && restrictedHosts > 0 ? [{ key: "hosts", ...dimension("Hosts", [...machines.filter(machine => filters.hosts!.includes(machine)), ...filters.hosts!.filter(host => !machines.includes(host))]), reset: { hosts: null } }] : []),
     ...(roles !== undefined && rolesNarrowed ? [{ key: "roles", ...dimension("Roles", roleChoices.filter(role => filters.roles!.includes(role)).map(role => role ?? "No role")), reset: { roles: null } }] : []),
     ...(filters.harness ? [{ key: "harness", ...single(`Harness: ${sessionListHarnessLabel(filters.harness)}`), reset: { harness: null } }] : []),
@@ -158,7 +156,6 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     filters.harness ? sessionListHarnessLabel(filters.harness) : undefined,
     filters.repo || undefined,
     workspaceChip,
-    ...(filters.scope !== "all" ? [scopeLabel(filters.scope, scopes)] : []),
   ].flatMap(entry => !entry ? [] : typeof entry === "string" ? [{ label: entry, compact: entry }] : [entry]);
   const summary = summaryEntries.map(entry => entry.label).join(" · ");
   const hostLabel = (count: number) => `${count} ${count === 1 ? "host" : "hosts"}`;
@@ -201,16 +198,13 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
   const statusCountsElement = <SessionStatusCountButtons offlineCountMachines={offlineCountMachines} compactHeader={compactHeader}
     activeGroup={filters.statusGroup} onToggle={toggleStatus}
     counts={records === undefined && countsAvailable ? statusCounts
-      : sessionStatusCountValues(snapshot, open ? draft : filters, countsAvailable, scopes)} />;
+      : sessionStatusCountValues(snapshot, open ? draft : filters, countsAvailable, roleOf)} />;
   const expandedPanel = open ? <>
     {mobile ? <button type="button" className="session-filter-scrim" aria-label="Close session filters" onClick={close} /> : null}
     <div id={panelId} ref={panelRef} className={`session-filter-panel ${mobile ? "is-mobile" : ""}`} role="dialog" aria-modal={mobile ? true : undefined} aria-labelledby={headingId} onKeyDown={onKeyDown}>
       <div className="session-filter-panel-heading"><h2 id={headingId}>Session filters</h2><IconButton className="btn" aria-label="Close session filters" type="button" onClick={close}><CloseIcon /></IconButton></div>
       {compactHeader ? filterDetails : null}
       <div className="session-filter-panel-fields">
-        <label><span>Scope</span><select aria-label="Scope" value={resolveFilterScope(draft.scope, scopes)} onChange={event => update({ scope: event.currentTarget.value })}>
-          {(scopes?.options ?? [{ id: "all", label: "All sessions" }]).map(option => <option key={option.id} value={option.id}>{option.label} ({count({ scope: option.id })})</option>)}
-        </select></label>
         <details open className="session-filter-multi-select" data-filter-dimension="workspaces">
           <summary>Workspace <span>{draftWorkspaces == null ? `All workspaces (${count({ workspaces: null, excludedWorkspaces: null })})` : `${draftWorkspaces.length} of ${workspaceChoices.length}`}</span></summary>
           <div className="session-filter-facet-body"><button type="button" className="btn ghost session-filter-facet-all" disabled={draftWorkspaces == null} onClick={() => update({ workspaces: null, excludedWorkspaces: null })}>All workspaces</button>

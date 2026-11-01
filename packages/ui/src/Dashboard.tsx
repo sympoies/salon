@@ -3,7 +3,7 @@ import { IconButton } from "./IconButton.tsx";
 import { loadWorkspacePreferences, saveWorkspacePreferences } from "./workspacePreferences.ts";
 import { useUiExtensions, type SessionBadgeNavigation } from "./extensions.tsx";
 import { createPortal } from "react-dom";
-import { CLEAR_SESSION_FILTERS, filterRecords, hasActiveSessionFilters, resolveFilterScope, sessionRoleOptions, sessionWorkspaceOptions, type SessionFilters } from "./sessionFilters.ts";
+import { CLEAR_SESSION_FILTERS, filterRecords, hasActiveSessionFilters, sessionRoleOptions, sessionWorkspaceOptions, type SessionFilters } from "./sessionFilters.ts";
 import { useSessionOrdering } from "./extensions.tsx";
 import { useResourceEvents } from "./useResourceEvents.ts";
 import { RESOURCE_RECONCILE_MS } from "./resourceEvents.ts";
@@ -612,13 +612,12 @@ export function Dashboard({
   const [machineFilter, setMachineFilter] = useState<string>(ALL);
   const machineFilterRef = useRef(machineFilter);
   machineFilterRef.current = machineFilter;
-  const { workspaceLabels, sessionScopes: createSessionScopes, onSessionList } = useUiExtensions();
+  const { workspaceLabels, sessionRole: createSessionRole, onSessionList } = useUiExtensions();
   const workspaceLabelsRef = useRef(workspaceLabels);
   workspaceLabelsRef.current = workspaceLabels;
   const workspacePreferencesLoadedRef = useRef(false);
   const [sessionFilters, setSessionFilters] = useState<SessionFilters>(() => ({ ...CLEAR_SESSION_FILTERS, ...loadWorkspacePreferences() }));
   const [sessionExtensions, setSessionExtensions] = useState<Readonly<Record<string, unknown>>>();
-  const [scopeNotice, setScopeNotice] = useState<string>();
   const sessionFiltersRef = useRef(sessionFilters);
   sessionFiltersRef.current = sessionFilters;
   const [headerCounts, setHeaderCounts] = useState<HeaderCountAvailability>({
@@ -925,12 +924,6 @@ export function Dashboard({
         setSessionExtensions(res.ext);
         setExtensionCapabilities(res.capabilities ?? {});
         onSessionList?.(res.ext);
-        const nextScopes = createSessionScopes?.(res.sessions.map(session => ({ ...session, session_id: session.id,
-          created_at: session.created_at ?? "", provider: session.agent })), res.ext);
-        const nextScope = resolveFilterScope(sessionFiltersRef.current.scope, nextScopes);
-        setScopeNotice(nextScope !== sessionFiltersRef.current.scope && nextScope === "all"
-          ? "Selected scope is unavailable; showing All sessions." : nextScopes?.notice);
-        if (nextScopes?.ready) setSessionFilters(current => ({ ...current, scope: resolveFilterScope(current.scope, nextScopes) }));
       }
       setAccountMachines((current) => {
         const next = accountMachineKeys(machines);
@@ -1198,11 +1191,11 @@ export function Dashboard({
     layoutSessionKeysRef.current = layoutSessionKeys;
   }, [layoutSessionKeys]);
 
-  const scopes = useMemo(() => createSessionScopes?.(sessions.map(session => ({ ...session,
-    session_id: session.id, created_at: session.created_at ?? "", provider: session.agent })), sessionExtensions), [sessions, sessionExtensions, createSessionScopes]);
+  const roleOf = useMemo(() => createSessionRole?.(sessions.map(session => ({ ...session,
+    session_id: session.id, created_at: session.created_at ?? "", provider: session.agent })), sessionExtensions), [sessions, sessionExtensions, createSessionRole]);
   const overviewHarnesses = useMemo(() => deriveSessionListHarnessOptions(sessions), [sessions]);
   const overviewRoles = useMemo(() => sessionRoleOptions(sessions.map(session => ({ ...session,
-    session_id: session.id, created_at: session.created_at ?? "", provider: session.agent })), scopes), [sessions, scopes]);
+    session_id: session.id, created_at: session.created_at ?? "", provider: session.agent })), roleOf), [sessions, roleOf]);
   const orderedOverviewSessions = useMemo(() => {
     const ordered = orderSessionListSessions({
       sessions: visible,
@@ -1214,9 +1207,9 @@ export function Dashboard({
   const overviewFilterRecords = useMemo(() => orderedOverviewSessions.map(session => ({ ...session, session_id: session.id,
     created_at: session.created_at ?? "", provider: session.agent })), [orderedOverviewSessions]);
   const filterOverview = useCallback((filters: SessionFilters) => {
-    const matched = new Set(filterRecords(overviewFilterRecords, filters, scopes).map(sessionKey));
+    const matched = new Set(filterRecords(overviewFilterRecords, filters, roleOf).map(sessionKey));
     return orderedOverviewSessions.filter(session => matched.has(sessionKey(session)));
-  }, [orderedOverviewSessions, overviewFilterRecords, scopes]);
+  }, [orderedOverviewSessions, overviewFilterRecords, roleOf]);
   const overviewFilteredSessions = useMemo(() => filterOverview(sessionFilters), [filterOverview, sessionFilters]);
   const overviewStatusScopeSessions = useMemo(() => filterOverview({ ...sessionFilters, statusGroup: null }), [filterOverview, sessionFilters]);
   const overviewStatusCounts = useMemo(() => countSessionStatuses(overviewStatusScopeSessions, sessionStatusEvidence),
@@ -1355,9 +1348,8 @@ export function Dashboard({
     })) workspacePreferencesLoadedRef.current = true;
     saveWorkspacePreferences(filters);
     setSessionFilters(filters);
-    if (scopes) setScopeNotice(undefined);
     setSessionListPage(1);
-  }, [cancelPendingCreatedFocus, scopes]);
+  }, [cancelPendingCreatedFocus]);
 
   const resetSessionListFilters = useCallback(() => changeSessionFilters(CLEAR_SESSION_FILTERS), [changeSessionFilters]);
   const goToPreviousSessionListPage = useCallback(() => {
@@ -2099,7 +2091,7 @@ export function Dashboard({
         res.sessions.map(session => ({ ...session, session_id: session.id,
           created_at: session.created_at ?? "", provider: session.agent })),
         filters,
-        createSessionScopes?.(res.sessions.map(session => ({ ...session, session_id: session.id, created_at: session.created_at ?? "", provider: session.agent })), res.ext) ?? scopes,
+        createSessionRole?.(res.sessions.map(session => ({ ...session, session_id: session.id, created_at: session.created_at ?? "", provider: session.agent })), res.ext) ?? roleOf,
       );
       const repairVisible = sortByDefaultSessionOrder(
         selectedMachine === ALL ? repairRecords : repairRecords.filter(s => s.machine === selectedMachine), machines,
@@ -2117,7 +2109,7 @@ export function Dashboard({
   }, [
     closeOpenSlotMenus,
     machines,
-    scopes,
+    roleOf,
     repairingSessions,
     pendingRepair,
     applyLiveSessionList,
@@ -2510,15 +2502,8 @@ export function Dashboard({
     const targetKey = navigation?.session ? sessionKey(navigation.session) : null;
     if (targetKey && sessionsByKey.has(targetKey)) {
       onFocusSession(targetKey);
-      return;
     }
-    if (navigation?.scope) {
-      cancelPendingCreatedFocus();
-      setSessionFilters(current => ({ ...current, scope: navigation.scope! }));
-      setSessionListPage(1);
-      if (focusedKey !== null) leaveFocusedSession();
-    }
-  }, [cancelPendingCreatedFocus, focusedKey, leaveFocusedSession, onFocusSession, sessionsByKey]);
+  }, [onFocusSession, sessionsByKey]);
 
   const onOverviewSession = useCallback((key: string) => {
     const session = sessionsByKey.get(key);
@@ -2805,7 +2790,7 @@ export function Dashboard({
   // The single-session view keeps the list header's counts (#938): in the macOS
   // title bar, else in a strip above the session, logo first on desktop.
   const focusedStatusCounts = focusedKey === null ? null : <SessionStatusCountButtons
-    counts={sessionStatusCountValues(statusCountRecords, sessionFilters, countsAvailable, scopes)}
+    counts={sessionStatusCountValues(statusCountRecords, sessionFilters, countsAvailable, roleOf)}
     activeGroup={sessionFilters.statusGroup} offlineCountMachines={headerCounts.offlineMachines}
     onToggle={group => changeSessionFilters({ ...sessionFilters, statusGroup: sessionFilters.statusGroup === group ? null : group })} />;
   const nativeNoticeTarget = typeof document !== "undefined" && isMacTauri()
@@ -2878,8 +2863,7 @@ export function Dashboard({
               machines={machines}
               roles={overviewRoles}
               harnesses={overviewHarnesses}
-              scopes={scopes}
-              notice={scopeNotice}
+              roleOf={roleOf}
               statusNotice={connectionNotice && !nativeNoticeTarget ? statusNoticeElement : null}
               migrationNotice={hostMigrationNotice}
               onDismissMigration={onDismissHostMigration}
@@ -3083,7 +3067,7 @@ export function Dashboard({
         </section>
       ))}
 
-      {focusedKey === null && overviewFilteredSessions.length === 0 && hasActiveSessionFilters(sessionFilters, scopes) ? (
+      {focusedKey === null && overviewFilteredSessions.length === 0 && hasActiveSessionFilters(sessionFilters) ? (
         <div className="empty session-list-empty">
           <p>No matching sessions</p>
           <button className="btn" type="button" onClick={resetSessionListFilters}>Clear all</button>

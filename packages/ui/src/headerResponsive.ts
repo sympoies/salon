@@ -43,12 +43,6 @@ export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage 
   const stage = chooseHeaderCompactStage(value => {
     header.dataset.headerCompact = String(value);
     const bounds = header.getBoundingClientRect();
-    const scopeLabel = header.querySelector<HTMLElement>('[data-filter-chip="scope"] .session-filter-chip-label');
-    if (scopeLabel) {
-      const label = scopeLabel.getBoundingClientRect();
-      const chips = scopeLabel.closest(".session-filter-search-chips")?.getBoundingClientRect();
-      if (label.width < 40 || (chips && label.right > chips.right + 1)) return false;
-    }
     const controls = header.querySelectorAll<HTMLElement>(
       ".brand-title,.session-status-count,.session-list-pagination,.session-filter-searchbar,.header-usage,.layout-picker,.header-menu-trigger,.dashboard-new-session,.machine-filter,.connection-notice-layer.is-inline",
     );

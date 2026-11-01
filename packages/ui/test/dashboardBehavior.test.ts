@@ -364,7 +364,7 @@ test("the macOS title bar counts show unknown totals, not zero, when no host can
     "Working: – sessions | Waiting: – sessions | Needs attention: – sessions | Stopped: – sessions");
 });
 
-test("the macOS title bar counts keep the coordinator-tree Scope while a session is open (#938 review F2)", async () => {
+test("the macOS title bar counts keep the applied filters while a session is open (#938 review F2)", async () => {
   const mounted = installDom();
   cleanupStack.push(mounted.cleanup);
   const titleBarCounts = mounted.window.document.createElement("div");
@@ -375,27 +375,25 @@ test("the macOS title bar counts keep the coordinator-tree Scope while a session
   const lead = makeSession({ id: "lead", machine: "host-a", title: "Coordinator", role: "coordinator", coordinator_tree: { depth: 0 } });
   const child = makeSession({ id: "child", machine: "host-a", title: "Child", turn_state: { phase: "working" } as Session["turn_state"],
     dispatched_by: { machine: "host-a", session_id: "lead", repo_name: "example" }, coordinator_tree: { depth: 1 } });
-  const outside = makeSession({ id: "outside", machine: "host-a", title: "Outside", turn_state: { phase: "working" } as Session["turn_state"] });
+  const outside = makeSession({ id: "outside", machine: "host-a", title: "Outside", agent: "claude", turn_state: { phase: "working" } as Session["turn_state"] });
   globalThis.__agentConsoleDashboardBehaviorApiMock = {
     listSessions: async () => ({ ok: true, sessions: [lead, child, outside], machines: [{ name: "host-a", ok: true }] }),
   };
-  const Dashboard = await extendedDashboard(ssr, { sessionScopes: () => ({ options: [
-    { id: "center:tree-a", label: "Sample scope", includes: row => row.coordinator_tree !== undefined },
-  ] }) });
+  const { Dashboard } = await ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
   await act(async () => {
     mounted.root.render(createElement(Dashboard, { active: true, machines: ["host-a"], enabledMachines: ["host-a"], machineColors: {},
       onDebug: () => {}, onUsage: () => {}, onSettings: () => {} }));
     await flushPromises();
   });
   await openSessionFilters(mounted);
-  await setSessionFilter(mounted, "Scope", "center:tree-a");
+  await setSessionFilter(mounted, "Filter sessions by harness", "codex");
   await act(async () => {
     [...mounted.container.querySelectorAll<HTMLButtonElement>(".session-filter-panel-actions button")]
       .find(button => button.textContent === "Apply filters")!.click();
     await flushPromises();
   });
   const gridCounts = titleBarCountLabels(titleBarCounts);
-  assert.match(gridCounts, /^Working: 1 session \|/, "the tree's Scope counts only its own working child");
+  assert.match(gridCounts, /^Working: 1 session \|/, "the harness filter counts only the matching working child");
   await openFirstSession(mounted, "Open Child");
   assert.equal(titleBarCountLabels(titleBarCounts), gridCounts);
 });
@@ -2167,7 +2165,7 @@ test("filtered polls retain capabilities for permitted hosts omitted from the re
   assert.match(mounted.container.textContent ?? "", /Studio Codex/);
 });
 
-test("shared scope, host, and harness filters compose and clear together", async () => {
+test("shared host and harness filters compose and clear together", async () => {
   const mounted = installDom();
   cleanupStack.push(mounted.cleanup);
   const ssr = createUiSsrHarness([dashboardApiMockPlugin(), terminalPaneMockPlugin()]);
@@ -2185,11 +2183,7 @@ test("shared scope, host, and harness filters compose and clear together", async
     putLayoutOrder: async (order) => ({ reachable: true, order, revision: 2 }),
   };
   mounted.window.localStorage.setItem(AUTO_STORAGE, "1");
-  const Dashboard = await extendedDashboard(ssr, { sessionScopes: () => ({ ready: true, defaultScope: "center:control", options: [
-    { id: "center:control", label: "Control group", includes: row => row.session_id !== "plain" },
-    { id: "all", label: "All sessions", includes: () => true },
-    { id: "trees", label: "Coordinator trees", includes: row => row.session_id !== "plain" },
-  ] }) });
+  const Dashboard = await extendedDashboard(ssr, { sessionRole: () => (row: { session_id: string }) => row.session_id === "plain" ? "lead" : null });
   await act(async () => {
     mounted.root.render(createElement(Dashboard, {
       active: true, machines: ["host-a", "host-b"], enabledMachines: ["host-a", "host-b"], machineColors: {},
@@ -2197,14 +2191,7 @@ test("shared scope, host, and harness filters compose and clear together", async
     }));
     await flushPromises();
   });
-  await openSessionFilters(mounted);
-  await setSessionFilter(mounted, "Scope", "center:control");
-  await act(async () => {
-    [...mounted.container.querySelectorAll<HTMLButtonElement>(".session-filter-panel-actions button")]
-      .find(button => button.textContent === "Apply filters")!.click();
-    await flushPromises();
-  });
-  assert.deepEqual(new Set(slotKeys(mounted.container)), new Set(["host-a/control-1", "host-b/control-child"]));
+  assert.deepEqual(new Set(slotKeys(mounted.container)), new Set(["host-a/control-1", "host-b/control-child", "host-b/plain"]));
   await openSessionFilters(mounted);
   await setVisibleHosts(mounted, ["host-a"]);
   assert.deepEqual(slotKeys(mounted.container), ["host-a/control-1"]);
@@ -2222,6 +2209,8 @@ test("shared scope, host, and harness filters compose and clear together", async
   await openSessionFilters(mounted);
   const rolesGroup = mounted.container.querySelector<HTMLDetailsElement>('[data-filter-dimension="roles"]')!;
   rolesGroup.open = true;
+  const roleValues = [...rolesGroup.querySelectorAll<HTMLInputElement>("input")].map(input => input.value);
+  assert.ok(roleValues.includes("lead") && !roleValues.includes("worker"), "the host role hook names the Roles facet");
   // Every session has a role, so isolating "No role" matches nothing; an empty selection can never apply.
   const noRole = rolesGroup.querySelector<HTMLInputElement>('input[value=""]')!;
   await act(async () => { noRole.click(); await flushPromises(); });
