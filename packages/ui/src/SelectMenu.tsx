@@ -17,6 +17,8 @@ export interface SelectMenuOption {
   readonly value: string;
   readonly label: string;
   readonly meta?: string;
+  /** Shown but not selectable, like a disabled native option. */
+  readonly disabled?: boolean;
   /**
    * Decorative leading mark (an agent badge, a machine dot). Rendered
    * aria-hidden inside a fixed-size slot, so pass presentation only — the
@@ -30,6 +32,8 @@ export interface SelectMenuProps {
   readonly value: string;
   readonly options: readonly SelectMenuOption[];
   readonly disabled?: boolean;
+  /** Extra class on the root, for a caller that sizes or positions the control. */
+  readonly className?: string;
   readonly onChange: (value: string) => void;
 }
 
@@ -100,7 +104,7 @@ function triggerNavigationIndex(key: string, selectedIndex: number, optionCount:
   return (selectedIndex - 1 + optionCount) % optionCount;
 }
 
-export function SelectMenu({ ariaLabel, value, options, disabled = false, onChange }: SelectMenuProps) {
+export function SelectMenu({ ariaLabel, value, options, disabled = false, className, onChange }: SelectMenuProps) {
   const group = useContext(SelectMenuGroupContext);
   const [localOpen, setLocalOpen] = useState(false);
   const listboxId = useId();
@@ -118,10 +122,9 @@ export function SelectMenu({ ariaLabel, value, options, disabled = false, onChan
   const { style: floatingStyle } = useAnchoredFloating(triggerRef, open, { maxHeight: 260 });
 
   const focusOption = (index: number) => {
-    listboxRef.current
-      ?.querySelectorAll<HTMLButtonElement>('[role="option"]')
-      .item(index)
-      .focus();
+    const items = listboxRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]');
+    const target = items?.item(index);
+    (target && !target.disabled ? target : listboxRef.current?.querySelector<HTMLButtonElement>('[role="option"]:not(:disabled)'))?.focus();
   };
 
   function setMenuOpen(next: boolean) {
@@ -194,7 +197,7 @@ export function SelectMenu({ ariaLabel, value, options, disabled = false, onChan
   };
 
   const onListboxKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const items = [...(listboxRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [])];
+    const items = [...(listboxRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)') ?? [])];
     const currentIndex = document.activeElement instanceof HTMLElement
       ? items.indexOf(document.activeElement as HTMLButtonElement)
       : -1;
@@ -226,7 +229,7 @@ export function SelectMenu({ ariaLabel, value, options, disabled = false, onChan
   return (
     <div
       ref={rootRef}
-      className="select-menu"
+      className={className ? `select-menu ${className}` : "select-menu"}
       onBlur={(event) => {
         const preservesGroupedSwitch = group
           && group.pointerSwitchPrepared()
@@ -300,6 +303,7 @@ export function SelectMenu({ ariaLabel, value, options, disabled = false, onChan
                 role="option"
                 aria-label={optionAccessibleName(option)}
                 aria-selected={option.value === value}
+                disabled={option.disabled}
                 tabIndex={-1}
                 onClick={() => choose(option)}
               >

@@ -4,9 +4,10 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { loadAndroidLayout, saveAndroidLayout } from "../src/androidLayout.ts";
+import { assertNoElement } from "./support/domAssert.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 
-// #238: the Android app picks its session layout per device in Settings.
+// #252: the Android app picks Mobile or Desktop per device in Settings.
 function memoryStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
   return {
@@ -16,17 +17,40 @@ function memoryStorage(initial: Record<string, string> = {}) {
   };
 }
 
-test("the stored Android layout defaults to the phone list and keeps a saved layout", () => {
+test("the stored Android layout defaults to Mobile, persists the choice, and the first Desktop entry uses Auto", () => {
   const storage = memoryStorage();
-  assert.equal(loadAndroidLayout(storage), "list");
-  assert.equal(saveAndroidLayout(4, storage), true);
-  assert.equal(loadAndroidLayout(storage), 4);
-  assert.equal(saveAndroidLayout("list", storage), true);
-  assert.equal(loadAndroidLayout(storage), "list");
-  assert.equal(loadAndroidLayout(memoryStorage({ "ac.androidLayout": "9" })), "list", "an unknown value falls back to the list");
+  assert.equal(loadAndroidLayout(storage), "mobile");
+  assert.equal(saveAndroidLayout("desktop", storage), true);
+  assert.equal(loadAndroidLayout(storage), "desktop");
+  assert.equal(storage.getItem("agent-console.layout.auto"), "1", "the first Desktop entry follows the session count");
+  storage.setItem("agent-console.layout.auto", "0");
+  assert.equal(saveAndroidLayout("mobile", storage), true);
+  assert.equal(saveAndroidLayout("desktop", storage), true);
+  assert.equal(storage.getItem("agent-console.layout.auto"), "0", "a later Desktop entry keeps the remembered setting");
+  assert.equal(loadAndroidLayout(memoryStorage({ "ac.androidLayoutChoice": "tablet" })), "mobile", "an unknown value is Mobile");
 });
 
-async function settingsSelect(android: boolean, androidLayout: "list" | 3) {
+test("a stored #238 layout of 1 to 6 becomes Desktop with that count and Auto off; anything else becomes Mobile; the old key is removed", () => {
+  for (const count of ["1", "4", "6"]) {
+    const storage = memoryStorage({ "ac.androidLayout": count });
+    assert.equal(loadAndroidLayout(storage), "desktop");
+    assert.equal(storage.getItem("agent-console.layout.mode"), count);
+    assert.equal(storage.getItem("agent-console.layout.auto"), "0");
+    assert.equal(storage.getItem("ac.androidLayout"), null);
+    assert.equal(loadAndroidLayout(storage), "desktop", "the migrated choice persists");
+  }
+  for (const other of ["list", "9", "0", "auto", ""]) {
+    const storage = memoryStorage({ "ac.androidLayout": other });
+    assert.equal(loadAndroidLayout(storage), "mobile", `legacy ${JSON.stringify(other)}`);
+    assert.equal(storage.getItem("ac.androidLayout"), null);
+    assert.equal(storage.getItem("agent-console.layout.mode"), null, "no desktop count is invented");
+  }
+  const current = memoryStorage({ "ac.androidLayout": "3", "ac.androidLayoutChoice": "mobile" });
+  assert.equal(loadAndroidLayout(current), "mobile", "an existing choice wins over a stale old key");
+  assert.equal(current.getItem("ac.androidLayout"), null);
+});
+
+async function settingsSelect(android: boolean, androidLayout: "mobile" | "desktop") {
   const window = new Window({ url: "http://localhost", settings: android ? { navigator: { userAgent: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36" } } : {} });
   if (android) Object.assign(window, { __TAURI_INTERNALS__: {} });
   const names = ["window", "document", "Element", "HTMLElement", "HTMLInputElement", "HTMLTextAreaElement", "HTMLSelectElement", "Event", "MouseEvent", "localStorage", "IS_REACT_ACT_ENVIRONMENT"] as const;
@@ -43,14 +67,15 @@ async function settingsSelect(android: boolean, androidLayout: "list" | 3) {
       onMachineColorChange() {}, onMachineColorReset() {}, onDefaultAutoResumeChange() {}, onAttentionAlertsChange() {},
       onTerminalRenderModeChange() {}, onTerminalSelectedPaneRealtimeChange() {}, openAccess: false, onSignedOut() {},
     })));
-    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Session layout"]');
-    const options = select ? [...select.options].map(option => option.value) : null;
-    const value = select?.value ?? null;
-    if (select) {
-      select.value = "2";
-      await act(async () => { select.dispatchEvent(new window.Event("change", { bubbles: true })); });
-      select.value = "list";
-      await act(async () => { select.dispatchEvent(new window.Event("change", { bubbles: true })); });
+    assertNoElement(container, 'select[aria-label="Layout"]');
+    const trigger = [...container.querySelectorAll<HTMLButtonElement>(".select-menu button[aria-haspopup]")].find(button => button.getAttribute("aria-label")?.startsWith("Layout:"));
+    let options: string[] | null = null;
+    const value = trigger?.getAttribute("aria-label") ?? null;
+    if (trigger) {
+      await act(async () => { trigger.dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
+      const items = [...container.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+      options = items.map(item => item.textContent ?? "");
+      await act(async () => { items[0]!.dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
     }
     return { options, value, chosen };
   } finally {
@@ -58,14 +83,14 @@ async function settingsSelect(android: boolean, androidLayout: "list" | 3) {
   }
 }
 
-test("the Android Settings offer the phone list and the fixed layouts, and report the choice", async () => {
-  const result = await settingsSelect(true, 3);
-  assert.deepEqual(result.options, ["list", "1", "2", "3", "4", "5", "6"]);
-  assert.equal(result.value, "3");
-  assert.deepEqual(result.chosen, [2, "list"]);
+test("the Android Settings offer one Layout row with exactly Mobile and Desktop, and report the choice", async () => {
+  const result = await settingsSelect(true, "desktop");
+  assert.deepEqual(result.options, ["Mobile (default)", "Desktop"]);
+  assert.match(result.value ?? "", /Desktop/);
+  assert.deepEqual(result.chosen, ["mobile"]);
 });
 
-test("a browser's Settings have no Session layout choice", async () => {
-  const result = await settingsSelect(false, "list");
+test("a browser's Settings have no Layout choice", async () => {
+  const result = await settingsSelect(false, "mobile");
   assert.equal(result.options, null);
 });
