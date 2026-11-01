@@ -17,7 +17,7 @@ interface Sweep {
 
 const COMPONENTS = "brand-title,session-status-counts,session-list-pagination,session-filters-summary,session-filter-searchbar,header-usage,layout-picker,header-menu,dashboard-new-session";
 // The tier is published before the production compaction runs, as the app does (Android reports the phone tier at any width).
-const tierScript = (tier: boolean, grid: boolean) => `document.documentElement.dataset.phoneTier="${tier && !grid}";document.documentElement.dataset.phoneHeader="${tier}";`;
+const tierScript = (tier: boolean, grid: boolean) => `document.documentElement.dataset.phoneTier="${tier && !grid}";document.documentElement.dataset.phoneHeader="${tier}";${grid ? 'document.documentElement.dataset.androidDesktop="true";' : ""}`;
 const script = () => `
   const header=document.querySelector('.workspace-head');
   const name=e=>e.className.toString().split(' ')[0];
@@ -45,10 +45,11 @@ for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024]) {
       const fixture = await headerFixture();
       try {
         const tier = isPhoneWidth(width, false, android);
-        const m = measureHeaderMarkup<Sweep>(fixture.markup(width, false, focused, true), width, script(), false, 800, [], tierScript(tier, grid));
+        const m = measureHeaderMarkup<Sweep>(fixture.markup(width, false, focused, true, undefined, "", grid), width, script(), false, 800, [], tierScript(tier, grid));
         const detail = JSON.stringify(m);
         assert.deepEqual(m.overlaps, [], `no component overlaps another: ${detail}`);
         assert.deepEqual(m.outside, [], `every component stays inside the header: ${detail}`);
+        if (grid) assert.ok(m.sizes.layout || m.sizes.auto, `the layout control stays visible: ${detail}`);
         assert.deepEqual(m.missing, [], `the logo, New session and More stay visible: ${detail}`);
         assert.equal(new Set(Object.values(m.sizes)).size, 1, `header buttons share one size: ${detail}`);
       } finally { await fixture.close(); }

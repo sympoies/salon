@@ -7413,7 +7413,7 @@ textarea {
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .header-usage { grid-area: usage; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .dash-actions { grid-area: actions; flex: none; flex-wrap: nowrap; justify-self: end; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions { gap: 4px; margin-left: 0; }
-  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions > .btn {
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions > .btn, :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .dash-create-actions .layout-picker-trigger {
     box-sizing: border-box;
     width: var(--icon-standard-size);
     min-width: var(--icon-standard-size);
@@ -7451,8 +7451,14 @@ textarea {
   :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .layout-picker { display: inline-flex; }
   :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .layout-picker-inline,
   :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .layout-picker > .is-auto { display: none; }
-  :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .layout-picker-trigger { display: inline-flex; justify-content: center; width: 40px; min-width: 40px; height: 40px; }
-  :where(:root:not([data-phone-header="true"])[data-android-desktop="true"]) .workspace-head .dash-create-actions .layout-picker-trigger { width: 34px; min-width: 34px; height: 34px; }
+  :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .layout-picker-trigger { display: inline-flex; justify-content: center; }
+  :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .dash-create-actions .layout-picker { align-self: stretch; }
+  :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .dash-create-actions .layout-picker-trigger { height: 100%; min-height: var(--icon-standard-size); }
+  /* Four counts, the logo and three 40px controls do not fit a 320px row, so the counts narrow first. */
+  @media (max-width: 360px) {
+    :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .session-status-count,
+    :where(:root[data-phone-header="true"][data-android-desktop="true"]:not([data-mac-titlebar="true"])) .workspace-head .session-filters-summary.is-compact-header .session-status-count { min-width: 30px; padding: 0 1px; }
+  }
 
 
  :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-header="true"]) .workspace-head:has(.session-list-navigator) .dash-create-actions > .dashboard-new-session, :where(:root[data-phone-header="true"]) .workspace-head .session-status-count, :where(:root[data-phone-header="true"]) .workspace-head .session-list-pagination, :where(:root[data-phone-header="true"]) .workspace-head .session-filter-searchbar, :where(:root[data-phone-header="true"]) .workspace-head .dashboard-new-session, :where(:root[data-phone-header="true"]) .workspace-head .header-menu-trigger { height:40px; min-height:40px; }

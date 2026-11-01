@@ -28,7 +28,7 @@ export async function headerFixture() {
   const layouts = renderComponent(LayoutPicker, { auto: true, mode: 6, displayedMode: 6, onToggleAuto() {}, onSelect() {} });
   const menu = renderComponent(HeaderMenu, { open: false, onOpenChange() {}, historyAvailable: true, onHistory() {}, onUsage() {}, onDebug() {}, onSettings() {}, onAutoLayout() {}, onNewSession() {} });
   return { close: harness.close,
-    markup(width: number, coarse = false, focused = false, chips = true, statusCounts = { working: 40, waiting: 50, attention: 10, unknown: 0, stopped: 20 }, hostOffline = "") {
+    markup(width: number, coarse = false, focused = false, chips = true, statusCounts = { working: 40, waiting: 50, attention: 10, unknown: 0, stopped: 20 }, hostOffline = "", androidDesktop = false) {
       const nav = focused ? "" : renderComponent(SessionListNavigator, {
         filters: chips ? { ...CLEAR_SESSION_FILTERS, repo: "a-long-repository-name" } : CLEAR_SESSION_FILTERS,
         machines: ["fixture-a", "fixture-b"], harnesses: [], resultCount: 120,
@@ -38,7 +38,7 @@ export async function headerFixture() {
         statusNotice: hostOffline ? createElement(StatusNotice, { notice: hostOfflineNotice(hostOffline), onDismiss() {}, surface: "dashboard", inline: true }) : undefined,
       });
       const machine = focused ? '<label class="machine-filter"><select class="machine-filter-select" aria-label="Filter sessions by machine"><option>All machines</option></select></label>' : "";
-      return `<main class="dash workspace-shell"><header class="dash-head workspace-head"><div class="workspace-head-start">${brand}${nav}</div>${usage}<div class="dash-actions"><div class="dash-group">${machine}${layouts}</div><div class="dash-group dash-create-actions">${menu}${newButton}</div></div></header></main>`;
+      return `<main class="dash workspace-shell"><header class="dash-head workspace-head"><div class="workspace-head-start">${brand}${nav}</div>${usage}<div class="dash-actions"><div class="dash-group">${machine}${androidDesktop ? "" : layouts}</div><div class="dash-group dash-create-actions">${menu}${newButton}${androidDesktop ? layouts : ""}</div></div></header></main>`;
     },
     compact: `const HEADER_COMPACT_STAGES=${JSON.stringify(responsive.HEADER_COMPACT_STAGES)};const chooseHeaderCompactStage=${responsive.chooseHeaderCompactStage.toString()};(${responsive.updateHeaderCompaction.toString()})(document.querySelector('.workspace-head'));`,
   };
