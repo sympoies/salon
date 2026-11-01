@@ -104,3 +104,11 @@ test("message Markdown keeps table alignment and task list checkboxes", async ()
   assert.equal(container.querySelector("td:last-child")?.getAttribute("style")?.replace(/\s/g, ""), "text-align:right;");
   assert.deepEqual([...container.querySelectorAll('input[type="checkbox"]')].map((box) => box.hasAttribute("checked")), [true, false]);
 });
+
+test("message Markdown renders a quoted voice transcript as one blockquote after typed text", async () => {
+  const { container } = await renderMarkdown("typed text\n\n> [語音·Fast] line one\n> line two\n\n> [語音] second dictation");
+  const quotes = [...container.querySelectorAll(".message-markdown blockquote")];
+  assert.equal(quotes.length, 2);
+  assert.match(quotes[0]?.textContent ?? "", /^\[語音·Fast\] line one\s*line two$/);
+  assert.doesNotMatch(container.textContent ?? "", /^>|\n>/);
+});
