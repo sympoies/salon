@@ -183,7 +183,6 @@ import { projectFocusedGridSlots } from "./focusedGridProjection.ts";
 import { useShortcutClose } from "./useShortcutClose.ts";
 import { ShortcutHelpModal } from "./ShortcutHelpModal.tsx";
 import { SpeechComposer } from "./SpeechComposer.tsx";
-import { AppSelect } from "./AppSelect.tsx";
 import {
   browserNotificationPermission,
   createAlertChime,
