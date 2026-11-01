@@ -7,6 +7,7 @@ import { listHistoryMessages } from "./api.ts";
 import { AgentBadge } from "./AgentBadge.tsx";
 import { SessionNotice } from "./SessionNotice.tsx";
 import { parseSessionNotice } from "@agent-console/shared";
+import { uploadedFilePaths } from "./attachmentPaths.ts";
 import { MessageMarkdown } from "./MessageMarkdown.tsx";
 import { unwrapPastedContent } from "./pastedContent.ts";
 import type { HistoryMessage, HistoryMessagesResponse, HistorySession } from "./types.ts";
@@ -407,7 +408,7 @@ export function HistoryConversationView({
                 </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
                 {user && !imageOnly ? time : null}
-                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} /> : null}{imageOnly ? time : null}</div>}
+                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(unwrapPastedContent(caption), uploadSessionId) : undefined} /> : null}{imageOnly ? time : null}</div>}
                 {!user && !imageOnly ? time : null}
                 {session && (reread || toolImages.length) ? <div className="history-tool-output">
                   {reread ? <p className="history-tool-reread">Read attachment</p> : null}

@@ -25,3 +25,39 @@
 .conversation-image-canvas img { display:block; width:auto; height:auto; max-width:100%; max-height:100%; object-fit:contain; pointer-events:auto; }
 .conversation-image-canvas [role=status] { pointer-events:auto; }
 .conversation-image-navigation { display:flex; flex-shrink:0; justify-content:center; gap:8px; padding:8px 8px calc(8px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, var(--surface-overlay)); z-index:2; }
+
+.conversation-image-menu {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface, Canvas);
+  color: inherit;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 25%);
+}
+
+.conversation-image-menu button {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversation-image-menu button:hover,
+.conversation-image-menu button:focus-visible {
+  background: var(--hover, rgb(127 127 127 / 20%));
+}
+
+.conversation-image-menu-error {
+  flex-basis: 100%;
+  font-size: var(--text-sm);
+  color: var(--danger, #c33);
+}

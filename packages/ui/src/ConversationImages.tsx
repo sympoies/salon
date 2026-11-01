@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import type { ConversationImage } from "@agent-console/shared/conversation-images";
 import { Modal } from "./Modal.tsx";
 import { fetchConversationImage, type ConversationImageData } from "./conversationImageData.ts";
 import { saveConversationImage } from "./saveConversationImage.ts";
+import { copyConversationImage } from "./copyConversationImage.ts";
+import { isMacTauri } from "./runtime.ts";
+import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 import { IconButton } from "./IconButton.tsx";
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, DownloadIcon, FitImageIcon, ZoomInIcon, ZoomOutIcon } from "./icons.tsx";
 import "./ConversationImages.css";
@@ -34,7 +37,43 @@ function ImageContent({data,fail,onLoad}: { readonly data: ConversationImageData
   return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} onLoad={event => onLoad?.(event.currentTarget)} />
     : <span role="status">{data.state === "deleted" ? "Image deleted" : data.state === "unavailable" ? "Image unavailable" : "Loading image…"}</span>;
 }
-function Thumbnail({target,index,onOpen}: { readonly target: ImageTarget; readonly index: number; readonly onOpen: () => void }) {
+type ReadyImage = Extract<ConversationImageData,{state:"ready"}>;
+interface MenuState { readonly index: number; readonly x: number; readonly y: number; readonly image: ReadyImage }
+const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/** The macOS shell's own menu for an image: only actions that work there. */
+function ImageMenu({menu,paths,onOpen,onClose,onError}: {
+  readonly menu: MenuState; readonly paths: readonly string[];
+  readonly onOpen: (index: number) => void; readonly onClose: () => void; readonly onError: (message: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const path = paths.find(candidate => baseName(candidate) === menu.image.filename);
+  useEffect(() => {
+    ref.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const away = (event: Event) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } };
+    document.addEventListener("pointerdown",away,true);
+    document.addEventListener("keydown",key,true);
+    window.addEventListener("blur",onClose);
+    return () => { document.removeEventListener("pointerdown",away,true); document.removeEventListener("keydown",key,true); window.removeEventListener("blur",onClose); };
+  },[onClose]);
+  const run = (action: () => Promise<void> | void, failure: string) => () => {
+    onClose();
+    void Promise.resolve().then(action).catch(() => onError(failure));
+  };
+  const items: Array<[string,() => void]> = [
+    ["Copy image",run(() => copyConversationImage(menu.image.blob),"Image could not be copied")],
+    ["Save image",run(() => saveConversationImage(menu.image.blob,menu.image.filename,menu.image.url),"Image could not be saved")],
+    ["Open in image viewer",() => { onClose(); onOpen(menu.index); }],
+    ...(path ? [["Copy file path",run(() => writeTerminalClipboardText(path),"File path could not be copied")] as [string,() => void]] : []),
+  ];
+  return createPortal(<div ref={ref} className="conversation-image-menu" role="menu" aria-label="Image actions"
+    style={{left:Math.min(menu.x,window.innerWidth - 200),top:Math.min(menu.y,window.innerHeight - 160)}}>
+    {items.map(([label,action]) => <button key={label} type="button" role="menuitem" onClick={action}>{label}</button>)}
+  </div>,document.body);
+}
+
+function Thumbnail({target,index,onOpen,onMenu}: { readonly target: ImageTarget; readonly index: number; readonly onOpen: () => void; readonly onMenu: (menu: MenuState) => void }) {
   const ref = useRef<HTMLButtonElement>(null);
   // The shared descriptor is ID-only. Retain decoded dimensions when lazy
   // loading restarts so a known image keeps its place in the conversation.
@@ -48,7 +87,14 @@ function Thumbnail({target,index,onOpen}: { readonly target: ImageTarget; readon
   },[]);
   const {data,fail} = useImage(target,visible);
   const sizing = size ? {"--image-width":`${size.width}px`,"--image-ratio":size.width / size.height} as CSSProperties : undefined;
-  return <button ref={ref} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }}>
+  // The macOS shell's native web view menu offers commands it cannot run; show
+  // our own there. Browsers and Android keep theirs.
+  const contextMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (!isMacTauri()) return;
+    event.preventDefault();
+    if (data.state === "ready") onMenu({index,x:event.clientX,y:event.clientY,image:data});
+  };
+  return <button ref={ref} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }} onContextMenu={contextMenu}>
     <ImageContent data={data} fail={fail} onLoad={image => {
       if (image.naturalWidth && image.naturalHeight) setSize({width:image.naturalWidth,height:image.naturalHeight});
     }} />
@@ -178,12 +224,24 @@ function ImageViewer({machine,history,images,initial,onClose}: {
 }
 
 /** Shared by History, the full Conversation pane, phone and desktop tiles. */
-export function ConversationImages({machine,history,images}: {
+export function ConversationImages({machine,history,images,attachmentPaths = []}: {
   readonly machine: string; readonly history: string; readonly images: readonly ConversationImage[];
+  /** The message's own quoted upload paths, for Copy file path (#237). */
+  readonly attachmentPaths?: readonly string[];
 }) {
   const [open,setOpen] = useState<number | null>(null);
+  const [menu,setMenu] = useState<MenuState | null>(null);
+  const [notice,setNotice] = useState("");
+  const closeMenu = useCallback(() => setMenu(null),[]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""),4000);
+    return () => clearTimeout(timer);
+  },[notice]);
   return <div className="conversation-images">
-    {images.map((image,index) => <Thumbnail key={image.id} target={{machine,history,image:image.id}} index={index} onOpen={() => setOpen(index)} />)}
+    {images.map((image,index) => <Thumbnail key={image.id} target={{machine,history,image:image.id}} index={index} onOpen={() => setOpen(index)} onMenu={next => { setNotice(""); setMenu(next); }} />)}
+    {menu ? <ImageMenu menu={menu} paths={attachmentPaths} onOpen={setOpen} onClose={closeMenu} onError={setNotice} /> : null}
+    {notice ? <div className="conversation-image-menu-error" role="status">{notice}</div> : null}
     {open !== null ? <ImageViewer key={`${machine}/${history}`} machine={machine} history={history} images={images} initial={open} onClose={() => setOpen(null)} /> : null}
   </div>;
 }
