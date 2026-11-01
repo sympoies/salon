@@ -14,7 +14,7 @@ interface Measure {
   barShown: Box; barHidden: Box; paneShown: Box; paneHidden: Box; widened: boolean;
 }
 
-const CHIP_FILTERS = { ...CLEAR_SESSION_FILTERS, hosts: ["summit"], harness: "codex", repo: "agent-console" };
+const CHIP_FILTERS = { ...CLEAR_SESSION_FILTERS, hosts: ["summit"], harnesses: ["codex"], repo: "agent-console" };
 
 test("phone host notices overlay the count row without shifting filters, pager or cards", async (t) => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
@@ -30,7 +30,7 @@ test("phone host notices overlay the count row without shifting filters, pager o
       + renderComponent(IconButton, { preset:"standard", className:"header-menu-trigger btn", "aria-label":"More", children:"⋯" });
     for (const pageCount of [8, 1]) for (const [chips, filters] of [[0, CLEAR_SESSION_FILTERS], [3, CHIP_FILTERS]] as const) {
       const Composed = () => createElement(SessionListNavigator, {
-        filters, machines: ["summit", "beta"], harnesses: [{ id: "codex", label: "Codex" }],
+        filters, machines: ["summit", "beta"], harnesses: [{ id: "codex", label: "Codex" }, { id: "claude", label: "Claude" }],
         statusCounts: {working:4,waiting:2,attention:1,unknown:0,stopped:1}, countsAvailable: true,
         resultCount: 8, mobile: true, page: 1, pageCount, onPageChange() {}, onChange() {},
         statusNotice: createElement(StatusNotice, { notice: hostOfflineNotice(HOST_DOWN), onDismiss() {}, surface: "dashboard", inline: true }),

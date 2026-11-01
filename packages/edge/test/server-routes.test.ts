@@ -5,6 +5,8 @@ import type { Server as NetServer } from "node:net";
 import { createEdgeServer } from "../src/server.ts";
 import { closeServers, jsonReader, listenOnLoopback, loginCookie, makeEdgeConfig } from "./support.ts";
 
+let refusalDetails: unknown = {};
+
 // Every browser create is a console root (session-lineage-work-v1).
 const CONSOLE_ROOT_LINEAGE = {
   schema_version: "agent-session.session-lineage.v1",
@@ -492,7 +494,7 @@ before(async () => {
             error: {
               code: "claude-account-switch-refused",
               message: "private /home/runner/.claude-accounts/refused",
-              details: { cause: "claude-account-dir-unsafe", reason: "private path" },
+              details: refusalDetails,
             },
           }));
           return;
@@ -1813,16 +1815,35 @@ test("Claude account switch confirms queued and applied outcomes and maps Claude
     error: { code: "claude-account-unknown", message: "Claude account is not configured on this machine" },
   });
 
-  const refused = await put("refused");
-  assert.equal(refused.status, 422);
-  const refusedBody = await bodyOf(refused);
-  assert.deepEqual(refusedBody, {
-    ok: false,
-    error: {
-      code: "claude-account-switch-refused",
-      message: "the new Claude account could not be prepared; the running session was left unchanged",
-    },
-  });
+  const refusedUnsafe = "the new Claude account could not be prepared; the running session was left unchanged";
+  const left = "; the running session was left unchanged";
+  const typed: Array<[Record<string, unknown>, string, Record<string, string>]> = [
+    [{ cause: "claude-account-broker-invalid-response" }, `the Claude account broker returned an invalid response${left}`, { cause: "claude-account-broker-invalid-response" }],
+    [{ cause: "claude-account-broker-rejected" }, `the Claude account broker rejected the switch${left}`, { cause: "claude-account-broker-rejected" }],
+    [{ cause: "claude-account-broker-unavailable" }, `the Claude account broker is unavailable, try again later${left}`, { cause: "claude-account-broker-unavailable" }],
+    [{ cause: "claude-account-broker-timeout" }, `the Claude account broker did not answer in time, try again later${left}`, { cause: "claude-account-broker-timeout" }],
+    [{ cause: "claude-account-credentials-unverified" }, `the new Claude account's credentials could not be verified${left}`, { cause: "claude-account-credentials-unverified" }],
+    [{ cause: "claude-account-dir-unsafe" }, `the Claude account directory failed its safety check${left}`, { cause: "claude-account-dir-unsafe" }],
+    [{ cause: "claude-account-dir-unsafe", reason: "world_writable" }, `the Claude account directory failed its safety check (the directory is writable by other users)${left}`, { cause: "claude-account-dir-unsafe", reason: "world_writable" }],
+    [{ cause: "claude-account-dir-unsafe", reason: "credentials_not_owned" }, `the Claude account directory failed its safety check (the credentials file is not owned by the service user)${left}`, { cause: "claude-account-dir-unsafe", reason: "credentials_not_owned" }],
+    [{ cause: "claude-publication-unavailable", reason: "capability_missing" }, `the new Claude account could not be published to the session (a required capability is missing)${left}`, { cause: "claude-publication-unavailable", reason: "capability_missing" }],
+    [{ cause: "claude-publication-unavailable", reason: "invalid_response" }, `the new Claude account could not be published to the session (the response was invalid)${left}`, { cause: "claude-publication-unavailable", reason: "invalid_response" }],
+    // An unlisted reason, extra fields and non-scalar values never cross the edge.
+    [{ cause: "claude-account-dir-unsafe", reason: "private path", id: "acct-7", path: "/srv/accounts/x", raw: "broker output", nested: { a: 1 } }, `the Claude account directory failed its safety check${left}`, { cause: "claude-account-dir-unsafe" }],
+  ];
+  for (const [details, message, expectedDetails] of typed) {
+    refusalDetails = details;
+    const refused = await put("refused");
+    assert.equal(refused.status, 422);
+    assert.deepEqual(await bodyOf(refused), { ok: false, error: { code: "claude-account-switch-refused", message, details: expectedDetails } });
+  }
+  for (const details of [{ cause: "claude-account-future-cause" }, { cause: { nested: true } }, { reason: "world_writable" }, "text", null, {}]) {
+    refusalDetails = details;
+    const refused = await put("refused");
+    assert.equal(refused.status, 422);
+    assert.deepEqual(await bodyOf(refused), { ok: false, error: { code: "claude-account-switch-refused", message: refusedUnsafe } }, "an unknown or missing cause keeps the existing message");
+  }
+  refusalDetails = {};
 });
 
 test("maintenance inspection serializes behind Resume and Delete for the same session", async () => {
