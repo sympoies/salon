@@ -88,7 +88,7 @@ export function PhoneConversationPane({ session, machineReachable, replyDrafts, 
           </p>
           {outgoing}
         </>) : historySession ? (
-          <HistoryConversationView conversation={conversation} working={conversationTurnWorking(session.turn_state)} onJumpToLatest={jumpToLatest}
+          <HistoryConversationView conversation={conversation} uploadSessionId={session.id} working={conversationTurnWorking(session.turn_state)} onJumpToLatest={jumpToLatest}
             outgoing={outgoing} />
         ) : (<>
           {resolving ? <p className="history-empty">Finding this session in history…</p> : null}

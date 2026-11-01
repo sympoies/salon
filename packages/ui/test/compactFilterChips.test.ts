@@ -18,7 +18,7 @@ async function mount(filters: SessionFilters, compactHeader: boolean, onChange: 
   const root = createRoot(container), harness = createUiSsrHarness();
   const { SessionFiltersBar } = await harness.loadModule<typeof import("../src/SessionFiltersBar.tsx")>("/src/SessionFiltersBar.tsx");
   await act(() => root.render(createElement(SessionFiltersBar, { filters, mobile: false, compactHeader, machines: ["host-a", "host-b", "host-c"],
-    roles: ["steward", "reviewer"], harnesses: [], resultCount: 1, onChange })));
+    roles: ["steward", "reviewer"], harnesses: [{ id: "codex", label: "Codex" }, { id: "claude", label: "Claude" }, { id: "other", label: "Other" }], resultCount: 1, onChange })));
   return { container, async close() {
     await act(() => root.unmount()); await harness.close(); await window.happyDOM.close();
     for (const [key, descriptor] of previous) descriptor ? Object.defineProperty(globalThis, key, descriptor) : Reflect.deleteProperty(globalThis, key);
@@ -37,6 +37,7 @@ for (const compactHeader of [false, true]) test(`session filter chips are compac
     [{ ...CLEAR_SESSION_FILTERS, workspaces: [CJK, "乙组"] }, "Workspace", `Workspace: ${CJK} +1`, `Workspace: ${CJK}, 乙组`],
     [{ ...CLEAR_SESSION_FILTERS, hosts: ["host-a", "host-b"] }, "Hosts", "Hosts: host-a +1", "Hosts: host-a, host-b"],
     [{ ...CLEAR_SESSION_FILTERS, roles: ["steward", "reviewer"] }, "Roles", "Roles: steward +1", "Roles: steward, reviewer"],
+    [{ ...CLEAR_SESSION_FILTERS, harnesses: ["codex", "claude"] }, "Harness", "Harness: Codex +1", "Harness: Codex, Claude"],
   ];
   for (const [filters, key, compact, full] of cases) {
     const mounted = await mount(filters, compactHeader);
@@ -77,4 +78,21 @@ test("the closed trigger summary uses the compact workspace form without joining
     assert.match(mounted.container.querySelector(".session-filters-trigger")!.getAttribute("aria-label")!, /Workspace: alpha, beta, gamma/,
       "the accessible name keeps the full list");
   } finally { await mounted.close(); }
+});
+
+test("the Harness facet selects two harnesses with Hosts-style counts, applies them, and Clear all resets them", async () => {
+  let applied: SessionFilters = CLEAR_SESSION_FILTERS;
+  const view = await mount(CLEAR_SESSION_FILTERS, false, next => { applied = next; });
+  try {
+    await act(() => view.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!.click());
+    const facet = '[data-filter-dimension="harnesses"]';
+    assert.match(view.container.querySelector(`${facet} summary`)!.textContent!, /All harnesses \(/);
+    for (const id of ["codex", "claude"]) await act(() => view.container.querySelector<HTMLInputElement>(`${facet} input[value="${id}"]`)!.click());
+    assert.match(view.container.querySelector(`${facet} summary`)!.textContent!, /2 of 3/);
+    await act(() => view.container.querySelector<HTMLButtonElement>(".session-filter-panel-actions .primary")!.click());
+    assert.deepEqual(applied.harnesses, ["codex", "claude"]);
+    await act(() => view.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!.click());
+    await act(() => view.container.querySelector<HTMLButtonElement>(".session-filter-panel-actions .btn")!.click());
+    assert.equal(applied.harnesses, null);
+  } finally { await view.close(); }
 });

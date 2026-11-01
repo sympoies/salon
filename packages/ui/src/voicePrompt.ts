@@ -1,3 +1,5 @@
+import { shortenUploadedFiles } from "./attachmentPaths.ts";
+
 /** Short marker prepended to voice-transcribed prompts so previews keep the transcript visible. */
 export const VOICE_PROMPT_TAG = "[語音] ";
 
@@ -30,4 +32,9 @@ function dropVoiceQuoteMarkers(text: string): string {
     quoted = false;
     return line;
   }).join("\n");
+}
+
+/** A stored prompt as the Session list and History previews show it. */
+export function compactPromptPreview(text: string): string {
+  return shortenUploadedFiles(compactVoicePromptNote(text));
 }

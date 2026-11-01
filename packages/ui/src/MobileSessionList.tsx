@@ -16,7 +16,7 @@ import { sessionLabel, sessionRepoLabel } from "./format.ts";
 import { sessionKey } from "./layout.ts";
 import type { MachineColorMap } from "./machineColors.ts";
 import { useSharedClock } from "./useSharedClock.ts";
-import { compactVoicePromptNote } from "./voicePrompt.ts";
+import { compactPromptPreview } from "./voicePrompt.ts";
 import type { ActivityDeliveryState } from "./activityStream.ts";
 import type { DashboardSession, Session } from "./types.ts";
 
@@ -197,7 +197,7 @@ export function MobileSessionList({
                 aria-label={`Open ${sessionLabel(session)}`} aria-describedby={promptPreview ? promptId : undefined}
                 onClick={() => onOpen(key)}>
                 <span id={promptId} className="mobile-session-card-prompt" aria-hidden={!promptPreview || undefined}>
-                  {promptPreview ? compactVoicePromptNote(promptPreview) : "No prompt yet — Open session"}
+                  {promptPreview ? compactPromptPreview(promptPreview) : "No prompt yet — Open session"}
                 </span>
               </button>
             </div>

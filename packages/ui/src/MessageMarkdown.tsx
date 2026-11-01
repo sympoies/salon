@@ -1,5 +1,7 @@
-import { Component, createElement, Fragment, memo, type ElementType, type MouseEvent, type ReactNode } from "react";
+import { Component, createElement, Fragment, memo, useEffect, useMemo, useState, type ElementType, type MouseEvent, type ReactNode } from "react";
 import Markdown, { type MarkdownToJSX } from "markdown-to-jsx/react";
+import { linkUploadedFiles, type UploadedFile } from "./attachmentPaths.ts";
+import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 import { openExternalTerminalUrl, validateTerminalUrl } from "./terminalLinks.ts";
 
 /**
@@ -19,6 +21,20 @@ function MessageLink({ href, title, children }: {
     void openExternalTerminalUrl(safeUrl);
   };
   return <a href={safeUrl} title={title} target="_blank" rel="noopener noreferrer" onClick={open}>{children}</a>;
+}
+
+/** A session upload shown by its short label; selecting it copies the full path. */
+function AttachmentChip({ file }: { readonly file: UploadedFile }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return undefined;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const copy = () => {
+    void writeTerminalClipboardText(file.path).then(() => setCopied(true), () => {});
+  };
+  return <button type="button" className="attachment-chip" title="Copy path" aria-label={`Copy path ${file.label}`} onClick={copy}>{copied ? "Copied" : file.label}</button>;
 }
 
 // Unsupported sources remain explicit and never fetch an external image.
@@ -84,11 +100,27 @@ export class MessageMarkdownBoundary extends Component<{ readonly text: string; 
 }
 
 /** One conversation or history message rendered as safe Markdown. */
-export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressImages = false }: { readonly text: string; readonly suppressImages?: boolean }) {
+export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressImages = false, uploadSessionId }: {
+  readonly text: string;
+  readonly suppressImages?: boolean;
+  /** The session whose own quoted upload paths show as chips. */
+  readonly uploadSessionId?: string;
+}) {
+  const linked = useMemo(() => uploadSessionId === undefined ? { text, files: [] } : linkUploadedFiles(text, uploadSessionId), [text, uploadSessionId]);
+  const options = useMemo<MarkdownToJSX.Options>(() => {
+    const image = suppressImages ? HiddenMessageImage : MessageImage;
+    if (linked.files.length === 0) return suppressImages ? { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: MessageLink, img: image } } : MESSAGE_MARKDOWN_OPTIONS;
+    const link = (props: { readonly href?: string; readonly title?: string; readonly children?: ReactNode }) => {
+      const file = /^#salon-attachment-(\d+)$/.exec(props.href ?? "")?.[1];
+      const chip = file === undefined ? undefined : linked.files[Number(file)];
+      return chip ? <AttachmentChip file={chip} /> : <MessageLink {...props} />;
+    };
+    return { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: link, img: image } };
+  }, [linked.files, suppressImages]);
   return (
     <div className="message-markdown">
       <MessageMarkdownBoundary key={text} text={text}>
-        <Markdown options={suppressImages ? { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: MessageLink, img: HiddenMessageImage } } : MESSAGE_MARKDOWN_OPTIONS}>{text}</Markdown>
+        <Markdown options={options}>{linked.text}</Markdown>
       </MessageMarkdownBoundary>
     </div>
   );

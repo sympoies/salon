@@ -341,6 +341,7 @@ export function HistoryConversationView({
   onJumpToLatest,
   working = false,
   outgoing = null,
+  uploadSessionId,
 }: {
   readonly conversation: HistoryConversation;
   readonly onJumpToLatest: () => void;
@@ -348,6 +349,8 @@ export function HistoryConversationView({
   readonly working?: boolean;
   /** The owner's own replies from this browser, after the messages (#969). */
   readonly outgoing?: ReactNode;
+  /** The live session whose own quoted upload paths show as chips in user messages (#222). */
+  readonly uploadSessionId?: string;
 }) {
   const {
     session,
@@ -404,7 +407,7 @@ export function HistoryConversationView({
                 </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
                 {user && !imageOnly ? time : null}
-                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} /> : null}{imageOnly ? time : null}</div>}
+                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} /> : null}{imageOnly ? time : null}</div>}
                 {!user && !imageOnly ? time : null}
                 {session && (reread || toolImages.length) ? <div className="history-tool-output">
                   {reread ? <p className="history-tool-reread">Read attachment</p> : null}
