@@ -8,13 +8,13 @@ export interface SessionFilters {
   readonly excludedWorkspaces?: readonly (string | null)[] | null;
   readonly hosts: readonly string[] | null;
   readonly roles?: readonly (string | null)[] | null;
-  readonly harness: string | null;
+  readonly harnesses: readonly string[] | null;
   readonly repo: string;
   readonly statusGroup: SessionStatusGroup | null;
 }
-export const CLEAR_SESSION_FILTERS: SessionFilters = { workspaces: null, excludedWorkspaces: null, hosts: null, roles: null, harness: null, repo: "", statusGroup: null };
+export const CLEAR_SESSION_FILTERS: SessionFilters = { workspaces: null, excludedWorkspaces: null, hosts: null, roles: null, harnesses: null, repo: "", statusGroup: null };
 export function hasActiveSessionFilters(filters: SessionFilters): boolean {
-  return Boolean(filters.workspaces?.length) || Boolean(filters.excludedWorkspaces?.length) || filters.hosts !== null || filters.roles != null || filters.harness !== null || filters.repo !== "";
+  return Boolean(filters.workspaces?.length) || Boolean(filters.excludedWorkspaces?.length) || filters.hosts !== null || filters.roles != null || filters.harnesses !== null || filters.repo !== "";
 }
 export interface LineageRecord {
   readonly machine: string;
@@ -83,7 +83,7 @@ export function filterRecords<T extends FilterRecord>(records: readonly T[], fil
       && (!filters.workspaces?.length || filters.workspaces.includes(row.workspace ?? null))
       && !filters.excludedWorkspaces?.includes(row.workspace ?? null)
       && (allRolesSelected || filters.roles!.includes(recordRole(row, roleOf)))
-      && (filters.harness === null || row.provider === filters.harness)
+      && (filters.harnesses === null || filters.harnesses.includes(row.provider))
       && (!filters.repo || (row.repo_name?.trim() || row.cwd?.replace(/\/+$/, "").split("/").at(-1)) === filters.repo)
       && (filters.statusGroup === null || classifySessionStatus(sessionStatusEvidence(row)) === filters.statusGroup);
   });

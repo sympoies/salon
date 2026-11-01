@@ -69,7 +69,7 @@ function installDom(): {
 
 
 async function loadNavigator() { return (await ssr.loadModule<typeof import("../src/SessionListNavigator.tsx")>("/src/SessionListNavigator.tsx")).SessionListNavigator; }
-const base: SessionListNavigatorProps = { filters: CLEAR_SESSION_FILTERS, machines: ["host-a", "host-b"], harnesses: [{id:"codex",label:"Codex"}],
+const base: SessionListNavigatorProps = { filters: CLEAR_SESSION_FILTERS, machines: ["host-a", "host-b"], harnesses: [{id:"codex",label:"Codex"},{id:"claude",label:"Claude"}],
  resultCount: 4, mobile: true, page: 1, pageCount: 2, onPageChange: () => {}, onChange: () => {} };
 async function mount(options: Partial<SessionListNavigatorProps> = {}) {
  const Navigator = await loadNavigator(), dom = installDom(); cleanupStack.push(dom.cleanup);
@@ -176,7 +176,7 @@ test("stale selected hosts remain visible as an active filter condition", async(
 
 test("closed filters keep removable restrictions and excluded-host coverage inside the open panel", async()=>{
  const Navigator=await loadNavigator();
- const filters={...CLEAR_SESSION_FILTERS,hosts:["host-a"],harness:"codex",repo:"agent-console"};
+ const filters={...CLEAR_SESSION_FILTERS,hosts:["host-a"],harnesses:["codex"],repo:"agent-console"};
  const closedHtml=renderComponent(Navigator,{...base,filters});
  assert.match(closedHtml,/aria-label="Remove Hosts: host-a"/);
  assert.doesNotMatch(closedHtml,/class="session-filter-panel/);
@@ -185,7 +185,7 @@ test("closed filters keep removable restrictions and excluded-host coverage insi
  assert.match(html,/1 host excluded by your filter/);assert.match(html,/Show all hosts/);assert.match(html,/Clear all/);assert.match(html,/class="session-filter-panel[^>]*role="dialog"/);
 });
 test("search bar renders each active filter as an individually removable chip",async()=>{
- const filters={...CLEAR_SESSION_FILTERS,hosts:["host-a"],harness:"codex"};
+ const filters={...CLEAR_SESSION_FILTERS,hosts:["host-a"],harnesses:["codex"]};
  const closed=renderComponent(await loadNavigator(),{...base,filters});
  assert.match(closed,/class="session-filter-search-icon"/);
  assert.match(closed,/class="session-filter-search-chips"[^>]*aria-label="Active session filters"/);
@@ -194,7 +194,7 @@ test("search bar renders each active filter as an individually removable chip",a
  assert.doesNotMatch(closed,/session-filter-compact-state/);
  const dom=await mount({filters});
  await click(dom.container.querySelector<HTMLButtonElement>('[aria-label="Remove Harness: Codex"]')!);
- assert.deepEqual(dom.commits.at(-1),{...filters,harness:null},"removing one chip preserves the other condition");
+ assert.deepEqual(dom.commits.at(-1),{...filters,harnesses:null},"removing one chip preserves the other condition");
 });
 test("empty search bar has a placeholder and no condition chip",async()=>{
  const html=renderComponent(await loadNavigator(),base);
@@ -213,11 +213,19 @@ test("closed filters signal pending notices on the trigger",async()=>{
   assert.match(html,/class="session-filter-notice-indicator" aria-hidden="true">!<\/span>/);
  }
 });
+const pickHarness = (dom: { container: ParentNode }, id: string) => act(async () => {
+  (dom.container.querySelector(`[data-filter-dimension="harnesses"] input[value="${id}"]`) as HTMLInputElement).click();
+});
+test("opening the filter panel moves focus to its first enabled field",async()=>{
+ const dom=await mount();await click(dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!);
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});
+ const active=dom.window.document.activeElement;
+ assert.equal(Boolean(active&&dom.container.querySelector(".session-filter-panel-fields")?.contains(active)),true,"focus enters the panel fields");
+});
 test("drafts wait for Apply filters; Escape discards and restores focus",async()=>{
  const dom=await mount();const trigger=dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!;await click(trigger);
- const harness=dom.container.querySelector<HTMLSelectElement>('select[aria-label="Filter sessions by harness"]')!;
- await act(async()=>{harness.value="codex";harness.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
- assert.equal(dom.commits.length,0);await click(button(dom.container,"Apply filters"));assert.equal(dom.commits[0]?.harness,"codex");
+ await pickHarness(dom,"codex");
+ assert.equal(dom.commits.length,0);await click(button(dom.container,"Apply filters"));assert.deepEqual(dom.commits[0]?.harnesses, ["codex"]);
  await click(trigger);await act(async()=>{dom.container.querySelector('[role="dialog"]')!.dispatchEvent(new dom.window.KeyboardEvent("keydown",{key:"Escape",bubbles:true}));});
  assert.equal(Boolean(dom.container.querySelector('[role="dialog"]')),false);assert.equal(dom.window.document.activeElement===trigger,true);
 });
@@ -239,42 +247,40 @@ test("empty space around the chips opens the same filter panel",async()=>{
 });
 test("Clear all removes every dimension",async()=>{
  const birth="2030-01-01T00:00:00Z";
- const dom=await mount({open:true,filters:{hosts:["host-a"],harness:"codex",repo:"repo",state:"closed",since:"7d"}});
+ const dom=await mount({open:true,filters:{hosts:["host-a"],harnesses:["codex"],repo:"repo",state:"closed",since:"7d"}});
  assert.match(dom.container.textContent??"",/Hosts: host-a/);await click(button(dom.container,"Clear all"));assert.deepEqual(dom.commits[0],CLEAR_SESSION_FILTERS);
 });
 test("a host chip resets only host coverage and a single host can be isolated",async()=>{
- const dom=await mount({filters:{...CLEAR_SESSION_FILTERS,harness:"codex"}});await click(dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!);
+ const dom=await mount({filters:{...CLEAR_SESSION_FILTERS,harnesses:["codex"]}});await click(dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!);
  const second=dom.container.querySelector<HTMLInputElement>('input[value="host-b"]')!;await click(second);await click(button(dom.container,"Apply filters"));
  assert.deepEqual(dom.commits[0]?.hosts,["host-b"]);await click(dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!);
- await click(button(dom.container,"Hosts: host-b ×"));assert.equal(dom.commits.at(-1)?.hosts,null);assert.equal(dom.commits.at(-1)?.harness,"codex");
+ await click(button(dom.container,"Hosts: host-b ×"));assert.equal(dom.commits.at(-1)?.hosts,null);assert.deepEqual(dom.commits.at(-1)?.harnesses, ["codex"]);
 });
 test("applying after removing an active chip preserves the committed removal",async()=>{
- const dom=await mount({filters:{...CLEAR_SESSION_FILTERS,hosts:["host-a"],harness:"codex"}});
+ const dom=await mount({filters:{...CLEAR_SESSION_FILTERS,hosts:["host-a"],harnesses:["codex"]}});
  await click(dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!);
  await click(button(dom.container,"Hosts: host-a ×"));
  assert.equal(dom.commits.at(-1)?.hosts,null);
  await click(button(dom.container,"Apply filters"));
  assert.equal(dom.commits.at(-1)?.hosts,null,"Apply must not restore the chip's stale host restriction");
- assert.equal(dom.commits.at(-1)?.harness,"codex");
+ assert.deepEqual(dom.commits.at(-1)?.harnesses, ["codex"]);
 });
 test("removing an active chip preserves unrelated draft edits",async()=>{
  const dom=await mount({filters:{...CLEAR_SESSION_FILTERS,hosts:["host-a"]},harnesses:[{id:"codex",label:"Codex"},{id:"claude",label:"Claude"}]});
  await click(dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!);
- const harness=dom.container.querySelector<HTMLSelectElement>('select[aria-label="Filter sessions by harness"]')!;
- await act(async()=>{harness.value="claude";harness.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
+ await pickHarness(dom,"claude");
  await click(button(dom.container,"Hosts: host-a ×"));
  await click(button(dom.container,"Apply filters"));
  assert.equal(dom.commits.at(-1)?.hosts,null);
- assert.equal(dom.commits.at(-1)?.harness,"claude","chip reset must keep the unrelated harness draft");
+ assert.deepEqual(dom.commits.at(-1)?.harnesses, ["claude"],"chip reset must keep the unrelated harness draft");
 });
 test("status count changes preserve unrelated filter drafts",async()=>{
  const dom=await mount({harnesses:[{id:"codex",label:"Codex"},{id:"claude",label:"Claude"}],statusCounts:{working:2,waiting:0,attention:0,stopped:0}});
  await click(dom.container.querySelector<HTMLButtonElement>(".session-filters-trigger")!);
- const harness=dom.container.querySelector<HTMLSelectElement>('select[aria-label="Filter sessions by harness"]')!;
- await act(async()=>{harness.value="claude";harness.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
+ await pickHarness(dom,"claude");
  await click(dom.container.querySelector<HTMLButtonElement>('[data-status-group="working"]')!);
  await click(button(dom.container,"Apply filters"));
- assert.equal(dom.commits.at(-1)?.harness,"claude");
+ assert.deepEqual(dom.commits.at(-1)?.harnesses, ["claude"]);
  assert.equal(dom.commits.at(-1)?.statusGroup,"working");
 });
 test("mobile sheet traps Tab and desktop paging remains circular",async()=>{
@@ -303,16 +309,14 @@ for (const mobile of [false, true]) {
   const view = (next: SessionListNavigatorProps) => createElement(UiExtensionsProvider, { registry }, createElement(Navigator, next));
   await act(async()=>{dom.root.render(view(props));});
   const labels = () => [...dom.container.querySelectorAll(".session-filter-choice")].map(el=>el.textContent?.trim());
-  const harness = dom.container.querySelector<HTMLSelectElement>('select[aria-label="Filter sessions by harness"]')!;
-  assert.deepEqual([...harness.options].map(option=>option.textContent),["All harnesses (2)","Codex (1)","Claude (1)"]);
+  assert.match(dom.container.querySelector('[data-filter-dimension="harnesses"] summary')!.textContent!,/All harnesses \(2\)/);
   assertNoElement(dom.container,'select[aria-label="Scope"]',"no Scope field is offered");
-  assert.deepEqual(labels(),["Lead (0)","Team B (0)","Team A (0)","Unassigned (2)","host-a (1)","host-b (1)","No role (1)","reviewer (1)","tester (0)"]);
-  await act(async()=>{harness.value="claude";harness.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
-  assert.deepEqual(labels(),["Lead (0)","Team B (0)","Team A (0)","Unassigned (1)","host-a (0)","host-b (1)","No role (1)","reviewer (0)","tester (0)"]);
-  assert.equal(harness.options[0]!.textContent,"All harnesses (2)","own dimension remains ignored");
+  assert.deepEqual(labels(),["Lead (0)","Team B (0)","Team A (0)","Unassigned (2)","host-a (1)","host-b (1)","No role (1)","reviewer (1)","tester (0)","Codex (1)","Claude (1)"]);
+  await pickHarness(dom,"claude");
+  assert.deepEqual(labels(),["Lead (0)","Team B (0)","Team A (0)","Unassigned (1)","host-a (0)","host-b (1)","No role (1)","reviewer (0)","tester (0)","Codex (1)","Claude (1)"]);
   await act(async()=>{dom.root.render(view({...props,records:[...rows,{...rows[1]!,session_id:"new"}]}));});
-  assert.equal(harness.value,"claude","refresh preserves the unsaved draft");
-  assert.deepEqual(labels(),["Lead (0)","Team B (0)","Team A (0)","Unassigned (2)","host-a (0)","host-b (2)","No role (2)","reviewer (0)","tester (0)"]);
+  assert.equal((dom.container.querySelector('[data-filter-dimension="harnesses"] input[value="claude"]') as HTMLInputElement).checked,true,"refresh preserves the unsaved draft");
+  assert.deepEqual(labels(),["Lead (0)","Team B (0)","Team A (0)","Unassigned (2)","host-a (0)","host-b (2)","No role (2)","reviewer (0)","tester (0)","Codex (1)","Claude (2)"]);
  });
 }
 
@@ -320,13 +324,12 @@ test("filters open immediately with placeholders until a usable snapshot replace
  const Navigator=await loadNavigator(),dom=installDom();cleanupStack.push(dom.cleanup);
  const props={...base,open:true};
  await act(async()=>{dom.root.render(createElement(Navigator,props));});
- const harness=()=>dom.container.querySelector<HTMLSelectElement>('select[aria-label="Filter sessions by harness"]')!;
- assert.equal(harness().options[0]!.textContent,"All harnesses (–)");
- assert.equal(harness().disabled,false);
+ const harness=()=>dom.container.querySelector('[data-filter-dimension="harnesses"] summary')!.textContent;
+ assert.match(harness()!,/All harnesses \(–\)/);
  await act(async()=>{dom.root.render(createElement(Navigator,{...props,records:[]}));});
- assert.equal(harness().options[0]!.textContent,"All harnesses (0)","a successful empty snapshot is zero");
+ assert.match(harness()!,/All harnesses \(0\)/,"a successful empty snapshot is zero");
  await act(async()=>{dom.root.render(createElement(Navigator,{...props,records:undefined}));});
- assert.equal(harness().options[0]!.textContent,"All harnesses (–)","error/reconnect never shows a stale count");
+ assert.match(harness()!,/All harnesses \(–\)/,"error/reconnect never shows a stale count");
 });
 
 const facetSection = (container: ParentNode, dimension: string) => {
@@ -390,11 +393,10 @@ test("the first role pick isolates that role and the all state checks no role", 
 
 test("Apply keeps a host restriction while the host inventory is still empty", async () => {
   const dom = await mount({ machines: [], filters: { ...CLEAR_SESSION_FILTERS, hosts: ["moss"] }, open: true });
-  const harness = dom.container.querySelector<HTMLSelectElement>('select[aria-label="Filter sessions by harness"]')!;
-  await act(async () => { harness.value = "codex"; harness.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+  await pickHarness(dom, "codex");
   await click(button(dom.container, "Apply filters"));
   assert.deepEqual(dom.commits.at(-1)?.hosts, ["moss"], "an unloaded host inventory must not drop the host restriction");
-  assert.equal(dom.commits.at(-1)?.harness, "codex");
+  assert.deepEqual(dom.commits.at(-1)?.harnesses, ["codex"]);
 });
 
 test("title-area counts keep staged filter edits and return inside the inactive dashboard", async () => {
@@ -410,15 +412,14 @@ test("title-area counts keep staged filter edits and return inside the inactive 
  assert.equal(target.querySelectorAll('.session-status-count').length,4);
  assertNoElement(dom.container,'.session-status-count');
  await click(dom.container.querySelector<HTMLButtonElement>('.session-filter-search-open')!);
- const harness=dom.container.querySelector<HTMLSelectElement>('select[aria-label="Filter sessions by harness"]')!;
- await act(async()=>{harness.value="codex";harness.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
+ await pickHarness(dom,"codex");
  const working=target.querySelector<HTMLButtonElement>('[data-status-group="working"]')!;
  await act(async()=>working.dispatchEvent(new dom.window.Event("pointerdown",{bubbles:true})));
  await click(working);
  assert.ok(dom.container.querySelector('.session-filter-panel'),"portal pointerdown must not dismiss the panel");
- assert.equal(commits.at(-1)?.statusGroup,"working");assert.equal(commits.at(-1)?.harness,null,"only the status applies immediately");
+ assert.equal(commits.at(-1)?.statusGroup,"working");assert.equal(commits.at(-1)?.harnesses,null,"only the status applies immediately");
  await click(button(dom.container,"Apply filters"));
- assert.equal(commits.at(-1)?.harness,"codex");assert.equal(commits.at(-1)?.statusGroup,"working");
+ assert.deepEqual(commits.at(-1)?.harnesses, ["codex"]);assert.equal(commits.at(-1)?.statusGroup,"working");
  await act(async()=>dom.root.render(createElement(Host,{active:false})));
  assert.equal(target.querySelectorAll('.session-status-count').length,0,"inactive Dashboard leaves no interactive counts outside its inert subtree");
  assert.equal(dom.container.querySelectorAll('.session-status-count').length,4);
