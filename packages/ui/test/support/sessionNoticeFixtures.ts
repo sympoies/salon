@@ -8,6 +8,7 @@ export const validNotices = [
   { name: "empty body", raw: `${header}\n\n`, kind: "mailbox", source: "fixture", body: "" },
   { name: "double header stays body", raw: `${header}\n\n${header}\n\nBody`, kind: "mailbox", source: "fixture", body: `${header}\n\nBody` },
   { name: "unknown", raw: '<!-- agent-notice:v1 kind=future.kind source=fixture -->\n\nBody', kind: "future.kind", source: "fixture", body: "Body" },
+  { name: "inside a paste wrapper", raw: '<pasted_content id="sample">\n' + header + '\n\nBody\n</pasted_content id="sample">', kind: "mailbox", source: "fixture", body: "Body" },
   { name: "spoofed kind", raw: '<!-- agent-notice:v1 kind=mailbox.admin source=fixture -->\n\nBody', kind: "mailbox.admin", source: "fixture", body: "Body" },
 ];
 export const ordinaryMessages = [
@@ -29,7 +30,6 @@ export const ordinaryMessages = [
   { name: "inline code", raw: "`" + header + "`\n\nBody" },
   { name: "quoted", raw: "> " + header + "\n\nBody" },
   { name: "legacy prefix", raw: "[agent-notice] Synthetic body" },
-  { name: "pasted wrapper", raw: '<pasted_content id="sample">\n' + header + '\n\nBody\n</pasted_content id="sample">' },
   { name: "reordered fields", raw: '<!-- agent-notice:v1 source=fixture kind=mailbox -->\n\nBody' },
   { name: "extra metadata", raw: header.replace(" -->", " extra=value -->") + "\n\nBody" },
   { name: "empty field", raw: header.replace("mailbox", "") + "\n\nBody" },
@@ -37,4 +37,13 @@ export const ordinaryMessages = [
   { name: "non ASCII metadata", raw: header.replace("mailbox", "\u00e9") + "\n\nBody" },
   { name: "oversized header", raw: header.replace("mailbox", "x".repeat(512)) + "\n\nBody" },
   { name: "trailing header text", raw: header + " trailing\n\nBody" },
+];
+
+// Paste wrapper variants that are not one whole, well-formed wrapper around a notice.
+export const wrappedNonNotices = [
+  { name: "wrapped plain message", raw: '<pasted_content id="sample">\nSynthetic human message\n</pasted_content id="sample">' },
+  { name: "wrapper with mismatched ids", raw: '<pasted_content id="sample">\n' + header + '\n\nBody\n</pasted_content id="other">' },
+  { name: "text before the wrapper", raw: 'Intro\n<pasted_content id="sample">\n' + header + '\n\nBody\n</pasted_content id="sample">' },
+  { name: "text after the wrapper", raw: '<pasted_content id="sample">\n' + header + '\n\nBody\n</pasted_content id="sample">\nOutro' },
+  { name: "wrapper that never closes", raw: '<pasted_content id="sample">\n' + header + '\n\nBody' },
 ];

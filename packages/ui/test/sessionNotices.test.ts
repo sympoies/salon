@@ -4,7 +4,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { parseSessionNotice } from "@agent-console/shared";
-import { ordinaryMessages, validNotices, header } from "./support/sessionNoticeFixtures.ts";
+import { ordinaryMessages, validNotices, wrappedNonNotices, header } from "./support/sessionNoticeFixtures.ts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createUiSsrHarness } from "./support/ssr.ts";
 
@@ -62,13 +62,22 @@ test("strict draft corpus preserves body bytes and extracts plain metadata", () 
     const { name, raw, ...expected } = fixture;
     assert.deepEqual(parseSessionNotice(raw), expected, name);
   }
-  for (const fixture of ordinaryMessages) assert.equal(parseSessionNotice(fixture.raw), null, fixture.name);
+  for (const fixture of [...ordinaryMessages, ...wrappedNonNotices]) assert.equal(parseSessionNotice(fixture.raw), null, fixture.name);
   const fields = { kind: "k".repeat(48), source: "s".repeat(64), id: "I".repeat(96) };
   const envelope = (values: typeof fields) => `<!-- agent-notice:v1 kind=${values.kind} source=${values.source} id=${values.id} -->\n\nBody`;
   assert.deepEqual(parseSessionNotice(envelope(fields)), { ...fields, body: "Body" });
   for (const field of ["kind", "source", "id"] as const) {
     assert.equal(parseSessionNotice(envelope({ ...fields, [field]: fields[field] + "x" })), null, `${field} limit`);
   }
+});
+
+// A long prompt as Claude records it: one user turn, the whole text in one paste wrapper.
+test("a long notice in a Claude paste wrapper parses like the unwrapped one", () => {
+  const notice = '<!-- agent-notice:v1 kind=dispatch.bootstrap source=coordinator id=run-7 -->\n\n[bootstrap]\nStart the task.\n- Report back when done.\n';
+  const record = { type: "user", message: { role: "user", content: `<pasted_content id="641f">\n${notice}\n</pasted_content id="641f">` } };
+  const wrapped = parseSessionNotice(record.message.content);
+  assert.deepEqual(wrapped, { kind: "dispatch.bootstrap", source: "coordinator", id: "run-7", body: "[bootstrap]\nStart the task.\n- Report back when done.\n" });
+  assert.deepEqual(wrapped, parseSessionNotice(notice));
 });
 
 test("non-notices keep the exact existing Markdown and paste-unwrapping display", async () => {
