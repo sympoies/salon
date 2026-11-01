@@ -51,6 +51,13 @@ class StallTimeoutTest(unittest.TestCase):
         self.assertIn("killed step", result.stderr)
         self.assertIn("signal 9", result.stderr)
 
+    def test_step_that_closes_its_output_but_keeps_running_is_still_stopped(self):
+        started = time.monotonic()
+        result = run(1, "closed output step", "bash", "-c", "exec >&- 2>&-; sleep 60")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertLess(time.monotonic() - started, 20)
+        self.assertIn("closed output step", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,6 +43,7 @@ def main() -> int:
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
     last_output = time.monotonic()
+    eof = False
     while True:
         remaining = limit - (time.monotonic() - last_output) if limit else None
         if remaining is not None and remaining <= 0:
@@ -50,10 +51,18 @@ def main() -> int:
             print(f"Validation step stalled: {label}: no output for {limit}s; stopped. "
                   "Raise VALIDATION_STALL_SECONDS if the step is legitimately silent.", file=sys.stderr)
             return STALL_STATUS
+        if eof:
+            # Output is closed but the step may still run; the silence limit still applies.
+            try:
+                process.wait(timeout=1 if remaining is None else min(remaining, 1))
+                break
+            except subprocess.TimeoutExpired:
+                continue
         if selector.select(timeout=remaining if remaining is None else min(remaining, 1)):
             chunk = os.read(process.stdout.fileno(), 65536)
             if not chunk:
-                break
+                eof = True
+                continue
             last_output = time.monotonic()
             sys.stdout.buffer.write(chunk)
             sys.stdout.buffer.flush()
