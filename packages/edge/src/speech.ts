@@ -104,7 +104,7 @@ export async function transcribeSpeech(
   contentType: string,
   engine: string | undefined,
   signal?: AbortSignal,
-): Promise<{ text: string; language: string | null; engine: string | null }> {
+): Promise<{ text: string; language: string | null; engine: string | null; label: string | null }> {
   let response: Response;
   try {
     response = await fetch(`${provider.url}/v1/transcriptions`, {
@@ -157,6 +157,7 @@ export async function transcribeSpeech(
       text: parsed.text,
       language: typeof parsed.language === "string" ? parsed.language.slice(0, 80) : null,
       engine: typeof parsed.engine === "string" && ENGINE_TOKEN.test(parsed.engine) ? parsed.engine : null,
+      label: typeof parsed.label === "string" && parsed.label ? parsed.label : null,
     };
   } catch {
     throw new SpeechRequestError(502, "speech service returned an invalid response");

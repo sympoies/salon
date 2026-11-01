@@ -13,6 +13,7 @@ test("shortcut help lists voice and closes with Command-Slash or Escape", async 
     ShortcutHelpModal: ComponentType<{ onClose: () => void }>;
   }>("/src/ShortcutHelpModal.tsx");
   const window = new Window({ url: "http://localhost" });
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
   const previous = {
     window: globalThis.window,
     document: globalThis.document,

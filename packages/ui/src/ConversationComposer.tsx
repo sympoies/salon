@@ -47,6 +47,11 @@ function subscribeDraft(drafts: ConversationReplyDrafts, key: string, listener: 
   };
 }
 
+/** What joins a draft to a quoted voice block: a blank line unless the draft is empty. */
+function blockSeparator(text: string): string {
+  return text ? "\n".repeat(Math.max(0, 2 - (/\n*$/.exec(text)?.[0].length ?? 0))) : "";
+}
+
 function publishDraft(drafts: ConversationReplyDrafts, key: string, draft: ConversationReplyDraft) {
   const becameEmpty = Boolean(drafts.get(key)?.text) && !draft.text;
   if (!draft.text && !draft.error && !draft.outcomeUnknown && !draft.sending) drafts.delete(key);
@@ -326,16 +331,16 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
             event.preventDefault();
             void send();
           }} />
-        {/* Mic while the composer is empty, send once it has text (#942). */}
-        {draft.trim() || sending ? <button type="button" className="conversation-send" aria-label="Send reply" title={sending ? "Sending…" : "Send reply"}
-          aria-busy={sending} disabled={!canSend} onClick={() => void send()}>
-          <ConversationSendIcon />
-        </button> : <button type="button" className="conversation-voice" aria-label="Voice" title="Voice"
+        <button type="button" className="conversation-voice" aria-label="Voice" title="Voice"
           disabled={restarted || !session.session_incarnation}
           onClick={() => {
             if (!draft) updateReply({ incarnation: session.session_incarnation });
             setVoiceToken((token) => token + 1);
-          }}><ConversationMicIcon /></button>}
+          }}><ConversationMicIcon /></button>
+        {draft.trim() || sending ? <button type="button" className="conversation-send" aria-label="Send reply" title={sending ? "Sending…" : "Send reply"}
+          aria-busy={sending} disabled={!canSend} onClick={() => void send()}>
+          <ConversationSendIcon />
+        </button> : null}
       </div>
       {status ? <p className={error ? "history-error" : "conversation-hint"} role={error ? "alert" : "status"}>{status}</p> : null}
       <div className="conversation-composer-actions">
@@ -351,12 +356,12 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
         onBeforeOpen={() => {}} onOpenChange={onVoiceOpenChange}
         onTranscript={(text) => {
           const current = readDraft();
-          const separator = current.text && !current.text.endsWith("\n") ? "\n" : "";
+          const separator = blockSeparator(current.text);
           updateReply({ text: `${current.text}${separator}${text}`, error: current.outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
         }}
         onSendTranscript={(text, expectedIncarnation) => {
           const current = readDraft();
-          const separator = current.text && !current.text.endsWith("\n") ? "\n" : "";
+          const separator = blockSeparator(current.text);
           const content = `${current.text}${separator}${text}`;
           updateReply({ text: content, incarnation: expectedIncarnation, error: current.outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
           return send(content, expectedIncarnation);

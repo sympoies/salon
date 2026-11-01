@@ -248,3 +248,63 @@ test("the phone tier published for a browser at 900px with a fine pointer is des
     assert.equal(h.window.document.documentElement.dataset.phoneTier, "false");
   } finally { await h.close(); }
 });
+
+// #219: the Android app keeps its phone list until a layout is chosen, then lists
+// that layout's conversation tiles; opening a tile enters the phone conversation.
+async function renderDashboard(h: H, chosen: boolean) {
+  if (chosen) {
+    h.window.localStorage.setItem("agent-console.layout.chosen", "1");
+    h.window.localStorage.setItem("agent-console.layout.mode", "2");
+    h.window.localStorage.setItem("agent-console.layout.auto", "0");
+  }
+  const { Dashboard } = await h.ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
+  await act(async () => h.root.render(createElement(Dashboard, { phoneSessionOpen: "conversation", active: true, machines: ["fixture"], enabledMachines: ["fixture"], machineColors: {}, defaultAutoResume: false, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true, onDebug() {}, onUsage() {}, onSettings() {} })));
+  await waitFor(() => h.container.querySelector('[aria-label="Open First work"]') !== null, "the session list renders");
+}
+const tier = (h: H) => h.window.document.documentElement.dataset.phoneTier;
+const tiles = (h: H) => [...h.container.querySelectorAll(".terminal-slot")].filter(slot => slot.querySelector('[aria-label="Reply to session"]'));
+
+test("the Android app keeps the phone list when no layout is chosen", async () => {
+  const h = await harness(900, false, true);
+  try {
+    await renderDashboard(h, false);
+    assert.equal(tier(h), "true");
+    assertNoElement(h.container, ".session-workspace.desktop", "the wide layout is not shown");
+    assert.equal(tiles(h).length, 0);
+  } finally { await h.close(); }
+});
+
+for (const [width, coarse] of [[900, false], [360, false], [900, true]] as const) {
+  test(`a chosen layout lists conversation tiles in the Android app at ${width}px${coarse ? " with a coarse pointer" : ""} and a tile opens the phone conversation`, async () => {
+    const h = await harness(width, coarse, true);
+    try {
+      await renderDashboard(h, true);
+      assert.equal(tier(h), "false");
+      assert.equal(tiles(h).length, 2);
+      await act(async () => h.container.querySelector<HTMLButtonElement>('[aria-label="Open First work"]')!.click());
+      await waitFor(() => phonePane(h), "the tile opens the full-screen conversation");
+      assert.equal(tier(h), "true");
+      assert.equal(noGrid(h), true);
+    } finally { await h.close(); }
+  });
+}
+
+test("choosing a layout in the Android app persists and shows the tiles", async () => {
+  const h = await harness(900, false, true);
+  try {
+    await renderDashboard(h, false);
+    await act(async () => h.container.querySelector<HTMLButtonElement>('[aria-label="2 panes"]')!.click());
+    await waitFor(() => tier(h) === "false" && tiles(h).length === 2, "the chosen layout lists its tiles");
+    assert.equal(h.window.localStorage.getItem("agent-console.layout.chosen"), "1");
+    assert.equal(h.window.localStorage.getItem("agent-console.layout.mode"), "2");
+  } finally { await h.close(); }
+});
+
+test("a browser at 900px ignores the Android layout choice and keeps terminal tiles", async () => {
+  const h = await harness(900, false);
+  try {
+    await renderDashboard(h, true);
+    assert.equal(tier(h) ?? "false", "false");
+    assert.equal(tiles(h).length, 0);
+  } finally { await h.close(); }
+});

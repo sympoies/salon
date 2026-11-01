@@ -60,7 +60,7 @@ test("speech upload requires client auth and injects only the selected host toke
     method: "POST", headers, body: audio,
   });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true, data: { text: "不要刪除 src/main.ts", language: "Chinese", engine: null, provider: "primary" } });
+  assert.deepEqual(await response.json(), { ok: true, data: { text: "不要刪除 src/main.ts", language: "Chinese", engine: null, label: null, provider: "primary" } });
   assert.equal(upstreamAuthorization, "Bearer host-secret");
   assert.equal(upstreamContentType, "audio/webm");
   assert.deepEqual(upstreamBody, audio);
@@ -103,7 +103,7 @@ const engineUpstream = createServer((req, res) => {
     res.writeHead(failure || 200, { "content-type": "application/json" });
     res.end(JSON.stringify(failure
       ? { error: { message: `engine ${engineMode} message` } }
-      : { text: "ok", language: null, engine: engineHeader ?? "qwen" }));
+      : { text: "ok", language: null, engine: engineHeader ?? "qwen", ...(engineMode === "label" ? { label: " Fast · local " } : engineMode === "emptylabel" ? { label: "" } : {}) }));
   });
 });
 
@@ -138,6 +138,13 @@ test("speech engines are forwarded, the selector header is validated and forward
     const chosen = await post({ "x-speech-engine": "gpt-transcribe" });
     assert.equal(engineHeader, "gpt-transcribe");
     assert.equal(((await chosen.json()) as { data: { engine: string } }).data.engine, "gpt-transcribe");
+
+    assert.equal(((await (await post({})).json()) as { data: { label: string | null } }).data.label, null, "an upstream without label gives null");
+    engineMode = "label";
+    assert.equal(((await (await post({})).json()) as { data: { label: string | null } }).data.label, " Fast · local ", "the upstream label passes through verbatim");
+    engineMode = "emptylabel";
+    assert.equal(((await (await post({})).json()) as { data: { label: string | null } }).data.label, null, "an empty label is absent");
+    engineMode = "ok";
 
     engineHeader = "unset";
     assert.equal((await post({ "x-speech-engine": "bad engine!" })).status, 400);

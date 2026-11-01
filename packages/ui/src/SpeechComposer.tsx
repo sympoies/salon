@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import type { SpeechProviderSummary } from "@agent-console/shared/speech";
 import { getSpeechEngines, getSpeechProviders, submitSessionPrompt, transcribeSpeechAudio } from "./api.ts";
 import { Modal } from "./Modal.tsx";
+import { useShortcutClose } from "./useShortcutClose.ts";
 import { isAndroidTauri } from "./runtime.ts";
 import { loadSpeechEngine } from "./speechEngine.ts";
-import { VOICE_PROMPT_TAG } from "./voicePrompt.ts";
+import { quoteVoiceTranscript } from "./voicePrompt.ts";
 
 const UNKNOWN_PROMPT_OUTCOME = "The prompt may have been sent. A busy session shows it as a queued message; check the session before trying again.";
 
@@ -47,6 +48,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   const [language, setLanguage] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [answeredBy, setAnsweredBy] = useState<string | null>(null);
+  const [label, setLabel] = useState<string | null>(null);
   const [retryable, setRetryable] = useState(false);
   const retained = useRef<Blob | null>(null);
   const active = useRef<ActiveRecording | null>(null);
@@ -84,6 +86,8 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     setReplyRetained(false);
     setError("");
   };
+
+  useShortcutClose("voice", () => { close(); }, open);
 
   useEffect(() => () => {
     generation.current += 1;
@@ -128,6 +132,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     setRetryable(false);
     setError("");
     setAnsweredBy(null);
+    setLabel(null);
     setPhase("transcribing");
     const controller = new AbortController();
     transcription.current = controller;
@@ -139,6 +144,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
       retained.current = null;
       setText(result.text);
       setLanguage(result.language);
+      setLabel(result.label);
       setAnsweredBy(chosen && result.engine && result.engine !== chosen ? result.engine : null);
       if (!chosen && result.engine) {
         const answered = result.engine;
@@ -258,7 +264,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
       setPhase("sending");
       setError("");
       try {
-        const sent = await onSendTranscript(`${VOICE_PROMPT_TAG}${edited}`, draftIncarnation.current);
+        const sent = await onSendTranscript(quoteVoiceTranscript(edited, label), draftIncarnation.current);
         if (generation.current !== currentGeneration) return;
         if (sent) close();
         else {
@@ -274,7 +280,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
       return;
     }
     if (onTranscript) {
-      onTranscript(`${VOICE_PROMPT_TAG}${edited}`);
+      onTranscript(quoteVoiceTranscript(edited, label));
       close();
       return;
     }
@@ -282,7 +288,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     setError("");
     try {
       const result = await submitSessionPrompt(machine, id, {
-        text: `${VOICE_PROMPT_TAG}${edited}`,
+        text: quoteVoiceTranscript(edited, label),
         expected_session_incarnation: draftIncarnation.current,
       });
       if (generation.current !== currentGeneration) return;
@@ -307,7 +313,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
   const insert = () => {
     const edited = text.trim();
     if (!edited || !onTranscript) return;
-    onTranscript(`${VOICE_PROMPT_TAG}${edited}`);
+    onTranscript(quoteVoiceTranscript(edited, label));
     close();
   };
 
@@ -355,6 +361,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
             </label>
           ) : null}
           {phase === "review" ? <p className="speech-hint">Check negation, commands, filenames, and paths before sending. A voice-input tag is added so the agent knows this came from speech.</p> : null}
+          {phase === "review" && label ? <p className="speech-hint">{label}</p> : null}
           {phase === "review" && answeredBy ? <p className="speech-hint">Answered by {answeredBy}.</p> : null}
           {error ? <p className="speech-error" role="alert">{error}</p> : null}
           <div className="modal-actions">

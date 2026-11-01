@@ -1,5 +1,5 @@
 import { useUiExtensions } from "./extensions.tsx";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   resetClaudeLimit,
   resetCodexRateLimit,
@@ -26,7 +26,7 @@ import {
   usageCardSelection,
   usageMeterLevel,
 } from "./headerUsageModel.ts";
-import { isMacTauri } from "./runtime.ts";
+import { useShortcutClose } from "./useShortcutClose.ts";
 import { HostReaderUnavailable, useReachablePoll } from "./reachable.ts";
 import { useSharedClock } from "./useSharedClock.ts";
 import { useAccountDefaults } from "./accountDefaults.tsx";
@@ -673,30 +673,7 @@ export function UsagePanel({ onExit, canResetRateLimits = false }: UsagePanelPro
     return result;
   }, [usageState.refresh]);
 
-  // Cmd+; closes the panel too. The dashboard opens Usage with the same chord
-  // (see dashboardShortcuts), but that handler is inactive while this overlay is
-  // up — so handle the close here to make the shortcut a round-trip toggle.
-  // macOS-app only, matching the dashboard shortcut layer; the browser keeps its
-  // native shortcuts.
-  useEffect(() => {
-    if (!isMacTauri()) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.shiftKey &&
-        event.key === ";"
-      ) {
-        event.preventDefault();
-        onExit();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onExit]);
+  useShortcutClose("usage", onExit);
 
   return (
     <div className="dash usage-panel">

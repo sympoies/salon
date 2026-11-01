@@ -40,12 +40,6 @@ export function lineageParents(records: readonly LineageRecord[]): Map<string, s
     return [lineageRecordKey(row), candidates?.length === 1 ? lineageRecordKey(candidates[0]!) : null];
   }));
 }
-/** @deprecated Use {@link LineageRecord}; kept for one release so host imports keep working. */
-export type ScopeRecord = LineageRecord;
-/** @deprecated Use {@link lineageRecordKey}; kept for one release so host imports keep working. */
-export const scopeRecordKey = lineageRecordKey;
-/** @deprecated Use {@link lineageParents}; kept for one release so host imports keep working. */
-export const scopeParents = lineageParents;
 /** A host's role names for the Roles facet; core falls back to the record's own role. */
 export type SessionRoleResolver = (row: FilterRecord) => string | null;
 export interface FilterRecord extends LineageRecord {
