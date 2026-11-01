@@ -22,6 +22,9 @@ const fixture: Plugin = {
     `;
   },
   transform(code, id) {
+    if (id.endsWith("/src/runtime.ts")) {
+      return code.replace("export function needsDeviceConfig(", "export function fixtureOriginalNeedsDeviceConfig(") + "\nexport const needsDeviceConfig = () => false;\n";
+    }
     if (!id.endsWith("/src/api.ts")) return;
     return code.replace("export async function getAuthStatus(", "export async function fixtureOriginalGetAuthStatus(")
       .replace("export async function listMachineNames(", "export async function fixtureOriginalListMachineNames(") + `
@@ -31,8 +34,9 @@ const fixture: Plugin = {
   },
 };
 
-test("Command-Shift-S opens the Shell and closes it again from its input", { timeout: 15_000 }, async () => {
+for (const macApp of [true, false]) test(`Command-Shift-S opens the Shell and ${macApp ? "closes it again from its input in the macOS app" : "leaves it open in the browser"}`, { timeout: 15_000 }, async () => {
   const window = new Window({ url: "http://localhost" });
+  if (macApp) Object.assign(window, { __TAURI_INTERNALS__: {} });
   const names = ["window", "document", "Element", "HTMLElement", "Event", "MouseEvent", "KeyboardEvent", "MutationObserver", "IS_REACT_ACT_ENVIRONMENT"] as const;
   const previous = Object.fromEntries(names.map((name) => [name, globalThis[name]]));
   Object.assign(globalThis, {
@@ -57,7 +61,7 @@ test("Command-Shift-S opens the Shell and closes it again from its input", { tim
     await press(window.document.body);
     assert.ok(input(), "the first press did not open the Shell");
     await press(input()!);
-    assert.ok(input() === null, "the second press did not close the Shell");
+    assert.ok((input() === null) === macApp, "the second press did the wrong thing for this platform");
   } finally {
     await act(async () => root.unmount());
     await ssr.close();
