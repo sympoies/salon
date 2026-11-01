@@ -514,6 +514,6 @@ test("mobile session cards show an upload path as a short chip label", async () 
     agent: "claude",
     last_prompt: { text: "'/state/sessions/s-1/attachments/shot.png' check it", truncated: false },
   })]);
-  assert.match(html, /class="mobile-session-card-prompt">\[圖片 shot\.png\] check it<\/span>/);
+  assert.match(html, /class="mobile-session-card-prompt">\[Image shot\.png\] check it<\/span>/);
   assert.doesNotMatch(html, /\/state\/sessions/);
 });

@@ -130,3 +130,12 @@ test("leading blank lines do not leave empty blocks before the body", async () =
   const { container } = await mount(`${header}\n\n\n   \nFirst readable line\nSecond line`);
   assert.equal(container.querySelector(".session-notice-body")?.textContent, "First readable line\nSecond line");
 });
+
+test("voice messages stay ordinary human messages, plain or quoted (#243)", async () => {
+  for (const text of ["🎙️ one\ntwo", "🎙️ (Fast) one", "> 🎙️ (Fast) one\n> two", "typed\n\n> 🎙️ one\n> two"]) {
+    assert.equal(parseSessionNotice(text), null, text);
+    const { container } = await mount(text);
+    assert.equal(Boolean(container.querySelector(".session-notice")), false, text);
+    assert.ok(container.querySelector(".history-message.is-user"), `${text} is shown as the user's message`);
+  }
+});

@@ -134,7 +134,7 @@ test("HistoryPanel identifies sessions and opens the latest context before loadi
 
   assert.match(mounted.container.textContent ?? "", /Untitled session/);
   assert.match(mounted.container.textContent ?? "", /Start\[語音\] first human prompt/);
-  assert.match(mounted.container.textContent ?? "", /Latest\[圖片 shot\.png\] \[語音·Fast\] latest human prompt/);
+  assert.match(mounted.container.textContent ?? "", /Latest\[Image shot\.png\] \[語音·Fast\] latest human prompt/);
   assert.doesNotMatch(mounted.container.textContent ?? "", /語音轉寫/);
   const row = mounted.container.querySelector(".history-row");
   assert.ok(row);
