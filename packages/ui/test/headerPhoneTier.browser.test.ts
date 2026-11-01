@@ -130,7 +130,7 @@ test("the Android app at 900px with a fine pointer gets the computed phone heade
     const detail = JSON.stringify(m);
     assert.equal(m.coarse, false, `the pointer is fine: ${detail}`);
     assert.equal(m.picker, false, `no layout button in the phone layout: ${detail}`);
-    assert.match(m.areas, /"brand status actions"\s+"pages pages pages"/, `the two-row phone header grid applies: ${detail}`);
+    assert.match(m.areas, /"brand status usage actions"\s+"pages pages pages pages"/, `the two-row phone header grid applies: ${detail}`);
     assert.ok(m.overflow <= 1, `no horizontal overflow: ${detail}`);
   } finally { await fixture.close(); }
 });

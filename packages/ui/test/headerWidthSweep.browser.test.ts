@@ -11,11 +11,14 @@ interface Sweep {
   readonly outside: string[];
   readonly missing: string[];
   readonly sizes: Record<string, string>;
+  readonly quota: number;
+  readonly detail: string | null;
 }
 
 const COMPONENTS = "brand-title,session-status-counts,session-list-pagination,session-filters-summary,session-filter-searchbar,header-usage,layout-picker,header-menu,dashboard-new-session";
-const script = (tier: boolean, grid: boolean) => `
-  document.documentElement.dataset.phoneTier="${tier && !grid}";document.documentElement.dataset.phoneHeader="${tier}";
+// The tier is published before the production compaction runs, as the app does (Android reports the phone tier at any width).
+const tierScript = (tier: boolean, grid: boolean) => `document.documentElement.dataset.phoneTier="${tier && !grid}";document.documentElement.dataset.phoneHeader="${tier}";`;
+const script = () => `
   const header=document.querySelector('.workspace-head');
   const name=e=>e.className.toString().split(' ')[0];
   const seen=[...header.querySelectorAll('.${COMPONENTS.split(",").join(",.")}')]
@@ -30,7 +33,7 @@ const script = (tier: boolean, grid: boolean) => `
   const missing=[['.brand-title-mark','logo'],['.dashboard-new-session','new'],['.header-menu-trigger','more']].filter(([s])=>!present(s)).map(([,n])=>n);
   const buttons={more:'.header-menu-trigger',new:'.dashboard-new-session',layout:'.layout-picker-trigger',auto:'.layout-picker .is-auto',pane:'.layout-picker-inline button'};
   const sizes={};for(const [k,s] of Object.entries(buttons)){const e=header.querySelector(s);const r=e&&e.getBoundingClientRect();if(r&&r.width>0)sizes[k]=r.width.toFixed(0)+'x'+r.height.toFixed(0);}
-  const result={overlaps,outside,missing,sizes};
+  const quota=[...header.querySelectorAll('.header-usage .hu-provider')].filter(e=>e.getBoundingClientRect().width>0).length;const result={overlaps,outside,missing,sizes,quota,detail:header.getAttribute('data-quota-detail')};
 `;
 
 for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024]) {
@@ -42,7 +45,7 @@ for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024]) {
       const fixture = await headerFixture();
       try {
         const tier = isPhoneWidth(width, false, android);
-        const m = measureHeaderMarkup<Sweep>(fixture.markup(width, false, focused, true), width, script(tier, grid));
+        const m = measureHeaderMarkup<Sweep>(fixture.markup(width, false, focused, true), width, script(), false, 800, [], tierScript(tier, grid));
         const detail = JSON.stringify(m);
         assert.deepEqual(m.overlaps, [], `no component overlaps another: ${detail}`);
         assert.deepEqual(m.outside, [], `every component stays inside the header: ${detail}`);
@@ -51,4 +54,22 @@ for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024]) {
       } finally { await fixture.close(); }
     });
   }
+}
+
+// The quota strip gets the room left after the logo, New, More and the counts: it reduces to fewer
+// accounts as the width shrinks and is gone only when no room remains.
+for (const focused of [false, true]) {
+  test(`the ${focused ? "focused" : "list"} header's quota strip reduces with the width and is gone at 320px`, async t => {
+    if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
+    const fixture = await headerFixture();
+    try {
+      const widths = [320, 360, 412, 480, 600, 700, 760, 900, 1024, 1280];
+      const shown = widths.map(width => measureHeaderMarkup<Sweep>(fixture.markup(width, false, focused, true), width, script(), false, 800, [], tierScript(true, false)).quota);
+      const detail = JSON.stringify(Object.fromEntries(widths.map((width, i) => [width, shown[i]])));
+      assert.equal(shown[0], 0, `the quota strip is gone at 320px: ${detail}`);
+      assert.ok(shown.every((count, i) => i === 0 || count >= shown[i - 1]), `a narrower header never shows more accounts: ${detail}`);
+      assert.equal(shown.at(-1), 2, `both accounts show where they fit: ${detail}`);
+      assert.ok(shown.includes(1), `it reduces to fewer accounts before it disappears: ${detail}`);
+    } finally { await fixture.close(); }
+  });
 }

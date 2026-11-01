@@ -64,7 +64,7 @@ export const headerMeasure = `
 `;
 
 /** Apply the production header measurement when testing a server-rendered consumer. */
-export function measureHeaderMarkup<T>(markup: string, width: number, script: string, reducedMotion = false, height = 800, chromeArgs: readonly string[] = []): T {
-  const prelude = `const HEADER_COMPACT_STAGES=${JSON.stringify(HEADER_COMPACT_STAGES)};const chooseHeaderCompactStage=${chooseHeaderCompactStage.toString()};const workspaceHeader=document.querySelector('.workspace-head');if(workspaceHeader)(${updateHeaderCompaction.toString()})(workspaceHeader);`;
+export function measureHeaderMarkup<T>(markup: string, width: number, script: string, reducedMotion = false, height = 800, chromeArgs: readonly string[] = [], beforeCompaction = ""): T {
+  const prelude = `${beforeCompaction}const HEADER_COMPACT_STAGES=${JSON.stringify(HEADER_COMPACT_STAGES)};const chooseHeaderCompactStage=${chooseHeaderCompactStage.toString()};const workspaceHeader=document.querySelector('.workspace-head');if(workspaceHeader)(${updateHeaderCompaction.toString()})(workspaceHeader);`;
   return measureUiMarkup<T>(markup, width, prelude + script, reducedMotion, height, chromeArgs);
 }

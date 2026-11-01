@@ -4815,8 +4815,8 @@ textarea {
   }
   :where(:root[data-phone-header="true"]) .workspace-head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "brand actions";
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+    grid-template-areas: "brand usage actions";
     align-items: center;
     gap: var(--space-sm) var(--space-md);
     margin-bottom: var(--space-sm);
@@ -4923,9 +4923,17 @@ textarea {
   :where(:root[data-phone-header="true"]) .layout-seg {
     display: none;
   }
-  :where(:root[data-phone-header="true"]) .header-usage {
-    display: none;
+  /* The quota strip takes the room left after the logo, New, More and the counts; headerResponsive.ts
+     drops accounts and detail until it fits, and hides it only when no room remains (#238). */
+  :where(:root[data-phone-header="true"]) .workspace-head > .header-usage {
+    position: static; transform: none; max-width: 100%; min-width: 0; overflow: hidden; flex-wrap: nowrap;
+    justify-self: end; gap: var(--space-sm); height: var(--icon-standard-size); padding-block: 0;
   }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="0"] > .header-usage { display: none; }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="compact"] > .header-usage :is(.hu-name, .hu-reset) { display: none; }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="1"] > .header-usage > .hu-provider:nth-child(n+3),
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="2"] > .header-usage > .hu-provider:nth-child(n+4),
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="3"] > .header-usage > .hu-provider:nth-child(n+5) { display: none; }
   /* The header menu becomes a bottom sheet: the trigger stays in the row, but
      the panel pins to the viewport bottom behind a full-width scrim — easier to
      reach one-handed than a top-right dropdown, and it can't overflow the edge. */
@@ -7369,15 +7377,15 @@ textarea {
    Dashboard's phone layout, touch tablets included (#968); headerResponsive.ts uses the same query. */
 
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) {
-    grid-template-columns: var(--icon-identity-size) minmax(0, 1fr) auto;
-    grid-template-areas: "brand status actions" "pages pages pages" "filters filters filters";
+    grid-template-columns: var(--icon-identity-size) auto minmax(0, 1fr) auto;
+    grid-template-areas: "brand status usage actions" "pages pages pages pages" "filters filters filters filters";
     align-items: center;
     column-gap: 4px;
     row-gap: 4px;
   }
   /* A phone with one page renders no pager, so its row would only add a row gap. */
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator):not(:has(.session-list-pagination)) {
-    grid-template-areas: "brand status actions" "filters filters filters";
+    grid-template-areas: "brand status usage actions" "filters filters filters filters";
   }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .brand-title { grid-area: brand; min-width: 0; gap: 0; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-filter-controls-row { display: contents; }
@@ -7402,7 +7410,7 @@ textarea {
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:is([data-count-labels="full"],[data-count-labels="none"]) .is-compact-header .session-status-count-short-label { display: none; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-status-count { min-width: var(--icon-standard-size); height: var(--icon-standard-size); }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-pagination { display: inline-flex; grid-area: pages; align-self: center; justify-self: start; }
-  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .header-usage { display: none; }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .header-usage { grid-area: usage; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .dash-actions { grid-area: actions; flex: none; flex-wrap: nowrap; justify-self: end; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions { gap: 4px; margin-left: 0; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions .header-menu-trigger, :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .dash-create-actions > .btn {

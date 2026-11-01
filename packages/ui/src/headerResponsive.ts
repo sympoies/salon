@@ -14,6 +14,28 @@ export function chooseHeaderCompactStage(fits: (stage: HeaderCompactStage) => bo
  * (#968). Narrow macOS windows keep the measured desktop row (title-bar counts).
  */
 export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage | null {
+  // The phone header gives the quota strip what the logo, New, More and the counts leave over (#238):
+  // all accounts first, then fewer accounts, then one account without names and countdowns, and it is
+  // hidden only when no room remains. Nested so the serialized function in test fixtures is complete.
+  const fitQuota = (): void => {
+    const usage = header.querySelector<HTMLElement>(".header-usage");
+    if (!usage) return;
+    const total = usage.querySelectorAll(".hu-provider").length;
+    const steps: Array<readonly [number, "full" | "compact"]> = [];
+    for (let accounts = total; accounts >= 1; accounts--) steps.push([accounts, "full"]);
+    if (total > 0) steps.push([1, "compact"]);
+    const fits = () => {
+      const rect = usage.getBoundingClientRect(), bounds = header.getBoundingClientRect();
+      return rect.width > 0 && usage.scrollWidth <= usage.clientWidth + 1 && rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
+    };
+    for (const [accounts, detail] of steps) {
+      header.dataset.quotaAccounts = String(accounts);
+      header.dataset.quotaDetail = detail;
+      if (fits()) return;
+    }
+    header.dataset.quotaAccounts = "0";
+    header.dataset.quotaDetail = "compact";
+  };
   // The tier published by syncPhoneTier, the same one the phone header rules in styles.css use.
   if (document.documentElement.dataset.phoneHeader === "true"
     && document.documentElement.dataset.macTitlebar !== "true") {
@@ -37,9 +59,12 @@ export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage 
       header.dataset.countLabels = form;
       return labelsFit();
     }) ?? "none";
+    fitQuota();
     return null;
   }
   header.removeAttribute("data-count-labels");
+  header.removeAttribute("data-quota-accounts");
+  header.removeAttribute("data-quota-detail");
   const stage = chooseHeaderCompactStage(value => {
     header.dataset.headerCompact = String(value);
     const bounds = header.getBoundingClientRect();
