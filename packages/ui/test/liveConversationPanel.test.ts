@@ -1545,3 +1545,25 @@ test("a miss on a session that is not running recovers once it runs again, witho
   assert.match(mounted.container.textContent ?? "", /the provider reply/);
   assertNoElement(mounted.container, '[role="alert"]', "the miss clears once the session runs again");
 });
+
+test("a running session waiting on its first history row reports the miss as soon as it stops, without a completed turn", async () => {
+  const mounted = installDom(); cleanups.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([conversationApiMockPlugin()]); cleanups.push(ssr.close);
+  globalThis.__agentConsoleConversationApiMock = {
+    listHistorySessions: async () => ({ ok: true, truncated: false, sessions: [] }),
+    listHistoryMessages: async () => ({ ok: true, messages: [] }),
+  };
+  const { LiveConversationPanel } = await loadPanel(ssr);
+  const render = (status: Session["status"]) => act(async () => {
+    mounted.root.render(createElement(LiveConversationPanel, { session: liveSession({ status }), onClose() {} }));
+    await flush();
+  });
+  await render("running");
+  await act(async () => flush());
+  assert.match(mounted.container.textContent ?? "", /Finding this session in history/);
+  assertNoElement(mounted.container, '[role="alert"]', "a running session waits");
+  await render("stopped");
+  await act(async () => flush());
+  assert.match(mounted.container.textContent ?? "", /No Codex session with ID provider-7 is in maple history\./);
+  assert.doesNotMatch(mounted.container.textContent ?? "", /Finding this session in history/);
+});

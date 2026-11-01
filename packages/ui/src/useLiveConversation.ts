@@ -90,6 +90,12 @@ export function useLiveConversation(session: Session, {
     };
   }, [label, openConversation, resetConversation, providerSessionId, session.machine]);
 
+  // A session that stops while waiting for its first history row is no longer expected to appear
+  // soon: look once more so the miss is reported (or the row found) without a focus change.
+  useEffect(() => {
+    if (waiting && session.status !== "running") void refreshRef.current();
+  }, [waiting, session.status]);
+
   // Turn completion refreshes immediately; periodic reads also pick up input
   // sent through the independently usable terminal.
   const completedAt = session.turn_state?.last_turn?.completed_at;
