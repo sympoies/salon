@@ -6,7 +6,7 @@ import { Modal } from "./Modal.tsx";
 import { useShortcutClose } from "./useShortcutClose.ts";
 import { isAndroidTauri } from "./runtime.ts";
 import { loadSpeechEngine } from "./speechEngine.ts";
-import { quoteVoiceTranscript } from "./voicePrompt.ts";
+import { plainVoiceOnlyMessage, quoteVoiceTranscript } from "./voicePrompt.ts";
 
 const UNKNOWN_PROMPT_OUTCOME = "The prompt may have been sent. A busy session shows it as a queued message; check the session before trying again.";
 
@@ -288,7 +288,7 @@ export function SpeechComposer({ machine, id, sessionIncarnation, onBeforeOpen, 
     setError("");
     try {
       const result = await submitSessionPrompt(machine, id, {
-        text: quoteVoiceTranscript(edited, label),
+        text: plainVoiceOnlyMessage(quoteVoiceTranscript(edited, label)),
         expected_session_incarnation: draftIncarnation.current,
       });
       if (generation.current !== currentGeneration) return;

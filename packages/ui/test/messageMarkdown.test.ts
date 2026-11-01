@@ -118,7 +118,7 @@ const OWN_DIR = "/state/sessions/s-1/attachments";
 test("an owned quoted upload path renders as a short chip and hides the full path", async () => {
   const { container } = await renderMarkdown(`look at\n'${OWN_DIR}/shot.png'\n'${OWN_DIR}/notes.txt'`, { uploadSessionId: "s-1" });
   const chips = [...container.querySelectorAll<HTMLButtonElement>("button.attachment-chip")];
-  assert.deepEqual(chips.map((chip) => chip.textContent), ["[圖片 shot.png]", "[檔案 notes.txt]"]);
+  assert.deepEqual(chips.map((chip) => chip.textContent), ["[Image shot.png]", "[File notes.txt]"]);
   assert.doesNotMatch(container.textContent ?? "", /\/state\/sessions/);
 });
 
@@ -129,7 +129,7 @@ test("selecting a chip copies the exact full path and shows feedback", async () 
   cleanups.push(() => { if (previous) Object.defineProperty(globalThis, "navigator", previous); else Reflect.deleteProperty(globalThis, "navigator"); });
   const { window, container } = await renderMarkdown(`'${OWN_DIR}/my shot it'\\''s.png'`, { uploadSessionId: "s-1" });
   const chip = container.querySelector<HTMLButtonElement>("button.attachment-chip");
-  assert.equal(chip?.textContent, "[圖片 my shot it's.png]");
+  assert.equal(chip?.textContent, "[Image my shot it's.png]");
   await act(async () => { chip?.dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
   assert.deepEqual(copied, [`${OWN_DIR}/my shot it's.png`]);
   assert.match(container.querySelector("button.attachment-chip")?.textContent ?? "", /Copied/);
@@ -160,7 +160,7 @@ test("quoted upload paths inside tilde-fenced and indented code stay literal cod
   const text = `~~~sh\ncat ${path}\n~~~\n\n    run ${path}\n\n\`\`\`\`\n\`\`\`\n${path}\n\`\`\`\n\`\`\`\`\n\nafter ${path}`;
   const { container } = await renderMarkdown(text, { uploadSessionId: "s-1" });
   const chips = [...container.querySelectorAll("button.attachment-chip")];
-  assert.deepEqual(chips.map((chip) => chip.textContent), ["[圖片 c.png]"], "only the paragraph after the code becomes a chip");
+  assert.deepEqual(chips.map((chip) => chip.textContent), ["[Image c.png]"], "only the paragraph after the code becomes a chip");
   const code = [...container.querySelectorAll("pre")].map((pre) => pre.textContent ?? "");
   assert.equal(code.length, 3);
   for (const block of code) assert.ok(block.includes(path), `code keeps the original quoted path: ${block}`);

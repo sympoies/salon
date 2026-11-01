@@ -316,7 +316,7 @@ test("the live panel shows chips for the live session's own uploads in user mess
   await act(async () => { mounted.root.render(createElement(LiveConversationPanel, { session: liveSession(), onClose: () => {} })); await flush(); });
   await act(async () => flush());
   const chips = [...mounted.container.querySelectorAll('button.attachment-chip')].map(chip => chip.textContent);
-  assert.deepEqual(chips, ['[圖片 shot.png]']);
+  assert.deepEqual(chips, ['[Image shot.png]']);
   assert.match(mounted.container.textContent ?? '', /other\/attachments\/old\.png/);
   assert.match(mounted.container.textContent ?? '', /\[語音\] see this/);
 });
@@ -778,6 +778,82 @@ async function replyPanel(submit: NonNullable<ConversationApiMock['submitSession
   return { ...mounted, render, toggle, textarea, write, send, closed: () => closed };
 }
 
+async function prepareVoice(panel: Awaited<ReturnType<typeof replyPanel>>, transcript: string) {
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const previousRecorder = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
+  cleanups.push(() => {
+    if (previousNavigator) Object.defineProperty(globalThis, 'navigator', previousNavigator);
+    else Reflect.deleteProperty(globalThis, 'navigator');
+    if (previousRecorder) Object.defineProperty(globalThis, 'MediaRecorder', previousRecorder);
+    else Reflect.deleteProperty(globalThis, 'MediaRecorder');
+  });
+  globalThis.__agentConsoleConversationApiMock!.speechProviders = [
+    { id: 'fixture', label: 'Fixture', max_duration_seconds: 90, max_bytes: 1024 },
+  ];
+  globalThis.__agentConsoleConversationApiMock!.speechText = transcript;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: panel.window.navigator });
+  Object.defineProperty(panel.window.navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+  });
+  class FixtureRecorder {
+    static isTypeSupported() { return true; }
+    state = 'inactive';
+    mimeType = 'audio/webm';
+    ondataavailable: ((event: { data: Blob }) => void) | null = null;
+    onstop: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    start() { this.state = 'recording'; }
+    stop() {
+      this.state = 'inactive';
+      this.ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) });
+      this.onstop?.();
+    }
+  }
+  Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: FixtureRecorder });
+}
+
+/** Dictate once and finish with the dialog button `finish` ("Send" or "Insert to edit"). */
+async function dictate(panel: Awaited<ReturnType<typeof replyPanel>>, finish: 'Send' | 'Insert to edit') {
+  await act(async () => { findButton(panel.container, 'Voice').click(); await flush(); });
+  await act(async () => { findButton(panel.window.document, 'Record').click(); await flush(); });
+  await act(async () => flush());
+  await act(async () => { findButton(panel.window.document, 'Stop recording').click(); await flush(); });
+  await act(async () => flush());
+  await act(async () => { findButton(panel.window.document, finish).click(); await flush(); });
+}
+
+test('a voice-only message is sent without a quote marker, from the dialog and from the draft (#243)', async () => {
+  const requests: unknown[][] = [];
+  const panel = await replyPanel(async (...args) => { requests.push(args); return { ok: true }; });
+  await prepareVoice(panel, 'line one\nline two');
+  await dictate(panel, 'Send');
+  assert.deepEqual(requests.map((request) => (request[2] as { text: string }).text), ['🎙️ line one\nline two']);
+  await dictate(panel, 'Insert to edit');
+  assert.equal(panel.textarea().value, '> 🎙️ line one\n> line two', 'the draft keeps the quoted form until it is sent');
+  await panel.send();
+  assert.deepEqual(requests.map((request) => (request[2] as { text: string }).text), ['🎙️ line one\nline two', '🎙️ line one\nline two']);
+});
+
+test('voice next to typed text keeps the quote on every transcript line (#243)', async () => {
+  const requests: unknown[][] = [];
+  const panel = await replyPanel(async (...args) => { requests.push(args); return { ok: true }; });
+  await prepareVoice(panel, 'line one\nline two');
+  await panel.write('typed first');
+  await dictate(panel, 'Insert to edit');
+  await panel.send();
+  await dictate(panel, 'Insert to edit');
+  await panel.write(`${panel.textarea().value}\n\ntyped after`);
+  await panel.send();
+  assert.deepEqual(requests.map((request) => (request[2] as { text: string }).text), [
+    'typed first\n\n> 🎙️ line one\n> line two',
+    '> 🎙️ line one\n> line two\n\ntyped after',
+  ]);
+  await panel.write('> typed quote');
+  await panel.send();
+  assert.equal((requests[2]?.[2] as { text: string }).text, '> typed quote', 'typed text starting with > is not altered');
+});
+
 test('a live conversation submits one fenced multiline reply and clears only an acknowledged draft', async () => {
   const requests: unknown[][] = [];
   const pending = deferred<{ ok: boolean }>();
@@ -883,9 +959,9 @@ test('a failed voice reply keeps the tagged transcript in the reply composer for
   await act(async () => { findButton(panel.window.document, 'Stop recording').click(); await flush(); });
   await act(async () => flush());
   await act(async () => { findButton(panel.window.document, 'Send').click(); await flush(); });
-  assert.equal(panel.textarea().value, "'report.txt'\n\n> [語音] reviewed voice reply");
+  assert.equal(panel.textarea().value, "'report.txt'\n\n> 🎙️ reviewed voice reply");
   assert.match(panel.container.textContent ?? '', /Local storage unavailable/);
-  assert.deepEqual(requests[0], ['maple', 'hs-7', { text: "'report.txt'\n\n> [語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
+  assert.deepEqual(requests[0], ['maple', 'hs-7', { text: "'report.txt'\n\n> 🎙️ reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
   const dialog = panel.window.document.querySelector('[role="dialog"][aria-label="Voice prompt"]');
   assert.ok(dialog, 'failed admission keeps the review dialog open');
   assert.match(dialog.textContent ?? '', /not sent.*remains in your reply draft/i);
@@ -895,7 +971,7 @@ test('a failed voice reply keeps the tagged transcript in the reply composer for
   await panel.send();
   assert.equal(panel.textarea().value, '');
   assert.equal(attempts, 2);
-  assert.deepEqual(requests[1], ['maple', 'hs-7', { text: "'report.txt'\n\n> [語音] reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
+  assert.deepEqual(requests[1], ['maple', 'hs-7', { text: "'report.txt'\n\n> 🎙️ reviewed voice reply", expected_session_incarnation: 'inc-1' }]);
 });
 
 test('a voice reply stays fenced to the session incarnation where its dialog opened', async () => {
@@ -941,7 +1017,7 @@ test('a voice reply stays fenced to the session incarnation where its dialog ope
   await act(async () => flush());
   await act(async () => { findButton(panel.window.document, 'Send').click(); await flush(); });
   assert.deepEqual(requests, [], 'a reviewed voice command is not admitted to the replacement session');
-  assert.equal(panel.textarea().value, '> [語音] reviewed voice reply');
+  assert.equal(panel.textarea().value, '> 🎙️ reviewed voice reply');
   assert.match(panel.container.textContent ?? '', /session restarted/i);
 });
 test('restarting the session fences an existing reply draft until it is explicitly discarded', async () => {

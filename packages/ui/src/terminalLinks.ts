@@ -3,7 +3,7 @@ import { isTauri } from "./runtime.ts";
 
 const URL_START_RE = /\b(?:https?:\/\/|www\.)/gi;
 const TRAILING_PUNCTUATION_RE = /[,.;:!?]+$/;
-const HARD_URL_BOUNDARY_RE = /[\s<>"'`，。；：！？、（）［］｛｝【】〈〉《》「」『』〔〕〖〗〘〙〚〛…—＂＇｀＜＞]/u;
+const HARD_URL_BOUNDARY_RE = /[\s<>"'`\uFF0C\u3002\uFF1B\uFF1A\uFF01\uFF1F\u3001\uFF08\uFF09\uFF3B\uFF3D\uFF5B\uFF5D\u3010\u3011\u3008\u3009\u300A\u300B\u300C\u300D\u300E\u300F\u3014\u3015\u3016\u3017\u3018\u3019\u301A\u301B\u2026\u2014\uFF02\uFF07\uFF40\uFF1C\uFF1E]/u;
 const OPENING_DELIMITERS: Readonly<Record<string, string>> = {
   "(": ")",
   "[": "]",

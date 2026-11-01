@@ -50,7 +50,7 @@ function uploadedFile(quoted: string, owner: string | undefined): UploadedFile |
   if (!match || path.split("/").includes("..")) return null;
   if (owner !== undefined && match[1] !== owner) return null;
   const name = match[2]!;
-  return { path, label: `[${IMAGE_NAME.test(name) ? "圖片" : "檔案"} ${name}]` };
+  return { path, label: `[${IMAGE_NAME.test(name) ? "Image" : "File"} ${name}]` };
 }
 
 /** Replace each quoted upload path in a message with a link the bubble renders as a chip. */
