@@ -90,7 +90,7 @@
     "dev": "pnpm --filter @agent-console/shared run build:package && vite",
     "build": "pnpm run build:package && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "NODE_OPTIONS=--conditions=source node --test test/domAssertSafety.test.ts && NODE_OPTIONS=--conditions=source node --test --test-reporter=tap --test-concurrency=3 test/*.test.ts",
+    "test": "NODE_OPTIONS=--conditions=source node --test test/domAssertSafety.test.ts && NODE_OPTIONS=--conditions=source node --test --test-reporter=tap --test-concurrency=${UI_TEST_CONCURRENCY:-3} test/*.test.ts",
     "preview": "vite preview",
     "build:package": "node ../../scripts/build-core-package.ts ui"
   },

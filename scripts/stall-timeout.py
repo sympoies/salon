@@ -6,7 +6,7 @@ Usage: stall-timeout.py <label> <command> [args...]
 A step that keeps printing is never stopped, however long it runs. The silence
 limit is VALIDATION_STALL_SECONDS (default 900; 0 disables it). On a stall the
 step's whole process group is stopped, the step is named on stderr and the exit
-status is 124.
+status is 124. A step that fails or is killed is named on stderr as well.
 """
 
 import os
@@ -57,7 +57,11 @@ def main() -> int:
             last_output = time.monotonic()
             sys.stdout.buffer.write(chunk)
             sys.stdout.buffer.flush()
-    return process.wait()
+    status = process.wait()
+    if status != 0:
+        how = f"killed by signal {-status}" if status < 0 else f"exited {status}"
+        print(f"Validation step failed: {label}: {how}.", file=sys.stderr)
+    return status
 
 
 if __name__ == "__main__":

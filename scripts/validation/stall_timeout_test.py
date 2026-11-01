@@ -41,7 +41,15 @@ class StallTimeoutTest(unittest.TestCase):
         self.assertIn("tick 8", result.stdout)
 
     def test_exit_status_of_the_step_is_kept(self):
-        self.assertEqual(run(5, "failing step", "bash", "-c", "exit 7").returncode, 7)
+        result = run(5, "failing step", "bash", "-c", "exit 7")
+        self.assertEqual(result.returncode, 7)
+        self.assertIn("failing step", result.stderr)
+
+    def test_step_killed_by_a_signal_is_reported_by_name(self):
+        result = run(5, "killed step", "bash", "-c", "kill -9 $$")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("killed step", result.stderr)
+        self.assertIn("signal 9", result.stderr)
 
 
 if __name__ == "__main__":
