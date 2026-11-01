@@ -154,3 +154,15 @@ test("a chip sits inside a mixed message with a quoted voice transcript", async 
   assert.equal(container.querySelectorAll("button.attachment-chip").length, 1);
   assert.match(container.querySelector("blockquote")?.textContent ?? "", /^\[語音·Fast\] line one\s*line two$/);
 });
+
+test("quoted upload paths inside tilde-fenced and indented code stay literal code", async () => {
+  const path = `'${OWN_DIR}/c.png'`;
+  const text = `~~~sh\ncat ${path}\n~~~\n\n    run ${path}\n\n\`\`\`\`\n\`\`\`\n${path}\n\`\`\`\n\`\`\`\`\n\nafter ${path}`;
+  const { container } = await renderMarkdown(text, { uploadSessionId: "s-1" });
+  const chips = [...container.querySelectorAll("button.attachment-chip")];
+  assert.deepEqual(chips.map((chip) => chip.textContent), ["[圖片 c.png]"], "only the paragraph after the code becomes a chip");
+  const code = [...container.querySelectorAll("pre")].map((pre) => pre.textContent ?? "");
+  assert.equal(code.length, 3);
+  for (const block of code) assert.ok(block.includes(path), `code keeps the original quoted path: ${block}`);
+  assert.doesNotMatch(container.textContent ?? "", /salon-attachment|\[file\]/);
+});
