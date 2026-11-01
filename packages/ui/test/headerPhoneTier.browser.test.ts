@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { hasHeadlessChrome, measureUiMarkup } from "./support/browserLayout.ts";
-import { headerFixture } from "./support/headerFixture.ts";
+import { headerFixture, headerMeasure, measureHeaderMarkup } from "./support/headerFixture.ts";
 import { uiSource, uiStyles } from "./support/source.ts";
 import { isPhoneWidth } from "../src/phoneTier.ts";
 
@@ -102,17 +102,17 @@ for (const [width, coarse] of [[761, false], [1024, false], [1025, true], [1500,
 // One rule (#968): the header's CSS and measurement use the phone tier that
 // Dashboard's single-column layout uses, published as data-phone-tier.
 test("the header CSS and measurement share Dashboard's phone tier", () => {
-  const desktop = ':where(:root:not([data-phone-tier="true"]))';
+  const desktop = ':where(:root:not([data-phone-header="true"]))';
   const dashboard = uiSource("Dashboard.tsx");
   assert.match(dashboard, /mobile: isPhoneTier\(\)/);
-  assert.ok(uiSource("headerResponsive.ts").includes("dataset.phoneTier"), "the measurement uses the published phone tier");
+  assert.ok(uiSource("headerResponsive.ts").includes("dataset.phoneHeader"), "the measurement uses the published header tier");
   const css = uiStyles();
   const hasRule = (prefix: string, rule: string) => {
     const at = css.indexOf(`${prefix} ${rule}`);
     assert.ok(at >= 0, `missing rule: ${prefix} ${rule}`);
   };
   assert.doesNotMatch(css, /@media[^{]*\(pointer: coarse\) and \(max-width: 1024px\)/, "no media query repeats the phone tier");
-  hasRule(':where(:root[data-phone-tier="true"]:not([data-mac-titlebar="true"]):not([data-android-app="true"]))', ".workspace-head .layout-picker { display: none; }");
+  hasRule(':where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"]))', ".workspace-head .layout-picker { display: none; }");
   hasRule(desktop, ".workspace-head .session-status-count-label");
 });
 
@@ -126,28 +126,31 @@ test("the Android app at 900px with a fine pointer gets the computed phone heade
   const fixture = await headerFixture();
   try {
     const m = measureUiMarkup<TierMeasure & { areas: string }>(fixture.markup(900, false, false, false, BUSY_COUNTS), 900,
-      `document.documentElement.dataset.phoneTier="true";${measure}result.areas=getComputedStyle(header).gridTemplateAreas;`);
+      `document.documentElement.dataset.phoneHeader="true";${measure}result.areas=getComputedStyle(header).gridTemplateAreas;`);
     const detail = JSON.stringify(m);
     assert.equal(m.coarse, false, `the pointer is fine: ${detail}`);
     assert.equal(m.picker, false, `no layout button in the phone layout: ${detail}`);
-    assert.match(m.areas, /"brand status actions"\s+"pages pages pages"/, `the two-row phone header grid applies: ${detail}`);
+    assert.match(m.areas, /"brand status usage actions"\s+"pages pages pages pages"/, `the two-row phone header grid applies: ${detail}`);
     assert.ok(m.overflow <= 1, `no horizontal overflow: ${detail}`);
   } finally { await fixture.close(); }
 });
 
-// #219: the Android app keeps the layout control in its phone header; below 600px it collapses to the menu button.
-for (const [width, inline, trigger] of [[900, true, false], [360, false, true]] as const) {
-  test(`the Android phone header offers the layout control at ${width}px`, async t => {
+// #238: a Settings layout shows the Android tile grid (data-phone-tier false) at any width, but the
+// header keeps following the raw width, so the quota strip and header controls never overlap at phone width.
+for (const width of [360, 412]) for (const tier of ["false", "true"]) {
+  test(`the Android header at ${width}px does not overlap its controls ${tier === "false" ? "with a Settings layout" : "on the phone list"}`, async t => {
     if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
     const fixture = await headerFixture();
     try {
-      const m = measureUiMarkup<TierMeasure & { inline: boolean; trigger: boolean }>(fixture.markup(width, false, false, false, OWNER_COUNTS), width,
-        `document.documentElement.dataset.phoneTier="true";document.documentElement.dataset.androidApp="true";${measure}`
-        + `const shownOf=s=>{const e=header.querySelector(s);return !!e&&visible(e)};result.inline=shownOf('.layout-picker-inline');result.trigger=shownOf('.layout-picker-trigger');`);
+      const m = measureHeaderMarkup<{ intersecting: string[]; bounded: boolean; overflow: number }>(fixture.markup(width, false, false, true), width,
+        `document.documentElement.dataset.phoneTier="${tier}";document.documentElement.dataset.phoneHeader="true";`
+        + `const header=document.querySelector('.workspace-head');const shown=[...header.querySelectorAll('.brand-title,.session-status-count,.session-list-pagination,.session-filter-searchbar,.header-usage,.header-menu-trigger,.dashboard-new-session')]`
+        + `.filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0}).map(e=>({name:e.className.toString().split(' ')[0],r:e.getBoundingClientRect()}));`
+        + `const intersecting=[];shown.forEach((a,i)=>shown.forEach((b,j)=>{if(i<j&&Math.min(a.r.right,b.r.right)-Math.max(a.r.left,b.r.left)>1&&Math.min(a.r.bottom,b.r.bottom)-Math.max(a.r.top,b.r.top)>1)intersecting.push(a.name+'/'+b.name)}));`
+        + `const result={intersecting,bounded:shown.every(c=>c.r.left>=-1&&c.r.right<=innerWidth+1),overflow:document.documentElement.scrollWidth-innerWidth};`);
       const detail = JSON.stringify(m);
-      assert.equal(m.picker, true, `the layout control is visible: ${detail}`);
-      assert.equal(m.inline, inline, `inline layout buttons: ${detail}`);
-      assert.equal(m.trigger, trigger, `layout menu button: ${detail}`);
+      assert.deepEqual(m.intersecting, [], `the quota strip and header controls do not overlap: ${detail}`);
+      assert.equal(m.bounded, true, `the header controls stay inside the viewport: ${detail}`);
       assert.ok(m.overflow <= 1, `no horizontal overflow: ${detail}`);
     } finally { await fixture.close(); }
   });
