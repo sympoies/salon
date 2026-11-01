@@ -55,11 +55,11 @@ test("coarse-pointer overview controls share the same 44px toolbar geometry", ()
 test("narrow overview controls share the same 44px toolbar geometry regardless of pointer type", () => {
   assert.match(
     styles,
-    /:where\(:root\[data-phone-tier="true"\]\) [\s\S]*?\.workspace-head:has\(\.session-list-navigator\) \.session-list-group-trigger,\s*:where\(:root\[data-phone-tier="true"\]\) \.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions \.header-menu-trigger,\s*:where\(:root\[data-phone-tier="true"\]\) \.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions > \.btn \{[^}]*height:\s*44px;[^}]*min-height:\s*44px;/s,
+    /:where\(:root\[data-phone-header="true"\]\) [\s\S]*?\.workspace-head:has\(\.session-list-navigator\) \.session-list-group-trigger,\s*:where\(:root\[data-phone-header="true"\]\) \.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions \.header-menu-trigger,\s*:where\(:root\[data-phone-header="true"\]\) \.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions > \.btn \{[^}]*height:\s*44px;[^}]*min-height:\s*44px;/s,
   );
   assert.match(
     styles,
-    /:where\(:root\[data-phone-tier="true"\]\) [\s\S]*?\.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions \.header-menu-trigger \{[^}]*width:\s*44px;/s,
+    /:where\(:root\[data-phone-header="true"\]\) [\s\S]*?\.workspace-head:has\(\.session-list-navigator\) \.dash-create-actions \.header-menu-trigger \{[^}]*width:\s*44px;/s,
   );
 });
 

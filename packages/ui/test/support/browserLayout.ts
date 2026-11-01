@@ -12,7 +12,7 @@ export function hasHeadlessChrome(): boolean {
 }
 
 /** Publishes the tier the way the app does (phoneTier.ts), for pages that load styles.css directly. */
-export const phoneTierScript = `<script>document.documentElement.dataset.phoneTier=String((${isPhoneWidth.toString()})(innerWidth,matchMedia('(pointer: coarse)').matches,false));</script>`;
+export const phoneTierScript = `<script>const tier=String((${isPhoneWidth.toString()})(innerWidth,matchMedia('(pointer: coarse)').matches,false));document.documentElement.dataset.phoneTier=tier;document.documentElement.dataset.phoneHeader=tier;</script>`;
 
 /** Chrome clamps its window width; an iframe gives phone tests the exact viewport. */
 export function measureUiMarkup<T>(markup: string, width: number, script: string, reducedMotion = false, height = 800, chromeArgs: readonly string[] = [], hideScrollbars = true): T {

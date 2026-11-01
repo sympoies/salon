@@ -38,7 +38,7 @@ import { orderForCreatedSession } from "./layoutOrder.ts";
 import { updateHeaderCompaction } from "./headerResponsive.ts";
 import { LayoutPicker } from "./LayoutPicker.tsx";
 import { isAndroidTauri, isMacTauri } from "./runtime.ts";
-import { isCoarsePointer, isPhoneTier, setAndroidTileGrid, watchPhoneTier } from "./phoneTier.ts";
+import { isCoarsePointer, isPhoneHeader, isPhoneTier, setAndroidTileGrid, watchPhoneTier } from "./phoneTier.ts";
 import { pruneAutoTitleStates } from "./autoTitle.ts";
 import {
   createdSessionAutoTitleState,
@@ -102,6 +102,7 @@ import { accountRecoveryPolicy, sessionAccountChoices, sessionAccountProvider } 
 import { accountMachineKeys, useAccountInventories } from "./useAccountInventories.ts";
 import { SessionSlot } from "./SessionSlot.tsx";
 import type { CardPreview } from "./cardPreview.ts";
+import type { AndroidLayout } from "./androidLayout.ts";
 import type { SessionListDisplay } from "./sessionListDisplay.ts";
 import { SessionListNavigator } from "./SessionListNavigator.tsx";
 import { countSessionStatuses, sessionStatusEvidence } from "./sessionStatusGroups.ts";
@@ -206,8 +207,6 @@ const ALL = "__all__";
 const NEW_SESSION = "__new__";
 const MODE_STORAGE = "agent-console.layout.mode";
 const AUTO_STORAGE = "agent-console.layout.auto";
-// Set once the layout control is used; the Android app keeps its phone list until then (#219).
-const CHOSEN_STORAGE = "agent-console.layout.chosen";
 const SLOTS_STORAGE = "agent-console.layout.slots";
 const SESSION_LIST_NAVIGATION_HINT = "Selected session · Cmd-F to open";
 
@@ -215,6 +214,8 @@ interface Viewport {
   readonly width: number;
   readonly height: number;
   readonly mobile: boolean;
+  /** The raw width tier: the workspace header follows it while the Android tile grid is shown (#238). */
+  readonly headerMobile: boolean;
   /** Primary pointer is coarse, whatever the width: decides how a session opens, not the layout. */
   readonly touchPrimary: boolean;
 }
@@ -287,13 +288,13 @@ function readSlots(): SlotKey[] {
 
 function currentViewport(): Viewport {
   if (typeof window === "undefined") {
-    return { width: 1024, height: 768, mobile: false, touchPrimary: false };
+    return { width: 1024, height: 768, mobile: false, headerMobile: false, touchPrimary: false };
   }
   const width = window.innerWidth;
   const height = window.innerHeight;
   // The Android app is always a touch client, even when a stylus reports a fine pointer.
   const touchPrimary = isCoarsePointer() || isAndroidTauri();
-  return { width, height, mobile: isPhoneTier(), touchPrimary };
+  return { width, height, mobile: isPhoneTier(), headerMobile: isPhoneHeader(), touchPrimary };
 }
 
 function isTerminalShortcutTarget(target: EventTarget | null): boolean {
@@ -544,6 +545,8 @@ export interface DashboardProps {
   /** Phones show the single-session count row unless this device hid it (#938). */
   readonly phoneFocusCounts?: boolean;
   readonly sessionListDisplay?: SessionListDisplay;
+  /** The Android app's per-device Session layout from Settings (#238); the phone list by default. */
+  readonly androidLayout?: AndroidLayout;
   readonly cardPreview?: CardPreview;
   readonly operatorCapabilities?: {
     readonly debug: boolean;
@@ -575,6 +578,7 @@ export function Dashboard({
   phoneSessionOpen = "conversation",
   phoneFocusCounts = true,
   sessionListDisplay = "terminal",
+  androidLayout = "list",
   cardPreview = "latest-message",
   operatorCapabilities = DEFAULT_OPERATOR_CAPABILITIES,
   onDebug,
@@ -650,14 +654,15 @@ export function Dashboard({
   const [autoLayout, setAutoLayout] = useState<boolean>(() => readAutoLayout());
   const [slots, setSlots] = useState<SlotKey[]>(() => readSlots());
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const [layoutChosen, setLayoutChosen] = useState(() => localStorageGetItem(CHOSEN_STORAGE) === "1");
-  const chooseLayout = useCallback(() => {
-    setLayoutChosen(true);
-    localStorageSetItem(CHOSEN_STORAGE, "1");
-  }, []);
+  const androidTileMode = isAndroidTauri() && androidLayout !== "list" ? androidLayout : null;
   useEffect(() => {
-    setAndroidTileGridState(isAndroidTauri() && layoutChosen && focusedKey === null && conversationKey === null);
-  }, [layoutChosen, focusedKey, conversationKey]);
+    if (androidTileMode === null) return;
+    setLayoutMode(androidTileMode);
+    setAutoLayout(false);
+  }, [androidTileMode]);
+  useEffect(() => {
+    setAndroidTileGridState(androidTileMode !== null && focusedKey === null && conversationKey === null);
+  }, [androidTileMode, focusedKey, conversationKey]);
   const pollingMachinesKey = permittedMachines.join("\0");
   const pollingMachines = useMemo(() => pollingMachinesKey ? pollingMachinesKey.split("\0") : [], [pollingMachinesKey]);
   // Keep all permitted hosts available for creation and host-specific pages;
@@ -2890,7 +2895,7 @@ export function Dashboard({
               resultCount={overviewFilteredSessions.length}
               statusCounts={overviewStatusCounts}
               open={mobileOverviewNavOpen}
-              mobile={viewport.mobile}
+              mobile={viewport.headerMobile}
               onOpenChange={setMobileOverviewNavOpen}
               onPageChange={changeOverviewPage}
             />
@@ -2926,9 +2931,10 @@ export function Dashboard({
                 <SelectChevronIcon />
               </label>
             ) : null}
-            <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
-              onToggleAuto={() => { chooseLayout(); setAutoLayout(current => !current); }}
-              onSelect={mode => { chooseLayout(); setAutoLayout(false); setLayoutMode(mode); }} />
+            {/* The Android app sets its layout in Settings (#238). */}
+            {isAndroidTauri() ? null : <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
+              onToggleAuto={() => setAutoLayout(current => !current)}
+              onSelect={mode => { setAutoLayout(false); setLayoutMode(mode); }} />}
           </div>
           <div className="dash-group dash-create-actions">
             <HeaderMenu

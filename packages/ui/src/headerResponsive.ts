@@ -15,7 +15,7 @@ export function chooseHeaderCompactStage(fits: (stage: HeaderCompactStage) => bo
  */
 export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage | null {
   // The tier published by syncPhoneTier, the same one the phone header rules in styles.css use.
-  if (document.documentElement.dataset.phoneTier === "true"
+  if (document.documentElement.dataset.phoneHeader === "true"
     && document.documentElement.dataset.macTitlebar !== "true") {
     header.removeAttribute("data-header-compact");
     // Count buttons shrink and clip before they overlap, so both are checked.

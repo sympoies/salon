@@ -18,20 +18,26 @@ export function setAndroidTileGrid(on: boolean): void {
   syncPhoneTier();
 }
 
-export function isPhoneTier(): boolean {
+/** The raw width rule. The header follows it even while the Android tile grid is shown (#238). */
+export function isPhoneHeader(): boolean {
   if (typeof window === "undefined") return false;
-  // A chosen tile layout overrides every width and pointer fallback of the phone tier.
-  if (androidTileGrid && isAndroidTauri()) return false;
   return isPhoneWidth(window.innerWidth, isCoarsePointer(), isAndroidTauri());
+}
+
+export function isPhoneTier(): boolean {
+  // A chosen tile layout overrides the body's phone rules at every width and pointer.
+  if (androidTileGrid && isAndroidTauri()) return false;
+  return isPhoneHeader();
 }
 
 /**
  * Publish the tier on the root element so styles.css follows the same decision
- * as the JS layout; the phone rules there are keyed on `data-phone-tier`.
+ * as the JS layout; the phone rules there are keyed on `data-phone-tier` (body)
+ * and `data-phone-header` (the workspace header).
  */
 export function syncPhoneTier(): void {
   document.documentElement.dataset.phoneTier = String(isPhoneTier());
-  document.documentElement.dataset.androidApp = String(isAndroidTauri());
+  document.documentElement.dataset.phoneHeader = String(isPhoneHeader());
 }
 
 export function watchPhoneTier(): () => void {
