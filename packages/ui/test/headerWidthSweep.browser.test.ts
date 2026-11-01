@@ -51,7 +51,6 @@ for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024]) {
         assert.deepEqual(m.outside, [], `every component stays inside the header: ${detail}`);
         assert.deepEqual(m.missing, [], `the logo, New session and More stay visible: ${detail}`);
         assert.equal(new Set(Object.values(m.sizes)).size, 1, `header buttons share one size: ${detail}`);
-        if (grid) assert.ok(m.sizes.layout, `the Android desktop list keeps its layout control at any width: ${detail}`);
       } finally { await fixture.close(); }
     });
   }

@@ -664,7 +664,12 @@ export function Dashboard({
   }, [androidDesktop]);
   // The list screen uses the desktop grid; an opened session is the phone view.
   useEffect(() => {
-    setAndroidTileGridState(androidDesktop && focusedKey === null && conversationKey === null);
+    const onList = androidDesktop && focusedKey === null && conversationKey === null;
+    setAndroidTileGridState(onList);
+    // Lets the phone-width header keep its layout trigger on the Android Desktop list.
+    if (onList) document.documentElement.dataset.androidDesktop = "true";
+    else delete document.documentElement.dataset.androidDesktop;
+    return () => { delete document.documentElement.dataset.androidDesktop; };
   }, [androidDesktop, focusedKey, conversationKey]);
   const pollingMachinesKey = permittedMachines.join("\0");
   const pollingMachines = useMemo(() => pollingMachinesKey ? pollingMachinesKey.split("\0") : [], [pollingMachinesKey]);
@@ -2935,7 +2940,7 @@ export function Dashboard({
               </label>
             ) : null}
             {/* The Android app shows the grid layout control only in Desktop (#252). */}
-            {isAndroidTauri() && !androidDesktop ? null : <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
+            {isAndroidTauri() ? null : <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
               onToggleAuto={() => setAutoLayout(current => !current)}
               onSelect={mode => { setAutoLayout(false); setLayoutMode(mode); }} />}
           </div>
@@ -2970,6 +2975,10 @@ export function Dashboard({
             >
               <PlusIcon />
             </IconButton>
+            {/* The Android Desktop list keeps its layout control beside New and More (#252). */}
+            {androidDesktop ? <LayoutPicker auto={autoLayout} mode={layoutMode} displayedMode={displayedDesktopMode}
+              onToggleAuto={() => setAutoLayout(current => !current)}
+              onSelect={mode => { setAutoLayout(false); setLayoutMode(mode); }} /> : null}
           </div>
         </div>
         {repairToastMessage ? (
