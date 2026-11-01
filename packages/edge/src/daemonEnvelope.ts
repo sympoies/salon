@@ -833,6 +833,48 @@ function switchedAccountProvider(data: Record<string, unknown> | undefined): Acc
     : "codex";
 }
 
+// A refused Claude switch names its cause. Only these allow-listed scalars cross
+// the edge; the daemon's other detail fields, paths and raw output stay private.
+const REFUSED_SWITCH_LEFT_UNCHANGED = "; the running session was left unchanged";
+const CLAUDE_SWITCH_REFUSED_CAUSES: Readonly<Record<string, { readonly message: string; readonly reasons?: Readonly<Record<string, string>> }>> = {
+  "claude-account-broker-invalid-response": { message: "the Claude account broker returned an invalid response" },
+  "claude-account-broker-rejected": { message: "the Claude account broker rejected the switch" },
+  "claude-account-broker-unavailable": { message: "the Claude account broker is unavailable, try again later" },
+  "claude-account-broker-timeout": { message: "the Claude account broker did not answer in time, try again later" },
+  "claude-account-credentials-unverified": { message: "the new Claude account's credentials could not be verified" },
+  "claude-account-dir-unsafe": {
+    message: "the Claude account directory failed its safety check",
+    reasons: {
+      world_writable: "the directory is writable by other users",
+      not_absolute: "the directory path is not absolute",
+      missing: "the directory is missing",
+      not_directory: "the path is not a directory",
+      not_owned: "the directory is not owned by the service user",
+      credentials_missing: "the credentials file is missing",
+      credentials_not_regular: "the credentials entry is not a regular file",
+      credentials_not_owned: "the credentials file is not owned by the service user",
+    },
+  },
+  "claude-publication-unavailable": {
+    message: "the new Claude account could not be published to the session",
+    reasons: { invalid_response: "the response was invalid", capability_missing: "a required capability is missing" },
+  },
+};
+
+function refusedClaudeSwitch(errorValue: { details?: unknown } | undefined): { code: string; message: string; details: { cause: string; reason?: string } } | undefined {
+  const details = errorValue?.details;
+  if (typeof details !== "object" || details === null) return undefined;
+  const { cause, reason } = details as { cause?: unknown; reason?: unknown };
+  const known = typeof cause === "string" && Object.hasOwn(CLAUDE_SWITCH_REFUSED_CAUSES, cause) ? CLAUDE_SWITCH_REFUSED_CAUSES[cause] : undefined;
+  if (!known || typeof cause !== "string") return undefined;
+  const phrase = typeof reason === "string" && known.reasons && Object.hasOwn(known.reasons, reason) ? known.reasons[reason] : undefined;
+  return {
+    code: "claude-account-switch-refused",
+    message: `${known.message}${phrase ? ` (${phrase})` : ""}${REFUSED_SWITCH_LEFT_UNCHANGED}`,
+    details: { cause, ...(phrase && typeof reason === "string" ? { reason } : {}) },
+  };
+}
+
 /**
  * Forwards the provider-routed `PUT /sessions/{id}/account` answer once it
  * confirms the requested account: a Codex switch applied or queued behind the
@@ -849,9 +891,14 @@ export function forwardSessionAccountDaemon(
   const body = r.body as {
     ok?: boolean;
     data?: Record<string, unknown>;
-    error?: { code?: unknown; details?: { reason?: unknown } };
+    error?: { code?: unknown; details?: unknown };
   } | undefined;
   if (!ok2xx || body?.ok === false) {
+    const refused = r.status === 422 && body?.error?.code === "claude-account-switch-refused" ? refusedClaudeSwitch(body.error) : undefined;
+    if (refused) {
+      sendJson(res, 422, { ok: false, error: refused });
+      return;
+    }
     sendJson(res, ok2xx ? 502 : r.status, {
       ok: false,
       error: safeDaemonError(body?.error?.code, "account switch failed"),

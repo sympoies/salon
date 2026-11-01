@@ -2705,6 +2705,16 @@ test("Codex account switch bounds browser transport and treats rejection as inde
   });
 });
 
+test("a refused Claude account switch shows the edge's typed message and is not an unknown outcome", async () => {
+  const message = "the Claude account broker did not answer in time, try again later; the running session was left unchanged";
+  setFetchMock(async () => jsonResponse({
+    ok: false,
+    error: { code: "claude-account-switch-refused", message, details: { cause: "claude-account-broker-timeout" } },
+  }, { status: 422 }));
+
+  assert.deepEqual(await switchSessionAccount("claude", "maple", "s1", "sym", "launch-s1"), { ok: false, error: message });
+});
+
 test("Codex account switch rejects confirmation for another runtime incarnation", async () => {
   setFetchMock(async () => jsonResponse({
     ok: true,
