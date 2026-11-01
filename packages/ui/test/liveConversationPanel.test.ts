@@ -836,6 +836,27 @@ test('a voice-only message is sent without a quote marker, from the dialog and f
   assert.deepEqual(requests.map((request) => (request[2] as { text: string }).text), ['🎙️ line one\nline two', '🎙️ line one\nline two']);
 });
 
+test('an attached upload plus voice is sent plain, and typed text beside it keeps the quote (#243)', async () => {
+  const requests: unknown[][] = [];
+  const panel = await replyPanel(async (...args) => { requests.push(args); return { ok: true }; });
+  await prepareVoice(panel, 'line one\nline two');
+  const upload = "'/state/sessions/hs-7/attachments/shot.png'";
+  await panel.write(`${upload}\n`);
+  await dictate(panel, 'Insert to edit');
+  assert.equal(panel.textarea().value, `${upload}\n\n> 🎙️ line one\n> line two`);
+  await panel.send();
+  await panel.write(`${upload}\n`);
+  await dictate(panel, 'Send');
+  await panel.write(`typed note\n\n${upload}\n`);
+  await dictate(panel, 'Insert to edit');
+  await panel.send();
+  assert.deepEqual(requests.map((request) => (request[2] as { text: string }).text), [
+    `${upload}\n\n🎙️ line one\nline two`,
+    `${upload}\n\n🎙️ line one\nline two`,
+    `typed note\n\n${upload}\n\n> 🎙️ line one\n> line two`,
+  ]);
+});
+
 test('voice next to typed text keeps the quote on every transcript line (#243)', async () => {
   const requests: unknown[][] = [];
   const panel = await replyPanel(async (...args) => { requests.push(args); return { ok: true }; });

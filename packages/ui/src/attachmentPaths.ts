@@ -74,3 +74,11 @@ export function shortenUploadedFiles(text: string): string {
 export function uploadedFilePaths(text: string, owner: string): readonly string[] {
   return linkUploadedFiles(text, owner).files.map((file) => file.path);
 }
+
+const WHOLE_QUOTED = /^'((?:[^']|'\\'')*)'$/;
+
+/** Whether a line is exactly one quoted upload path, as the composer adds for an attached file. */
+export function isUploadedPathLine(line: string): boolean {
+  const quoted = WHOLE_QUOTED.exec(line.trim())?.[1];
+  return quoted !== undefined && uploadedFile(quoted, undefined) !== null;
+}
