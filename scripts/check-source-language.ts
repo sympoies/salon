@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 // Package source is language-neutral English. Chinese, Japanese and Korean text,
 // including fullwidth punctuation, is reported; write such code points as escapes.
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}　-〿＀-￯]/u;
-const PACKAGE_SOURCE = /^packages\/[^/]+\/src\/.+\.(?:ts|tsx|js|jsx|mjs|cjs|css)$/;
+// Every tracked text file under a package `src`, code or not (SVG titles, Markdown,
+// licenses); a NUL byte marks a binary file such as a font, which is skipped.
+const PACKAGE_SOURCE = /^packages\/[^/]+\/src\//;
 
 // The only literal CJK allowed: parsers for voice tags that earlier releases stored.
 export const SOURCE_LANGUAGE_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
@@ -22,7 +24,7 @@ export const SOURCE_LANGUAGE_ALLOWLIST: Readonly<Record<string, readonly string[
 export function findSourceLanguageViolations(files: Iterable<readonly [path: string, text: string]>): string[] {
   const violations: string[] = [];
   for (const [path, text] of files) {
-    if (!PACKAGE_SOURCE.test(path)) continue;
+    if (!PACKAGE_SOURCE.test(path) || text.includes("\0")) continue;
     const allowed = new Set(SOURCE_LANGUAGE_ALLOWLIST[path] ?? []);
     text.split("\n").forEach((line, index) => {
       if (CJK.test(line) && !allowed.has(line)) violations.push(`${path}:${index + 1}`);

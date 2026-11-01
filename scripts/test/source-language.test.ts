@@ -32,6 +32,20 @@ test("ASCII, emoji and escaped code points pass, and tests and non-package files
   ]), []);
 });
 
+test("non-code text under package source is scanned too, and binary files are skipped", () => {
+  assert.deepEqual(findSourceLanguageViolations([
+    ["packages/ui/src/assets/mark.svg", "<svg>\n<title>標誌</title>\n</svg>\n"],
+    ["packages/ui/src/notes.md", "# 說明\n"],
+    ["packages/ui/src/fonts/LICENSE", "License 許可\n"],
+    ["packages/ui/src/readme.txt", "plain\n"],
+    ["packages/ui/src/fonts/face.woff2", "wOF2\u0000\u0001 保 \u0000"],
+  ]), [
+    "packages/ui/src/assets/mark.svg:2",
+    "packages/ui/src/notes.md:1",
+    "packages/ui/src/fonts/LICENSE:1",
+  ]);
+});
+
 test("only the fixed legacy-parser lines are allowed, and nothing else in their file", () => {
   const allowed = allowedLines.join("\n");
   assert.deepEqual(findSourceLanguageViolations([[allowedPath, `${allowed}\n`]]), []);
