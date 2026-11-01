@@ -15,6 +15,8 @@ export interface MailboxEvent {
   readonly acknowledged_at: string | null;
   readonly revision: number;
   readonly availability: "complete";
+  /** `lf`: the producer put one LF before a body that begins with a notice marker; the row removes it. */
+  readonly body_prefix: "none" | "lf";
 }
 
 const SCHEMA = "agent-session.mailbox-read-event.v1";
@@ -34,6 +36,7 @@ export function normalizeMailboxEvent(value: unknown): MailboxEvent | undefined 
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const raw = value as Record<string, unknown>;
   if (raw.schema_version !== SCHEMA || raw.availability !== "complete") return undefined;
+  const bodyPrefix = raw.body_prefix === "none" || raw.body_prefix === "lf" ? raw.body_prefix : undefined;
   const messageId = bounded(raw.message_id, 96);
   const category = typeof raw.category === "string" && CATEGORIES.has(raw.category) ? raw.category as MailboxEvent["category"] : undefined;
   const state = raw.state === "read" || raw.state === "acknowledged" ? raw.state : undefined;
@@ -44,12 +47,13 @@ export function normalizeMailboxEvent(value: unknown): MailboxEvent | undefined 
   const kind = sender?.kind === "session" || sender?.kind === "service" ? sender.kind : undefined;
   const machine = bounded(sender?.machine, 128);
   const senderId = bounded(kind === "service" ? sender?.service_id : sender?.session_id, 128);
-  if (!messageId || !category || !state || readAt === undefined || acknowledgedAt === undefined || revision === undefined || !kind || !machine || !senderId) return undefined;
+  if (!bodyPrefix || !messageId || !category || !state || readAt === undefined || acknowledgedAt === undefined || revision === undefined || !kind || !machine || !senderId) return undefined;
   return {
     schema_version: SCHEMA,
     message_id: messageId,
     sender: kind === "service" ? { kind, machine, service_id: senderId } : { kind, machine, session_id: senderId },
     category, state, read_at: readAt, acknowledged_at: acknowledgedAt, revision,
     availability: "complete",
+    body_prefix: bodyPrefix,
   };
 }

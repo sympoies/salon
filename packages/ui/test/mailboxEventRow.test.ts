@@ -15,6 +15,7 @@ const mailbox = (overrides: Record<string, unknown> = {}) => ({
   sender: { kind: "session", machine: "machine-a", session_id: "sender-1" },
   category: "handoff", state: "read", read_at: "2026-11-02T01:02:03.456Z", acknowledged_at: null, revision: 1,
   availability: "complete",
+  body_prefix: "none",
   ...overrides,
 });
 const eventText = (body: string) => `<!-- agent-notice:v1 kind=mailbox.read source=agent-session id=m-1 -->\n\n${body}`;
@@ -70,6 +71,17 @@ test("the row starts collapsed and expands to the full body rendered as Markdown
   assert.equal(body.querySelectorAll("li").length, 1);
   assertNoElement(body, "script");
   assert.match(body.textContent ?? "", /<script>alert\(1\)<\/script>/);
+});
+
+test("a leading-marker body loses exactly one LF and shows as plain text, never as a nested notice", async () => {
+  const nested = "<!-- agent-notice:v1 kind=mailbox source=peer -->\n\nnested **body**\n";
+  const { container } = await mount(timeline({ text: eventText(`\n${nested}`), mailbox: mailbox({ body_prefix: "lf" }) }), { "ac.mailboxRowsExpanded": "1" });
+  const body = container.querySelector(".mailbox-event-body")!;
+  assert.equal(body.querySelector("pre")?.textContent, nested, "the stored body byte for byte");
+  assert.equal(container.querySelectorAll(".session-notice").length, 1, "no nested notice");
+  assertNoElement(body, "strong");
+  const plain = await mount(timeline({ text: eventText("\nkept"), mailbox: mailbox() }), { "ac.mailboxRowsExpanded": "1" });
+  assert.match(plain.container.querySelector(".mailbox-event-body")?.textContent ?? "", /kept/);
 });
 
 test("the per-device setting makes rows start expanded", async () => {

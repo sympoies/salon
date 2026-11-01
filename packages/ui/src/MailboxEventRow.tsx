@@ -16,7 +16,9 @@ export function MailboxEventRow({ event, body, time }: { readonly event: Mailbox
         {time}
       </summary>
       <div className="mailbox-event-body">
-        {body.trim() ? <MessageMarkdown text={body} /> : <p>Message body unavailable</p>}
+        {/* A body that began with a notice marker arrives behind one LF; it is shown as plain text, never as a nested notice. */}
+        {event.body_prefix === "lf" ? <pre className="mailbox-event-plain">{body.startsWith("\n") ? body.slice(1) : body}</pre>
+          : body.trim() ? <MessageMarkdown text={body} /> : <p>Message body unavailable</p>}
       </div>
     </details>
   </div>;

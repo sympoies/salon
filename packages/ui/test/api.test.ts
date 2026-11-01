@@ -300,7 +300,7 @@ test("history messages keep a valid mailbox read event and drop anything unknown
     schema_version: "agent-session.mailbox-read-event.v1", message_id: "m-1",
     sender: { kind: "session", machine: "machine-a", session_id: "s-1", incarnation: "private" },
     category: "report", state: "acknowledged", read_at: null, acknowledged_at: "2026-11-02T01:05:00.000Z",
-    revision: 2, availability: "complete", path: "/private",
+    revision: 2, availability: "complete", body_prefix: "lf", path: "/private",
   };
   setFetchMock(async () => jsonResponse({ ok: true, data: { messages: [
     { id: "e1", role: "notice", text, mailbox },
@@ -312,7 +312,7 @@ test("history messages keep a valid mailbox read event and drop anything unknown
     { id: "e1", role: "notice", text, mailbox: {
       schema_version: "agent-session.mailbox-read-event.v1", message_id: "m-1",
       sender: { kind: "session", machine: "machine-a", session_id: "s-1" }, category: "report",
-      state: "acknowledged", read_at: null, acknowledged_at: "2026-11-02T01:05:00.000Z", revision: 2, availability: "complete" } },
+      state: "acknowledged", read_at: null, acknowledged_at: "2026-11-02T01:05:00.000Z", revision: 2, availability: "complete", body_prefix: "lf" } },
     { id: "e2", role: "notice", text },
     { id: "e3", role: "notice", text },
   ]);

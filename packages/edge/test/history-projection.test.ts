@@ -78,6 +78,7 @@ const mailbox = {
   acknowledged_at: null,
   revision: 1,
   availability: "complete",
+  body_prefix: "none",
 };
 
 test("history projection forwards a valid mailbox read event with display fields only", () => {

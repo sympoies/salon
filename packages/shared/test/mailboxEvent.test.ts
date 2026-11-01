@@ -12,6 +12,7 @@ const wire = {
   acknowledged_at: null,
   revision: 1,
   availability: "complete",
+  body_prefix: "none",
 };
 
 test("a v1 mailbox read event keeps only its display fields", () => {
@@ -33,6 +34,12 @@ test("service senders, acknowledged state and an ack before the first read are a
   assert.equal(acked?.state, "acknowledged");
   assert.equal(acked?.read_at, null);
   assert.equal(acked?.revision, 2);
+});
+
+test("the leading-marker body prefix is kept, and an absent or unknown one is not an event", () => {
+  assert.equal(normalizeMailboxEvent({ ...wire, body_prefix: "lf" })?.body_prefix, "lf");
+  const { body_prefix: _omitted, ...withoutPrefix } = wire;
+  for (const bad of [withoutPrefix, { ...wire, body_prefix: "crlf" }, { ...wire, body_prefix: null }]) assert.equal(normalizeMailboxEvent(bad), undefined, JSON.stringify(bad));
 });
 
 test("an unknown or malformed mailbox object is not an event", () => {
