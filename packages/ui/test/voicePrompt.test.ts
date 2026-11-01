@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { VOICE_PROMPT_TAG, compactVoicePromptNote, quoteVoiceTranscript } from "../src/voicePrompt.ts";
+import { VOICE_PROMPT_TAG, compactPromptPreview, compactVoicePromptNote, quoteVoiceTranscript } from "../src/voicePrompt.ts";
 
 const LEGACY_NOTE = "以下文字由語音轉寫，可能有同音字或專有名詞錯誤。請依對話脈絡理解；檔名、路徑、指令、數字或可能修改資料的內容若有歧義，先向我確認。\n\n原始轉寫：\n";
 
@@ -39,4 +39,10 @@ test("compactVoicePromptNote keeps typed and literal angle brackets around a voi
   assert.equal(compactVoicePromptNote("a > b\n\n> [語音] hello"), "a > b\n\n[語音] hello");
   assert.equal(compactVoicePromptNote("> [語音] x > y\n> z > w\n\nafter > it"), "[語音] x > y\nz > w\n\nafter > it");
   assert.equal(compactVoicePromptNote("a > b > [語音] hello"), "a > b [語音] hello");
+});
+
+test("compactPromptPreview shortens upload paths and keeps the voice tag and text", () => {
+  assert.equal(compactPromptPreview("'/s/sessions/a1/attachments/shot.png' 'it' > [語音·Fast] hello"), "[圖片 shot.png] 'it' [語音·Fast] hello");
+  assert.equal(compactPromptPreview("'/s/sessions/a1/attachments/my '\\''x.txt'\n\n> [語音] hi\n> there"), "[檔案 my 'x.txt]\n\n[語音] hi\nthere");
+  assert.equal(compactPromptPreview("'/data/file.txt' and \"plain\""), "'/data/file.txt' and \"plain\"");
 });

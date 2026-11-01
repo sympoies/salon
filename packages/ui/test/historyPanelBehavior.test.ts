@@ -84,7 +84,7 @@ test("HistoryPanel identifies sessions and opens the latest context before loadi
         title: null,
         prompt_preview: "legacy wrapper",
         first_user_prompt_preview: `${LEGACY_VOICE_NOTE}first human prompt`,
-        last_user_prompt_preview: "> [語音·Fast] latest human prompt",
+        last_user_prompt_preview: "'/state/sessions/s-1/attachments/shot.png' > [語音·Fast] latest human prompt",
         cwd: "/home/runner/Project/exampleOrg/agent-console",
         repo_name: "agent-console",
         created_at: "2026-08-31T00:00:00Z",
@@ -134,7 +134,7 @@ test("HistoryPanel identifies sessions and opens the latest context before loadi
 
   assert.match(mounted.container.textContent ?? "", /Untitled session/);
   assert.match(mounted.container.textContent ?? "", /Start\[語音\] first human prompt/);
-  assert.match(mounted.container.textContent ?? "", /Latest\[語音·Fast\] latest human prompt/);
+  assert.match(mounted.container.textContent ?? "", /Latest\[圖片 shot\.png\] \[語音·Fast\] latest human prompt/);
   assert.doesNotMatch(mounted.container.textContent ?? "", /語音轉寫/);
   const row = mounted.container.querySelector(".history-row");
   assert.ok(row);

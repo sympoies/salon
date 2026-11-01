@@ -19,7 +19,7 @@ import { SessionBadges } from "./extensions.tsx";
 import { historyMarkerItem, type CoordinatorTreeItem } from "./coordinatorTree.ts";
 import { isTauri } from "./runtime.ts";
 import { useAndroidBackEntry } from "./useAndroidBackEntry.ts";
-import { compactVoicePromptNote } from "./voicePrompt.ts";
+import { compactPromptPreview } from "./voicePrompt.ts";
 import { createAsyncPoller, type AsyncPollTick } from "./useAsyncPoll.ts";
 
 const HISTORY_PAGE_SIZE = 50;
@@ -46,7 +46,7 @@ function sessionTitle(session: HistorySession): string {
 
 function firstPromptPreview(session: HistorySession): string | undefined {
   const preview = session.first_user_prompt_preview ?? session.prompt_preview;
-  return preview === undefined ? undefined : compactVoicePromptNote(preview);
+  return preview === undefined ? undefined : compactPromptPreview(preview);
 }
 
 function harnessLabel(provider: HistorySession["provider"]): string {
@@ -434,7 +434,7 @@ export function HistoryPanel({ machines, liveSessions = [], onClose, onResumed }
                   <span className="history-row-preview"><b>Start</b>{firstPromptPreview(session)}</span>
                 ) : null}
                 {session.last_user_prompt_preview ? (
-                  <span className="history-row-preview"><b>Latest</b>{compactVoicePromptNote(session.last_user_prompt_preview)}</span>
+                  <span className="history-row-preview"><b>Latest</b>{compactPromptPreview(session.last_user_prompt_preview)}</span>
                 ) : null}
               </button>
               {starAvailable ? (
