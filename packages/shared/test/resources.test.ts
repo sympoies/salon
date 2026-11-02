@@ -55,7 +55,7 @@ test("conversation snapshots preserve bounded image-only descriptors without pat
 
 test("conversation snapshots retain classified rows including empty compactions", () => {
   const conversation = { messages: [
-    { id: "compact", role: "notice", text: "", row_class: "compaction" },
+    { id: "compact", role: "notice", text: "", row_class: "compaction", compaction: { summary_truncated: true } },
     { id: "notice", role: "user", text: "Synthetic notice", row_class: "notice" },
     { id: "unknown", role: "user", text: "ordinary", row_class: "future" },
   ] };

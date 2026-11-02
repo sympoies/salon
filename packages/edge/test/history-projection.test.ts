@@ -215,8 +215,11 @@ test("image-only history messages retain bounded opaque descriptors", () => {
 test("history projection preserves frozen classified rows and ignores unknown classes", () => {
   const fixture = JSON.parse(readFileSync(new URL("../../shared/test/fixtures/history-row-classes-v1.json", import.meta.url), "utf8"));
   const rows = fixture.compactions.flatMap((entry: { expected: unknown }) => Array.isArray(entry.expected) ? entry.expected : [entry.expected]);
+  rows.push({ ...fixture.valid_rows.find((row: { row_class?: string }) => row.row_class === "compaction"), id: "truncated", compaction: { summary_truncated: fixture.compaction_summary_bound.over_limit.summary_truncated } });
   const notices = fixture.notice_recognition.slice(0, 2).map((entry: { expected: unknown }) => entry.expected);
   const unknown = { id: "unknown", role: "user", text: "ordinary", row_class: "future" };
-  assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [...rows, ...notices, unknown] }),
-    { messages: [...rows.map(({ compaction: _compaction, ...row }: Record<string, unknown>) => row), ...notices, { id: "unknown", role: "user", text: "ordinary" }] });
+  const unrelated = { id: "ordinary", role: "user", text: "hello", compaction: { summary_truncated: true } };
+  const malformed = { id: "invalid", role: "notice", text: "summary", row_class: "compaction", compaction: { summary_truncated: "yes" } };
+  assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [...rows, ...notices, unknown, unrelated, malformed] }),
+    { messages: [...rows, ...notices, { id: "unknown", role: "user", text: "ordinary" }, { id: "ordinary", role: "user", text: "hello" }, { id: "invalid", role: "notice", text: "summary", row_class: "compaction" }] });
 });
