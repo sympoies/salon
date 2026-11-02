@@ -129,8 +129,9 @@ import { MobileSessionList } from "./MobileSessionList.tsx";
 import { SessionMaintenanceDrawer } from "./SessionMaintenanceDrawer.tsx";
 import { StatusNotice } from "./StatusNotice.tsx";
 import { useStatusNotice } from "./useStatusNotice.ts";
-import { TRANSIENT_NOTICE_MS, TransientNoticeContext, type TransientNoticeControl } from "./transientNotice.ts";
-import { resultStatusNotice, type StatusNotice as StatusNoticeState } from "./statusNoticeModel.ts";
+import { TransientNoticeContext, type TransientNoticeControl } from "./transientNotice.ts";
+import { useTransientNotice } from "./useTransientNotice.ts";
+import { resultStatusNotice } from "./statusNoticeModel.ts";
 import {
   buildMaintenanceActionRequest,
   createSessionMaintenanceIncident,
@@ -752,7 +753,7 @@ export function Dashboard({
   } = useExpiringValue<RetitleFeedback>(2600);
   const { value: shortcutFeedback, show: showShortcutFeedback, clear: clearShortcutFeedback } = useExpiringValue<ShortcutFeedback>(2200);
   // Short-lived results (session refresh, retitle, shortcut hint) share the status layer at the top right.
-  const { value: transientNotice, show: showTransientNotice, clear: clearTransientNotice } = useExpiringValue<StatusNoticeState>(TRANSIENT_NOTICE_MS);
+  const { notice: transientNotice, show: showTransientNotice, clear: clearTransientNotice } = useTransientNotice(statusNotice !== null);
   const transientNoticeControl = useMemo<TransientNoticeControl>(() => ({ show: showTransientNotice }), [showTransientNotice]);
   const [repairingSessions, setRepairingSessions] = useState(false);
   const repairOpenerRef = useRef<HTMLElement | null>(null);
