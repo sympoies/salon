@@ -1124,6 +1124,17 @@ test("#969 a reply merged with other queued input into one user turn is proven, 
     assert.equal(outbox.items(h.session()).length,1,"spent parts of a turn prove nothing again");
   }finally{await h.close();clock.restore();}
 });
+test("#288 mailbox reminders joined with a queued reply prove only recognized forms",async()=>{
+  const h=await mount();try{
+    const {transcriptProof}=h.queueModule,at=Date.now();
+    const reply={id:"r",text:"queued reply",requestId:"r",incarnation:"inc-1",state:"unknown" as const,attemptedAt:at};
+    const proven=(nudge:string)=>transcriptProof([reply],[userTurn("t",nudge+reply.text,at+1000)]).has("r");
+    for(const nudge of ["Mailbox: 1 unread; agent-session message inbox","Mailbox: 256 unread; agent-session message inbox","Mailbox: 2030-01-01T09:00:00Z; agent-session message inbox"])
+      assert.equal(proven(nudge),true,nudge);
+    for(const nudge of ["Mailbox: 3 unread","Mailbox: many unread; agent-session message inbox","Mailbox: 3 unread; something else","Mailbox: 3 unread extra; agent-session message inbox","Mailbox: 3 unread; agent-session message inbox extra"])
+      assert.equal(proven(nudge),false,nudge);
+  }finally{await h.close();}
+});
 test("#973 N3: a stored row without any time is not proven by an older identical turn",async()=>{
   const h=await mount();try{
     await h.render("idle",1,claude);
