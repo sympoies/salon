@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.31 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.32 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -156,15 +156,10 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.31`; its release is a GitHub
-prerelease with `latest=false`. The Android app has one Layout setting, Mobile or
-Desktop, for the session list; an opened session always uses the mobile view.
-Dropdowns go through one wrapper, themed on Android (#252, #255). Status bubbles
-share one top-right layer; a host drawing its own refresh bubble should remove it
-(#254). Header buttons share one size at each width (#259). Mailbox read events
-render in the conversation (#223). Uploaded paths are not typed text beside voice
-(#243). Existing
-`v0.1.0` through `v0.1.30` tags and assets stay immutable. The visibility transition does not
+merge. The checked-in SDK version is `0.1.32`; its release is a GitHub
+prerelease with `latest=false`. A status layer result behind another notice is held
+and shown for its full time once visible (#262). Existing
+`v0.1.0` through `v0.1.31` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
