@@ -131,6 +131,7 @@ import { StatusNotice } from "./StatusNotice.tsx";
 import { useStatusNotice } from "./useStatusNotice.ts";
 import { TransientNoticeContext, type TransientNoticeControl } from "./transientNotice.ts";
 import { useTransientNotice } from "./useTransientNotice.ts";
+import { useVisibleExpiringValue } from "./useVisibleExpiringValue.ts";
 import { resultStatusNotice } from "./statusNoticeModel.ts";
 import {
   buildMaintenanceActionRequest,
@@ -746,14 +747,18 @@ export function Dashboard({
     value: copiedStartupDiagnosticsKey,
     show: showCopiedStartupDiagnosticsKey,
   } = useExpiringValue<string>(2000);
+  const liveSessionKeys = useMemo(() => new Set(sessions.map(sessionKey)), [sessions]);
+  // Short-lived results (session refresh, retitle, shortcut hint) share the status layer at the top right, and
+  // each one's display time starts only once it is the notice on screen (#262).
+  const { notice: transientNotice, show: showTransientNotice, clear: clearTransientNotice } = useTransientNotice(statusNotice !== null);
+  const resultBlocked = statusNotice !== null || transientNotice !== null;
   const {
     value: retitleFeedback,
     set: setRetitleFeedback,
     show: showRetitleFeedback,
-  } = useExpiringValue<RetitleFeedback>(2600);
-  const { value: shortcutFeedback, show: showShortcutFeedback, clear: clearShortcutFeedback } = useExpiringValue<ShortcutFeedback>(2200);
-  // Short-lived results (session refresh, retitle, shortcut hint) share the status layer at the top right.
-  const { notice: transientNotice, show: showTransientNotice, clear: clearTransientNotice } = useTransientNotice(statusNotice !== null);
+  } = useVisibleExpiringValue<RetitleFeedback>(resultBlocked, 2600);
+  const retitleShowing = retitleFeedback !== null && liveSessionKeys.has(retitleFeedback.key);
+  const { value: shortcutFeedback, show: showShortcutFeedback, clear: clearShortcutFeedback } = useVisibleExpiringValue<ShortcutFeedback>(resultBlocked || retitleShowing, 2200);
   const transientNoticeControl = useMemo<TransientNoticeControl>(() => ({ show: showTransientNotice }), [showTransientNotice]);
   const [repairingSessions, setRepairingSessions] = useState(false);
   const repairOpenerRef = useRef<HTMLElement | null>(null);
@@ -1061,7 +1066,6 @@ export function Dashboard({
     return new Map(visible.map((s) => [sessionKey(s), s] as const));
   }, [visible]);
 
-  const liveSessionKeys = useMemo(() => new Set(sessions.map(sessionKey)), [sessions]);
   const conversationReplyDrafts = useRef<ConversationReplyDrafts>(new Map());
   useConversationOutboxDelivery(sessions, reachableMachineNames, conversationReplyDrafts.current);
   useSharedOutboxSync(sessions);
