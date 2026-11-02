@@ -1009,3 +1009,19 @@ for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as cons
     });
   });
 }
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: a refused Ctrl+U before the quarantine is known leaves the ${command} draft guarded after the release`, async () => {
+    await withPane(agent, true, async p => {
+      for (const char of command) await p.text(char);
+      // The prop is still false: the control text clears the local draft, then the daemon refuses it.
+      await p.text("\x15");
+      await p.rejectLater(false, "auth-quarantined");
+      await p.remount({ authQuarantined: true });
+      await p.remount({ authQuarantined: false });
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before, "Enter is still refused: the provider draft was never cleared");
+    });
+  });
+}

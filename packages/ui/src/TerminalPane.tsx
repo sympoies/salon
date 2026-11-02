@@ -222,7 +222,7 @@ export function TerminalPane({
     readonly outcomeUnknown?: boolean;
   }) => {
     if (rejection.code === AUTH_QUARANTINED_CODE) {
-      contextCommandGuardRef.current.enterQuarantine();
+      contextCommandGuardRef.current.refusedByQuarantine();
       setContextCommandRefusal(AUTH_QUARANTINE_TERMINAL_TEXT);
       return;
     }
