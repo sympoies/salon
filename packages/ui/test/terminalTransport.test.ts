@@ -137,6 +137,18 @@ test("ordered input sender keeps connection state independent from HTTP input re
   assert.equal(sender.pendingCount(), 0);
 });
 
+test("ordered input sender forwards the error code of a refused HTTP input", async () => {
+  const rejections: unknown[] = [];
+  const sender = createOrderedSessionInputSender({
+    getWebSocket: () => null,
+    sendFallback: async () => ({ ok: false, error: "quarantined", code: "auth-quarantined" }),
+    isMounted: () => true,
+    onInputRejected: (rejection) => rejections.push(rejection),
+  });
+  await sender.send({ text: "lost" });
+  assert.deepEqual(rejections, [{ code: "auth-quarantined", message: "quarantined", retryable: true, outcomeUnknown: false }]);
+});
+
 test("ordered input sender preserves an indeterminate HTTP delivery outcome", async () => {
   const rejections: Array<{
     message?: string;

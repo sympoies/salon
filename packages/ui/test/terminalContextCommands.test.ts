@@ -26,7 +26,7 @@ interface Fixture {
     terminalPasteInputRef: { current: boolean };
     onProviderPromptCapability(mode: "fallback"): void;
     onProviderPromptEvent(event: ProviderPromptSubmittedFrame): void;
-    onInputRejected(rejection: {message: string; outcomeUnknown?: boolean}): void;
+    onInputRejected(rejection: {message: string; code?: string; outcomeUnknown?: boolean}): void;
   };
 }
 declare global { var __terminalContextFixture: Fixture | undefined; }
@@ -61,7 +61,7 @@ const terminalAdapter: Plugin = {
 async function withPane(agent: string, socket: boolean, run: (fixture: {
   inputs: Input[];
   rejectNext(unknown?: boolean): void;
-  rejectLater(unknown?: boolean): Promise<void>;
+  rejectLater(unknown?: boolean, code?: string): Promise<void>;
   deferNext(): void;
   rejectDeferred(): Promise<void>;
   text(text: string, paste?: boolean): Promise<void>;
@@ -132,9 +132,9 @@ async function withPane(agent: string, socket: boolean, run: (fixture: {
       deferNext: () => {fixture.deferNext=true;},
       rejectDeferred: async () => {await act(async () => fixture.rejectDeferred!());},
       rejectNext: (unknown = false) => {fixture.rejectNext=true;fixture.rejectionUnknown=unknown;},
-      rejectLater: async (unknown = false) => {await act(async () => {
+      rejectLater: async (unknown = false, code?: string) => {await act(async () => {
         await Promise.resolve();
-        fixture.deps!.onInputRejected({message: "rejected callback", outcomeUnknown: unknown});
+        fixture.deps!.onInputRejected({message: "rejected callback", outcomeUnknown: unknown, ...(code ? {code} : {})});
       });},
       text: async (text, paste = false) => {
         await act(async () => {
@@ -935,6 +935,47 @@ for (const agent of ["claude", "codex"]) for (const socket of [false, true]) {
       await p.click("Clear draft");
       await p.text("hello"); await p.enter();
       assert.doesNotMatch(p.notice(), /provider draft is uncertain|Enter is blocked/, "ordinary input recovers without a remount");
+    });
+  });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: input refused by auth quarantine names it, offers no Clear draft and leaves no uncertain draft`, async () => {
+    await withPane(agent, true, async p => {
+      await p.remount({ authQuarantined: true });
+      for (const char of command) await p.text(char);
+      await p.rejectLater(false, "auth-quarantined");
+      assert.match(p.notice(), /authentication quarantine/i);
+      assert.doesNotMatch(p.html(), /<button[^>]*>Clear draft<\/button>/);
+      assert.doesNotMatch(p.notice(), /draft is uncertain/);
+      await p.remount({ authQuarantined: false });
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before + 1, "Enter is not blocked once the quarantine is released");
+      assert.equal(p.notice(), "");
+    });
+  });
+
+  test(`${agent}: an uncertain draft recorded under quarantine clears when the release is confirmed`, async () => {
+    await withPane(agent, true, async p => {
+      await p.remount({ authQuarantined: true });
+      for (const char of command) await p.text(char);
+      await p.rejectLater();
+      assert.match(p.notice(), /draft is uncertain/);
+      assert.doesNotMatch(p.html(), /<button[^>]*>Clear draft<\/button>/, "Clear draft is no way out of a quarantine");
+      await p.remount({ authQuarantined: false });
+      assert.doesNotMatch(p.notice(), /draft is uncertain/);
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before + 1);
+    });
+  });
+
+  test(`${agent}: Clear draft returns for an uncertain draft when no quarantine applies`, async () => {
+    await withPane(agent, true, async p => {
+      for (const char of command) await p.text(char);
+      await p.rejectLater();
+      assert.match(p.html(), /<button[^>]*>Clear draft<\/button>/);
     });
   });
 }

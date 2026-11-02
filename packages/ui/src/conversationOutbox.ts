@@ -5,6 +5,7 @@ import { apiBase, nativeConnectionConfigGeneration, nativePrincipalIsActive } fr
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { parseTurnStateV1 } from "./sessionActivity.ts";
 import { sessionKey } from "./layout.ts";
+import { AUTH_QUARANTINED_CODE, AUTH_QUARANTINE_REPLY_TEXT } from "./authQuarantine.ts";
 import { providerImageLabelPattern } from "./providerImageLabels.ts";
 import { stripPasteWrappers } from "./pastedContent.ts";
 import { isActivityTurnWaitingPhase } from "@agent-console/shared/activity";
@@ -84,6 +85,7 @@ const NOT_CONFIRMED = "Not confirmed in the conversation. Retry sends it again."
 const TERMINAL_DRAFT_ERRORS: Readonly<Record<string, string>> = {
   "composer-not-empty": "Terminal has a draft, so this reply was not sent. Clear it in the terminal, then Retry.",
   "composer-unobservable": "Console cannot read the terminal input, so this reply was not sent. Check the terminal, then Retry.",
+  [AUTH_QUARANTINED_CODE]: AUTH_QUARANTINE_REPLY_TEXT,
 };
 const provable = (item: QueuedReply) => item.state === "unknown" || item.state === "dispatching" || item.state === "delivered"
   || (item.state === "refused" && item.unconfirmed === true)

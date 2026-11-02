@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
   classifyClaudeAccountMutationOutcome,
+  isAuthQuarantined,
   normalizeAgentSessionCapabilities,
   normalizeClaudeAccountStatus,
   normalizeAccountSummaries,
@@ -149,4 +150,25 @@ test("Claude account switch capability and session view are additive", () => {
   assert.deepEqual(projected.claude_account, bound);
   assert.equal(projectPublicAgentSession({ id: "c1", agent: "claude" }).claude_account, undefined);
   assert.equal(projectPublicAgentSession({ id: "c1", agent: "claude", claude_account: { bad: true } }).claude_account, null);
+});
+
+test("the public session projection carries only the auth incident status", () => {
+  const projected = projectPublicAgentSession({
+    id: "c1",
+    agent: "claude",
+    auth_incident: { status: "auth_failed", incident_id: "private", observed_at: "2026-01-01T00:00:00Z", failover: { state: "x" } },
+  });
+  assert.deepEqual(projected.auth_incident, { status: "auth_failed" });
+  assert.equal(projectPublicAgentSession({ id: "c1", agent: "claude" }).auth_incident, undefined);
+  for (const bad of [null, "auth_failed", {}, { status: 1 }, { status: "x".repeat(65) }]) {
+    assert.equal(projectPublicAgentSession({ id: "c1", agent: "claude", auth_incident: bad }).auth_incident, undefined);
+  }
+});
+
+test("only an auth_failed incident marks a session as auth quarantined", () => {
+  assert.equal(isAuthQuarantined({ auth_incident: { status: "auth_failed" } }), true);
+  for (const session of [{}, { auth_incident: undefined }, { auth_incident: { status: "recovered" } },
+    { auth_incident: { status: "runtime_replaced" } }]) {
+    assert.equal(isAuthQuarantined(session), false);
+  }
 });

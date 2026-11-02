@@ -35,6 +35,7 @@ import {
   setSessionAutoResume,
   listAccounts,
   switchSessionAccount,
+  reverifySessionAccount,
   cancelSessionAutoResume,
   sendSessionInput,
   submitSessionPrompt,
@@ -2040,6 +2041,42 @@ test("create and initial-prompt server failures preserve an indeterminate outcom
     ok: false,
     error: "upstream timeout",
     outcomeUnknown: true,
+  });
+});
+
+test("re-verify PUTs the current account and incarnation and does not interpret the answer", async () => {
+  let seen: { path: string; method?: string; body?: string } | undefined;
+  setFetchMock(async (url, init) => {
+    seen = { path: url, method: init?.method, body: String(init?.body) };
+    return jsonResponse({ ok: true, data: { claude_account: { unexpected: true } } });
+  });
+  assert.deepEqual(await reverifySessionAccount("maple", "claude-1", "alpha", "launch-1"), { ok: true });
+  assert.deepEqual(seen, {
+    path: "/api/sessions/maple/claude-1/account",
+    method: "PUT",
+    body: JSON.stringify({ account: "alpha", expected_session_incarnation: "launch-1" }),
+  });
+  setFetchMock(async () => jsonResponse({
+    ok: false,
+    error: { code: "claude-account-recheck-refused", message: "safe text" },
+  }, { status: 422 }));
+  assert.deepEqual(await reverifySessionAccount("maple", "claude-1", "alpha", "launch-1"), { ok: false, error: "safe text" });
+  setFetchMock(async () => { throw new Error("offline"); });
+  assert.deepEqual(await reverifySessionAccount("maple", "claude-1", "alpha", "launch-1"), {
+    ok: false,
+    error: "Re-verify outcome is unknown. Check the session again.",
+  });
+});
+
+test("terminal input refused by auth quarantine keeps its error code", async () => {
+  setFetchMock(async () => jsonResponse({
+    ok: false,
+    error: { code: "auth-quarantined", message: "session is quarantined" },
+  }, { status: 409 }));
+  assert.deepEqual(await sendSessionInput("maple", "claude-1", { text: "x" }), {
+    ok: false,
+    error: "session is quarantined",
+    code: "auth-quarantined",
   });
 });
 

@@ -54,6 +54,7 @@ import { backgroundReconnectOffsetMs, type TerminalTransportController } from ".
 import { useTerminalClipboard } from "./useTerminalClipboard.ts";
 import { SpeechComposer } from "./SpeechComposer.tsx";
 import { createTerminalContextCommandGuard, isBracketedTerminalPaste } from "./terminalContextCommandGuard.ts";
+import { AUTH_QUARANTINED_CODE, AUTH_QUARANTINE_TERMINAL_TEXT } from "./authQuarantine.ts";
 
 export type { TerminalConnectionStatus };
 type UploadStatus = TerminalUploadStatus;
@@ -67,6 +68,8 @@ export interface TerminalPaneProps {
   readonly id: string;
   readonly sessionIncarnation?: string;
   readonly agent?: string;
+  /** The session is under auth quarantine: Clear draft is no way out of it. */
+  readonly authQuarantined?: boolean;
   readonly className?: string;
   readonly autoFocus?: boolean;
   readonly fontSize?: number;
@@ -95,6 +98,7 @@ export function TerminalPane({
   id,
   sessionIncarnation,
   agent,
+  authQuarantined = false,
   className,
   autoFocus = false,
   fontSize = BASE_TERMINAL_FONT_SIZE,
@@ -217,6 +221,11 @@ export function TerminalPane({
     readonly message?: string;
     readonly outcomeUnknown?: boolean;
   }) => {
+    if (rejection.code === AUTH_QUARANTINED_CODE) {
+      contextCommandGuardRef.current.releaseQuarantine();
+      setContextCommandRefusal(AUTH_QUARANTINE_TERMINAL_TEXT);
+      return;
+    }
     const uncertainty = contextCommandGuardRef.current.markInputUncertain();
     if (uncertainty) setContextCommandRefusal(uncertainty);
     const message = rejection.outcomeUnknown
@@ -273,6 +282,16 @@ export function TerminalPane({
     );
     return () => defaultScheduler.clearTimeout(timer);
   }, [id, machine, machineReachable]);
+
+  // A confirmed release: the refused input never reached the provider.
+  const wasQuarantinedRef = useRef(authQuarantined);
+  useEffect(() => {
+    if (wasQuarantinedRef.current && !authQuarantined) {
+      contextCommandGuardRef.current.releaseQuarantine();
+      setContextCommandRefusal(null);
+    }
+    wasQuarantinedRef.current = authQuarantined;
+  }, [authQuarantined]);
 
   const sendTransportInput = (body: Parameters<TerminalTransportController["sendInput"]>[0]) => {
     const transport = transportRef.current;
@@ -735,8 +754,9 @@ export function TerminalPane({
       {contextCommandRefusal ? (
         <div className="upload-status error context-command-refusal" role="alert">
           <span>{contextCommandRefusal}</span>
-          <button type="button" className="btn ghost" onMouseDown={preventKeyBarMouseFocus}
-            onClick={clearContextDraft}>Clear draft</button>
+          {authQuarantined || contextCommandRefusal === AUTH_QUARANTINE_TERMINAL_TEXT ? null
+            : <button type="button" className="btn ghost" onMouseDown={preventKeyBarMouseFocus}
+              onClick={clearContextDraft}>Clear draft</button>}
         </div>
       ) : uploadStatus ? <div className={`upload-status ${uploadStatus.kind}`}>{uploadStatus.message}</div> : null}
       {status === "closed" ? (

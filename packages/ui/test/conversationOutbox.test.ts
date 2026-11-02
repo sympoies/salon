@@ -811,6 +811,17 @@ test("#995 a reply refused because the terminal input cannot be read says so, wi
     assert.equal(Boolean(h.button("Clear terminal draft")),false,"an unreadable input cannot be proven cleared");
   }finally{await h.close();}
 });
+test("a reply refused by auth quarantine names the quarantine, offers Retry, and is not resent",async()=>{
+  const h=await mount();try{
+    h.response({ok:false,refusalCode:"auth-quarantined",error:"The queued reply was refused (auth-quarantined)."});
+    await h.render("idle",1,claude);await h.write("held by quarantine");await h.reply();
+    assert.equal(h.status("held by quarantine"),"refused");
+    assert.match(h.container.textContent??"",/under authentication quarantine, so this reply was not sent\. Re-verify the account, then Retry\./);
+    assert.equal(Boolean(h.button("Retry reply")),true);
+    await h.render("idle",2,claude);
+    assert.equal(h.requests.length,1,"never resent on its own");
+  }finally{await h.close();}
+});
 test("#995 an unknown refusal code keeps the daemon's own message, even one named like an object key",async()=>{
   const h=await mount();try{
     h.response({ok:false,refusalCode:"constructor",error:"The queued reply was refused (constructor)."});

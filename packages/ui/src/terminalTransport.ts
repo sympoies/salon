@@ -45,6 +45,7 @@ export type TerminalTransportSocketFactory = (
 export interface ApiResultLike {
   readonly ok: boolean;
   readonly error?: string;
+  readonly code?: string;
   readonly outcomeUnknown?: boolean;
 }
 
@@ -100,13 +101,14 @@ export function createOrderedSessionInputSender({
           sendSessionInputViaWebSocket(ws, body);
           return;
         }
-        const result = await sendFallback(body).catch(() => ({
+        const result: ApiResultLike = await sendFallback(body).catch(() => ({
           ok: false,
           error: "Terminal input failed.",
           outcomeUnknown: false,
         }));
         if (!result.ok && isMounted()) {
           onInputRejected?.({
+            ...(result.code ? { code: result.code } : {}),
             message: result.error,
             retryable: result.outcomeUnknown !== true,
             outcomeUnknown: result.outcomeUnknown === true,

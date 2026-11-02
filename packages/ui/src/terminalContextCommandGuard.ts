@@ -48,6 +48,8 @@ export interface TerminalContextCommandGuard {
   clearDraft(): DraftClear | null;
   noteNavigation(): void;
   markInputUncertain(): string | null;
+  /** Drops the local draft and uncertainty once no input is pending in the provider. */
+  releaseQuarantine(): void;
   uncertaintyMessage(): string | null;
   confirmSubmission(submittedAt: string): boolean;
 }
@@ -245,6 +247,12 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
       inputUncertain = commands.length > 0;
       uncertainSince = Date.now();
       return uncertaintyMessage();
+    },
+    // A quarantined session accepts no input, so nothing typed under it
+    // reached the provider: the draft is empty and not uncertain.
+    releaseQuarantine() {
+      draft = emptyDraft();
+      inputUncertain = false;
     },
     confirmSubmission(submittedAt) {
       // Attach prompt events come from provider history, not terminal pixels or

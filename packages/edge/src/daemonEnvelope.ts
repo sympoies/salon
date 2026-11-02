@@ -885,6 +885,24 @@ function refusedClaudeSwitch(errorValue: { details?: unknown } | undefined): { c
   };
 }
 
+// A same-account Claude re-verify the daemon refuses leaves the quarantine in
+// place. Only these allow-listed reasons cross the edge.
+const RECHECK_LEFT_UNCHANGED = "; the authentication quarantine was left unchanged";
+const CLAUDE_RECHECK_REFUSED_REASONS: Readonly<Record<string, string>> = {
+  credentials_not_republished: "the account credentials have not been republished yet",
+  recovery_in_progress: "an automatic recovery is still running",
+};
+
+function refusedClaudeRecheck(errorValue: { details?: unknown }): { code: string; message: string; details?: { reason: string } } {
+  const reason = (errorValue.details as { reason?: unknown } | null | undefined)?.reason;
+  const known = typeof reason === "string" && Object.hasOwn(CLAUDE_RECHECK_REFUSED_REASONS, reason) ? reason : undefined;
+  return {
+    code: "claude-account-recheck-refused",
+    message: `${known ? CLAUDE_RECHECK_REFUSED_REASONS[known] : "the account credentials could not be confirmed"}${RECHECK_LEFT_UNCHANGED}`,
+    ...(known ? { details: { reason: known } } : {}),
+  };
+}
+
 /**
  * Forwards the provider-routed `PUT /sessions/{id}/account` answer once it
  * confirms the requested account: a Codex switch applied or queued behind the
@@ -907,6 +925,10 @@ export function forwardSessionAccountDaemon(
     const refused = r.status === 422 && body?.error?.code === "claude-account-switch-refused" ? refusedClaudeSwitch(body.error) : undefined;
     if (refused) {
       sendJson(res, 422, { ok: false, error: refused });
+      return;
+    }
+    if (!ok2xx && body?.error?.code === "claude-account-recheck-refused") {
+      sendJson(res, r.status, { ok: false, error: refusedClaudeRecheck(body.error) });
       return;
     }
     sendJson(res, ok2xx ? 502 : r.status, {

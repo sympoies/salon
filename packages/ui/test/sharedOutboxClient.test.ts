@@ -564,7 +564,8 @@ test("a shared composer draft refusal explains safe recovery without automatic r
 
 for (const [code, expected] of [
   ["busy", 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'],
-  ["auth-quarantined", "This message was not sent."],
+  ["auth-quarantined", "This session is under authentication quarantine, so this reply was not sent. Re-verify the account, then Retry."],
+  ["some-other-refusal", "This message was not sent."],
 ] as const) test(`a shared reply refused as ${code} shows its own text and keeps Retry and Discard`, async () => {
   const h = await fixture(new IDBFactory(), false);
   try {

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { OutgoingBubble } from "./OutgoingBubble.tsx";
+import { AUTH_QUARANTINED_CODE, AUTH_QUARANTINE_REPLY_TEXT } from "./authQuarantine.ts";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import type { HistoryMessage, Session } from "./types.ts";
 
@@ -57,6 +58,7 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
             {item.state === "refused" ? <>
               <p role="alert" className="history-outgoing-note">{item.error_code === "composer-not-empty"
                 ? "Terminal has a draft, so this reply was not sent. Clear it in the terminal, then Retry."
+                : item.error_code === AUTH_QUARANTINED_CODE ? AUTH_QUARANTINE_REPLY_TEXT
                 : item.error_code === "busy"
                   ? 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'
                   : "This message was not sent."}</p>
