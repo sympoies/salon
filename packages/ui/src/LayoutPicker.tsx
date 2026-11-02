@@ -46,8 +46,10 @@ export function LayoutPicker({ auto, mode, displayedMode, onToggleAuto, onSelect
       <LayoutModeIcon mode={auto ? displayedMode : mode} /><SelectChevronIcon />
     </IconButton>
     {open ? <div ref={menuRef} id={id} className="layout-picker-menu" role="menu" aria-label="Choose terminal layout" onKeyDown={focus.onKeyDown}>
+      <button type="button" role="menuitemradio" className="control-menu layout-picker-option" aria-checked={auto}
+        onClick={() => { if (!auto) onToggleAuto(); close(); triggerRef.current?.focus(); }}><AutoLayoutIcon />Auto</button>
       {LAYOUT_MODES.map(value => <button key={value} type="button" role="menuitemradio" className="control-menu layout-picker-option"
-        aria-checked={(auto ? displayedMode : mode) === value} onClick={() => select(value)}><LayoutModeIcon mode={value} />{label(value)}</button>)}
+        aria-checked={!auto && mode === value} onClick={() => select(value)}><LayoutModeIcon mode={value} />{label(value)}</button>)}
     </div> : null}
   </div>;
 }
