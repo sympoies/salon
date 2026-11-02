@@ -41,6 +41,7 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
             {id:'source',role:'user',text:'[Image #1]\\n[Image: source: /fixtures/sample.png]',images:[image(1)]},
             {id:'mixed',role:'user',text:'[Image #1] [Image: source: /fixtures/sample.png] Synthetic caption',images:[image(0)]},
             {id:'plain',role:'user',text:'[Image #1]',images:[]},
+            {id:'mixed-portrait',role:'user',text:'Synthetic caption',images:[image(1)]},
           ].map(m=>({...m,timestamp:'2026-01-01T12:00:00'}));
           createRoot(document.querySelector('#root')).render(React.createElement(HistoryConversationView,{
             conversation:{session:{machine:'fixture',id:'sample'},messages,latestMessagePaging:true,
@@ -49,14 +50,14 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
             else if(--attempts)setTimeout(check,10);else reject(Error('fixture did not settle'));}check()});
           const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}};
           void (async()=>{try {
-            await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===5 &&
+            await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===6 &&
               [...document.images].every(img=>img.complete && img.naturalWidth));
             await new Promise(resolve=>setTimeout(resolve,50));
             const boxes=[...document.querySelectorAll('article')].map(article=>{
               const bubble=article.querySelector('.history-bubble');
               const image=bubble.querySelector('img');const time=article.querySelector('time');
               const style=getComputedStyle(bubble),metadata=getComputedStyle(time);
-              return {bubble:rect(bubble),image:image ? rect(image) : null,time:rect(time),
+              return {article:rect(article),bubble:rect(bubble),image:image ? rect(image) : null,time:rect(time), timeCount:article.querySelectorAll('time').length,
                 text:rect(bubble.querySelector('.message-markdown')),
                 textBackground:getComputedStyle(bubble.querySelector('.message-markdown')).backgroundColor,
                 background:style.backgroundColor,border:style.borderWidth,radius:style.borderRadius,
@@ -80,7 +81,7 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
   const temp = mkdtempSync(join(tmpdir(),"conversation-image-sizing-"));
   const evidence = process.env.AGENT_CONSOLE_UI_SCREENSHOT_DIR;
   try {
-    for (const width of [1440,360]) {
+    for (const width of [1280,384]) {
       const frame = `<!doctype html><style>${css}html,body{margin:0}#measurement{display:none}</style>
         <div id="root"></div><pre id="measurement"></pre><script>
         window.publishFixtureResult=value=>{const json=JSON.stringify(value);document.querySelector('#measurement').textContent=json;parent.postMessage({type:'agent-console-fixture-result',json},'*')};
@@ -108,6 +109,10 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
         assert.equal(measured.viewportWidth,width);
         assert.equal(measured.overflow,false,"attachments never overflow the column");
         for (const box of measured.boxes.slice(0,4)) {
+          assert.ok(box.image.x > box.article.x + 10, "user image leaves a left gutter");
+          assert.ok(Math.abs(box.image.x + box.image.w - (box.article.x + box.article.w)) < 2, "user image aligns right");
+          assert.ok(box.time.x + box.time.w > box.image.x + box.image.w - 8, "image time sits on the right");
+          assert.equal(box.timeCount, 1);
           assert.ok(Math.abs(box.bubble.w-box.image.w)<1,"image-only bubble width equals image");
           assert.ok(Math.abs(box.bubble.h-box.image.h)<1,"image-only bubble height equals image");
           assert.equal(box.background,"rgba(0, 0, 0, 0)","no colored bubble frame");
@@ -121,13 +126,18 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
         }
         for (const box of measured.boxes.slice(0,4)) assert.equal(box.caption,"","provider labels do not render as captions");
         assert.equal(measured.boxes[5].caption,"[Image #1]","text without images is unchanged");
-        const mixed=measured.boxes[4];
+        for (const mixed of [measured.boxes[4], measured.boxes[6]]) {
+        assert.equal(mixed.timeCount,1);
+        assert.ok(mixed.time.x >= mixed.text.x + mixed.text.w, "caption time sits to the right of the text");
+        assert.ok(mixed.image.x > mixed.article.x + 10, "captioned image leaves a left gutter");
+        assert.ok(Math.abs(mixed.image.x + mixed.image.w - (mixed.article.x + mixed.article.w)) < 2, "captioned image aligns right");
         assert.equal(mixed.caption,"Synthetic caption","only user words remain in the caption");
         assert.equal(mixed.background,"rgba(0, 0, 0, 0)","mixed image has no colored surrounding frame");
         assert.equal(mixed.border,"0px");
         assert.equal(mixed.textBackground,"rgb(42, 84, 140)","caption keeps its normal user bubble color");
         assert.ok(mixed.text.w<mixed.image.w,"caption bubble fits text independently of wider image");
         assert.ok(mixed.text.y+mixed.text.h<=mixed.image.y,"image is below the colored text bubble");
+        }
 
       });
     }

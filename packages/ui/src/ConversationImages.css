@@ -3,12 +3,17 @@
 .history-message > .history-bubble:has(> .conversation-images) { width:fit-content; max-width:min(100%,var(--preview-width)); padding:0; background:transparent; }
 .history-bubble:has(> .conversation-images) > .message-markdown:not(:empty) { width:fit-content; max-width:100%; padding:8px 12px; border-radius:var(--r-conversation); background:var(--conversation-agent-bubble); }
 .is-user > .history-bubble:has(> .conversation-images) > .message-markdown:not(:empty) { background:var(--conversation-user-bubble); }
+.history-message.is-user .conversation-images { justify-items:end; }
+.history-image-caption { display:flex; align-items:flex-end; justify-content:flex-end; gap:6px; }
+.history-image-caption > .message-markdown { width:fit-content; padding:8px 12px; border-radius:var(--r-conversation); background:var(--conversation-user-bubble); }
+.history-image-caption > time { flex:none; padding-bottom:2px; color:var(--conversation-meta); font-size:var(--text-2xs); font-variant-numeric:tabular-nums; }
 .history-message > .history-bubble.is-image-only { position:relative; border:0; border-radius:10px; background:transparent; }
 .history-bubble.is-image-only > .message-markdown:empty { display:none; }
 .history-bubble.is-image-only > .conversation-images { margin-top:0; }
 .history-bubble.is-image-only > time { position:absolute; right:4px; bottom:4px; padding:2px 5px; border-radius:4px; color:#fff; background:rgba(0,0,0,.75); font-size:var(--text-2xs); font-variant-numeric:tabular-nums; pointer-events:none; }
 @container (max-width:600px) {
-  .history-bubble:has(> .conversation-images) { --preview-width:100cqw; }
+  .history-message:not(.is-user) .history-bubble:has(> .conversation-images) { --preview-width:100cqw; }
+  .history-message.is-user .history-bubble:has(> .conversation-images) { --preview-width:80cqw; }
 }
 .conversation-images { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:8px; margin-top:6px; min-width:0; }
 .conversation-images:has(> .conversation-image-thumbnail:nth-child(2)) { grid-template-columns:repeat(2,minmax(0,1fr)); }
