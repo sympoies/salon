@@ -7560,7 +7560,8 @@ textarea {
 #mac-titlebar-notice .connection-notice-message { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .slot-focus-strip .connection-notice-dismiss,
 #mac-titlebar-notice .connection-notice-dismiss { flex: none; width: 24px; height: 24px; min-height: 24px; }
-/* The notice overlays persistent phone counts instead of reflowing or hiding them. */
+/* At phone width a showing notice takes the status-count cell and the counts are hidden in place: same box, no reflow,
+   not focusable. They return when the notice ends or is dismissed (#254). */
 
   :where(:root[data-phone-tier="true"]) .slot-focus-strip { position: relative; }
   :where(:root[data-phone-tier="true"]) .slot-focus-strip > .connection-notice-layer.is-inline {
@@ -7573,6 +7574,8 @@ textarea {
   :where(:root[data-phone-tier="true"]) .session-filter-status-row > .connection-notice-layer.is-inline {
     position: absolute; inset: 0; justify-content: flex-end; padding: 0; min-width: 0; z-index: 1;
   }
+  :where(:root[data-phone-tier="true"]) .session-filter-status-row:has(> .connection-notice-layer.is-inline) .session-status-counts,
+  :where(:root[data-phone-tier="true"]) .slot-focus-strip:has(> .connection-notice-layer.is-inline) .session-status-counts { visibility: hidden; }
   :where(:root[data-phone-tier="true"]) .session-filter-status-row .connection-notice {
     box-sizing: border-box; min-width: 0; max-width: 100%; height: 100%; padding-block: 0;
   }
