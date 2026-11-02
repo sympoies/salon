@@ -37,4 +37,7 @@ test("the card preview follows the same rule for the last prompt and last messag
   assert.equal(preview("/exit"), "Command: Session restarting (/exit)");
   assert.equal(preview("/compact focus on tests", "last_message"), "Command: Compacting context (/compact focus on tests)");
   assert.equal(preview("/etc/hosts is unreadable"), "/etc/hosts is unreadable");
+  for (const field of ["last_prompt", "last_message"] as const) {
+    assert.equal(preview("/compact\nordinary second line", field), "/compact ordinary second line", `${field}: multi-line text is not a command`);
+  }
 });

@@ -365,7 +365,8 @@ function normalizePublicLastPrompt(value: unknown): Record<string, unknown> | un
   const body = notice ? notice.body.split(/\r?\n/, 1)[0]! : prompt;
   const cleaned = body.replace(HARNESS_WRAPPER_PATTERN, " ").replace(/\s+/g, " ").trim();
   if (cleaned.length === 0 || /\p{Cc}/u.test(cleaned)) return undefined;
-  const runtime = notice ? null : parseRuntimeCommand(cleaned);
+  // Classified on the original text: flattening newlines must not make a multi-line message a command.
+  const runtime = notice ? null : parseRuntimeCommand(prompt);
   const text = notice ? `Notice: ${cleaned}` : runtime ? `Command: ${runtime.title} (${runtime.text})` : cleaned;
   const submittedAt = publicSessionString(raw.submitted_at, 64);
   return {
