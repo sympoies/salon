@@ -1,4 +1,5 @@
 import { parseSessionNotice } from "./parseSessionNotice.ts";
+import { parseRuntimeCommand } from "./runtimeCommand.ts";
 import { unwrapPastedContent } from "./pastedContent.ts";
 import { normalizeSessionModelSettings } from "./sessionModel.ts";
 import { normalizeActivityTurnState } from "./activity.ts";
@@ -364,7 +365,9 @@ function normalizePublicLastPrompt(value: unknown): Record<string, unknown> | un
   const body = notice ? notice.body.split(/\r?\n/, 1)[0]! : prompt;
   const cleaned = body.replace(HARNESS_WRAPPER_PATTERN, " ").replace(/\s+/g, " ").trim();
   if (cleaned.length === 0 || /\p{Cc}/u.test(cleaned)) return undefined;
-  const text = notice ? `Notice: ${cleaned}` : cleaned;
+  // Classified on the original text: flattening newlines must not make a multi-line message a command.
+  const runtime = notice ? null : parseRuntimeCommand(prompt);
+  const text = notice ? `Notice: ${cleaned}` : runtime ? `Command: ${runtime.title} (${runtime.text})` : cleaned;
   const submittedAt = publicSessionString(raw.submitted_at, 64);
   return {
     text: text.length > MAX_PUBLIC_LAST_PROMPT ? text.slice(0, MAX_PUBLIC_LAST_PROMPT) : text,
