@@ -1024,4 +1024,20 @@ for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as cons
       assert.equal(p.inputs.length, before, "Enter is still refused: the provider draft was never cleared");
     });
   });
+
+  test(`${agent}: a ${command} draft stays guarded when the refusal arrives long after the frame`, async () => {
+    await withPane(agent, true, async p => {
+      for (const char of command) await p.text(char);
+      await p.text("\x15");
+      // The send route may wait up to ten seconds for a daemon answer.
+      const real = Date.now;
+      Date.now = () => real() + 9_000;
+      try { await p.rejectLater(false, "auth-quarantined"); } finally { Date.now = real; }
+      await p.remount({ authQuarantined: true });
+      await p.remount({ authQuarantined: false });
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before, "Enter is still refused however late the refusal came");
+    });
+  });
 }

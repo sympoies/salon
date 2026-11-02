@@ -53,7 +53,8 @@ export interface TerminalContextCommandGuard {
   /**
    * A quarantine refusal arrived before the session was known to be quarantined.
    * The refused frame never reached the provider, so a draft it seemed to
-   * clear is still there: the most guarded state of the frames in flight is kept.
+   * clear is still there: the most guarded state since the last provider-confirmed
+   * submission is kept, however long the refusal took.
    */
   refusedByQuarantine(): void;
   /** Restores the state from before the quarantine, so a draft accepted earlier stays guarded. */
@@ -62,21 +63,20 @@ export interface TerminalContextCommandGuard {
   confirmSubmission(submittedAt: string): boolean;
 }
 
-/** How long a sent frame may still be answered by a refusal. */
-const IN_FLIGHT_MS = 3000;
-
 export function createTerminalContextCommandGuard(agent: string | undefined): TerminalContextCommandGuard {
   const commands = agent && Object.hasOwn(CONTEXT_COMMANDS, agent) ? CONTEXT_COMMANDS[agent]! : [];
   let draft = emptyDraft();
   let inputUncertain = false;
   let uncertainSince = 0;
   let beforeQuarantine: {draft: Draft; inputUncertain: boolean} | null = null;
-  // The state before each recent frame, kept for IN_FLIGHT_MS: a refusal answers a frame sent within it.
-  const recent: Array<{at: number; draft: Draft; inputUncertain: boolean}> = [];
+  // The most guarded draft seen since a provider-confirmed submission. A refused frame
+  // is not told apart from the accepted ones, and a local edit that seems to clear a
+  // draft proves nothing about the provider, so this is what stays guarded.
+  const guarded = (state: {draft: Draft}) => (state.draft.slash ? 1000 : 0) + state.draft.chars.length;
+  let peak: {draft: Draft; inputUncertain: boolean} | null = null;
   const remember = () => {
-    const now = Date.now();
-    while (recent.length > 0 && now - recent[0]!.at > IN_FLIGHT_MS) recent.shift();
-    recent.push({at: now, draft: structuredClone(draft), inputUncertain});
+    const state = {draft: structuredClone(draft), inputUncertain};
+    if (!peak || guarded(state) > guarded(peak)) peak = state;
   };
   const uncertaintyMessage = () => inputUncertain && commands.length > 0
     ? "The provider draft is uncertain after rejected or unconfirmed input. Enter is blocked. "
@@ -276,20 +276,20 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
     },
     refusedByQuarantine() {
       if (beforeQuarantine) return;
-      const now = Date.now();
-      // Which in-flight frame was refused is unknown, so keep the most guarded
-      // state among them; Clear draft is available once the quarantine is released.
-      const guarded = (entry: {draft: Draft}) => (entry.draft.slash ? 1000 : 0) + entry.draft.chars.length;
+      // Which frame was refused, and how long ago, is unknown: keep the most guarded
+      // state. Clear draft is available once the quarantine is released.
       let best: {draft: Draft; inputUncertain: boolean} = {draft: structuredClone(draft), inputUncertain};
-      for (const entry of recent) if (now - entry.at <= IN_FLIGHT_MS && guarded(entry) > guarded(best)) best = entry;
+      if (peak && guarded(peak) > guarded(best)) best = peak;
       beforeQuarantine = {draft: structuredClone(best.draft), inputUncertain: best.inputUncertain};
     },
     releaseQuarantine() {
       if (!beforeQuarantine) return;
       ({draft, inputUncertain} = beforeQuarantine);
       beforeQuarantine = null;
+      peak = null;
     },
     confirmSubmission(submittedAt) {
+      peak = null; // a submission the provider reports consumed its composer
       // Attach prompt events come from provider history, not terminal pixels or
       // a transport write acknowledgement. Replayed/older events cannot prove
       // that a rejected input has since been consumed. Keep local draft tracking:
