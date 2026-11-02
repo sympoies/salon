@@ -31,6 +31,7 @@ interface Envelope {
   created_at_epoch: number;
   expires_at_epoch: number;
   reply_to?: string | null;
+  reply_by_epoch?: number;
   reply_depth: number;
 }
 function object(value: unknown): Record<string, unknown> | null {
@@ -135,7 +136,7 @@ function envelope(value: unknown): Envelope | null {
   const entry = object(value);
   if (!entry) return null;
   const v2 = entry.schema_version === MESSAGE_SCHEMA_V2;
-  const keys = ["schema_version", "message_id", "from", "to", "body", "body_sha256", "created_at_epoch", "expires_at_epoch", "reply_to", "reply_depth"];
+  const keys = ["schema_version", "message_id", "from", "to", "body", "body_sha256", "created_at_epoch", "expires_at_epoch", "reply_to", "reply_depth", "reply_by_epoch"];
   if (v2) keys.push("category", "forwarding");
   if (Object.keys(entry).some(key => !keys.includes(key))) return null;
   const now = Math.floor(Date.now() / 1000);
@@ -147,6 +148,9 @@ function envelope(value: unknown): Envelope | null {
     || (entry.created_at_epoch as number) > now + 60 || (entry.created_at_epoch as number) < 0
     || (entry.expires_at_epoch as number) <= (entry.created_at_epoch as number)
     || (entry.expires_at_epoch as number) - (entry.created_at_epoch as number) > MAX_TTL_SECONDS
+    || (Object.hasOwn(entry, "reply_by_epoch") && (!epoch(entry.reply_by_epoch)
+      || entry.reply_by_epoch <= (entry.created_at_epoch as number)
+      || entry.reply_by_epoch - (entry.created_at_epoch as number) > MAX_TTL_SECONDS))
     || !Number.isInteger(entry.reply_depth) || (entry.reply_depth as number) < 0 || (entry.reply_depth as number) > 16
     || (entry.reply_to !== undefined && entry.reply_to !== null && (typeof entry.reply_to !== "string" || !SAFE_ID.test(entry.reply_to)))) return null;
   if (v2 && ((entry.category == null && entry.forwarding == null)

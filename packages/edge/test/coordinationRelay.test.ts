@@ -192,6 +192,24 @@ function forwardedEnvelope(base: Awaited<ReturnType<typeof fixture>>["envelope"]
   };
 }
 
+test("relay validates and preserves optional reply deadlines in both envelope versions", async () => {
+  const f = await fixture();
+  try {
+    for (const base of [f.envelope, forwardedEnvelope(f.envelope)]) {
+      assert.equal((await send(f.base, base)).status, 200);
+      for (const offset of [1, 604800]) {
+        const packet = { ...base, reply_by_epoch: base.created_at_epoch + offset };
+        assert.equal((await send(f.base, packet)).status, 200);
+        assert.deepEqual(f.state.seen, packet);
+      }
+      for (const deadline of [base.created_at_epoch, base.created_at_epoch + 604801, base.created_at_epoch + 1.5, -1, null, Number.MAX_SAFE_INTEGER + 1]) {
+        assert.equal((await send(f.base, { ...base, reply_by_epoch: deadline })).status, 400);
+      }
+      assert.equal((await send(f.base, { ...base, reply_by_epoch: base.created_at_epoch + 1, unknown: true })).status, 400);
+    }
+  } finally { await f.cleanup(); }
+});
+
 test("v2 relays every category and bounded forwarding provenance unchanged with historical origins", async () => {
   const f = await fixture();
   try {
