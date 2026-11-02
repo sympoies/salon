@@ -3767,3 +3767,11 @@ test("listSessions gates last_message on both edge and daemon support", async ()
     assert.equal(response.capabilities?.last_message, edge);
   }
 });
+
+test("history messages retain compaction truncation metadata", async () => {
+  const fixture = JSON.parse(await readFile(new URL("../../shared/test/fixtures/history-row-classes-v1.json", import.meta.url), "utf8"));
+  const base = fixture.valid_rows.find((row: { row_class?: string }) => row.row_class === "compaction");
+  const rows = [base, { ...base, id: "truncated", compaction: { summary_truncated: fixture.compaction_summary_bound.over_limit.summary_truncated } }];
+  setFetchMock(async () => jsonResponse({ ok: true, data: { messages: rows } }));
+  assert.deepEqual(await listHistoryMessages("fixture", "history"), { ok: true, messages: rows });
+});

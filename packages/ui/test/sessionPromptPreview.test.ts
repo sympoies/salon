@@ -29,3 +29,10 @@ test("normalized notices are marked in both modes without replacing a genuine pr
     assert.deepEqual(preview(text, text), [unchanged, unchanged]);
   }
 });
+
+test("classified compaction does not become an agent turn preview", () => {
+  const session = makeSession(projectPublicAgentSession({ last_prompt: { text: "Human prompt" }, last_message: { role: "assistant", text: "Summary", row_class: "compaction" } }));
+  assert.equal(sessionCardPreview(session, "latest-message"), "Human prompt");
+  const classifiedPrompt = makeSession(projectPublicAgentSession({ last_prompt: { text: "Summary", row_class: "compaction" } }));
+  assert.equal(sessionLastPromptPreview(classifiedPrompt), null);
+});

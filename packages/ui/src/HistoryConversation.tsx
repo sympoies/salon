@@ -386,8 +386,12 @@ export function HistoryConversationView({
           </button>
         ) : null}
         {messages.map((message, index) => {
-          const notice = parseSessionNotice(message.text);
-          const runtime = notice || message.images?.length ? null : parseRuntimeCommand(message.text);
+          const notice = message.row_class === "notice" || (!message.row_class && message.role === "notice") ? parseSessionNotice(message.text) : null;
+          const runtime = message.row_class === "runtime_command"
+            ? { title: parseRuntimeCommand(message.text)?.title ?? "Runtime command", text: message.text }
+            : !message.row_class && !notice && !message.images?.length ? parseRuntimeCommand(message.text) : null;
+          const compaction = message.row_class === "compaction";
+          const plainNotice = message.row_class === "notice" && !notice;
           const date = messageDate(message.timestamp);
           const previous = messages[index - 1];
           const previousDate = messageDate(previous?.timestamp);
@@ -404,9 +408,9 @@ export function HistoryConversationView({
             <Fragment key={message.id}>
               {newDay && date ? <div className="history-day-separator"><span>{messageDayLabel(date)}</span></div> : null}
               <article data-history-message-id={message.id}
-                aria-label={runtime ? "Runtime command" : notice ? message.mailbox ? "Mailbox read" : "System notice" : user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
-                className={notice || runtime ? "history-message is-notice" : `history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
-                {runtime ? <div className="session-notice runtime-command">
+                aria-label={compaction ? "Context compaction" : runtime ? "Runtime command" : notice || plainNotice ? message.mailbox ? "Mailbox read" : "System notice" : user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
+                className={notice || plainNotice || runtime || compaction ? "history-message is-notice" : `history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
+                {compaction ? <details className="session-notice mailbox-event-disclosure"><summary className="session-notice-title">Context compacted{time}</summary><div className="session-notice-body"><MessageMarkdown text={message.text} /></div></details> : plainNotice ? <div className="session-notice"><h3 className="session-notice-title"><span className="session-notice-label">System notice</span>{time}</h3><div className="session-notice-body"><MessageMarkdown text={message.text} /></div></div> : runtime ? <div className="session-notice runtime-command">
                   <h3 className="session-notice-title"><span className="session-notice-label">{runtime.title}</span>{time}</h3>
                   <code className="runtime-command-text">{runtime.text}</code>
                 </div> : notice && message.mailbox ? <MailboxEventRow event={message.mailbox} body={notice.body} time={time} /> : notice ? <SessionNotice notice={notice} raw={message.text} time={time} suppressImages={Boolean(message.images?.length)}>

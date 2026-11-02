@@ -81,7 +81,7 @@ export interface Session {
   /** Most-recent user prompt preview from the edge (capability-gated); absent for old daemons/edge. */
   readonly last_prompt?: SessionLastPrompt;
   /** Newest user or assistant message; optional during daemon upgrades. */
-  readonly last_message?: SessionLastPrompt & { readonly role: "user" | "assistant" };
+  readonly last_message?: SessionLastPrompt & { readonly role: "user" | "assistant"; readonly row_class?: import("@agent-console/shared").HistoryRowClass };
   /** Exact producer freshness state; absent for old or incompatible daemon/edge pairs. */
   readonly last_prompt_state?: SessionLastPromptState;
   /** Opaque response-only fence that rotates when exact transcript continuity is lost. */
@@ -165,6 +165,8 @@ export interface HistorySession {
 }
 
 export interface HistoryMessage {
+  readonly row_class?: import("@agent-console/shared").HistoryRowClass;
+  readonly compaction?: import("@agent-console/shared").HistoryCompaction;
   readonly images?: readonly import("@agent-console/shared/conversation-images").ConversationImage[];
   readonly id: string;
   readonly role: "user" | "assistant" | "goal" | "notice";

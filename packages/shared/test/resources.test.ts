@@ -52,3 +52,13 @@ test("conversation snapshots preserve bounded image-only descriptors without pat
   const bounded = normalizeResourceEvent({...event,conversation:{messages:[{id:"many",role:"assistant",text:"images",images:Array(30).fill(image)}]}});
   assert.equal(bounded?.conversation?.messages[0]?.images?.length,16);
 });
+
+test("conversation snapshots retain classified rows including empty compactions", () => {
+  const conversation = { messages: [
+    { id: "compact", role: "notice", text: "", row_class: "compaction", compaction: { summary_truncated: true } },
+    { id: "notice", role: "user", text: "Synthetic notice", row_class: "notice" },
+    { id: "unknown", role: "user", text: "ordinary", row_class: "future" },
+  ] };
+  assert.deepEqual(normalizeResourceEvent({ schema_version: "agent-console.resource-event.v1", type: "changed", resource: "conversation/a/b", revision: 1, conversation })?.conversation,
+    { messages: [conversation.messages[0], conversation.messages[1], { id: "unknown", role: "user", text: "ordinary" }] });
+});

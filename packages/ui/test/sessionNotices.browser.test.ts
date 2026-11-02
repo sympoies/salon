@@ -27,7 +27,7 @@ test("session notices render Markdown bodies that stay selectable and wrap at ph
     import {HistoryConversationView} from '/src/HistoryConversation.tsx';
     const messages=[{id:'human',role:'user',text:'Synthetic human message'},
       {id:'agent',role:'assistant',text:'Synthetic agent reply'},
-      {id:'notice',role:'user',text:${JSON.stringify(raw)}},
+      {id:'notice',role:'user',row_class:'notice',text:${JSON.stringify(raw)}},
       {id:'next',role:'assistant',text:'Conversation continues.'}].map(m=>({...m,timestamp:'2026-01-01T12:00:00'}));
     window.fixtureRoot=createRoot(document.querySelector('#root'));
     window.fixtureRoot.render(React.createElement(HistoryConversationView,{conversation:{

@@ -164,7 +164,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const revisionKey = `${key}:${state?.revision}`;
   if (revisionSeen.key !== revisionKey) setRevisionSeen({ key: revisionKey, at: Date.now() });
   // A notice is machine text, not agent output: it is never activity.
-  const activityMessages = messages.filter(message => message.role !== "notice");
+  const activityMessages = messages.filter(message => !message.row_class && message.role !== "notice");
   const latestMessage = activityMessages.at(-1);
   const [messageSeen, setMessageSeen] = useState(() => ({ key, ready: messagesReady, latest: latestMessage, at: 0 }));
   if (messageSeen.key !== key) {

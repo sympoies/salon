@@ -12,7 +12,7 @@ const raw = '<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 
-async function mount(text: string, latestMessagePaging = true, role = "user") {
+async function mount(text: string, latestMessagePaging = true, role = "user", rowClass?: string) {
   const window = new Window({ url: "http://localhost" });
   const previous = { window: globalThis.window, document: globalThis.document, IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT };
   Object.assign(globalThis, { window, document: window.document, IS_REACT_ACT_ENVIRONMENT: true });
@@ -24,7 +24,7 @@ async function mount(text: string, latestMessagePaging = true, role = "user") {
   const { HistoryConversationView } = await ssr.loadModule<typeof import("../src/HistoryConversation.tsx")>("/src/HistoryConversation.tsx");
   const conversation = {
     session: { machine: "fixture", id: "sample", provider: "codex" },
-    messages: [{ id: "notice", role, text, timestamp: "2026-01-01T12:00:00" }],
+    messages: [{ id: "notice", role, text, row_class: rowClass, timestamp: "2026-01-01T12:00:00" }],
     latestMessagePaging, loading: false, viewportRef: { current: null }, messagePage: 0, messagePageCursors: [],
   } as unknown as import("../src/HistoryConversation.tsx").HistoryConversation;
   await act(async () => root.render(createElement(HistoryConversationView, { conversation, onJumpToLatest() {} })));
@@ -32,8 +32,8 @@ async function mount(text: string, latestMessagePaging = true, role = "user") {
 }
 
 test("notice header is hidden and rendered Markdown body is visible in live and history", async () => {
-  const live = await mount(raw);
-  const history = await mount(raw, false);
+  const live = await mount(raw, true, "user", "notice");
+  const history = await mount(raw, false, "user", "notice");
   for (const { container } of [live, history]) {
     assert.doesNotMatch(container.textContent ?? "", /<!-- agent-notice:/, "the envelope must not appear as visible text");
     assert.match(container.textContent ?? "", /Mailbox.*12:00.*Synthetic update/s);
@@ -48,7 +48,7 @@ test("notice header is hidden and rendered Markdown body is visible in live and 
 
 test("a notice-role message renders once as the same System notice as a user message with the header", async () => {
   const asNotice = await mount(raw, true, "notice");
-  const asUser = await mount(raw);
+  const asUser = await mount(raw, true, "user", "notice");
   assert.equal(asNotice.container.querySelectorAll("article").length, 1);
   assert.equal(asNotice.container.querySelectorAll(".session-notice-body").length, 1);
   assert.equal(asNotice.container.querySelector("article")?.getAttribute("aria-label"), "System notice");
@@ -99,7 +99,7 @@ test("labels follow the kind family; unknown and lookalike kinds stay generic pl
     ["unknown", "System notice"], ["constructor", "System notice"], ["constructor.admin", "System notice"],
     ["mailboxes", "System notice"], ["scheduled.pulse", "System notice"], ["schedule", "System notice"],
     ["system.admin", "System notice"]]) {
-    const { container, window } = await mount(`<!-- agent-notice:v1 kind=${kind} source=fixture.admin -->\n\nBody`);
+    const { container, window } = await mount(`<!-- agent-notice:v1 kind=${kind} source=fixture.admin -->\n\nBody`, true, "user", "notice");
     assert.equal(container.querySelector(".session-notice-label")?.textContent, label);
     assert.equal(container.querySelector(".session-notice-meta > span")?.textContent, `${kind} · fixture.admin`);
     assert.equal(Boolean(container.querySelector("script, b")), false);
@@ -112,7 +112,7 @@ test("failed notice child renders the parsed body without exposing the envelope"
   const previous = console.error;
   console.error = () => {};
   try {
-    const { container, ssr, root } = await mount(raw);
+    const { container, ssr, root } = await mount(raw, true, "user", "notice");
     const { SessionNotice } = await ssr.loadModule<typeof import("../src/SessionNotice.tsx")>("/src/SessionNotice.tsx");
     function FailedAttachment(): never { throw Error("Synthetic rendering failure"); }
     await act(async () => root.render(createElement(SessionNotice, {
@@ -127,7 +127,7 @@ test("failed notice child renders the parsed body without exposing the envelope"
 
 
 test("leading blank lines do not leave empty blocks before the body", async () => {
-  const { container } = await mount(`${header}\n\n\n   \nFirst readable line\nSecond line`);
+  const { container } = await mount(`${header}\n\n\n   \nFirst readable line\nSecond line`, true, "user", "notice");
   assert.equal(container.querySelector(".session-notice-body")?.textContent, "First readable line\nSecond line");
 });
 
@@ -138,4 +138,31 @@ test("voice messages stay ordinary human messages, plain or quoted (#243)", asyn
     assert.equal(Boolean(container.querySelector(".session-notice")), false, text);
     assert.ok(container.querySelector(".history-message.is-user"), `${text} is shown as the user's message`);
   }
+});
+
+test("classified compactions fold summaries and classified notices stay boxless", async () => {
+  for (const provider of ["claude", "codex"]) {
+    const fixture = JSON.parse((await import("node:fs")).readFileSync(new URL("../../shared/test/fixtures/history-row-classes-v1.json", import.meta.url), "utf8"));
+    const entry = fixture.compactions.find((item: { provider: string; expected: unknown }) => item.provider === provider && (Array.isArray(item.expected) ? item.expected.length : item.expected));
+    const row = Array.isArray(entry.expected) ? entry.expected[0] : entry.expected;
+    const { container } = await mount(row.text, true, row.role, row.row_class);
+    const fold = container.querySelector("details");
+    assert.ok(fold);
+    assert.equal(fold.open, false);
+    await act(async () => { fold.open = true; });
+    assert.equal(fold.open, true);
+    assert.match(fold.textContent ?? "", /Synthetic compact summary/);
+    assert.equal(Boolean(container.querySelector(".history-bubble")), false);
+  }
+  const fixture = JSON.parse((await import("node:fs")).readFileSync(new URL("../../shared/test/fixtures/history-row-classes-v1.json", import.meta.url), "utf8"));
+  const noticeRow = fixture.notice_recognition[0].expected;
+  const notice = await mount(noticeRow.text, true, noticeRow.role, noticeRow.row_class);
+  assert.equal(Boolean(notice.container.querySelector(".history-bubble")), false);
+  assert.match(notice.container.textContent ?? "", /Synthetic summary/);
+  const lookalike = await mount("Mailbox: agent-session message inbox");
+  assert.ok(lookalike.container.querySelector(".history-bubble"));
+  const envelopeLookalike = await mount(raw);
+  assert.ok(envelopeLookalike.container.querySelector(".history-bubble"));
+  const wins = await mount("/compact", true, "user", "notice");
+  assert.equal(Boolean(wins.container.querySelector(".runtime-command")), false);
 });

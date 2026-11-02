@@ -119,7 +119,7 @@ export function transcriptProof(items: readonly QueuedReply[], messages: readonl
   for (const message of messages) {
     const at = Date.parse(message.timestamp ?? "");
     const parts = spent.get(message.id) ?? [];
-    if (message.role !== "user" || !Number.isFinite(at) || parts.includes("")) continue;
+    if (message.row_class || message.role !== "user" || !Number.isFinite(at) || parts.includes("")) continue;
     const candidates = pending.filter(item => !matched.has(item.id) && (untimedImage(item)
       ? Boolean(message.images?.length) : attemptTime(item) > 0
         && attemptTime(item) <= at + (imagePaths(item.text).length === 0 ? TRANSCRIPT_CLOCK_SKEW_MS : 0)));

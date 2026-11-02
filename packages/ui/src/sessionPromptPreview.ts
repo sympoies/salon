@@ -17,7 +17,7 @@ export function sessionLastPromptPreview(session: Session): string | null {
 /** Latest-message mode remains useful before the daemon advertises the field. */
 export function sessionCardPreview(session: Session, mode: CardPreview): string | null {
   const message = mode === "latest-message" ? session.last_message : undefined;
-  if (message && !isWorkerBootstrapPrompt(message.text)) {
+  if (message && !message.row_class && !isWorkerBootstrapPrompt(message.text)) {
     return message.role === "assistant" ? `Agent: ${message.text}` : message.text;
   }
   return sessionLastPromptPreview(session);
