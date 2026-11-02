@@ -129,8 +129,8 @@ import { MobileSessionList } from "./MobileSessionList.tsx";
 import { SessionMaintenanceDrawer } from "./SessionMaintenanceDrawer.tsx";
 import { StatusNotice } from "./StatusNotice.tsx";
 import { useStatusNotice } from "./useStatusNotice.ts";
-import { TRANSIENT_NOTICE_MS, TransientNoticeContext, type TransientNoticeControl } from "./transientNotice.ts";
-import { resultStatusNotice, type StatusNotice as StatusNoticeState } from "./statusNoticeModel.ts";
+import { TransientNoticeContext, type TransientNoticeControl } from "./transientNotice.ts";
+import { useResultNotices } from "./useResultNotices.ts";
 import {
   buildMaintenanceActionRequest,
   createSessionMaintenanceIncident,
@@ -223,13 +223,6 @@ interface Viewport {
   readonly touchPrimary: boolean;
 }
 
-interface RetitleFeedback {
-  readonly key: string;
-  readonly state: "working" | "updated" | "failed" | "updating" | "committed" | "unchanged" | "degraded_cached" | "terminal_failure";
-  // The actionable reason behind a failed state, shown on hover.
-  readonly detail?: string;
-}
-
 interface CreatedPromptRecovery {
   readonly key: number;
   readonly prompt: string;
@@ -240,11 +233,6 @@ interface CreatedPromptRecovery {
   readonly listRequestFloor?: number;
   readonly reconciled?: boolean;
   readonly acknowledged?: boolean;
-}
-
-interface ShortcutFeedback {
-  readonly key: string;
-  readonly text: string;
 }
 
 interface RefreshGeneration {
@@ -745,14 +733,13 @@ export function Dashboard({
     value: copiedStartupDiagnosticsKey,
     show: showCopiedStartupDiagnosticsKey,
   } = useExpiringValue<string>(2000);
+  const liveSessionKeys = useMemo(() => new Set(sessions.map(sessionKey)), [sessions]);
+  // Short-lived results (session refresh, retitle, shortcut hint) share the status layer at the top right, and
+  // each one's display time starts only once it is the notice on screen (#262).
   const {
-    value: retitleFeedback,
-    set: setRetitleFeedback,
-    show: showRetitleFeedback,
-  } = useExpiringValue<RetitleFeedback>(2600);
-  const { value: shortcutFeedback, show: showShortcutFeedback, clear: clearShortcutFeedback } = useExpiringValue<ShortcutFeedback>(2200);
-  // Short-lived results (session refresh, retitle, shortcut hint) share the status layer at the top right.
-  const { value: transientNotice, show: showTransientNotice, clear: clearTransientNotice } = useExpiringValue<StatusNoticeState>(TRANSIENT_NOTICE_MS);
+    resultNotice, showTransient: showTransientNotice, setRetitleFeedback, showRetitleFeedback,
+    showShortcutFeedback, dismissResults,
+  } = useResultNotices(statusNotice !== null, (key) => liveSessionKeys.has(key));
   const transientNoticeControl = useMemo<TransientNoticeControl>(() => ({ show: showTransientNotice }), [showTransientNotice]);
   const [repairingSessions, setRepairingSessions] = useState(false);
   const repairOpenerRef = useRef<HTMLElement | null>(null);
@@ -1060,7 +1047,6 @@ export function Dashboard({
     return new Map(visible.map((s) => [sessionKey(s), s] as const));
   }, [visible]);
 
-  const liveSessionKeys = useMemo(() => new Set(sessions.map(sessionKey)), [sessions]);
   const conversationReplyDrafts = useRef<ConversationReplyDrafts>(new Map());
   useConversationOutboxDelivery(sessions, reachableMachineNames, conversationReplyDrafts.current);
   useSharedOutboxSync(sessions);
@@ -1157,14 +1143,11 @@ export function Dashboard({
     setFocusedKeyFromUser(next);
   }, [focusedKey, historyMachineNames, openConversation, phoneSessionOpen, sessionsByKey, setFocusedKeyFromUser, viewport.mobile, viewport.touchPrimary]);
   // Hook notices have higher severity than the phone history fallback (info).
-  const resultNotice = resultStatusNotice({
-    transient: transientNotice, retitle: retitleFeedback, shortcut: shortcutFeedback, isLive: (key) => liveSessionKeys.has(key),
-  });
   const visibleStatusNotice = statusNotice ?? resultNotice ?? (viewport.mobile && phoneConversationNotice
     ? { kind: "info" as const, message: phoneConversationNotice } : null);
   const connectionNotice = visibleStatusNotice !== null;
   const statusNoticeElement = visibleStatusNotice ? <StatusNotice notice={visibleStatusNotice}
-    onDismiss={statusNotice ? dismissStatusNotice : resultNotice ? () => { clearTransientNotice(); clearShortcutFeedback(); setRetitleFeedback(null); } : () => setPhoneConversationNotice(undefined)} surface="dashboard" inline /> : null;
+    onDismiss={statusNotice ? dismissStatusNotice : resultNotice ? dismissResults : () => setPhoneConversationNotice(undefined)} surface="dashboard" inline /> : null;
   const openPhoneTerminal = useCallback((session: Session, unavailable = false) => {
     if (conversationBusy) return;
     setConversationKey(null);

@@ -537,7 +537,7 @@ test("Dashboard surfaces ⌘P retitle progress in the shared status layer", () =
   assert.match(autoTitleControllerSource, /const result = await applyManualRetitleSummary\(\{/);
   assert.match(autoTitleControllerSource, /result === "updated"/);
   // Shown in the shared top-right status layer, not inside the slot header (#254).
-  assert.match(dashboardSource, /resultStatusNotice\(\{\s*transient: transientNotice, retitle: retitleFeedback, shortcut: shortcutFeedback/);
+  assert.match(dashboardSource, /useResultNotices\(statusNotice !== null,/);
   assert.doesNotMatch(sessionSlotSource, /retitleState|retitle-feedback/);
   assert.doesNotMatch(css, /\.retitle-feedback/);
 });

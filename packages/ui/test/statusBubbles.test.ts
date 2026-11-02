@@ -70,7 +70,7 @@ test("no transient result is rendered inside the session header; the dashboard o
   assert.doesNotMatch(slot, /retitle-feedback|shortcutHint|Session info updated/);
   assert.match(dashboard, /<TransientNoticeContext\.Provider value=\{transientNoticeControl\}>/);
   assert.match(dashboard, /const visibleStatusNotice = statusNotice \?\? resultNotice \?\?/);
-  assert.match(dashboard, /isLive: \(key\) => liveSessionKeys\.has\(key\)/);
+  assert.match(dashboard, /useResultNotices\(statusNotice !== null, \(key\) => liveSessionKeys\.has\(key\)\)/);
 });
 
 test("a retitle still pending for a session that left the list leaves no stale progress behind", () => {
