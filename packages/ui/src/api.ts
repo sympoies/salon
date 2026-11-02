@@ -1,5 +1,5 @@
 import { normalizeConversationImages } from "@agent-console/shared/conversation-images";
-import { normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
+import { normalizeHistoryRowClass, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { validOutboxText, SHARED_OUTBOX_MAX_ITEMS, SHARED_OUTBOX_MAX_HOLDS, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
 import { isPromptRequestId, normalizePromptReceipt, type PromptReceipt } from "@agent-console/shared/prompt-receipt";
@@ -790,16 +790,17 @@ function normalizeHistoryMessage(value: unknown): HistoryMessage | undefined {
   const raw = value as Record<string, unknown>;
   const id = boundedString(raw.id, 160);
   const role = raw.role === "user" || raw.role === "assistant" || raw.role === "goal" || raw.role === "notice" ? raw.role : undefined;
-  const text = typeof raw.text === "string" && raw.text.length <= 64 * 1024 ? raw.text : undefined;
+  const rowClass = normalizeHistoryRowClass(raw.row_class);
+  const text = typeof raw.text === "string" && (rowClass === "compaction" ? [...raw.text].length : raw.text.length) <= 64 * 1024 ? raw.text : undefined;
   const images = normalizeConversationImages(raw.images);
-  if (!id || !role || text === undefined || (!text && !images.length)) return undefined;
-  // A notice is display-only machine text: it must parse as an envelope and carry no images.
-  if (role === "notice" && (images.length || !parseSessionNotice(text))) return undefined;
+  if (!id || !role || text === undefined || (!text && !images.length && rowClass !== "compaction")) return undefined;
+  if (role === "notice" && (images.length || (!rowClass && !parseSessionNotice(text)))) return undefined;
   const mailbox = role === "notice" ? normalizeMailboxEvent(raw.mailbox) : undefined;
   return {
     id,
     role,
     text,
+    ...(rowClass ? { row_class: rowClass } : {}),
     ...(images.length ? { images } : {}),
     ...(boundedString(raw.timestamp, 64) ? { timestamp: raw.timestamp as string } : {}),
     ...(mailbox ? { mailbox } : {}),

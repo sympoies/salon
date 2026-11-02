@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { normalizeMailboxEvent } from "@agent-console/shared";
@@ -206,4 +207,16 @@ test("image-only history messages retain bounded opaque descriptors", () => {
   assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [
     { id: "image-only", role: "user", text: "", images: [{ id, path: "/private/image.png", data: "private" }] },
   ] }), { messages: [{ id: "image-only", role: "user", text: "", images: [{ id }] }] });
+});
+
+// Source: sympoies/nils-cli@f1cacbf8dd5d8e4a1dbe6cdcabdd8d926b6cf6db,
+// crates/agent-session/docs/specs/fixtures/history-row-classes-v1.json
+// SHA-256: ddfba0daa882f4b196ed24f6441e45f8f2a31f7e9dc8582191925ad29b583b17
+test("history projection preserves frozen classified rows and ignores unknown classes", () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../shared/test/fixtures/history-row-classes-v1.json", import.meta.url), "utf8"));
+  const rows = fixture.compactions.flatMap((entry: { expected: unknown }) => Array.isArray(entry.expected) ? entry.expected : [entry.expected]);
+  const notices = fixture.notice_recognition.slice(0, 2).map((entry: { expected: unknown }) => entry.expected);
+  const unknown = { id: "unknown", role: "user", text: "ordinary", row_class: "future" };
+  assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [...rows, ...notices, unknown] }),
+    { messages: [...rows.map(({ compaction: _compaction, ...row }: Record<string, unknown>) => row), ...notices, { id: "unknown", role: "user", text: "ordinary" }] });
 });

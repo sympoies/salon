@@ -359,7 +359,7 @@ const HARNESS_WRAPPER_PATTERN = new RegExp(
 function normalizePublicLastPrompt(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const raw = value as Record<string, unknown>;
-  if (typeof raw.text !== "string") return undefined;
+  if (typeof raw.text !== "string" || raw.row_class === "compaction" || raw.row_class === "notice" || raw.row_class === "runtime_command") return undefined;
   const prompt = unwrapPastedContent(raw.text);
   const notice = parseSessionNotice(prompt);
   const body = notice ? notice.body.split(/\r?\n/, 1)[0]! : prompt;

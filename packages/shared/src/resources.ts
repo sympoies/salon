@@ -16,8 +16,13 @@ export function resourceKey(subscription: ResourceSubscription): string {
 // The same normalized latest-page shape as the history HTTP response. Larger
 // pages stay on HTTP so an eight-conversation stream remains bounded.
 export const CONVERSATION_SNAPSHOT_MAX_BYTES = 60 * 1024;
+export type HistoryRowClass = "runtime_command" | "compaction" | "notice";
+export function normalizeHistoryRowClass(value: unknown): HistoryRowClass | undefined {
+  return value === "runtime_command" || value === "compaction" || value === "notice" ? value : undefined;
+}
+
 export interface ConversationSnapshot {
-  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly images?: readonly ConversationImage[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent }>;
+  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly row_class?: HistoryRowClass; readonly images?: readonly ConversationImage[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent }>;
   readonly next_cursor?: string;
   readonly older_cursor?: string;
 }
@@ -35,11 +40,11 @@ export function normalizeConversationSnapshot(value: unknown): ConversationSnaps
       || typeof item.text !== "string" || item.text.length > 64 * 1024
       || (item.timestamp !== undefined && (typeof item.timestamp !== "string" || item.timestamp.length > 64))) return undefined;
     const images = normalizeConversationImages(item.images);
-    // A notice is display-only machine text: it must parse as an envelope and carry no images.
-    if (item.role === "notice" && (images.length || !parseSessionNotice(item.text))) continue;
+    const rowClass = normalizeHistoryRowClass(item.row_class);
+    if (item.role === "notice" && (images.length || (!rowClass && !parseSessionNotice(item.text)))) continue;
     ids.add(item.id);
     const mailbox = item.role === "notice" ? normalizeMailboxEvent(item.mailbox) : undefined;
-    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal" | "notice", text: item.text, ...(images.length ? { images } : {}),
+    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal" | "notice", text: item.text, ...(rowClass ? { row_class: rowClass } : {}), ...(images.length ? { images } : {}),
       ...(typeof item.timestamp === "string" ? { timestamp: item.timestamp } : {}), ...(mailbox ? { mailbox } : {}) });
   }
   const snapshot: ConversationSnapshot = { messages };
