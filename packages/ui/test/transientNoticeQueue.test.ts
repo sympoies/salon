@@ -8,6 +8,7 @@ import { hostOfflineNotice, transientStatusNotice, type StatusNotice } from "../
 import type { TimeoutScheduler } from "../src/scheduler.ts";
 import { useTransientNotice } from "../src/useTransientNotice.ts";
 import { useVisibleExpiringValue } from "../src/useVisibleExpiringValue.ts";
+import { useResultNotices } from "../src/useResultNotices.ts";
 
 // #262: a transient result is shown for its full time once it is on screen. One that arrives while another
 // status notice is showing waits behind it instead of expiring unseen.
@@ -149,12 +150,102 @@ test("an indefinite working retitle never expires, is replaced by its result and
   assert.equal(scheduler.live().length, 0);
 });
 
-test("the dashboard drives the held result by whether another status notice is showing", () => {
+type Results = ReturnType<typeof useResultNotices>;
+
+// The whole shared-layer composition the dashboard uses: a host notice blocks every result, results rank
+// refresh > retitle > hint, and each result's time starts when it is the one on screen.
+async function mountResults(scheduler: ReturnType<typeof fakeScheduler>, live: Set<string>) {
+  const window = new Window({ url: "http://localhost" });
+  const previous = { window: globalThis.window, document: globalThis.document, IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT };
+  Object.assign(globalThis, { window, document: window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  const container = window.document.createElement("div");
+  window.document.body.append(container);
+  const root = createRoot(container);
+  cleanups.push(async () => { await act(async () => root.unmount()); Object.assign(globalThis, previous); await window.happyDOM.abort(); });
+  const seen = {} as { api: Results; statusShowing: boolean };
+  function Probe({ statusShowing }: { statusShowing: boolean }) {
+    seen.api = useResultNotices(statusShowing, key => live.has(key), scheduler);
+    seen.statusShowing = statusShowing;
+    return null;
+  }
+  const setStatus = async (statusShowing: boolean) => { await act(async () => root.render(createElement(Probe, { statusShowing }))); };
+  await setStatus(false);
+  // What the layer shows: the status notice first, else the result.
+  const visible = () => seen.statusShowing ? "status" : seen.api.resultNotice?.message ?? null;
+  return { seen, setStatus, visible };
+}
+
+test("retitle success and failure and the shortcut hint behind a host notice show after it ends and then expire", async () => {
+  const scheduler = fakeScheduler();
+  const { seen, setStatus, visible } = await mountResults(scheduler, new Set(["host:a"]));
+  const cases = [
+    { name: "retitle success", show: () => seen.api.showRetitleFeedback({ key: "host:a", state: "updated" }), text: "Title updated", ttl: 2600 },
+    { name: "retitle failure", show: () => seen.api.showRetitleFeedback({ key: "host:a", state: "failed", detail: "Try again" }), text: "Retitle failed: Try again", ttl: 2600 },
+    { name: "shortcut hint", show: () => seen.api.showShortcutFeedback({ key: "host:a", text: "Open a session" }), text: "Open a session", ttl: 2200 },
+  ];
+  for (const c of cases) {
+    await setStatus(true);
+    await act(async () => c.show());
+    assert.equal(visible(), "status", `${c.name}: the host notice shows first`);
+    assert.equal(scheduler.live().length, 0, `${c.name}: no time runs behind the host notice`);
+    await setStatus(false);
+    assert.equal(visible(), c.text, `${c.name}: shows after the host notice ends`);
+    assert.equal(scheduler.live()[0]!.delayMs, c.ttl, `${c.name}: its full time starts when shown`);
+    await act(async () => scheduler.live()[0]!.callback());
+    assert.equal(visible(), null, `${c.name}: expires normally`);
+  }
+});
+
+test("results rank refresh over retitle over hint, each starting its time when it reaches the screen", async () => {
+  const scheduler = fakeScheduler();
+  const { seen, visible } = await mountResults(scheduler, new Set(["host:a"]));
+  await act(async () => { seen.api.showShortcutFeedback({ key: "host:a", text: "Open a session" }); });
+  assert.equal(visible(), "Open a session");
+  await act(async () => { seen.api.showRetitleFeedback({ key: "host:a", state: "updated" }); });
+  assert.equal(visible(), "Title updated", "the retitle result takes the layer from the hint");
+  await act(async () => { seen.api.showTransient(transientStatusNotice("Session info updated", "ok")); });
+  assert.equal(visible(), "Session info updated", "the refresh result ranks first");
+  assert.equal(scheduler.live().length, 1, "only the result on screen is timing");
+  await act(async () => scheduler.live()[0]!.callback());
+  assert.equal(visible(), "Title updated", "the retitle result shows next with its full time");
+  assert.equal(scheduler.live()[0]!.delayMs, 2600);
+  await act(async () => scheduler.live()[0]!.callback());
+  assert.equal(visible(), "Open a session", "then the hint, with its full time");
+  assert.equal(scheduler.live()[0]!.delayMs, 2200);
+  await act(async () => scheduler.live()[0]!.callback());
+  assert.equal(visible(), null, "nothing is left on screen");
+  assert.equal(scheduler.live().length, 0);
+});
+
+test("a retitle in progress stays until its result replaces it; dismissing clears every result", async () => {
+  const scheduler = fakeScheduler();
+  const { seen, visible } = await mountResults(scheduler, new Set(["host:a"]));
+  await act(async () => seen.api.setRetitleFeedback({ key: "host:a", state: "working" }));
+  assert.equal(visible(), "Retitling…");
+  assert.equal(scheduler.live().length, 0, "progress never expires");
+  await act(async () => seen.api.showRetitleFeedback({ key: "host:a", state: "updated" }));
+  assert.equal(visible(), "Title updated");
+  await act(async () => seen.api.showShortcutFeedback({ key: "host:a", text: "Open a session" }));
+  await act(async () => seen.api.dismissResults());
+  assert.equal(visible(), null);
+  assert.equal(scheduler.live().length, 0);
+});
+
+test("a pending retitle for a removed session leaves no stale progress and does not hold the hint", async () => {
+  const scheduler = fakeScheduler();
+  const live = new Set(["host:a", "host:b"]);
+  const { seen, visible } = await mountResults(scheduler, live);
+  await act(async () => seen.api.setRetitleFeedback({ key: "host:a", state: "working" }));
+  assert.equal(visible(), "Retitling…");
+  live.delete("host:a");
+  await act(async () => seen.api.showShortcutFeedback({ key: "host:b", text: "Open a session" }));
+  assert.equal(visible(), "Open a session", "the removed session's progress is not shown and does not mask the hint");
+  assert.equal(scheduler.live()[0]!.delayMs, 2200, "the hint times normally");
+});
+
+test("the dashboard uses the shared result composition, not its own expiring values", () => {
   const dashboard = readFileSync(new URL("../src/Dashboard.tsx", import.meta.url), "utf8");
-  assert.match(dashboard, /useTransientNotice\(statusNotice !== null\)/);
-  assert.doesNotMatch(dashboard, /useExpiringValue<StatusNoticeState>\(TRANSIENT_NOTICE_MS\)/);
-  // Retitle results and the shortcut hint wait behind other notices too, and the hint also waits behind a retitle on screen.
-  assert.match(dashboard, /useVisibleExpiringValue<RetitleFeedback>\(resultBlocked, 2600\)/);
-  assert.match(dashboard, /useVisibleExpiringValue<ShortcutFeedback>\(resultBlocked \|\| retitleShowing, 2200\)/);
-  assert.doesNotMatch(dashboard, /useExpiringValue<RetitleFeedback>|useExpiringValue<ShortcutFeedback>/);
+  assert.match(dashboard, /useResultNotices\(statusNotice !== null, \(key\) => liveSessionKeys\.has\(key\)\)/);
+  assert.match(dashboard, /const visibleStatusNotice = statusNotice \?\? resultNotice \?\?/);
+  assert.doesNotMatch(dashboard, /useExpiringValue<RetitleFeedback>|useExpiringValue<ShortcutFeedback>|useExpiringValue<StatusNoticeState>/);
 });
