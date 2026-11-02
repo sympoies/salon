@@ -78,7 +78,7 @@ test("coarse-pointer picker and filter controls keep mobile touch targets throug
 test("very narrow overview collapses New to its icon without changing its accessible name", () => {
   assert.match(
     styles,
-    /@media \(max-width: 340px\) \{[\s\S]*?\.workspace-head:has\(\.session-list-navigator\)\s+\.dash-create-actions\s*>\s*\.btn\s*\{[^}]*width:\s*var\(--control-toolbar-height\);[^}]*padding-inline:\s*0;[^}]*font-size:\s*0;/s,
+    /@media \(max-width: 340px\) \{[\s\S]*?\.workspace-head:has\(\.session-list-navigator\)\s+\.dash-create-actions\s*>\s*\.btn\s*\{[^}]*width:\s*var\(--icon-standard-size\);[^}]*padding-inline:\s*0;[^}]*font-size:\s*0;/s,
   );
 });
 
