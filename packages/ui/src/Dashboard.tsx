@@ -129,6 +129,8 @@ import { MobileSessionList } from "./MobileSessionList.tsx";
 import { SessionMaintenanceDrawer } from "./SessionMaintenanceDrawer.tsx";
 import { StatusNotice } from "./StatusNotice.tsx";
 import { useStatusNotice } from "./useStatusNotice.ts";
+import { TRANSIENT_NOTICE_MS, TransientNoticeContext, type TransientNoticeControl } from "./transientNotice.ts";
+import { resultStatusNotice, type StatusNotice as StatusNoticeState } from "./statusNoticeModel.ts";
 import {
   buildMaintenanceActionRequest,
   createSessionMaintenanceIncident,
@@ -748,7 +750,10 @@ export function Dashboard({
     set: setRetitleFeedback,
     show: showRetitleFeedback,
   } = useExpiringValue<RetitleFeedback>(2600);
-  const { value: shortcutFeedback, show: showShortcutFeedback } = useExpiringValue<ShortcutFeedback>(2200);
+  const { value: shortcutFeedback, show: showShortcutFeedback, clear: clearShortcutFeedback } = useExpiringValue<ShortcutFeedback>(2200);
+  // Short-lived results (session refresh, retitle, shortcut hint) share the status layer at the top right.
+  const { value: transientNotice, show: showTransientNotice, clear: clearTransientNotice } = useExpiringValue<StatusNoticeState>(TRANSIENT_NOTICE_MS);
+  const transientNoticeControl = useMemo<TransientNoticeControl>(() => ({ show: showTransientNotice }), [showTransientNotice]);
   const [repairingSessions, setRepairingSessions] = useState(false);
   const repairOpenerRef = useRef<HTMLElement | null>(null);
   const [pendingRepair, setPendingRepair] = useState<{
@@ -1152,11 +1157,14 @@ export function Dashboard({
     setFocusedKeyFromUser(next);
   }, [focusedKey, historyMachineNames, openConversation, phoneSessionOpen, sessionsByKey, setFocusedKeyFromUser, viewport.mobile, viewport.touchPrimary]);
   // Hook notices have higher severity than the phone history fallback (info).
-  const visibleStatusNotice = statusNotice ?? (viewport.mobile && phoneConversationNotice
+  const resultNotice = resultStatusNotice({
+    transient: transientNotice, retitle: retitleFeedback, shortcut: shortcutFeedback, isLive: (key) => liveSessionKeys.has(key),
+  });
+  const visibleStatusNotice = statusNotice ?? resultNotice ?? (viewport.mobile && phoneConversationNotice
     ? { kind: "info" as const, message: phoneConversationNotice } : null);
   const connectionNotice = visibleStatusNotice !== null;
   const statusNoticeElement = visibleStatusNotice ? <StatusNotice notice={visibleStatusNotice}
-    onDismiss={statusNotice ? dismissStatusNotice : () => setPhoneConversationNotice(undefined)} surface="dashboard" inline /> : null;
+    onDismiss={statusNotice ? dismissStatusNotice : resultNotice ? () => { clearTransientNotice(); clearShortcutFeedback(); setRetitleFeedback(null); } : () => setPhoneConversationNotice(undefined)} surface="dashboard" inline /> : null;
   const openPhoneTerminal = useCallback((session: Session, unavailable = false) => {
     if (conversationBusy) return;
     setConversationKey(null);
@@ -2866,6 +2874,7 @@ export function Dashboard({
   }, []);
 
   return (
+    <TransientNoticeContext.Provider value={transientNoticeControl}>
     <SessionRefreshContext.Provider value={sessionRefreshControl}>
     <DashboardUsageProvider enabled={operatorCapabilities.usage}>
       <div
@@ -3169,9 +3178,6 @@ export function Dashboard({
             // the focused header.
             const ordinalIndex = slot ? shortcutSessionKeys.indexOf(slot) : -1;
             const sessionOrdinal = ordinalIndex >= 0 ? ordinalIndex + 1 : null;
-            const retitleState = slot && retitleFeedback?.key === slot ? retitleFeedback.state : null;
-            const retitleDetail = slot && retitleFeedback?.key === slot ? retitleFeedback.detail ?? null : null;
-            const shortcutHint = slot && shortcutFeedback?.key === slot ? shortcutFeedback.text : null;
             return (
               <SessionSlot
                 key={slot ?? `empty-${index}`}
@@ -3210,9 +3216,6 @@ export function Dashboard({
                   sessionNavGridKeys,
                   onFocusPrevious: () => { if (!phoneConversationLocked) focusAdjacentSession(-1); },
                   onFocusNext: () => { if (!phoneConversationLocked) focusAdjacentSession(1); },
-                  shortcutHint,
-                  retitleState,
-                  retitleDetail,
                   onRetitle: retitleSession,
                   repairingSessions,
                   viewport,
@@ -3400,5 +3403,6 @@ export function Dashboard({
       </div>
     </DashboardUsageProvider>
     </SessionRefreshContext.Provider>
+    </TransientNoticeContext.Provider>
   );
 }

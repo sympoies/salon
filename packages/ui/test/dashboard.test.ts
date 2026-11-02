@@ -205,7 +205,7 @@ test("Dashboard exposes explicit recovery action for resumable sessions", () => 
   assert.match(source, /const resumeAvailable = s \? isSessionResumeAvailable\(s\) : false;/);
   assert.match(source, /const onResume = async \(s: Session\) => \{/);
   assert.match(source, /const resumeButton = s && resumeAvailable \? \(/);
-  assert.match(source, /\{headerFeedback\}\s*\{resumeButton\}\s*\{titleControlFor\(false\)\}/);
+  assert.match(source, /\{resumeButton\}\s*\{titleControlFor\(false\)\}/);
   assert.match(source, /className="slot-focus-actions"[\s\S]*\{resumeButton\}/);
   assert.match(source, />\s*Recover\s*<\/AsyncButton>/);
   assert.match(source, /s\.status === "running" \? \(/);
@@ -532,15 +532,14 @@ test("Dashboard exposes focused-session previous and next controls around the or
   assert.match(css, /\.slot-session-nav-icon \{/);
 });
 
-test("Dashboard surfaces ⌘P retitle progress as slot feedback", () => {
+test("Dashboard surfaces ⌘P retitle progress in the shared status layer", () => {
   // Working state on trigger, resolved state from the summarizer result.
   assert.match(autoTitleControllerSource, /const result = await applyManualRetitleSummary\(\{/);
   assert.match(autoTitleControllerSource, /result === "updated"/);
-  // Passed down and rendered in the slot header (visible while focused).
-  assert.match(dashboardSource, /retitleState,/);
-  assert.match(sessionSlotSource, /readonly retitleState: /);
-  assert.match(sessionSlotSource, /retitle-feedback \$\{retitleState\}/);
-  assert.match(css, /\.retitle-feedback \{/);
+  // Shown in the shared top-right status layer, not inside the slot header (#254).
+  assert.match(dashboardSource, /resultStatusNotice\(\{\s*transient: transientNotice, retitle: retitleFeedback, shortcut: shortcutFeedback/);
+  assert.doesNotMatch(sessionSlotSource, /retitleState|retitle-feedback/);
+  assert.doesNotMatch(css, /\.retitle-feedback/);
 });
 
 test("Dashboard ⌘F toggles between the list and the selected session", () => {
