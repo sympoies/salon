@@ -403,6 +403,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+.runtime-command-text {
+  display: block;
+  padding-inline: var(--space-md);
+  text-align: center;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
 .session-notice-body {
   padding-inline: var(--space-md);
   text-align: left;

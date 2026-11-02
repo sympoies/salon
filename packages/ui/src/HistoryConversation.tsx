@@ -8,7 +8,7 @@ import { AgentBadge } from "./AgentBadge.tsx";
 import { SessionNotice } from "./SessionNotice.tsx";
 import { MailboxEventRow } from "./MailboxEventRow.tsx";
 import { boundHistoryMessages, mergeOlderHistoryMessages } from "./historyMessageWindow.ts";
-import { parseSessionNotice } from "@agent-console/shared";
+import { parseRuntimeCommand, parseSessionNotice } from "@agent-console/shared";
 import { uploadedFilePaths } from "./attachmentPaths.ts";
 import { MessageMarkdown } from "./MessageMarkdown.tsx";
 import { unwrapPastedContent } from "./pastedContent.ts";
@@ -387,6 +387,7 @@ export function HistoryConversationView({
         ) : null}
         {messages.map((message, index) => {
           const notice = parseSessionNotice(message.text);
+          const runtime = notice || message.images?.length ? null : parseRuntimeCommand(message.text);
           const date = messageDate(message.timestamp);
           const previous = messages[index - 1];
           const previousDate = messageDate(previous?.timestamp);
@@ -403,9 +404,12 @@ export function HistoryConversationView({
             <Fragment key={message.id}>
               {newDay && date ? <div className="history-day-separator"><span>{messageDayLabel(date)}</span></div> : null}
               <article data-history-message-id={message.id}
-                aria-label={notice ? message.mailbox ? "Mailbox read" : "System notice" : user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
-                className={notice ? "history-message is-notice" : `history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
-                {notice && message.mailbox ? <MailboxEventRow event={message.mailbox} body={notice.body} time={time} /> : notice ? <SessionNotice notice={notice} raw={message.text} time={time} suppressImages={Boolean(message.images?.length)}>
+                aria-label={runtime ? "Runtime command" : notice ? message.mailbox ? "Mailbox read" : "System notice" : user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
+                className={notice || runtime ? "history-message is-notice" : `history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
+                {runtime ? <div className="session-notice runtime-command">
+                  <h3 className="session-notice-title"><span className="session-notice-label">{runtime.title}</span>{time}</h3>
+                  <code className="runtime-command-text">{runtime.text}</code>
+                </div> : notice && message.mailbox ? <MailboxEventRow event={message.mailbox} body={notice.body} time={time} /> : notice ? <SessionNotice notice={notice} raw={message.text} time={time} suppressImages={Boolean(message.images?.length)}>
                   {message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}
                 </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}

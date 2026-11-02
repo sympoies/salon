@@ -5,3 +5,4 @@ export * from "./sessionRetitle.ts";
 export * from "./title.ts";
 export * from "./parseSessionNotice.ts";
 export * from "./mailboxEvent.ts";
+export * from "./runtimeCommand.ts";
