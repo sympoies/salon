@@ -48,7 +48,9 @@ export interface TerminalContextCommandGuard {
   clearDraft(): DraftClear | null;
   noteNavigation(): void;
   markInputUncertain(): string | null;
-  /** Drops the local draft and uncertainty once no input is pending in the provider. */
+  /** Remembers the draft state once, when a quarantine begins; later input is refused and not part of it. */
+  enterQuarantine(): void;
+  /** Restores the state from before the quarantine, so a draft accepted earlier stays guarded. */
   releaseQuarantine(): void;
   uncertaintyMessage(): string | null;
   confirmSubmission(submittedAt: string): boolean;
@@ -59,6 +61,7 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
   let draft = emptyDraft();
   let inputUncertain = false;
   let uncertainSince = 0;
+  let beforeQuarantine: {draft: Draft; inputUncertain: boolean} | null = null;
   const uncertaintyMessage = () => inputUncertain && commands.length > 0
     ? "The provider draft is uncertain after rejected or unconfirmed input. Enter is blocked. "
       + "Send a reply from Conversation after the provider recovers; a confirmed submission unlocks Enter. "
@@ -248,11 +251,15 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
       uncertainSince = Date.now();
       return uncertaintyMessage();
     },
-    // A quarantined session accepts no input, so nothing typed under it
-    // reached the provider: the draft is empty and not uncertain.
+    // A quarantined session accepts no input, so what is typed under it never
+    // reached the provider; a draft accepted before it still sits there.
+    enterQuarantine() {
+      beforeQuarantine ??= {draft: structuredClone(draft), inputUncertain};
+    },
     releaseQuarantine() {
-      draft = emptyDraft();
-      inputUncertain = false;
+      if (!beforeQuarantine) return;
+      ({draft, inputUncertain} = beforeQuarantine);
+      beforeQuarantine = null;
     },
     confirmSubmission(submittedAt) {
       // Attach prompt events come from provider history, not terminal pixels or

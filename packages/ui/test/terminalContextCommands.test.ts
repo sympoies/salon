@@ -18,6 +18,7 @@ interface Fixture {
   inputs: Input[];
   rejectNext?: boolean;
   rejectionUnknown?: boolean;
+  rejectionCode?: string;
   deferNext?: boolean;
   rejectDeferred?: () => void;
   deps?: {
@@ -60,7 +61,7 @@ const terminalAdapter: Plugin = {
 
 async function withPane(agent: string, socket: boolean, run: (fixture: {
   inputs: Input[];
-  rejectNext(unknown?: boolean): void;
+  rejectNext(unknown?: boolean, code?: string): void;
   rejectLater(unknown?: boolean, code?: string): Promise<void>;
   deferNext(): void;
   rejectDeferred(): Promise<void>;
@@ -96,7 +97,7 @@ async function withPane(agent: string, socket: boolean, run: (fixture: {
       });
     }
     assert.equal(body.allow_blocked, true, "human permission replies retain their HTTP intent");
-    if(fixture.rejectNext){fixture.rejectNext=false;return new Response(JSON.stringify({error:'not sent'}),{status:fixture.rejectionUnknown ? 503 : 409});}
+    if(fixture.rejectNext){fixture.rejectNext=false;return new Response(JSON.stringify({error:fixture.rejectionCode ? {code:fixture.rejectionCode,message:'not sent'} : 'not sent'}),{status:fixture.rejectionUnknown ? 503 : 409});}
     fixture.inputs.push({ ...(body.text === undefined ? {} : {text: body.text}),
       ...(body.keys === undefined ? {} : {keys: body.keys}) });
     return new Response(JSON.stringify({ ok: true }), {status: 200});
@@ -131,7 +132,7 @@ async function withPane(agent: string, socket: boolean, run: (fixture: {
       })); },
       deferNext: () => {fixture.deferNext=true;},
       rejectDeferred: async () => {await act(async () => fixture.rejectDeferred!());},
-      rejectNext: (unknown = false) => {fixture.rejectNext=true;fixture.rejectionUnknown=unknown;},
+      rejectNext: (unknown = false, code?: string) => {fixture.rejectNext=true;fixture.rejectionUnknown=unknown;fixture.rejectionCode=code;},
       rejectLater: async (unknown = false, code?: string) => {await act(async () => {
         await Promise.resolve();
         fixture.deps!.onInputRejected({message: "rejected callback", outcomeUnknown: unknown, ...(code ? {code} : {})});
@@ -976,6 +977,35 @@ for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as cons
       for (const char of command) await p.text(char);
       await p.rejectLater();
       assert.match(p.html(), /<button[^>]*>Clear draft<\/button>/);
+    });
+  });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: a ${command} draft accepted before the quarantine stays guarded after the release`, async () => {
+    await withPane(agent, true, async p => {
+      for (const char of command) await p.text(char);
+      await p.remount({ authQuarantined: true });
+      await p.text("x");
+      await p.rejectLater(false, "auth-quarantined");
+      await p.remount({ authQuarantined: false });
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before, "Enter is still refused for the earlier slash command");
+      assert.match(p.notice(), /managed|thread|context/i);
+    });
+  });
+
+  test(`${agent}: direct HTTP input refused by auth quarantine names it without latching an uncertain draft`, async () => {
+    await withPane(agent, false, async p => {
+      await p.remount({ authQuarantined: true });
+      for (const char of command) await p.text(char);
+      p.rejectNext(false, "auth-quarantined");
+      await p.text("x");
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+      assert.match(p.notice(), /authentication quarantine/i);
+      assert.doesNotMatch(p.notice(), /draft is uncertain/);
+      assert.doesNotMatch(p.html(), /<button[^>]*>Clear draft<\/button>/);
     });
   });
 }

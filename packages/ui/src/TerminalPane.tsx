@@ -222,7 +222,7 @@ export function TerminalPane({
     readonly outcomeUnknown?: boolean;
   }) => {
     if (rejection.code === AUTH_QUARANTINED_CODE) {
-      contextCommandGuardRef.current.releaseQuarantine();
+      contextCommandGuardRef.current.enterQuarantine();
       setContextCommandRefusal(AUTH_QUARANTINE_TERMINAL_TEXT);
       return;
     }
@@ -286,6 +286,7 @@ export function TerminalPane({
   // A confirmed release: the refused input never reached the provider.
   const wasQuarantinedRef = useRef(authQuarantined);
   useEffect(() => {
+    if (authQuarantined) contextCommandGuardRef.current.enterQuarantine();
     if (wasQuarantinedRef.current && !authQuarantined) {
       contextCommandGuardRef.current.releaseQuarantine();
       setContextCommandRefusal(null);
@@ -305,6 +306,7 @@ export function TerminalPane({
       .then((result) => {
         if (!result.ok && mountedRef.current && inputGuard === contextCommandGuardRef.current) {
           showInputRejection({
+            ...(result.code ? { code: result.code } : {}),
             message: result.error,
             outcomeUnknown: result.outcomeUnknown,
           });
