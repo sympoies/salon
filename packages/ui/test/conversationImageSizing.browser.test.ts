@@ -104,8 +104,8 @@ test("image previews fit column, natural dimensions and viewport without croppin
           assert.ok(box.h<=550.1,"height fits 55% of the viewport");
           assert.ok(Math.abs(box.image.w-box.w)<1 && Math.abs(box.image.h-box.h)<1,"no padded frame or crop");
         }
-        assert.ok(wide.w>measured.column.w*(width<=600?0.8:0.6),"wide screenshot fills the intended column share");
-        assert.ok(wide.w<measured.column.w*(width<=600?1:0.7),"desktop leaves column breathing room");
+        assert.ok(wide.w>measured.column.w*(width<=600?0.75:0.6),"wide screenshot fills the intended column share");
+        assert.ok(wide.w<measured.column.w*(width<=600?0.85:0.7),"desktop leaves column breathing room");
         assert.ok(portrait.h>portrait.w && tall.h>tall.w,"portrait and tall remain upright");
         assert.equal(tiny.w,32);assert.equal(tiny.h,24);
         assert.ok(Math.abs(tall.h-550)<1,"very tall image reaches the height cap");
