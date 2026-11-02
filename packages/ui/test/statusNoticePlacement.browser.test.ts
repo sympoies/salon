@@ -50,8 +50,8 @@ for (const kind of ["host-offline", "attention", "info"] as const) {
           assert.equal(m.role, kind === "info" ? "status" : "alert");
           assert.equal(m.rowHeight, m.clearRowHeight, "notice does not grow its row");
           if (width <= 760 && focused) {
-            assert.equal(m.countsVisible, counts, "persistent counts remain visible beneath the notice");
-            if (counts && width === 360 && kind === "host-offline") assert.equal(m.overlap, true, "long notice overlays counts");
+            assert.equal(m.countsVisible, counts, "the counts keep their box (no reflow) while the notice takes their cell");
+            if (counts) assert.ok(m.buttons.every((b: { visible: boolean }) => !b.visible), "the counts are hidden in place, not covered by the notice");
           }
         });
       }
@@ -89,7 +89,9 @@ function measure(markup: string, width: number, native: boolean, name: string) {
         floating:!row||getComputedStyle(layer).position==='fixed',
         atEnd:!!r&&Math.abs(p.right-r.right)<=12,
         countsVisible:!!c?.width&&getComputedStyle(counts).display!=='none',
-        overlap:!!c?.width&&p.left<c.right,rowHeight,clearRowHeight,
+        overlap:!!c?.width&&p.left<c.right,
+        buttons:[...document.querySelectorAll('.session-status-count')].map(b=>{const q=b.getBoundingClientRect();return {l:q.left,t:q.top,r:q.right,b:q.bottom,visible:getComputedStyle(b).visibility!=='hidden'&&getComputedStyle(b).display!=='none'}}),
+        notice:p&&{l:p.left,t:p.top,r:p.right,b:p.bottom},rowHeight,clearRowHeight,
         noticeHeight:p?.height,noticeCenter:p&&(p.top+p.bottom)/2,rowCenter:r&&(r.top+r.bottom)/2,
         dismissHeight:d?.height,dismissWidth:d?.width,
         dismissEdgesClickable:!!d&&[d.top+1,d.bottom-1].every(y=>{const h=document.elementFromPoint(d.x+d.width/2,y);return h===dismiss||dismiss.contains(h);}),
@@ -110,4 +112,28 @@ function measure(markup: string, width: number, native: boolean, name: string) {
     if (evidence) writeFileSync(join(evidence, `${name}.json`), JSON.stringify(m, null, 2));
     return m;
   } finally { rmSync(temp, { recursive: true, force: true }); }
+}
+
+// #254: no bubble may cover a header button at phone width. Computed boxes, not the count strip as a whole.
+function coveredButtons(m: { buttons: Array<{ l: number; t: number; r: number; b: number; visible: boolean }>; notice: { l: number; t: number; r: number; b: number } | null }): number {
+  const n = m.notice;
+  if (!n) return 0;
+  return m.buttons.filter(b => b.visible && Math.min(n.r, b.r) - Math.max(n.l, b.l) > 1 && Math.min(n.b, b.b) - Math.max(n.t, b.t) > 1).length;
+}
+for (const kind of ["attention", "host-offline"] as const) for (const focused of [false, true]) {
+  test(`#254 ${kind} notice at 384px covers no visible header control and the counts return after it (${focused ? "focused" : "overview"})`, async () => {
+    let dismissed = "";
+    const markup = await renderNoticeSurface("dashboard", 384, { restore: false, focused, phoneFocusCounts: true, focusedConversation: false,
+      error: kind === "host-offline" ? "fixture: offline" : "Session update needs attention",
+      inspectClear: (container, phase) => { if (phase === "dismissed") dismissed = container.innerHTML; } });
+    const m = measure(markup, 384, false, `overlap-${kind}-${focused}`);
+    assert.ok(m.buttons.length >= 1, "the status count buttons are rendered");
+    assert.equal(coveredButtons(m), 0, `no visible count button is covered: ${JSON.stringify({ notice: m.notice, buttons: m.buttons })}`);
+    assert.ok(m.buttons.every((b: { visible: boolean }) => !b.visible), "the counts are hidden in place while the notice shows");
+    assert.equal(m.rowHeight, m.clearRowHeight, "hiding the counts does not reflow the row");
+    assert.ok(dismissed.length > 0 && !dismissed.includes("connection-notice-layer"), "dismissing removes the notice");
+    const after = measure(dismissed, 384, false, `overlap-${kind}-${focused}-dismissed`);
+    assert.ok(!after.notice, "no notice box remains");
+    assert.ok(after.buttons.length >= 1 && after.buttons.every((b: { visible: boolean }) => b.visible), "the counts return once the notice is gone");
+  });
 }
