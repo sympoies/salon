@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.37 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.38 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -156,11 +156,11 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.37`; its release is a GitHub
-prerelease with `latest=false`. Delivery proof recognises the runtime's mailbox
-reminder with an unread total (`Mailbox: <N> unread; ...`) when it is joined
-with queued replies (#288). Existing
-`v0.1.0` through `v0.1.36` tags and assets stay immutable. The visibility transition does not
+merge. The checked-in SDK version is `0.1.38`; its release is a GitHub
+prerelease with `latest=false`. Activity snapshots keep sessions whose phase is
+unresponsive or not yet known instead of dropping the whole snapshot (#291).
+Existing
+`v0.1.0` through `v0.1.37` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
