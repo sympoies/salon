@@ -1,3 +1,4 @@
+import { normalizeSavedDraft, normalizeSavedDraftInventory, type SavedDraft } from "@agent-console/shared";
 import { normalizeConversationImages } from "@agent-console/shared/conversation-images";
 import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
 import { getPrincipalStorageNamespace } from "./storage.ts";
@@ -454,8 +455,10 @@ export async function listSessions(
       : undefined;
     const dispatchedBy = normalizeSessionDispatchedBy(rawSession.dispatched_by);
     const coordinatorTree = normalizeSessionCoordinatorTree(rawSession.coordinator_tree);
+    const savedDraft = typeof rawSession.id === "string" ? normalizeSavedDraft(rawSession.stale_draft, rawSession.id) : undefined;
     const session = {
       ...projectPublicAgentSession(rawSession),
+      ...(savedDraft ? { stale_draft: savedDraft } : {}),
       ...(dispatchedBy ? { dispatched_by: dispatchedBy } : {}),
       ...(coordinatorTree ? { coordinator_tree: coordinatorTree } : {}),
       ...(rawMachine ? { machine: rawMachine } : {}),
@@ -2395,3 +2398,19 @@ export async function actOnRefusedSharedOutbox(target: SharedOutboxTarget, item:
 
 /** Authenticated transport for statically registered distribution extensions. */
 export { req as extensionRequest, readReachableWithRecovery };
+
+/** Null means the runtime does not expose a usable draft inventory. */
+export async function fetchSavedDrafts(machine: string, id: string): Promise<readonly SavedDraft[] | null> {
+  const response = await req(`/api/sessions/${encodeURIComponent(machine)}/${encodeURIComponent(id)}/drafts`);
+  if (response.status === 404) return null;
+  const envelope = response.body as { ok?: boolean; data?: unknown } | undefined;
+  if (!resultOf(response).ok || envelope?.ok !== true) throw new Error("Could not load saved drafts");
+  return normalizeSavedDraftInventory(envelope.data, id) ?? null;
+}
+
+export async function fetchSavedDraftText(machine: string, id: string, draftId: string): Promise<string | null> {
+  const response = await appFetch(`/api/sessions/${encodeURIComponent(machine)}/${encodeURIComponent(id)}/drafts/${encodeURIComponent(draftId)}`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("Could not load saved draft");
+  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(await response.arrayBuffer());
+}

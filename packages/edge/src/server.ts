@@ -1,3 +1,4 @@
+import { normalizeSavedDraft } from "@agent-console/shared";
 import { forwardHistoryImage } from "./historyImages.ts";
 import {isPromptRequestId,isPromptIncarnation} from "@agent-console/shared/prompt-receipt";
 import {forwardPromptReceipt} from "./promptReceipts.ts";
@@ -31,6 +32,7 @@ import { serveStatic } from "./static.ts";
 import {
   aggregateSessions,
   daemonFetch,
+  daemonFetchBytes,
   machineAdvertisesAgentLaunchProfile,
   type DaemonDebugContext,
   type DaemonResult,
@@ -118,6 +120,7 @@ import {
 } from "./accessStore.ts";
 import { handleCoordinationRelay, isCoordinationRoute, assertResumeOwnership, resumeFailure, resumeRefusal } from "./coordinationRelay.ts";
 import { BoardQueryError } from "./board/query.ts";
+import { BOARD_RECORD_SCHEMA, BOARD_SNAPSHOT_SCHEMA } from "./board/record.ts";
 import { boardViewForRequest } from "./board/routes.ts";
 import { sessionViewerAccess } from "./crossOwnerSessionAccess.ts";
 import { openBoardService, type BoardServiceOptions } from "./board/service.ts";
@@ -271,6 +274,36 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   const attachHealth = options.attachHealth ?? new MachineHealth();
   const resourceWatches = new ResourceWatchRegistry();
   const activityStreams = new SharedActivityStreams();
+  // A board read must never add latency to the frequently polled session list.
+  const savedDraftBoards = new Map<string, { nextRefresh: number; inFlight: boolean; records: Map<string, import("@agent-console/shared").SavedDraft> }>();
+  const refreshSavedDraftBoard = (machine: MachineConfig): Map<string, import("@agent-console/shared").SavedDraft> => {
+    const now = Date.now();
+    const current = savedDraftBoards.get(machine.name);
+    if (current && (now < current.nextRefresh || current.inFlight)) return current.records;
+    const entry = current ?? { nextRefresh: 0, inFlight: false, records: new Map<string, import("@agent-console/shared").SavedDraft>() };
+    entry.nextRefresh = now + 30_000;
+    entry.inFlight = true;
+    savedDraftBoards.set(machine.name, entry);
+    void daemonFetch(machine, "/board/v1", { timeoutMs: 750 }).then(result => {
+      const body = result.body as { ok?: unknown; data?: { machine?: unknown; board?: { machine?: unknown; schema_version?: unknown; record_schema?: unknown; skipped_count?: unknown; records?: unknown } } } | undefined;
+      if (result.status !== 200 || body?.ok !== true || body.data?.machine !== machine.name
+        || body.data.board?.machine !== machine.name || body.data.board.schema_version !== BOARD_SNAPSHOT_SCHEMA
+        || body.data.board.record_schema !== BOARD_RECORD_SCHEMA || body.data.board.skipped_count !== 0
+        || !Array.isArray(body.data.board.records)) return;
+      const records = new Map<string, import("@agent-console/shared").SavedDraft>();
+      for (const value of body.data.board.records) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return;
+        const row = value as Record<string, unknown>;
+        if (row.machine !== machine.name || typeof row.session_id !== "string" || typeof row.created_at !== "string") return;
+        if (!Object.hasOwn(row, "stale_draft")) continue;
+        const event = normalizeSavedDraft(row.stale_draft, row.session_id);
+        if (!event) return;
+        records.set(JSON.stringify([row.session_id, row.created_at]), event);
+      }
+      entry.records = records;
+    }).catch(() => {}).finally(() => { entry.inFlight = false; });
+    return entry.records;
+  };
 
   const allMachineNames = config.machines.map((machine) => machine.name);
   // The root-only terminal opt-in must not change legacy/open identity payloads.
@@ -769,7 +802,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // fails closed for new routes, including GET endpoints for shells/settings.
     if (_principal.managedCredential && (method !== "GET" || ![
       "machines", "sessions", "board", "history-sessions", "history-messages", "history-image",
-      "resource-events", "activity-events", "glance", "buffer",
+      "resource-events", "activity-events", "glance", "buffer", "saved-drafts", "saved-draft",
     ].includes(route.id))) {
       sendJson(res, 403, { ok: false, error: { message: "forbidden" } });
       return;
@@ -1226,8 +1259,19 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           ? config.machines.filter((machine) => principalCanAccessMachine(_principal, machine.name))
           : config.machines;
         const only = selectMachines(permitted, url.searchParams.get("machines"));
-        const aggregate = await aggregateSessions(sessionMachinesForReader(_principal, only), machineHealth, daemonDebug(requestId));
-        const { sessions, metadata } = decoratedSessionsForReader(_principal, aggregate.sessions);
+        const readableMachines = sessionMachinesForReader(_principal, only);
+        const aggregate = await aggregateSessions(readableMachines, machineHealth, daemonDebug(requestId));
+        const snapshots = new Map(readableMachines.filter(machine =>
+          aggregate.machines.some(status => status.name === machine.name && status.ok)
+          && aggregate.sessions.some(session => session.machine === machine.name && typeof session.created_at === "string"))
+          .map(machine => [machine.name, refreshSavedDraftBoard(machine)]));
+        const decorated = decoratedSessionsForReader(_principal, aggregate.sessions);
+        const { metadata } = decorated;
+        const sessions = decorated.sessions.map(session => {
+          if (typeof session.machine !== "string" || typeof session.id !== "string" || typeof session.created_at !== "string") return session;
+          const event = snapshots.get(session.machine)?.get(JSON.stringify([session.id, session.created_at]));
+          return event ? { ...session, stale_draft: event } : session;
+        });
         sendJson(res, 200, {
           ok: true,
           data: {
@@ -1761,6 +1805,23 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         return;
+
+      case "saved-drafts":
+      case "saved-draft": {
+        const sessionId = routeParam(route, "id");
+        const draftId = route.id === "saved-draft" ? routeParam(route, "draft") : undefined;
+        await withMachine(res, routeParam(route, "machine"), async machine => {
+          const path = `/sessions/${encodeURIComponent(sessionId)}/drafts${draftId ? `/${encodeURIComponent(draftId)}` : ""}`;
+          if (!draftId) {
+            forwardDaemon(res, await daemonFetch(machine, path, { debug: daemonDebug(requestId) }));
+          } else {
+            const result = await daemonFetchBytes(machine, path);
+            res.writeHead(result.status, { "content-type": result.contentType, "cache-control": "no-store" });
+            res.end(result.body);
+          }
+        });
+        return;
+      }
 
       case "glance": {
         const sessionId = routeParam(route, "id");

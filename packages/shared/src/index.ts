@@ -7,3 +7,5 @@ export * from "./parseSessionNotice.ts";
 export * from "./mailboxEvent.ts";
 export * from "./runtimeCommand.ts";
 export { normalizeHistoryRowClass, normalizeHistoryCompaction, type HistoryRowClass, type HistoryCompaction } from "./resources.ts";
+export { normalizeSavedDraft, normalizeSavedDraftInventory } from "./savedDraft.ts";
+export type { SavedDraft } from "./savedDraft.ts";

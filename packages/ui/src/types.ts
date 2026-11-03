@@ -30,6 +30,7 @@ export interface SessionLastPrompt {
 }
 
 export interface Session {
+  readonly stale_draft?: import("@agent-console/shared").SavedDraft;
   readonly id: string;
   readonly agent: string;
   readonly agent_profile?: string;
