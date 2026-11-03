@@ -154,7 +154,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     && session.startup?.state !== "failed";
   const status = error || uploading || (hint === BUSY_REPLY_HINT || recoverable ? "" : hint);
   // A failed turn names its cause and offers one tap to try again (#921).
-  const stuck = hint || state?.phase === "needs_input" || state?.current_turn?.attention
+  const stuck = hint || state?.phase === "unresponsive" || state?.phase === "needs_input" || state?.current_turn?.attention
     ? null : stuckTurn(state, session.auto_resume, messages);
   const [resending, setResending] = useState(false);
   // A working turn with no activity for a while may be stuck (#921). Activity

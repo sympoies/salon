@@ -475,3 +475,23 @@ test("repeated backpressure drains remove abort listeners before the final abort
   assert.equal(getEventListeners(controller.signal, "abort").length, 0);
   assert.equal(writable.listenerCount("drain"), 0);
 });
+
+test("edge passes an unresponsive session in activity snapshots", async () => {
+  const snapshot = JSON.parse(sse("local", "boot", 1).split("data: ")[1]!);
+  snapshot.sessions = [{ id: "one", turn_state: {
+    schema_version: "agent-session.turn-state.v1", phase: "unresponsive",
+    phase_changed_at: "2026-07-11T12:00:00Z", revision: 1,
+    source: { kind: "runtime", confidence: "authoritative" },
+  } }];
+  const controller = new AbortController();
+  const decoder = new ActivitySseDecoder();
+  const events: ReturnType<ActivitySseDecoder["push"]> = [];
+  await streamActivityEvents([machine("summit")], {
+    fetchImpl: (async () => new Response(`id: boot:1\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`, { headers: { "content-type": "text/event-stream" } })) as typeof fetch,
+    signal: controller.signal,
+    write: chunk => { events.push(...decoder.push(chunk)); controller.abort(); return true; },
+  });
+  const event = events[0];
+  assert.ok(event && "sessions" in event && event.sessions);
+  assert.equal(event.sessions[0]?.turn_state?.phase, "unresponsive");
+});

@@ -7741,3 +7741,6 @@ textarea {
 :root[data-theme="paper"] .repo-badge {
   color: color-mix(in srgb, var(--machine-accent, var(--accent)), var(--fg) 55%);
 }
+
+/* Keep this quiet status readable at compact widths. */
+.session-activity-trigger.activity-unresponsive .session-activity-text { display: inline; }

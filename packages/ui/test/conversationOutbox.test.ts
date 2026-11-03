@@ -1988,3 +1988,12 @@ test("#86 Retry of a timed refused image keeps its new intention past already-lo
     assert.equal(h.requests.length, 0, "dispatch remains unavailable during this actual Retry action");
   } finally { await h.close(); }
 });
+
+test("unresponsive phase permits idle-guarded outbox admission", async () => {
+  const h = await mount();
+  try {
+    await h.render("unresponsive");
+    assert.equal(h.queueModule.queuedReplyDeliverablePhase(h.session()), true);
+    assert.equal(h.queueModule.queuedReplyTargetAllowed(h.session(), true), true);
+  } finally { await h.close(); }
+});
