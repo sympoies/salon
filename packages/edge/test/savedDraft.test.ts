@@ -43,9 +43,9 @@ test("the session list attaches only matching board draft metadata", async () =>
       { id: "session-1", agent: "codex", status: "running", created_at: "2026-01-01T00:00:00Z" },
       { id: "session-2", agent: "codex", status: "running", created_at: "2026-01-01T00:00:00Z" },
     ] } }));
-    else if (req.url === "/board/v1") res.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { machine: "fixture", records: [
-      { session_id: "session-1", created_at: "2026-01-01T00:00:00Z", stale_draft: { ...draft, text: "private" } },
-      { session_id: "session-2", created_at: "2025-01-01T00:00:00Z", stale_draft: { ...draft, session_id: "session-2" } },
+    else if (req.url === "/board/v1") res.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { schema_version: "agent-session.board.v1", record_schema: "agent-session.board-record.v1", skipped_count: 0, machine: "fixture", records: [
+      { machine: "fixture", session_id: "session-1", created_at: "2026-01-01T00:00:00Z", stale_draft: { ...draft, text: "private" } },
+      { machine: "fixture", session_id: "session-2", created_at: "2025-01-01T00:00:00Z", stale_draft: { ...draft, session_id: "session-2" } },
     ] } } }));
     else { res.writeHead(404); res.end(); }
   });
@@ -87,8 +87,8 @@ test("a slow board never delays session lists and refreshes are shared and cache
     const second = await list();
     assert.equal(second.stale_draft, undefined);
     assert.equal(boardHits, 1, "concurrent polls share the pending refresh");
-    pending.shift()!.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { machine: "fixture", records: [
-      { session_id: "session-1", created_at: "2026-01-01T00:00:00Z", stale_draft: draft },
+    pending.shift()!.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { schema_version: "agent-session.board.v1", record_schema: "agent-session.board-record.v1", skipped_count: 0, machine: "fixture", records: [
+      { machine: "fixture", session_id: "session-1", created_at: "2026-01-01T00:00:00Z", stale_draft: draft },
     ] } } }));
     let cached: any;
     for (let attempt = 0; attempt < 50; attempt++) {
@@ -99,8 +99,42 @@ test("a slow board never delays session lists and refreshes are shared and cache
     assert.deepEqual(cached.stale_draft, draft);
     assert.equal(boardHits, 1, "cached metadata is reused within the window");
     t.mock.timers.tick(30_001);
-    assert.equal((await list()).stale_draft, undefined, "expired metadata is not served while refreshing");
-    await list();
+    assert.deepEqual((await list()).stale_draft, draft, "the marker remains when refresh starts");
+    assert.deepEqual((await list()).stale_draft, draft, "the marker remains while refresh is pending");
     assert.equal(boardHits, 2, "one refresh starts after the cache window");
+    const failed = pending.shift()!;
+    failed.writeHead(500); failed.end("{}");
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual((await list()).stale_draft, draft, "a failed refresh retains the marker");
+    t.mock.timers.tick(30_001);
+    assert.deepEqual((await list()).stale_draft, draft);
+    for (let attempt = 0; pending.length === 0 && attempt < 50; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(pending.length, 1, "the next refresh reaches the daemon");
+    const malformed = pending.shift()!;
+    malformed.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { schema_version: "agent-session.board.v1", record_schema: "agent-session.board-record.v1", skipped_count: 0, machine: "fixture", records: [
+      { machine: "fixture", session_id: "session-1", created_at: "2026-01-01T00:00:00Z", stale_draft: { ...draft, bytes: -1 } },
+    ] } } }));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual((await list()).stale_draft, draft, "an invalid refresh retains the marker");
+    t.mock.timers.tick(30_001);
+    assert.deepEqual((await list()).stale_draft, draft);
+    for (let attempt = 0; pending.length === 0 && attempt < 50; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(pending.length, 1);
+    const incomplete = pending.shift()!;
+    incomplete.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { schema_version: "agent-session.board.v1", record_schema: "agent-session.board-record.v1", skipped_count: 1, machine: "fixture", records: [] } } }));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual((await list()).stale_draft, draft, "an incomplete snapshot retains the marker");
+    t.mock.timers.tick(30_001);
+    assert.deepEqual((await list()).stale_draft, draft);
+    for (let attempt = 0; pending.length === 0 && attempt < 50; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(pending.length, 1);
+    const refreshed = pending.shift()!;
+    refreshed.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { schema_version: "agent-session.board.v1", record_schema: "agent-session.board-record.v1", skipped_count: 0, machine: "fixture", records: [] } } }));
+    let removed = false;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (!(await list()).stale_draft) { removed = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(removed, true, "a successful snapshot removes absent markers");
   } finally { for (const response of pending) response.end(); closeServers(edge, daemon); }
 });

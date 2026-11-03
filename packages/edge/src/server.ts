@@ -120,6 +120,7 @@ import {
 } from "./accessStore.ts";
 import { handleCoordinationRelay, isCoordinationRoute, assertResumeOwnership, resumeFailure, resumeRefusal } from "./coordinationRelay.ts";
 import { BoardQueryError } from "./board/query.ts";
+import { BOARD_RECORD_SCHEMA, BOARD_SNAPSHOT_SCHEMA } from "./board/record.ts";
 import { boardViewForRequest } from "./board/routes.ts";
 import { sessionViewerAccess } from "./crossOwnerSessionAccess.ts";
 import { openBoardService, type BoardServiceOptions } from "./board/service.ts";
@@ -278,21 +279,28 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   const refreshSavedDraftBoard = (machine: MachineConfig): Map<string, import("@agent-console/shared").SavedDraft> => {
     const now = Date.now();
     const current = savedDraftBoards.get(machine.name);
-    if (current && now < current.nextRefresh) return current.records;
-    if (current?.inFlight) return new Map();
-    const entry = { nextRefresh: now + 30_000, inFlight: true, records: new Map<string, import("@agent-console/shared").SavedDraft>() };
+    if (current && (now < current.nextRefresh || current.inFlight)) return current.records;
+    const entry = current ?? { nextRefresh: 0, inFlight: false, records: new Map<string, import("@agent-console/shared").SavedDraft>() };
+    entry.nextRefresh = now + 30_000;
+    entry.inFlight = true;
     savedDraftBoards.set(machine.name, entry);
     void daemonFetch(machine, "/board/v1", { timeoutMs: 750 }).then(result => {
-      const body = result.body as { ok?: unknown; data?: { machine?: unknown; board?: { machine?: unknown; records?: unknown } } } | undefined;
+      const body = result.body as { ok?: unknown; data?: { machine?: unknown; board?: { machine?: unknown; schema_version?: unknown; record_schema?: unknown; skipped_count?: unknown; records?: unknown } } } | undefined;
       if (result.status !== 200 || body?.ok !== true || body.data?.machine !== machine.name
-        || body.data.board?.machine !== machine.name || !Array.isArray(body.data.board.records)) return;
+        || body.data.board?.machine !== machine.name || body.data.board.schema_version !== BOARD_SNAPSHOT_SCHEMA
+        || body.data.board.record_schema !== BOARD_RECORD_SCHEMA || body.data.board.skipped_count !== 0
+        || !Array.isArray(body.data.board.records)) return;
+      const records = new Map<string, import("@agent-console/shared").SavedDraft>();
       for (const value of body.data.board.records) {
-        if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+        if (!value || typeof value !== "object" || Array.isArray(value)) return;
         const row = value as Record<string, unknown>;
-        if (typeof row.session_id !== "string" || typeof row.created_at !== "string") continue;
+        if (row.machine !== machine.name || typeof row.session_id !== "string" || typeof row.created_at !== "string") return;
+        if (!Object.hasOwn(row, "stale_draft")) continue;
         const event = normalizeSavedDraft(row.stale_draft, row.session_id);
-        if (event) entry.records.set(JSON.stringify([row.session_id, row.created_at]), event);
+        if (!event) return;
+        records.set(JSON.stringify([row.session_id, row.created_at]), event);
       }
+      entry.records = records;
     }).catch(() => {}).finally(() => { entry.inFlight = false; });
     return entry.records;
   };
