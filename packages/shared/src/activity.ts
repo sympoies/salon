@@ -69,7 +69,7 @@ interface ActivityShadowObservation {
 
 export interface ActivityTurnState {
   readonly schema_version: typeof TURN_STATE_SCHEMA;
-  readonly phase: "starting" | "working" | "idle" | "waiting" | "needs_input" | "unknown";
+  readonly phase: "starting" | "working" | "idle" | "waiting" | "needs_input" | "unresponsive" | "unknown";
   readonly phase_changed_at: string;
   readonly revision: number;
   readonly source: ActivityTurnSource;
@@ -313,7 +313,9 @@ function normalizeLastTurn(value: unknown): ActivityLastTurn | null {
 export function normalizeActivityTurnState(value: unknown): ActivityTurnState | null {
   const state = object(value);
   if (!state || state.schema_version !== TURN_STATE_SCHEMA) return null;
-  if (!(["starting", "working", "idle", "waiting", "needs_input", "unknown"] as const).includes(state.phase as never)) return null;
+  if (typeof state.phase !== "string") return null;
+  const phase = (["starting", "working", "idle", "waiting", "needs_input", "unresponsive", "unknown"] as const).includes(state.phase as never)
+    ? state.phase as ActivityTurnState["phase"] : "unknown";
   const phaseChangedAt = timestamp(state.phase_changed_at);
   const source = normalizeSource(state.source);
   if (!phaseChangedAt || !source || !Number.isSafeInteger(state.revision) || Number(state.revision) < 0) return null;
@@ -338,7 +340,7 @@ export function normalizeActivityTurnState(value: unknown): ActivityTurnState | 
   if (state.phase === "waiting" && !lastTurn) return null;
   return {
     schema_version: TURN_STATE_SCHEMA,
-    phase: state.phase as ActivityTurnState["phase"],
+    phase,
     phase_changed_at: phaseChangedAt,
     revision: Number(state.revision),
     source,

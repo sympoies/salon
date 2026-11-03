@@ -1243,3 +1243,13 @@ test("a starting phase stops reading as Connecting once it goes stale", () => {
   // Connecting is deliberate, since an untrusted clock is not evidence of stall.
   assert.equal(kindAt(-5_000, "2026-07-10T12:09:50Z"), "connecting");
 });
+
+test("unresponsive activity shows a quiet status", () => {
+  const session = makeSession({ turn_state: { ...providerState("waiting"), phase: "unresponsive" } });
+  const activity = selectSessionActivity({ session, machineReachable: true, focused: false, nowMs: now });
+  assert.equal(activity.primaryText, "Not responding");
+  assert.equal(activity.kind, "unresponsive");
+  assert.equal(formatActivityHeaderText(activity, now), "Not responding");
+  assert.equal(activity.ripple, false);
+  assert.equal(activity.attentionText, undefined);
+});

@@ -586,3 +586,18 @@ test("last turn keeps an allowlisted provider failure kind only on a failed turn
     assert.equal(turn && "provider_failure_kind" in turn, false, `${outcome}/${kind} carries no failure kind`);
   }
 });
+
+test("snapshots retain unresponsive and working sessions and unknown phases degrade", () => {
+  const event = normalizeActivityStreamEvent({
+    schema_version: "agent-session.activity-stream.event.v1", type: "snapshot",
+    stream_id: "boot-a", sequence: 1, machine: "local", observed_at: "2026-07-11T12:00:01Z",
+    sessions: [
+      { id: "one", turn_state: { ...waitingState, phase: "unresponsive" } },
+      { id: "two", turn_state: { ...waitingState, phase: "working", current_turn: { started_at: "2026-07-11T12:00:00Z" } } },
+    ],
+  }, "local");
+  assert.ok(event && "sessions" in event && event.sessions);
+  assert.deepEqual(event.sessions.map((session) => session.turn_state?.phase), ["unresponsive", "working"]);
+  assert.equal(normalizeActivityTurnState({ ...waitingState, phase: "future_phase" })?.phase, "unknown");
+  assert.equal(normalizeActivityTurnState({ ...waitingState, phase: 42 }), null);
+});

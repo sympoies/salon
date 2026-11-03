@@ -27,7 +27,8 @@ export type SessionActivityKind =
   | "unavailable"
   | "active"
   | "quiet"
-  | "unknown";
+  | "unknown"
+  | "unresponsive";
 
 export interface EffectiveSessionActivity {
   readonly kind: SessionActivityKind;
@@ -181,6 +182,7 @@ export function formatActivityHeaderText(
   activity: EffectiveSessionActivity,
   nowMs: number,
 ): string {
+  if (activity.kind === "unresponsive") return activity.primaryText;
   const elapsed = elapsedMs(activity.timerStartedAt, nowMs);
   return elapsed === null ? "" : formatCardElapsedDuration(elapsed);
 
@@ -223,6 +225,7 @@ export function cardActivityPresentation(
   if (session.startup?.state === "failed") return {
     state: "blocked", group, description: `Blocked: ${session.startup.message}`, timerStartedAt: session.startup.occurred_at,
   };
+  if (activity.kind === "unresponsive") return { state: "unknown", group, description: activity.primaryText };
   if (activity.kind === "working-uncertain") return unknown("provider status expired");
   if (["unknown", "active", "quiet", "connecting", "unavailable"].includes(activity.kind)) {
     // Time an unknown provider state from its last evidence, not from the
@@ -341,6 +344,9 @@ function providerActivity(
     sourceProvider: providerDisplayLabel(state.source?.provider),
     confidence: state.source?.confidence,
   };
+  if (state.phase === "unresponsive") {
+    return { kind: "unresponsive", primaryText: "Not responding", ripple: false, ...metadata };
+  }
   if (state.phase === "starting") {
     // Phase dwell, so `phase_changed_at` alone: `semantic_event` carries provider
     // evidence age, which the `working` branch below wants but this one must not.

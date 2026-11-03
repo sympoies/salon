@@ -239,7 +239,7 @@ export function queuedReplyTargetAllowed(session: Session, reachable: boolean): 
   const state = parseTurnStateV1(session.turn_state);
   return reachable && session.status === "running" && Boolean(session.session_incarnation)
     && (provider === "codex" || provider === "claude") && Boolean(state)
-    && !state?.current_turn?.attention && state?.phase !== "needs_input";
+    && (state?.phase === "unresponsive" || !state?.current_turn?.attention) && state?.phase !== "needs_input";
 }
 
 /**
@@ -253,7 +253,7 @@ export function queuedReplyTargetAllowed(session: Session, reachable: boolean): 
 export function queuedReplyDeliverablePhase(session: Session): boolean {
   const phase = parseTurnStateV1(session.turn_state)?.phase;
   const provider = session.provider_resume?.provider ?? session.agent;
-  return isActivityTurnWaitingPhase(phase)
+  return isActivityTurnWaitingPhase(phase) || phase === "unresponsive"
     || ((provider === "claude" || provider === "codex") && (phase === "working" || phase === "starting"));
 }
 
@@ -443,7 +443,7 @@ export class ConversationOutbox {
     if (!state || !nativePrincipalIsActive()) return;
     const waiting = isActivityTurnWaitingPhase(state?.phase);
     const codex = (session.provider_resume?.provider ?? session.agent) === "codex";
-    const idleGuard = codex || waiting;
+    const idleGuard = codex || waiting || state.phase === "unresponsive";
     if (outboxNamespace() !== this.namespace) return;
     const target = this.key(session);
     if (this.delivering.has(target)) return;

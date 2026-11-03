@@ -301,3 +301,11 @@ test("#1049 a composer that cannot take replies swallows a pasted file instead o
     assert.equal(h.textarea().value, "");
   } finally { delete globalThis.__agentConsoleStatusUpload; await h.close(); }
 });
+
+test("unresponsive session does not show a busy hint", async () => {
+  const h = await mount();
+  try {
+    await h.render("unresponsive");
+    assert.doesNotMatch(h.container.textContent ?? "", /busy|working/i);
+  } finally { await h.close(); }
+});
