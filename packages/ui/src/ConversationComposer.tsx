@@ -2,7 +2,8 @@ import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ClipboardEvent, DragEvent } from "react";
 import { conversationOutbox, queuedReplyDeliverablePhase, queuedReplyTargetAllowed, useConversationOutbox } from "./conversationOutbox.ts";
-import { uploadAttachment } from "./api.ts";
+import { uploadAttachment, fetchSavedDrafts, fetchSavedDraftText } from "./api.ts";
+import type { SavedDraft } from "@agent-console/shared";
 import { ConversationAttachIcon, ConversationMicIcon, ConversationSendIcon } from "./icons.tsx";
 import { shellQuotePathForTerminal } from "./shellQuote.ts";
 import { plainVoiceOnlyMessage } from "./voicePrompt.ts";
@@ -101,6 +102,39 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     const before = readDraft();
     publishDraft(drafts, key, { ...before, ...patch });
   }, [drafts, key, readDraft]);
+  const [savedDrafts, setSavedDrafts] = useState<readonly SavedDraft[] | null>(null);
+  const [savedOpen, setSavedOpen] = useState(false);
+  const [savedUnsupported, setSavedUnsupported] = useState(false);
+  const [savedText, setSavedText] = useState<string | null>(null);
+  const [savedError, setSavedError] = useState("");
+  const savedTarget = `${key}:${session.session_incarnation ?? ""}`;
+  const savedTargetRef = useRef(savedTarget);
+  savedTargetRef.current = savedTarget;
+  useEffect(() => {
+    setSavedDrafts(null); setSavedOpen(false); setSavedUnsupported(false); setSavedText(null); setSavedError("");
+  }, [savedTarget]);
+  const openSavedDrafts = async () => {
+    try {
+      const result = await fetchSavedDrafts(session.machine, session.id);
+      if (savedTargetRef.current !== savedTarget) return;
+      if (!result || result.length === 0) { setSavedUnsupported(true); return; }
+      setSavedDrafts(result); setSavedOpen(true); setSavedError("");
+    } catch { if (savedTargetRef.current === savedTarget) setSavedError("Could not load saved drafts."); }
+  };
+  const readSavedDraft = async (item: SavedDraft) => {
+    try {
+      const text = await fetchSavedDraftText(session.machine, session.id, item.draft_id);
+      if (savedTargetRef.current !== savedTarget) return;
+      if (text === null) { setSavedUnsupported(true); setSavedOpen(false); return; }
+      setSavedText(text); setSavedError("");
+    } catch { if (savedTargetRef.current === savedTarget) setSavedError("Could not load saved draft."); }
+  };
+  const restoreSavedDraft = () => {
+    if (savedText === null || sending) return;
+    if (readDraft().text && !window.confirm("Replace the current composer text with this saved draft?")) return;
+    updateReply({ text: savedText, incarnation: session.session_incarnation, error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
+    setSavedOpen(false); setSavedText(null);
+  };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -300,6 +334,14 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
 
   return (
     <footer id={composerId} className="conversation-composer" hidden={hidden} onDragOver={onDragOver} onDrop={onDrop}>
+      {session.stale_draft && !savedUnsupported ? <button type="button" className="btn ghost" onClick={() => void openSavedDrafts()}>Saved drafts</button> : null}
+      {savedOpen ? <section aria-label="Saved drafts">
+        <h3>Saved drafts</h3>
+        {savedDrafts?.map(item => <button type="button" className="btn ghost" key={item.draft_id} onClick={() => void readSavedDraft(item)}>{new Date(item.saved_at).toLocaleString()} · {item.bytes} bytes</button>)}
+        {savedText !== null ? <><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{savedText}</pre><button type="button" className="btn" onClick={restoreSavedDraft}>Restore</button></> : null}
+        <button type="button" className="btn ghost" onClick={() => setSavedOpen(false)}>Close</button>
+      </section> : null}
+      {savedError ? <p role="alert">{savedError}</p> : null}
       {recoverable && recovery ? <div className="conversation-stuck" role="status">
         <span className="conversation-stuck-text">This session stopped.</span>
         <button type="button" className="btn ghost" aria-busy={recovery.pending} disabled={recovery.pending}

@@ -69,6 +69,8 @@ const API_ROUTES = [
   { id: "codex-rate-limit-reset", pattern: "/api/codex/rate-limit-reset", methods: ["POST"], params: [] },
   { id: "claude-limit-reset", pattern: "/api/claude/limit-reset", methods: ["POST"], params: [] },
   { id: "layout", pattern: "/api/layout", methods: ["GET", "PUT"], params: [] },
+  { id: "saved-drafts", pattern: "/api/sessions/:machine/:id/drafts", methods: ["GET"], params: ["machine", "id"] },
+  { id: "saved-draft", pattern: "/api/sessions/:machine/:id/drafts/:draft", methods: ["GET"], params: ["machine", "id", "draft"] },
   { id: "glance", pattern: "/api/sessions/:machine/:id/glance", methods: ["GET"], params: ["machine", "id"] },
   { id: "buffer", pattern: "/api/sessions/:machine/:id/buffer", methods: ["GET"], params: ["machine", "id"] },
   {

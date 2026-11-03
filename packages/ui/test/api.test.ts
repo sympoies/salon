@@ -9,6 +9,7 @@ import {
   createSession,
   fetchRepoRemoteUrl,
   fetchSessionBuffer,
+  fetchSavedDraftText,
   glance,
   killSession,
   resultOf,
@@ -3774,4 +3775,9 @@ test("history messages retain compaction truncation metadata", async () => {
   const rows = [base, { ...base, id: "truncated", compaction: { summary_truncated: fixture.compaction_summary_bound.over_limit.summary_truncated } }];
   setFetchMock(async () => jsonResponse({ ok: true, data: { messages: rows } }));
   assert.deepEqual(await listHistoryMessages("fixture", "history"), { ok: true, messages: rows });
+});
+
+test("saved draft reads preserve UTF-8 text including a leading BOM and trailing spaces", async () => {
+  setFetchMock(async () => new Response(new TextEncoder().encode("\ufeff雪  "), { status: 200 }));
+  assert.equal(await fetchSavedDraftText("fixture", "session-1", "draft-1"), "\ufeff雪  ");
 });

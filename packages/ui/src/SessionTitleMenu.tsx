@@ -140,6 +140,7 @@ export function SessionTitleMenu({ session, options, machineColors, accounts, ac
       >
         <span className="slot-title-text">
           <span className={mobile ? "mobile-session-card-title" : "slot-title-label"}>{sessionLabel(session)}</span>
+          {session.stale_draft ? <span className="saved-draft-marker">Saved draft · {new Date(session.stale_draft.saved_at).toLocaleString()}</span> : null}
         </span>
       </summary>
       <div ref={menuRef} className="slot-title-dropdown" role="menu" onKeyDown={menuFocus.onKeyDown}>

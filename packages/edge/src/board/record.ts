@@ -1,3 +1,4 @@
+import { normalizeSavedDraft, type SavedDraft } from "@agent-console/shared";
 import {normalizeSessionRole, type SessionRole} from "@agent-console/shared/lineage";
 import { normalizeSessionModelSettings } from "@agent-console/shared/session-model";
 import { objectProp as object } from "../normalize.ts";
@@ -87,6 +88,7 @@ export interface BoardWork {
 export interface BoardRecord {
   readonly machine: string;
   readonly session_id: string;
+  readonly stale_draft?: SavedDraft;
   readonly session_incarnation: string | null;
   readonly messaging_supported: boolean;
   readonly repo_name: string | null;
@@ -313,6 +315,7 @@ export function projectBoardRecord(
   const common = {
     machine,
     session_id: sessionId,
+    ...(normalizeSavedDraft(raw.stale_draft, sessionId) ? { stale_draft: normalizeSavedDraft(raw.stale_draft, sessionId) } : {}),
     session_incarnation: incarnation,
     repo_name: repoName,
     cwd,

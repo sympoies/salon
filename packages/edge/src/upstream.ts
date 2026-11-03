@@ -199,6 +199,15 @@ export async function daemonFetch(
   }
 }
 
+/** Read a draft without decoding or re-encoding its response bytes. */
+export async function daemonFetchBytes(machine: MachineConfig, path: string): Promise<{ status: number; body: Buffer; contentType: string }> {
+  return authedFetch(`${machine.url}${path}`, async response => ({
+    status: response.status,
+    body: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type") ?? "application/octet-stream",
+  }), { token: machine.token, timeoutMs: DEFAULT_DAEMON_TIMEOUT_MS });
+}
+
 function dataOf(body: unknown): Record<string, unknown> | undefined {
   if (body && typeof body === "object" && "data" in body) {
     const d = (body as { data: unknown }).data;

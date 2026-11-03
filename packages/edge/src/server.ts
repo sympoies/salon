@@ -1,3 +1,4 @@
+import { normalizeSavedDraft } from "@agent-console/shared";
 import { forwardHistoryImage } from "./historyImages.ts";
 import {isPromptRequestId,isPromptIncarnation} from "@agent-console/shared/prompt-receipt";
 import {forwardPromptReceipt} from "./promptReceipts.ts";
@@ -31,6 +32,7 @@ import { serveStatic } from "./static.ts";
 import {
   aggregateSessions,
   daemonFetch,
+  daemonFetchBytes,
   machineAdvertisesAgentLaunchProfile,
   type DaemonDebugContext,
   type DaemonResult,
@@ -769,7 +771,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // fails closed for new routes, including GET endpoints for shells/settings.
     if (_principal.managedCredential && (method !== "GET" || ![
       "machines", "sessions", "board", "history-sessions", "history-messages", "history-image",
-      "resource-events", "activity-events", "glance", "buffer",
+      "resource-events", "activity-events", "glance", "buffer", "saved-drafts", "saved-draft",
     ].includes(route.id))) {
       sendJson(res, 403, { ok: false, error: { message: "forbidden" } });
       return;
@@ -1226,8 +1228,28 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           ? config.machines.filter((machine) => principalCanAccessMachine(_principal, machine.name))
           : config.machines;
         const only = selectMachines(permitted, url.searchParams.get("machines"));
-        const aggregate = await aggregateSessions(sessionMachinesForReader(_principal, only), machineHealth, daemonDebug(requestId));
-        const { sessions, metadata } = decoratedSessionsForReader(_principal, aggregate.sessions);
+        const readableMachines = sessionMachinesForReader(_principal, only);
+        const aggregate = await aggregateSessions(readableMachines, machineHealth, daemonDebug(requestId));
+        const snapshots = await Promise.all(readableMachines.filter(machine =>
+          aggregate.machines.some(status => status.name === machine.name && status.ok)
+          && aggregate.sessions.some(session => session.machine === machine.name && typeof session.created_at === "string")).map(async machine => {
+            try {
+              const result = await daemonFetch(machine, "/board/v1", { timeoutMs: 3000, debug: daemonDebug(requestId) });
+              const body = result.body as { ok?: unknown; data?: { machine?: unknown; board?: { machine?: unknown; records?: unknown } } } | undefined;
+              return result.status === 200 && body?.ok === true && body.data?.machine === machine.name
+                && body.data.board?.machine === machine.name && Array.isArray(body.data.board.records)
+                ? { machine: machine.name, records: body.data.board.records as Record<string, unknown>[] } : null;
+            } catch { return null; }
+          }));
+        const decorated = decoratedSessionsForReader(_principal, aggregate.sessions);
+        const { metadata } = decorated;
+        const sessions = decorated.sessions.map(session => {
+          if (typeof session.machine !== "string" || typeof session.id !== "string" || typeof session.created_at !== "string") return session;
+          const record = snapshots.find(snapshot => snapshot?.machine === session.machine)?.records.find(row =>
+            row && row.session_id === session.id && row.created_at === session.created_at);
+          const event = normalizeSavedDraft(record?.stale_draft, session.id);
+          return event ? { ...session, stale_draft: event } : session;
+        });
         sendJson(res, 200, {
           ok: true,
           data: {
@@ -1761,6 +1783,23 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         return;
+
+      case "saved-drafts":
+      case "saved-draft": {
+        const sessionId = routeParam(route, "id");
+        const draftId = route.id === "saved-draft" ? routeParam(route, "draft") : undefined;
+        await withMachine(res, routeParam(route, "machine"), async machine => {
+          const path = `/sessions/${encodeURIComponent(sessionId)}/drafts${draftId ? `/${encodeURIComponent(draftId)}` : ""}`;
+          if (!draftId) {
+            forwardDaemon(res, await daemonFetch(machine, path, { debug: daemonDebug(requestId) }));
+          } else {
+            const result = await daemonFetchBytes(machine, path);
+            res.writeHead(result.status, { "content-type": result.contentType, "cache-control": "no-store" });
+            res.end(result.body);
+          }
+        });
+        return;
+      }
 
       case "glance": {
         const sessionId = routeParam(route, "id");

@@ -42,6 +42,10 @@ The UI core's session overview cards show the latest user or agent message when
 available, falling back to the last user prompt for older servers. In Settings,
 **Card preview** offers **Latest message** (default) and **My last prompt**.
 The choice is saved on the current device, including on the mobile layout.
+When the session runtime saves a draft, Salon marks the session with its save
+time. Open its conversation to read saved drafts and restore one to the reply
+composer; replacing existing text requires confirmation. Restoring does not
+send the draft.
 
 ## Contributing
 
