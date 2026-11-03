@@ -109,31 +109,40 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const [savedError, setSavedError] = useState("");
   const savedTarget = `${key}:${session.session_incarnation ?? ""}`;
   const savedTargetRef = useRef(savedTarget);
+  const savedRequest = useRef(0);
   savedTargetRef.current = savedTarget;
   useEffect(() => {
     setSavedDrafts(null); setSavedOpen(false); setSavedUnsupported(false); setSavedText(null); setSavedError("");
+    return () => { savedRequest.current++; };
   }, [savedTarget]);
+  useLayoutEffect(() => {
+    if (hidden) { savedRequest.current++; setSavedOpen(false); setSavedText(null); }
+  }, [hidden]);
   const openSavedDrafts = async () => {
+    const request = ++savedRequest.current;
+    setSavedText(null);
     try {
       const result = await fetchSavedDrafts(session.machine, session.id);
-      if (savedTargetRef.current !== savedTarget) return;
+      if (savedTargetRef.current !== savedTarget || savedRequest.current !== request) return;
       if (!result || result.length === 0) { setSavedUnsupported(true); return; }
       setSavedDrafts(result); setSavedOpen(true); setSavedError("");
-    } catch { if (savedTargetRef.current === savedTarget) setSavedError("Could not load saved drafts."); }
+    } catch { if (savedTargetRef.current === savedTarget && savedRequest.current === request) setSavedError("Could not load saved drafts."); }
   };
   const readSavedDraft = async (item: SavedDraft) => {
+    const request = ++savedRequest.current;
+    setSavedText(null); setSavedError("");
     try {
       const text = await fetchSavedDraftText(session.machine, session.id, item.draft_id);
-      if (savedTargetRef.current !== savedTarget) return;
+      if (savedTargetRef.current !== savedTarget || savedRequest.current !== request) return;
       if (text === null) { setSavedUnsupported(true); setSavedOpen(false); return; }
       setSavedText(text); setSavedError("");
-    } catch { if (savedTargetRef.current === savedTarget) setSavedError("Could not load saved draft."); }
+    } catch { if (savedTargetRef.current === savedTarget && savedRequest.current === request) setSavedError("Could not load saved draft."); }
   };
   const restoreSavedDraft = () => {
     if (savedText === null || sending) return;
     if (readDraft().text && !window.confirm("Replace the current composer text with this saved draft?")) return;
     updateReply({ text: savedText, incarnation: session.session_incarnation, error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
-    setSavedOpen(false); setSavedText(null);
+    savedRequest.current++; setSavedOpen(false); setSavedText(null);
   };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -339,7 +348,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
         <h3>Saved drafts</h3>
         {savedDrafts?.map(item => <button type="button" className="btn ghost" key={item.draft_id} onClick={() => void readSavedDraft(item)}>{new Date(item.saved_at).toLocaleString()} · {item.bytes} bytes</button>)}
         {savedText !== null ? <><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{savedText}</pre><button type="button" className="btn" onClick={restoreSavedDraft}>Restore</button></> : null}
-        <button type="button" className="btn ghost" onClick={() => setSavedOpen(false)}>Close</button>
+        <button type="button" className="btn ghost" onClick={() => { savedRequest.current++; setSavedOpen(false); setSavedText(null); }}>Close</button>
       </section> : null}
       {savedError ? <p role="alert">{savedError}</p> : null}
       {recoverable && recovery ? <div className="conversation-stuck" role="status">

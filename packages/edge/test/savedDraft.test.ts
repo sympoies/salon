@@ -53,9 +53,54 @@ test("the session list attaches only matching board draft metadata", async () =>
   const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: daemonBase, token: "daemon-fixture" }] }));
   const base = (await listenOnLoopback(edge)).base;
   try {
-    const response = await fetch(`${base}/api/sessions`);
-    const sessions = (await response.json() as any).data.sessions;
+    let sessions: any[] = [];
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const response = await fetch(`${base}/api/sessions`);
+      sessions = (await response.json() as any).data.sessions;
+      if (sessions[0].stale_draft) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
     assert.deepEqual(sessions[0].stale_draft, draft);
     assert.equal(sessions[1].stale_draft, undefined);
   } finally { closeServers(edge, daemon); }
+});
+
+test("a slow board never delays session lists and refreshes are shared and cached", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-01T12:00:00Z") });
+  let boardHits = 0;
+  const pending: import("node:http").ServerResponse[] = [];
+  const daemon = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/sessions") res.end(JSON.stringify({ ok: true, data: { sessions: [
+      { id: "session-1", agent: "codex", status: "running", created_at: "2026-01-01T00:00:00Z" },
+    ] } }));
+    else if (req.url === "/board/v1") { boardHits++; pending.push(res); }
+    else { res.writeHead(404); res.end(); }
+  });
+  const daemonBase = (await listenOnLoopback(daemon)).base;
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: daemonBase, token: "daemon-fixture" }] }));
+  const base = (await listenOnLoopback(edge)).base;
+  const list = async () => (await (await fetch(`${base}/api/sessions`)).json() as any).data.sessions[0];
+  try {
+    const first = await Promise.race([list(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("session list waited for board")), 400))]);
+    assert.equal(first.stale_draft, undefined);
+    const second = await list();
+    assert.equal(second.stale_draft, undefined);
+    assert.equal(boardHits, 1, "concurrent polls share the pending refresh");
+    pending.shift()!.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { machine: "fixture", records: [
+      { session_id: "session-1", created_at: "2026-01-01T00:00:00Z", stale_draft: draft },
+    ] } } }));
+    let cached: any;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      cached = await list();
+      if (cached.stale_draft) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(cached.stale_draft, draft);
+    assert.equal(boardHits, 1, "cached metadata is reused within the window");
+    t.mock.timers.tick(30_001);
+    assert.equal((await list()).stale_draft, undefined, "expired metadata is not served while refreshing");
+    await list();
+    assert.equal(boardHits, 2, "one refresh starts after the cache window");
+  } finally { for (const response of pending) response.end(); closeServers(edge, daemon); }
 });

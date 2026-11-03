@@ -273,6 +273,29 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   const attachHealth = options.attachHealth ?? new MachineHealth();
   const resourceWatches = new ResourceWatchRegistry();
   const activityStreams = new SharedActivityStreams();
+  // A board read must never add latency to the frequently polled session list.
+  const savedDraftBoards = new Map<string, { nextRefresh: number; inFlight: boolean; records: Map<string, import("@agent-console/shared").SavedDraft> }>();
+  const refreshSavedDraftBoard = (machine: MachineConfig): Map<string, import("@agent-console/shared").SavedDraft> => {
+    const now = Date.now();
+    const current = savedDraftBoards.get(machine.name);
+    if (current && now < current.nextRefresh) return current.records;
+    if (current?.inFlight) return new Map();
+    const entry = { nextRefresh: now + 30_000, inFlight: true, records: new Map<string, import("@agent-console/shared").SavedDraft>() };
+    savedDraftBoards.set(machine.name, entry);
+    void daemonFetch(machine, "/board/v1", { timeoutMs: 750 }).then(result => {
+      const body = result.body as { ok?: unknown; data?: { machine?: unknown; board?: { machine?: unknown; records?: unknown } } } | undefined;
+      if (result.status !== 200 || body?.ok !== true || body.data?.machine !== machine.name
+        || body.data.board?.machine !== machine.name || !Array.isArray(body.data.board.records)) return;
+      for (const value of body.data.board.records) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+        const row = value as Record<string, unknown>;
+        if (typeof row.session_id !== "string" || typeof row.created_at !== "string") continue;
+        const event = normalizeSavedDraft(row.stale_draft, row.session_id);
+        if (event) entry.records.set(JSON.stringify([row.session_id, row.created_at]), event);
+      }
+    }).catch(() => {}).finally(() => { entry.inFlight = false; });
+    return entry.records;
+  };
 
   const allMachineNames = config.machines.map((machine) => machine.name);
   // The root-only terminal opt-in must not change legacy/open identity payloads.
@@ -1230,24 +1253,15 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         const only = selectMachines(permitted, url.searchParams.get("machines"));
         const readableMachines = sessionMachinesForReader(_principal, only);
         const aggregate = await aggregateSessions(readableMachines, machineHealth, daemonDebug(requestId));
-        const snapshots = await Promise.all(readableMachines.filter(machine =>
+        const snapshots = new Map(readableMachines.filter(machine =>
           aggregate.machines.some(status => status.name === machine.name && status.ok)
-          && aggregate.sessions.some(session => session.machine === machine.name && typeof session.created_at === "string")).map(async machine => {
-            try {
-              const result = await daemonFetch(machine, "/board/v1", { timeoutMs: 3000, debug: daemonDebug(requestId) });
-              const body = result.body as { ok?: unknown; data?: { machine?: unknown; board?: { machine?: unknown; records?: unknown } } } | undefined;
-              return result.status === 200 && body?.ok === true && body.data?.machine === machine.name
-                && body.data.board?.machine === machine.name && Array.isArray(body.data.board.records)
-                ? { machine: machine.name, records: body.data.board.records as Record<string, unknown>[] } : null;
-            } catch { return null; }
-          }));
+          && aggregate.sessions.some(session => session.machine === machine.name && typeof session.created_at === "string"))
+          .map(machine => [machine.name, refreshSavedDraftBoard(machine)]));
         const decorated = decoratedSessionsForReader(_principal, aggregate.sessions);
         const { metadata } = decorated;
         const sessions = decorated.sessions.map(session => {
           if (typeof session.machine !== "string" || typeof session.id !== "string" || typeof session.created_at !== "string") return session;
-          const record = snapshots.find(snapshot => snapshot?.machine === session.machine)?.records.find(row =>
-            row && row.session_id === session.id && row.created_at === session.created_at);
-          const event = normalizeSavedDraft(record?.stale_draft, session.id);
+          const event = snapshots.get(session.machine)?.get(JSON.stringify([session.id, session.created_at]));
           return event ? { ...session, stale_draft: event } : session;
         });
         sendJson(res, 200, {
