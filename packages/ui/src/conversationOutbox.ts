@@ -93,7 +93,7 @@ const provable = (item: QueuedReply) => item.state === "unknown" || item.state =
 const provenKey = (turnId: string, text: string) => `${turnId}\u0000${text}`;
 
 /** The daemon's mailbox nudge, which Claude Code may join with queued replies. */
-const MAILBOX_NUDGE = /^Mailbox: \S+; agent-session message inbox/;
+const MAILBOX_NUDGE = /^Mailbox: (?:\S+|[1-9]\d* unread); agent-session message inbox/;
 
 /**
  * Which attempted replies a transcript proves delivered, as reply id -> proven
