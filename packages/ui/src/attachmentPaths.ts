@@ -82,3 +82,13 @@ export function isUploadedPathLine(line: string): boolean {
   const quoted = WHOLE_QUOTED.exec(line.trim())?.[1];
   return quoted !== undefined && uploadedFile(quoted, undefined) !== null;
 }
+
+/** Remove upload image tokens represented by history image selectors. */
+export function hideUploadedImages(text: string, owner: string, count: number): string {
+  return editOutsideCode(text, (quoted, whole) => {
+    const file = uploadedFile(quoted, owner);
+    if (!file || !IMAGE_NAME.test(file.path) || count <= 0) return whole;
+    count -= 1;
+    return "";
+  }).trim();
+}

@@ -24,7 +24,7 @@ function MessageLink({ href, title, children }: {
 }
 
 /** A session upload shown by its short label; selecting it copies the full path. */
-function AttachmentChip({ file }: { readonly file: UploadedFile }) {
+export function AttachmentChip({ file }: { readonly file: UploadedFile }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return undefined;
@@ -100,9 +100,10 @@ export class MessageMarkdownBoundary extends Component<{ readonly text: string; 
 }
 
 /** One conversation or history message rendered as safe Markdown. */
-export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressImages = false, uploadSessionId }: {
+export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressImages = false, uploadSessionId, neutralUploads = false }: {
   readonly text: string;
   readonly suppressImages?: boolean;
+  readonly neutralUploads?: boolean;
   /** The session whose own quoted upload paths show as chips. */
   readonly uploadSessionId?: string;
 }) {
@@ -113,10 +114,10 @@ export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressIma
     const link = (props: { readonly href?: string; readonly title?: string; readonly children?: ReactNode }) => {
       const file = /^#salon-attachment-(\d+)$/.exec(props.href ?? "")?.[1];
       const chip = file === undefined ? undefined : linked.files[Number(file)];
-      return chip ? <AttachmentChip file={chip} /> : <MessageLink {...props} />;
+      return chip ? <AttachmentChip file={neutralUploads ? { ...chip, label: chip.label.startsWith("[Image ") ? "[Image]" : "[Attachment]" } : chip} /> : <MessageLink {...props} />;
     };
     return { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: link, img: image } };
-  }, [linked.files, suppressImages]);
+  }, [linked.files, suppressImages, neutralUploads]);
   return (
     <div className="message-markdown">
       <MessageMarkdownBoundary key={text} text={text}>

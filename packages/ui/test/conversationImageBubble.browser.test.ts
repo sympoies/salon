@@ -9,7 +9,7 @@ import react from "@vitejs/plugin-react";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
 // Real component and CSS; raster bytes are generated locally, with no live data.
-test("image thumbnails have no frame and image-only metadata stays inside previews", async t => {
+test("image thumbnails retain their sizing and outgoing metadata stays beside the bubble", async t => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
   const bundled = await build({
     resolve:{conditions:["source"]}, configFile:false, logLevel:"silent", define:{"process.env.NODE_ENV":JSON.stringify("production")},
@@ -111,24 +111,20 @@ test("image thumbnails have no frame and image-only metadata stays inside previe
         for (const box of measured.boxes.slice(0,4)) {
           assert.ok(box.image.x > box.article.x + 10, "user image leaves a left gutter");
           assert.ok(Math.abs(box.image.x + box.image.w - (box.article.x + box.article.w)) < 2, "user image aligns right");
-          assert.ok(box.time.x + box.time.w > box.image.x + box.image.w - 8, "image time sits on the right");
+          assert.ok(box.time.x + box.time.w <= box.bubble.x + 1, "image time sits to the left");
           assert.equal(box.timeCount, 1);
           assert.ok(Math.abs(box.bubble.w-box.image.w)<1,"image-only bubble width equals image");
-          assert.ok(Math.abs(box.bubble.h-box.image.h)<1,"image-only bubble height equals image");
+          assert.ok(box.bubble.h>box.image.h,"image label stays in the bubble");
           assert.equal(box.background,"rgba(0, 0, 0, 0)","no colored bubble frame");
           assert.equal(box.border,"0px");
           assert.equal(box.radius,box.imageRadius,"corners match the preview");
-          assert.ok(box.time.x>=box.image.x && box.time.y>=box.image.y &&
-            box.time.x+box.time.w<=box.image.x+box.image.w+1 &&
-            box.time.y+box.time.h<=box.image.y+box.image.h+1,"timestamp sits inside image");
-          assert.equal(box.metadataColor,"rgb(255, 255, 255)");
-          assert.equal(box.metadataBackground,"rgba(0, 0, 0, 0.75)","contrast on light and dark pixels");
+
         }
         for (const box of measured.boxes.slice(0,4)) assert.equal(box.caption,"","provider labels do not render as captions");
         assert.equal(measured.boxes[5].caption,"[Image #1]","text without images is unchanged");
         for (const mixed of [measured.boxes[4], measured.boxes[6]]) {
         assert.equal(mixed.timeCount,1);
-        assert.ok(mixed.time.x >= mixed.text.x + mixed.text.w, "caption time sits to the right of the text");
+        assert.ok(mixed.time.x + mixed.time.w <= mixed.bubble.x + 1, "caption time sits to the left of the bubble");
         assert.ok(mixed.image.x > mixed.article.x + 10, "captioned image leaves a left gutter");
         assert.ok(Math.abs(mixed.image.x + mixed.image.w - (mixed.article.x + mixed.article.w)) < 2, "captioned image aligns right");
         assert.equal(mixed.caption,"Synthetic caption","only user words remain in the caption");

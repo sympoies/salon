@@ -7744,3 +7744,5 @@ textarea {
 
 /* Keep this quiet status readable at compact widths. */
 .session-activity-trigger.activity-unresponsive .session-activity-text { display: inline; }
+
+.history-image-label { display:block; color:var(--conversation-meta); font-size:var(--text-2xs); text-align:right; }
