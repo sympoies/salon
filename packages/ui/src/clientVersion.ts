@@ -22,6 +22,8 @@ export function clientVersionInfo(): ClientVersionInfo {
 }
 
 /** Select only build metadata, never the broader diagnostic context. */
-export function versionCopyText(info: ClientVersionInfo): string {
-  return `Client version: ${info.version ?? "Unavailable"}\nClient build: ${info.build ?? "Unavailable"}\nSurface: ${info.surface}`;
+export function versionCopyText(info: ClientVersionInfo, server: { version?: string; build?: string } = {}): string {
+  return `Client version: ${info.version ?? "Unavailable"}\nClient build: ${info.build ?? "Unavailable"}\nSurface: ${info.surface}`
+    + (server.version ? `\nServer version: ${server.version}` : "")
+    + (server.build ? `\nServer build: ${server.build}` : "");
 }

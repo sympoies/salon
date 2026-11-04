@@ -2414,3 +2414,13 @@ export async function fetchSavedDraftText(machine: string, id: string, draftId: 
   if (!response.ok) throw new Error("Could not load saved draft");
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(await response.arrayBuffer());
 }
+
+export async function getServerVersion(): Promise<{ version?: string; build?: string }> {
+  const { status, body } = await req("/api/server-version");
+  if (status !== 200 || !body || typeof body !== "object") return {};
+  const value = body as { version?: unknown; build?: unknown };
+  return {
+    ...(typeof value.version === "string" && value.version.trim() ? { version: value.version } : {}),
+    ...(typeof value.build === "string" && value.build.trim() ? { build: value.build } : {}),
+  };
+}

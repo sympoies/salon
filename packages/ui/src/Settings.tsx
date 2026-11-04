@@ -14,7 +14,7 @@ import {
   normalizeServerUrl,
   isTauri,
 } from "./runtime.ts";
-import { logout, type AuthStatus, type ConnectFailure } from "./api.ts";
+import { getServerVersion, logout, type AuthStatus, type ConnectFailure } from "./api.ts";
 import {
   createMachineColorMap,
   machineColorOverride,
@@ -123,6 +123,12 @@ export function Settings({
   // The stored token is never rendered into the DOM: Android WebView accessibility
   // reports input values and attributes. The field only ever holds a replacement.
   const [tokenSaved, setTokenSaved] = useState(() => loadToken() !== "");
+  const [serverVersion, setServerVersion] = useState<{ version?: string; build?: string }>({});
+  useEffect(() => {
+    let active = true;
+    void getServerVersion().then(value => { if (active) setServerVersion(value); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   const [versionCopyStatus, setVersionCopyStatus] = useState<string | null>(null);
   const [draftMachineColors, setDraftMachineColors] = useState<Record<string, string>>(() => createMachineColorMap());
 
@@ -332,12 +338,13 @@ export function Settings({
           <p>Client version: {clientVersion.version ?? "Unavailable"}</p>
           <p>Client build: {clientVersion.build ?? "Unavailable"}</p>
           <p>Surface: {clientVersion.surface}</p>
-          <p>Server version: Unavailable</p>
-          <p className="settings-hint">The server does not provide Console version metadata.</p>
+          <p>Server version: {serverVersion.version ?? "Unavailable"}</p>
+          {serverVersion.build ? <p>Server build: {serverVersion.build}</p> : null}
+          {!serverVersion.version && !serverVersion.build ? <p className="settings-hint">The server does not provide Console version metadata.</p> : null}
           <div className="settings-actions">
             <AsyncButton className="btn ghost" onClick={async () => {
               try {
-                await writeTerminalClipboardText(versionCopyText(clientVersion));
+                await writeTerminalClipboardText(versionCopyText(clientVersion, serverVersion));
                 setVersionCopyStatus("Copied version information.");
               } catch {
                 setVersionCopyStatus("Could not copy version information. Try again.");

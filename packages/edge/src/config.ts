@@ -100,6 +100,8 @@ export function principalCanUseTerminal(principal: PrincipalConfig): boolean {
 export interface EdgeConfig {
   readonly host: string;
   readonly port: number;
+  readonly serverVersion?: string;
+  readonly serverBuild?: string;
   // The legacy client-facing bearer token. The browser trades it for an httpOnly
   // session cookie; the per-machine tokens above never reach the client.
   // May be empty only in open-access mode; open-access may still carry a token
@@ -579,6 +581,8 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
   return {
     host: env.AGENT_CONSOLE_EDGE_HOST ?? "127.0.0.1",
     port: Number(env.AGENT_CONSOLE_EDGE_PORT ?? "8790"),
+    serverVersion: env.AGENT_CONSOLE_SERVER_VERSION?.trim() || undefined,
+    serverBuild: env.AGENT_CONSOLE_SERVER_BUILD?.trim() || undefined,
     clientToken,
     principals,
     multiUser,

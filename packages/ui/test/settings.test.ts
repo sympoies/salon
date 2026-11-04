@@ -189,6 +189,26 @@ test("Settings shows and copies injected client metadata while server version is
   assert.match(section.textContent ?? "", /Copied/);
 });
 
+test("Settings displays and copies server metadata", async () => {
+  const globals = globalThis as typeof globalThis & Record<string, unknown>;
+  const copied: string[] = [];
+  globals.__serverVersionCopy = (text: string) => copied.push(text);
+  const harness = createUiSsrHarness([{ name: "server-version-boundary", transform(code, id) {
+    if (id.endsWith("/src/terminalClipboard.ts")) return "export async function writeTerminalClipboardText(text) { globalThis.__serverVersionCopy(text); }";
+    if (id.endsWith("/src/api.ts")) return code.replace("export async function getServerVersion(", "export async function originalGetServerVersion(") + `\nexport async function getServerVersion() { return { version: "1.2.3", build: "abc123" }; }`;
+  }}]);
+  cleanupStack.push(async () => { await harness.close(); delete globals.__serverVersionCopy; });
+  const { Settings } = await harness.loadModule<{ Settings: ComponentType<SettingsProps> }>("/src/Settings.tsx");
+  const mounted = installDom(); cleanupStack.push(mounted.cleanup);
+  await act(async () => mounted.root.render(createElement(Settings, versionSettingsProps())));
+  const section = mounted.container.querySelector('[aria-label="Version information"]'); assert.ok(section);
+  assert.match(section.textContent ?? "", /Server version.*1\.2\.3/);
+  assert.match(section.textContent ?? "", /Server build.*abc123/);
+  const button = section.querySelector<HTMLButtonElement>("button"); assert.ok(button);
+  await act(async () => button.click());
+  assert.match(copied[0] ?? "", /Server version: 1\.2\.3\nServer build: abc123/);
+});
+
 test("Settings missing metadata stays explicit and usable without a backend", async () => {
   const module = await ssr.loadModule<{ Settings: ComponentType<SettingsProps> }>("/src/Settings.tsx");
   const mounted = installDom();
