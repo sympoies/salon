@@ -12,6 +12,7 @@ const API_ROUTES = [
   { id: "debug", pattern: "/api/debug/bundle", methods: ["GET"], params: [] },
   { id: "shell", pattern: "/api/shells/:machine", methods: ["GET", "POST", "DELETE"], params: ["machine"] },
   { id: "shell-ticket", pattern: "/api/shells/:machine/:incarnation/attach-ticket", methods: ["POST"], params: ["machine", "incarnation"] },
+  { id: "server-version", pattern: "/api/server-version", methods: ["GET"], params: [] },
   { id: "machines", pattern: "/api/machines", methods: ["GET"], params: [] },
   { id: "machine-preferences", pattern: "/api/machine-preferences", methods: ["GET"], params: [] },
   { id: "machine-preference", pattern: "/api/machine-preferences/:machine", methods: ["PUT"], params: ["machine"] },

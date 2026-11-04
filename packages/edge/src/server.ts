@@ -978,6 +978,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         });
         return;
 
+      case "server-version":
+        sendJson(res, 200, { ...(config.serverVersion ? { version: config.serverVersion } : {}), ...(config.serverBuild ? { build: config.serverBuild } : {}) });
+        return;
+
       case "machines":
         sendJson(res, 200, {
           ok: true,
