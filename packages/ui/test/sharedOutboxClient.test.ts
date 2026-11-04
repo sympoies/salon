@@ -538,6 +538,28 @@ test("a replaced shared cookie cannot move a retained intention into another acc
   } finally { await h.close(); }
 });
 
+for (const [code, expected] of [
+  ["composer-unobservable", /^Console cannot read the terminal input, so this reply was not sent\. Check the terminal, then Retry\.$/],
+] as const) test(`a shared refusal coded ${code} states why it was not sent`, async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const requestId = crypto.randomUUID();
+    await h.ownServer({ revision: 2, compose_holds: [], items: [{
+      id: "coded-refusal", text: "kept reply", state: "refused", revision: 2,
+      session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: requestId,
+      edit_hold: null, error_code: code,
+      receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1",
+        outcome: "refused", code },
+    }] });
+    await h.client.sync(h.target);
+    await h.showReplies();
+    const refused = h.container.querySelector('[data-status="refused"]');
+    assert.ok(refused);
+    assert.match(refused.querySelector('[role="alert"]')?.textContent ?? "", expected);
+    assert.ok(refused.textContent?.includes("Discard") && refused.textContent.includes("Retry"));
+  } finally { await h.close(); }
+});
+
 test("a shared composer draft refusal explains safe recovery without automatic retry", async () => {
   const h = await fixture(new IDBFactory(), false);
   try {
@@ -564,7 +586,7 @@ test("a shared composer draft refusal explains safe recovery without automatic r
 
 for (const [code, expected] of [
   ["busy", 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'],
-  ["auth-quarantined", "This message was not sent."],
+  ["auth-quarantined", "Not sent (code: auth-quarantined). Retry when the session is idle."],
 ] as const) test(`a shared reply refused as ${code} shows its own text and keeps Retry and Discard`, async () => {
   const h = await fixture(new IDBFactory(), false);
   try {

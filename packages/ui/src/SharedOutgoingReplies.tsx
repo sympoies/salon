@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { refusalReason } from "./conversationOutbox.ts";
 import { OutgoingBubble } from "./OutgoingBubble.tsx";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import type { HistoryMessage, Session } from "./types.ts";
@@ -55,11 +56,9 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
           <div className="history-outgoing-body">
             <OutgoingBubble text={item.text} onDismiss={client.canDismiss(row, item) ? () => { void client.dismiss(row.target, item.id).catch(() => {}); } : undefined} />
             {item.state === "refused" ? <>
-              <p role="alert" className="history-outgoing-note">{item.error_code === "composer-not-empty"
-                ? "Terminal has a draft, so this reply was not sent. Clear it in the terminal, then Retry."
-                : item.error_code === "busy"
-                  ? 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'
-                  : "This message was not sent."}</p>
+              <p role="alert" className="history-outgoing-note">{item.error_code === "busy"
+                ? 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'
+                : refusalReason(item.error_code ?? "unknown")}</p>
               <div className="history-outgoing-actions">
                 <button type="button" className="btn ghost" onClick={() => void client.actOnRefused(session, row.target, item, "discard_refused")}>Discard</button>
                 {row.target.incarnation === session.session_incarnation
