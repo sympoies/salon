@@ -724,8 +724,11 @@ test("a pre-ownership local admission remains owned when a lost acknowledgement 
 });
 
 test("a delayed equal-revision snapshot cannot hide the sender's acknowledged queued reply", async () => {
-  const factory = new IDBFactory(), h = await fixture(factory, false);
+  const factory = new IDBFactory();
+  let h = await fixture(factory, false);
   const other = new h.module.SharedOutboxClient(h.client.namespace, factory);
+  const path = "/fixture/sessions/shared-reply/attachments/stored.png";
+  const preview = new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" });
   const deferred = () => { let release!: () => void; const ready = new Promise<void>(resolve => { release = resolve; }); return { ready, release }; };
   const putStarted = deferred(), allowPut = deferred(), staleStarted = deferred(), allowStale = deferred(), freshStarted = deferred(), allowFresh = deferred();
   const transport = globalThis.fetch;
@@ -743,11 +746,13 @@ test("a delayed equal-revision snapshot cannot hide the sender's acknowledged qu
   };
   try {
     await other.ready;
-    const id = await h.client.enqueue(session, "Known queued reply"); await putStarted.ready;
+    const id = await h.client.enqueue(session, `'${path}'\nKnown queued reply`, [{ path, original_name: "Known draft.png", preview }]); await putStarted.ready;
     const delayed = other.sync(h.target); await staleStarted.ready;
     allowPut.release(); await freshStarted.ready;
     assert.deepEqual(h.client.state(h.target).localIntentIds, [id], "the acknowledged local intent is still owned");
     allowStale.release(); await delayed;
+    assert.equal(other.state(h.target).attachments?.[id]?.[0]?.original_name, "Known draft.png",
+      "an equal-revision response cannot retire browser-only attachment metadata");
     allowFresh.release(); await h.client.sync(h.target);
     assert.equal(other.error(h.target), undefined, "the delayed response completes without a fixture timeout");
     assert.equal(h.client.state(h.target).snapshot.items[0]?.state, "queued");
@@ -755,9 +760,28 @@ test("a delayed equal-revision snapshot cannot hide the sender's acknowledged qu
     assert.match(h.container.textContent ?? "", /Known queued reply/, "fresh server state must restore the known sender's visible reply");
     assert.deepEqual(h.client.state(h.target).localIntentIds, [id]);
     assert.equal(h.admissions.length, 1, "concurrent snapshots never replay the intention");
-    h.server({ ...h.snapshot(), revision: h.snapshot().revision + 1, items: [] });
+    assert.equal(h.container.querySelector(".attachment-chip")?.textContent, "Known draft.png");
+    assert.match(h.container.querySelector(".outgoing-attachment-preview")?.getAttribute("src") ?? "", /^blob:/);
+    const fresh = h.snapshot();
+    other.close(); globalThis.fetch = transport; await h.close();
+    h = await fixture(factory, false); h.online(false); await h.client.ready;
+    const attachment = h.client.state(h.target).attachments?.[id]?.[0];
+    assert.equal(attachment?.original_name, "Known draft.png", "reload preserves the display name");
+    assert.equal(attachment?.preview?.type, "image/png");
+    assert.deepEqual(new Uint8Array(await attachment!.preview!.arrayBuffer()), new Uint8Array([1, 2, 3]), "reload preserves raster bytes");
+    await h.showReplies();
+    assert.equal(h.container.querySelector(".attachment-chip")?.textContent, "Known draft.png");
+    assert.match(h.container.querySelector(".outgoing-attachment-preview")?.getAttribute("src") ?? "", /^blob:/, "reload recreates the preview from the retained blob");
+    h.server({ ...fresh, revision: fresh.revision - 1, items: [] }); h.online(true);
+    await act(async () => h.client.sync(h.target));
+    assert.equal(h.client.state(h.target).snapshot.revision, fresh.revision, "older responses cannot replace newer state");
+    assert.equal(h.client.state(h.target).attachments?.[id]?.[0]?.original_name, "Known draft.png");
+    h.server({ ...fresh, revision: fresh.revision + 1, items: [] });
     await act(async () => h.client.sync(h.target));
     assert.deepEqual(h.client.state(h.target).localIntentIds, [], "a newer authoritative removal can retire the owned ID after acknowledgement");
+    assert.equal(h.client.state(h.target).attachments?.[id], undefined, "newer eviction removes the name and blob");
+    await h.showReplies();
+    assertNoElement(h.container, ".outgoing-attachment-preview", "newer eviction removes the preview");
   } finally {
     allowPut.release(); allowStale.release(); allowFresh.release(); globalThis.fetch = transport;
     other.close(); await h.close();

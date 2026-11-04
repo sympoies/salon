@@ -220,8 +220,9 @@ export class SharedOutboxClient {
       unattributedIntentIds: snapshot.revision > row.snapshot.revision
         ? row.unattributedIntentIds!.filter(id => snapshot.items.some(item => item.id === id)) : row.unattributedIntentIds,
       admissions: row.admissions.filter(admission => !snapshot.items.some(item => item.id === admission.id)),
-      attachments: Object.fromEntries(Object.entries(row.attachments ?? {}).filter(([id]) =>
-        row.admissions.some(item => item.id === id) || snapshot.items.some(item => item.id === id && item.state !== "cancelled" && item.state !== "command_dispatched"))),
+      attachments: snapshot.revision > row.snapshot.revision
+        ? Object.fromEntries(Object.entries(row.attachments ?? {}).filter(([id]) =>
+          row.admissions.some(item => item.id === id) || snapshot.items.some(item => item.id === id && item.state !== "cancelled" && item.state !== "command_dispatched"))) : row.attachments,
       submittedProofs: Object.fromEntries(Object.entries(row.submittedProofs ?? {}).filter(([id]) => snapshot.items.some(item => item.id === id))),
       dismissedIds: row.dismissedIds?.filter(id => snapshot.items.some(item => item.id === id)) });
   }
