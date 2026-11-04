@@ -209,7 +209,7 @@ function ImageViewer({machine,history,images,initial,onClose}: {
       <IconButton className="btn" aria-label="Close image viewer" title="Close image viewer" onClick={onClose}><CloseIcon /></IconButton>
     </div>
     {saveError ? <div className="conversation-image-save-error" role="status">Image could not be saved</div> : null}
-    <div ref={stage} className="conversation-image-stage" onPointerDown={down} onPointerMove={drag} onPointerUp={event => up(event)} onPointerCancel={event => up(event,true)}
+    <div ref={stage} className="conversation-image-stage" onContextMenu={event => event.preventDefault()} onPointerDown={down} onPointerMove={drag} onPointerUp={event => up(event)} onPointerCancel={event => up(event,true)}
       onTouchStart={event => event.stopPropagation()} onTouchMove={event => event.stopPropagation()} onTouchEnd={event => event.stopPropagation()}
       onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget && !gesture.current?.moved && gesture.current?.outside) onClose(); }}
       onDoubleClick={event => { event.stopPropagation(); setScale(value => value === 1 ? 2 : 1); setPan({x:0,y:0}); }}>
