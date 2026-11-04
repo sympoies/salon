@@ -38,6 +38,13 @@ function editOutsideCode(text: string, edit: (quoted: string, whole: string) => 
   }).join("\n");
 }
 
+/** Browser-local upload display data; the provider prompt still contains only the path. */
+export interface OutgoingAttachment {
+  readonly path: string;
+  readonly original_name?: string;
+  readonly preview?: Blob;
+}
+
 export interface UploadedFile {
   readonly path: string;
   readonly label: string;

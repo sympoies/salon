@@ -611,13 +611,13 @@ test("issue 17 and durable-session routes proxy title, workdirs, repo URL, resum
     assert.equal(resume.status, 200);
     assert.equal((await resume.json()).data.session.repo_name, "agent-console");
 
-    const upload = await fetch(`${edgeBase}/api/sessions/maple/s1/attachments?filename=clip.png`, {
+    const upload = await fetch(`${edgeBase}/api/sessions/maple/s1/attachments?filename=${encodeURIComponent("../drafts\\clip.\u0000png")}`, {
       method: "POST",
       headers: { "content-type": "image/png", cookie },
       body: Buffer.from("png-bytes"),
     });
     assert.equal(upload.status, 200);
-    assert.equal((await upload.json()).data.attachment.path, "/tmp/clip.png");
+    assert.deepEqual((await upload.json()).data.attachment, { path: "/tmp/clip.png", bytes: 9, original_name: "clip.png" });
 
     assert.deepEqual(
       seen.map((r) => [r.method, r.url, r.auth]),

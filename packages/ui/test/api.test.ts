@@ -3323,13 +3323,14 @@ test("uploadAttachment posts the raw file body and returns the remote path", asy
     seenType = new Headers(init?.headers).get("content-type") ?? "";
     seenBytes = init?.body instanceof File ? init.body.size : 0;
     return jsonResponse(
-      { ok: true, data: { attachment: { path: "/tmp/clip.png", bytes: 3 } } },
+      { ok: true, data: { attachment: { path: "/tmp/clip.png", bytes: 3, original_name: "Design draft.png" } } },
       { status: 200 },
     );
   });
   const result = await uploadAttachment("maple", "s1", payload);
   assert.equal(result.ok, true);
   assert.equal(result.path, "/tmp/clip.png");
+  assert.equal(result.original_name, "Design draft.png");
   assert.equal(seenPath, "/api/sessions/maple/s1/attachments?filename=clip.png");
   assert.equal(seenMethod, "POST");
   assert.equal(seenType, "image/png");

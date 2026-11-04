@@ -1,5 +1,5 @@
 import { normalizeSavedDraft, normalizeSavedDraftInventory, type SavedDraft } from "@agent-console/shared";
-import { normalizeConversationImages } from "@agent-console/shared/conversation-images";
+import { normalizeConversationImages, sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
 import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { validOutboxText, SHARED_OUTBOX_MAX_ITEMS, SHARED_OUTBOX_MAX_HOLDS, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
@@ -1839,6 +1839,7 @@ export async function searchWorkdirs(machine: string, q: string, limit = 20): Pr
 }
 
 export interface UploadAttachmentResult extends ApiResult {
+  readonly original_name?: string;
   readonly path?: string;
   readonly bytes?: number;
 }
@@ -1857,9 +1858,9 @@ export async function uploadAttachment(machine: string, id: string, file: File):
   if (!result.ok) {
     return result;
   }
-  const attachment = (r.body as { data?: { attachment?: { path?: string; bytes?: number } } } | undefined)?.data
+  const attachment = (r.body as { data?: { attachment?: { path?: string; bytes?: number; original_name?: unknown } } } | undefined)?.data
     ?.attachment;
-  return { ok: true, path: attachment?.path, bytes: attachment?.bytes };
+  return { ok: true, path: attachment?.path, bytes: attachment?.bytes, original_name: sanitizeAttachmentName(attachment?.original_name) };
 }
 
 function fallbackAttachmentName(contentType: string): string {

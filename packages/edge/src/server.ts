@@ -1,3 +1,4 @@
+import { sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
 import { normalizeSavedDraft } from "@agent-console/shared";
 import { forwardHistoryImage } from "./historyImages.ts";
 import {isPromptRequestId,isPromptIncarnation} from "@agent-console/shared/prompt-receipt";
@@ -2391,7 +2392,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         const sessionId = routeParam(route, "id");
-        const filename = url.searchParams.get("filename");
+        const filename = sanitizeAttachmentName(url.searchParams.get("filename"));
         const suffix = filename ? `?filename=${encodeURIComponent(filename)}` : "";
         const rawType = req.headers["content-type"];
         const uploadContentType = Array.isArray(rawType) ? rawType[0] : rawType;
@@ -2409,7 +2410,14 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             },
           );
           closeIncompleteUpload();
-          forwardDaemon(res, daemonResult);
+          const envelope = objectProp(daemonResult.body);
+          const data = objectProp(envelope?.data);
+          const attachment = objectProp(data?.attachment);
+          if (daemonResult.status >= 200 && daemonResult.status < 300 && envelope?.ok !== false && attachment) {
+            forwardDaemon(res, { ...daemonResult, body: { ...envelope, data: { ...data,
+              attachment: { ...attachment, original_name: filename },
+            } } });
+          } else forwardDaemon(res, daemonResult);
         } catch (err) {
           closeIncompleteUpload();
           if (uploadBody.limitExceeded()) {

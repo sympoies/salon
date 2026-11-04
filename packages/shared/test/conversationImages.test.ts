@@ -49,3 +49,15 @@ test("unknown origins and malformed references are dropped while the image stays
     {id,attachment_ref:"a b"}, {id,attachment_ref:""}, {id,attachment_ref:"x".repeat(129)}, {id,attachment_ref:42},
   ]),Array(9).fill({id}));
 });
+
+
+test("history image descriptors retain sanitized original upload names without changing selectors", () => {
+  const id = `${"a".repeat(16)}.0.0.${"b".repeat(32)}`;
+  assert.deepEqual(normalizeConversationImages([
+    { id, original_name: "Design draft.png" }, { id },
+    { id, original_name: "../folder\\Design\u0000 draft.png" },
+    { id, original_name: ".." }, { id, original_name: 42 },
+    { id, original_name: "😀".repeat(256) },
+  ]), [{ id, original_name: "Design draft.png" }, { id },
+    { id, original_name: "Design draft.png" }, { id }, { id }, { id, original_name: "😀".repeat(255) }]);
+});

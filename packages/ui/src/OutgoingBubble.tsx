@@ -1,7 +1,8 @@
+import { sanitizeAttachmentName, CONVERSATION_IMAGE_TYPES } from "@agent-console/shared/conversation-images";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { AttachmentChip } from "./MessageMarkdown.tsx";
-import { linkUploadedFiles } from "./attachmentPaths.ts";
+import { linkUploadedFiles, type OutgoingAttachment } from "./attachmentPaths.ts";
 import { useDismissOnOutside } from "./useDismissOnOutside.ts";
 import { useMenuFocus } from "./useMenuFocus.ts";
 
@@ -10,13 +11,25 @@ const LONG_PRESS_MS = 500;
 const MENU_WIDTH = 160;
 const MENU_HEIGHT = 48;
 
+function LocalImagePreview({ blob, name }: { readonly blob: Blob; readonly name: string }) {
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    if (!CONVERSATION_IMAGE_TYPES.some(type => type === blob.type)) return;
+    const owned = URL.createObjectURL(blob);
+    setUrl(owned);
+    return () => { URL.revokeObjectURL(owned); };
+  }, [blob]);
+  return url ? <img className="outgoing-attachment-preview" src={url} alt={name} onError={() => setUrl(undefined)} /> : null;
+}
+
 /**
  * A reply bubble. When `onDismiss` is given, a right-click, the menu key (or
  * Shift+F10, Enter, Space) on the focused bubble, or a touch long press opens a
  * menu with one action that removes this local echo and nothing else (#110).
  */
-export function OutgoingBubble({ text, onDismiss, uploadSessionId }: {
+export function OutgoingBubble({ text, onDismiss, uploadSessionId, attachments = [] }: {
   readonly text: string;
+  readonly attachments?: readonly OutgoingAttachment[];
   readonly uploadSessionId: string;
   readonly onDismiss?: () => void;
 }) {
@@ -34,7 +47,14 @@ export function OutgoingBubble({ text, onDismiss, uploadSessionId }: {
   const content = <div className="history-outgoing-text message-markdown">{parts.map((part, index) => {
     const number = /^\[file\]\(#salon-attachment-(\d+)\)$/.exec(part)?.[1];
     const file = number === undefined ? undefined : linked.files[Number(number)];
-    return file ? <AttachmentChip key={index} file={{ ...file, label: file.label.startsWith("[Image ") ? "[Image]" : "[Attachment]" }} /> : part;
+    if (!file) return part;
+    const attachment = attachments.find(value => value.path === file.path);
+    const name = sanitizeAttachmentName(attachment?.original_name);
+    const label = name ?? (file.label.startsWith("[Image ") ? "[Image]" : "[Attachment]");
+    return <span className="outgoing-attachment" key={index}>
+      {attachment?.preview ? <LocalImagePreview blob={attachment.preview} name={name ?? "Image"} /> : null}
+      <AttachmentChip file={{ ...file, label }} />
+    </span>;
   })}</div>;
   if (!onDismiss) return <div className="history-bubble history-outgoing-bubble">{content}</div>;
   const openAt = (x: number, y: number) => setAt({

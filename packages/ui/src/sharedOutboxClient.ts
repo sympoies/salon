@@ -1,3 +1,4 @@
+import { uploadedFilePaths, type OutgoingAttachment } from "./attachmentPaths.ts";
 import { useEffect, useSyncExternalStore } from "react";
 import { validOutboxText, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
 import { actOnRefusedSharedOutbox, admitSharedOutbox, readSharedOutbox, SharedOutboxRequestError, type SharedOutboxTarget } from "./api.ts";
@@ -18,6 +19,8 @@ export interface SharedClientTarget {
   readonly target: SharedOutboxTarget;
   readonly snapshot: SharedOutboxSnapshot;
   readonly admissions: readonly LocalSharedAdmission[];
+  /** Local display metadata and raster blobs, never sent in server admissions. */
+  readonly attachments?: Readonly<Record<string, readonly OutgoingAttachment[]>>;
   /** Recorded with the local intention, before any upload. Snapshots confer no ownership. */
   readonly localIntentIds?: readonly string[];
   /** Pre-ownership cached rows: preserve unresolved text without adopting new remote rows. */
@@ -130,7 +133,8 @@ export class SharedOutboxClient {
       const item = row.snapshot.items.find(candidate => candidate.id === id);
       if (!item || !this.canDismiss(row, item)) return row;
       dismissed = true;
-      return { ...row, dismissedIds: [...(row.dismissedIds ?? []), id] };
+      return { ...row, dismissedIds: [...(row.dismissedIds ?? []), id],
+        attachments: Object.fromEntries(Object.entries(row.attachments ?? {}).filter(([key]) => key !== id)) };
     });
     return dismissed;
   }
@@ -158,7 +162,11 @@ export class SharedOutboxClient {
     if (Object.keys(proof).length === Object.keys(row.submittedProofs ?? {}).length) return;
     // Merge under the journal transaction, so another pane/tab cannot undo a
     // handover or spend the same transcript part on two identical replies.
-    await this.update(target, current => ({ ...current, submittedProofs: this.submittedProof(current, messages) }));
+    await this.update(target, current => {
+      const submittedProofs = this.submittedProof(current, messages);
+      return { ...current, submittedProofs,
+        attachments: Object.fromEntries(Object.entries(current.attachments ?? {}).filter(([id]) => !Object.hasOwn(submittedProofs, id))) };
+    });
   }
   /** Read-only recovery of text left by the retired editor. Never replay it. */
   retainedEdits(session: Session): readonly { id: string; text: string }[] {
@@ -212,16 +220,20 @@ export class SharedOutboxClient {
       unattributedIntentIds: snapshot.revision > row.snapshot.revision
         ? row.unattributedIntentIds!.filter(id => snapshot.items.some(item => item.id === id)) : row.unattributedIntentIds,
       admissions: row.admissions.filter(admission => !snapshot.items.some(item => item.id === admission.id)),
+      attachments: Object.fromEntries(Object.entries(row.attachments ?? {}).filter(([id]) =>
+        row.admissions.some(item => item.id === id) || snapshot.items.some(item => item.id === id && item.state !== "cancelled" && item.state !== "command_dispatched"))),
       submittedProofs: Object.fromEntries(Object.entries(row.submittedProofs ?? {}).filter(([id]) => snapshot.items.some(item => item.id === id))),
       dismissedIds: row.dismissedIds?.filter(id => snapshot.items.some(item => item.id === id)) });
   }
-  async enqueue(session: Session, text: string): Promise<string> {
+  async enqueue(session: Session, text: string, attachments: readonly OutgoingAttachment[] = []): Promise<string> {
     this.requireActive();
     if (!usesSharedOutbox(session) || !validOutboxText(text)) throw new Error("This reply cannot be queued. Keep the draft and check the target and text.");
     const target = sharedOutboxTarget(session), id = crypto.randomUUID();
+    const paths = uploadedFilePaths(text, session.id);
+    const attached = attachments.filter(file => paths.includes(file.path));
     const saved = await this.commit(target, row => {
       if (row.admissions.length >= 256) throw new Error("This device's reply queue is full. Your draft has been kept.");
-      return { ...row, localIntentIds: [...row.localIntentIds!, id],
+      return { ...row, attachments: { ...row.attachments, ...(attached.length ? { [id]: attached } : {}) }, localIntentIds: [...row.localIntentIds!, id],
         admissions: [...row.admissions, { id, text, created_at: Date.now(), attempted: false }] };
     });
     // Once committed the intent is owned by the journal under this id. Rejecting

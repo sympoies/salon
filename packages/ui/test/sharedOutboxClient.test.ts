@@ -43,6 +43,11 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
     if (method === "GET" && nextRead) {
       const read = nextRead; nextRead = undefined; return read();
     }
+    if (url.pathname.endsWith("/attachments")) {
+      return Response.json({ ok: true, data: { attachment: {
+        path: "/fixture/sessions/shared-reply/attachments/stored.png", bytes: 3, original_name: "Design draft.png",
+      } } });
+    }
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     if (!url.pathname.includes("/outbox")) throw new Error("Unexpected transport");
     if (method === "PUT") {
@@ -141,6 +146,11 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
         tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error);
       });
       db.close();
+    },
+    async attach(file: File) {
+      const event = new window.Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", { value: { files: [file], items: [], types: ["Files"], getData: () => "" } });
+      await act(async () => { editor().dispatchEvent(event); }); await settle();
     },
     async send(text: string) {
       const node = editor(), key = Object.keys(node).find(key => key.startsWith("__reactProps$"))!;
@@ -915,4 +925,76 @@ test("#110 a pending bubble is dismissed from its context menu, only locally, an
     assert.ok(!h.container.textContent?.includes("stuck submitted reply"), "the dismissal survives a restart");
     assert.ok(h.container.textContent?.includes("queued reply"));
   } finally { await h.close(); }
+});
+
+
+test("composer uploads retain original names and local previews through admission and refusal", async () => {
+  const factory = new IDBFactory(), h = await fixture(factory);
+  const created: string[] = [], revoked: string[] = [];
+  const create = URL.createObjectURL, revoke = URL.revokeObjectURL;
+  URL.createObjectURL = blob => { assert.equal(blob.type, "image/png"); const url = create(blob); created.push(url); return url; };
+  URL.revokeObjectURL = url => { revoked.push(url); revoke(url); };
+  let restored: InstanceType<typeof h.module.SharedOutboxClient> | undefined;
+  try {
+    await h.attach(new File([new Uint8Array([1, 2, 3])], "Design draft.png", { type: "image/png" }));
+    assert.match(h.editor().value, /stored\.png/);
+    await h.send(h.editor().value);
+    await h.client.sync(h.target); await h.client.sync(h.target);
+    await h.showReplies();
+    assert.equal(h.container.querySelector(".attachment-chip")?.textContent, "Design draft.png");
+    assert.match(h.container.querySelector(".outgoing-attachment-preview")?.getAttribute("src") ?? "", /^blob:/);
+    assert.equal(h.admissions.length, 1);
+    assert.equal(h.admissions[0]?.text, "'/fixture/sessions/shared-reply/attachments/stored.png'");
+    const queued = h.snapshot();
+    h.server({ ...queued, revision: queued.revision + 1, items: queued.items.map(item => ({ ...item, state: "refused", error_code: "busy" })) });
+    await act(async () => { await h.client.sync(h.target); }); await h.showReplies();
+    assert.equal(h.container.querySelector(".attachment-chip")?.textContent, "Design draft.png");
+    restored = new h.module.SharedOutboxClient(h.client.namespace, factory); await restored.ready;
+    const metadata = restored.state(h.target).attachments?.[h.admissions[0]!.id];
+    assert.equal(metadata?.[0]?.original_name, "Design draft.png");
+    assert.equal(metadata?.[0]?.preview?.size, 3);
+    const item = h.snapshot().items[0]!;
+    await act(async () => { await h.client.actOnRefused(session, h.target, item, "retry_refused"); }); await h.showReplies();
+    assert.ok(h.container.querySelector(".outgoing-attachment-preview"));
+    const snapshot = h.snapshot();
+    h.server({ ...snapshot, revision: snapshot.revision + 1, items: snapshot.items.map(item => ({ ...item, state: "submitted", error_code: null, request_id: item.id,
+      receipt: { request_id: item.id, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null } })) });
+    await h.settle();
+    await act(async () => { await h.client.sync(h.target); await h.client.sync(h.target); });
+    const delivered: HistoryMessage[] = [{ id: "delivered-image", role: "user", text: "", images: [{ id: "a".repeat(16) + ".0.0." + "b".repeat(32) }], timestamp: new Date(Date.now() + 1000).toISOString() }];
+    await h.showReplies(session, delivered);
+    assertNoElement(h.container, ".outgoing-attachment-preview", "history proof removes local preview");
+    assert.equal(h.client.state(h.target).attachments?.[item.id], undefined);
+    assert.deepEqual(revoked.sort(), created.sort(), "all local URLs are released after delivery");
+  } finally { restored?.close(); await h.close(); URL.createObjectURL = create; URL.revokeObjectURL = revoke; }
+});
+
+
+for (const removal of ["dismiss", "evict"] as const) test(`local attachment metadata and URLs are released on ${removal}`, async () => {
+  const h = await fixture(new IDBFactory(), false);
+  const path = "/fixture/sessions/shared-reply/attachments/stored.png";
+  const create = URL.createObjectURL, revoke = URL.revokeObjectURL;
+  const created: string[] = [], revoked: string[] = [];
+  URL.createObjectURL = blob => { const url = create(blob); created.push(url); return url; };
+  URL.revokeObjectURL = url => { revoked.push(url); revoke(url); };
+  try {
+    const id = await h.client.enqueue(session, `'${path}'`, [{ path, original_name: "Draft.png", preview: new Blob(["image"], { type: "image/png" }) },
+      { path: "/fixture/sessions/shared-reply/attachments/removed.png", original_name: "Removed.png" }]);
+    await h.client.sync(h.target); await h.client.sync(h.target);
+    assert.equal(h.client.state(h.target).attachments?.[id]?.length, 1, "removed paths are not retained");
+    await h.showReplies(); assert.ok(h.container.querySelector(".outgoing-attachment-preview"));
+    const snapshot = h.snapshot();
+    if (removal === "dismiss") {
+      h.server({ ...snapshot, revision: snapshot.revision + 1, items: snapshot.items.map(item => ({ ...item, state: "submitted", request_id: item.id,
+        receipt: { request_id: item.id, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null } })) });
+      await act(async () => { await h.client.sync(h.target); await h.client.sync(h.target); await h.client.dismiss(h.target, id); });
+    } else {
+      h.server({ ...snapshot, revision: snapshot.revision + 1, items: [] });
+      await act(async () => { await h.client.sync(h.target); await h.client.sync(h.target); });
+    }
+    await h.showReplies();
+    assert.equal(h.client.state(h.target).attachments?.[id], undefined);
+    assertNoElement(h.container, ".outgoing-attachment-preview");
+    assert.deepEqual(revoked.sort(), created.sort());
+  } finally { await h.close(); URL.createObjectURL = create; URL.revokeObjectURL = revoke; }
 });

@@ -47,12 +47,12 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
     {visibleRows.map(row => <div key={row.key}>
       {client.error(row.target) ? <p role="alert" className="history-outgoing-note">{client.error(row.target)}</p> : null}
       {row.admissions.map(item => <article key={item.id} className="history-message is-user history-outgoing-reply">
-        <div className="history-outgoing-body"><OutgoingBubble text={item.text} uploadSessionId={session.id} /></div>
+        <div className="history-outgoing-body"><OutgoingBubble text={item.text} uploadSessionId={session.id} attachments={row.attachments?.[item.id]} /></div>
       </article>)}
       {row.items.map(item =>
         <article key={item.id} className="history-message is-user history-outgoing-reply" data-status={item.state}>
           <div className="history-outgoing-body">
-            <OutgoingBubble uploadSessionId={session.id} text={item.text} onDismiss={client.canDismiss(row, item) ? () => { void client.dismiss(row.target, item.id).catch(() => {}); } : undefined} />
+            <OutgoingBubble uploadSessionId={session.id} text={item.text} attachments={row.attachments?.[item.id]} onDismiss={client.canDismiss(row, item) ? () => { void client.dismiss(row.target, item.id).catch(() => {}); } : undefined} />
             {item.state === "refused" ? <>
               <p role="alert" className="history-outgoing-note">{item.error_code === "busy"
                 ? 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'
