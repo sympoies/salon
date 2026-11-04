@@ -1,4 +1,5 @@
 import type { SessionWork, SessionWorkRef } from "@agent-console/shared/lineage";
+import { openExternalTerminalUrl } from "./terminalLinks.ts";
 
 export function SessionWorkRefs({ title, work }: { readonly title?: string | null; readonly work?: SessionWork | null }) {
   if (!work) return null;
@@ -12,8 +13,9 @@ export function SessionWorkRefs({ title, work }: { readonly title?: string | nul
     {refs.map((ref, index) => {
       const label = `${ref.repository.split("/").at(-1)}#${ref.number}`;
       const safeRepository = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(ref.repository);
+      const url = `https://github.com/${ref.repository}/issues/${ref.number}`;
       return ref.provider === "github" && safeRepository
-        ? <a key={index} className="control-reference" href={`https://github.com/${ref.repository}/issues/${ref.number}`} target="_blank" rel="noopener noreferrer">{label}</a>
+        ? <a key={index} className="control-reference" href={url} target="_blank" rel="noopener noreferrer" onClick={event => { event.preventDefault(); void openExternalTerminalUrl(url); }}>{label}</a>
         : <span key={index} className="control-reference">{label}</span>;
     })}
     {remaining ? <span>+{remaining}</span> : null}
