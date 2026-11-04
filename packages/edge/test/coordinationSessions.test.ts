@@ -458,7 +458,7 @@ test("a relayed start forwards the caller's lineage, work, and role to the targe
   } finally { await f.cleanup(); }
 });
 
-test("the owner's list shows lineage and role but takes work from the board", async () => {
+test("the owner's list shows the lineage, work, and role a lineage-aware daemon recorded", async () => {
   const f = await fixture();
   try {
     f.source.state.echoLineage = true;
@@ -467,7 +467,7 @@ test("the owner's list shows lineage and role but takes work from the board", as
     const byId = new Map((await listSessions(f.base, "browser-tess", "summit")).map((s: any) => [s.id, s]));
     const listedChild = byId.get(child.body.data.session.id);
     assert.deepEqual(listedChild.lineage, childLineage);
-    assert.equal(listedChild.work, undefined, "without a board snapshot, daemon list work is not used");
+    assert.deepEqual(listedChild.work, work);
     assert.deepEqual(listedChild.dispatched_by, { machine: "summit", session_id: "dispatcher", repo_name: "legacy-root" },
       "the dispatcher mark stays as the fallback for older daemons");
     const listedCoordinator = byId.get(coordinator.body.data.session.id);

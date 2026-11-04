@@ -67,7 +67,6 @@ test("the session list attaches only matching board draft metadata", async () =>
 
 test("a slow board never delays session lists and refreshes are shared and cached", async t => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-01T12:00:00Z") });
-  const work = { program: null, issues: [{ provider: "github", repository: "example/project", number: 7 }], inherited: false };
   let boardHits = 0;
   const pending: import("node:http").ServerResponse[] = [];
   const daemon = createServer((req, res) => {
@@ -89,7 +88,7 @@ test("a slow board never delays session lists and refreshes are shared and cache
     assert.equal(second.stale_draft, undefined);
     assert.equal(boardHits, 1, "concurrent polls share the pending refresh");
     pending.shift()!.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { schema_version: "agent-session.board.v1", record_schema: "agent-session.board-record.v1", skipped_count: 0, machine: "fixture", records: [
-      { machine: "fixture", session_id: "session-1", created_at: "2026-01-01T00:00:00Z", stale_draft: draft, work },
+      { machine: "fixture", session_id: "session-1", created_at: "2026-01-01T00:00:00Z", stale_draft: draft },
     ] } } }));
     let cached: any;
     for (let attempt = 0; attempt < 50; attempt++) {
@@ -98,7 +97,6 @@ test("a slow board never delays session lists and refreshes are shared and cache
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     assert.deepEqual(cached.stale_draft, draft);
-    assert.deepEqual(cached.work, work);
     assert.equal(boardHits, 1, "cached metadata is reused within the window");
     t.mock.timers.tick(30_001);
     assert.deepEqual((await list()).stale_draft, draft, "the marker remains when refresh starts");
@@ -130,18 +128,6 @@ test("a slow board never delays session lists and refreshes are shared and cache
     assert.deepEqual((await list()).stale_draft, draft);
     for (let attempt = 0; pending.length === 0 && attempt < 50; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal(pending.length, 1);
-    const updatedWork = { ...work, issues: [{ ...work.issues[0], number: 8 }] };
-    pending.shift()!.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { schema_version: "agent-session.board.v1", record_schema: "agent-session.board-record.v1", skipped_count: 0, machine: "fixture", records: [
-      { machine: "fixture", session_id: "session-1", created_at: "2026-01-01T00:00:00Z", work: updatedWork },
-    ] } } }));
-    for (let attempt = 0; attempt < 50; attempt++) {
-      if ((await list()).work?.issues[0].number === 8) break;
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-    assert.deepEqual((await list()).work, updatedWork, "a refreshed snapshot replaces work");
-    t.mock.timers.tick(30_001);
-    await list();
-    for (let attempt = 0; pending.length === 0 && attempt < 50; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
     const refreshed = pending.shift()!;
     refreshed.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { schema_version: "agent-session.board.v1", record_schema: "agent-session.board-record.v1", skipped_count: 0, machine: "fixture", records: [] } } }));
     let removed = false;
@@ -150,6 +136,5 @@ test("a slow board never delays session lists and refreshes are shared and cache
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     assert.equal(removed, true, "a successful snapshot removes absent markers");
-    assert.equal((await list()).work, undefined, "a successful snapshot removes absent work");
   } finally { for (const response of pending) response.end(); closeServers(edge, daemon); }
 });

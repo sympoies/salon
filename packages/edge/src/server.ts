@@ -63,7 +63,7 @@ import {
 } from "@agent-console/shared/api";
 import { normalizeSessionTitleState } from "@agent-console/shared/title";
 import { projectPublicAgentSession, type SessionDispatchedBy } from "@agent-console/shared/api";
-import { SESSION_LINEAGE_SCHEMA, normalizeSessionWork, type SessionWork } from "@agent-console/shared/lineage";
+import { SESSION_LINEAGE_SCHEMA } from "@agent-console/shared/lineage";
 import {
   MAINTENANCE_SCHEMA_VERSION,
   MAINTENANCE_SCHEMA_VERSION_V2,
@@ -275,13 +275,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   const resourceWatches = new ResourceWatchRegistry();
   const activityStreams = new SharedActivityStreams();
   // A board read must never add latency to the frequently polled session list.
-  type BoardDecoration = { stale_draft?: import("@agent-console/shared").SavedDraft; work?: SessionWork };
-  const savedDraftBoards = new Map<string, { nextRefresh: number; inFlight: boolean; records: Map<string, BoardDecoration> }>();
-  const refreshSavedDraftBoard = (machine: MachineConfig): Map<string, BoardDecoration> => {
+  const savedDraftBoards = new Map<string, { nextRefresh: number; inFlight: boolean; records: Map<string, import("@agent-console/shared").SavedDraft> }>();
+  const refreshSavedDraftBoard = (machine: MachineConfig): Map<string, import("@agent-console/shared").SavedDraft> => {
     const now = Date.now();
     const current = savedDraftBoards.get(machine.name);
     if (current && (now < current.nextRefresh || current.inFlight)) return current.records;
-    const entry = current ?? { nextRefresh: 0, inFlight: false, records: new Map<string, BoardDecoration>() };
+    const entry = current ?? { nextRefresh: 0, inFlight: false, records: new Map<string, import("@agent-console/shared").SavedDraft>() };
     entry.nextRefresh = now + 30_000;
     entry.inFlight = true;
     savedDraftBoards.set(machine.name, entry);
@@ -291,16 +290,15 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         || body.data.board?.machine !== machine.name || body.data.board.schema_version !== BOARD_SNAPSHOT_SCHEMA
         || body.data.board.record_schema !== BOARD_RECORD_SCHEMA || body.data.board.skipped_count !== 0
         || !Array.isArray(body.data.board.records)) return;
-      const records = new Map<string, BoardDecoration>();
+      const records = new Map<string, import("@agent-console/shared").SavedDraft>();
       for (const value of body.data.board.records) {
         if (!value || typeof value !== "object" || Array.isArray(value)) return;
         const row = value as Record<string, unknown>;
         if (row.machine !== machine.name || typeof row.session_id !== "string" || typeof row.created_at !== "string") return;
-        const event = Object.hasOwn(row, "stale_draft") ? normalizeSavedDraft(row.stale_draft, row.session_id) : undefined;
-        if (Object.hasOwn(row, "stale_draft") && !event) return;
-        const work = row.work == null ? undefined : normalizeSessionWork(row.work);
-        if (row.work != null && !work) return;
-        records.set(JSON.stringify([row.session_id, row.created_at]), { ...(event ? { stale_draft: event } : {}), ...(work ? { work } : {}) });
+        if (!Object.hasOwn(row, "stale_draft")) continue;
+        const event = normalizeSavedDraft(row.stale_draft, row.session_id);
+        if (!event) return;
+        records.set(JSON.stringify([row.session_id, row.created_at]), event);
       }
       entry.records = records;
     }).catch(() => {}).finally(() => { entry.inFlight = false; });
@@ -1274,10 +1272,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         const decorated = decoratedSessionsForReader(_principal, aggregate.sessions);
         const { metadata } = decorated;
         const sessions = decorated.sessions.map(session => {
-          const { work: _work, ...withoutWork } = session;
-          if (typeof session.machine !== "string" || typeof session.id !== "string" || typeof session.created_at !== "string") return withoutWork;
-          const decoration = snapshots.get(session.machine)?.get(JSON.stringify([session.id, session.created_at]));
-          return decoration ? { ...withoutWork, ...decoration } : withoutWork;
+          if (typeof session.machine !== "string" || typeof session.id !== "string" || typeof session.created_at !== "string") return session;
+          const event = snapshots.get(session.machine)?.get(JSON.stringify([session.id, session.created_at]));
+          return event ? { ...session, stale_draft: event } : session;
         });
         sendJson(res, 200, {
           ok: true,
