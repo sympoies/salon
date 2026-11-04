@@ -1,3 +1,4 @@
+import { SessionWorkRefs } from "./SessionWorkRefs.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { SessionModelBadge } from "./SessionModelBadge.tsx";
 import {
@@ -699,6 +700,7 @@ export function SessionSlot({
           onMoveHere={onMoveSessionHere && slot ? (key) => onMoveSessionHere(slot, key) : undefined}
           onNewSession={() => onSlotSelect(slotAssignmentIndex, slot, newSessionValue)}
         />
+        {!focused ? <SessionWorkRefs title={s.title} work={s.work} /> : null}
       </div>
     ) : (
       <details

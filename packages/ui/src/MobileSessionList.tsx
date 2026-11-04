@@ -1,3 +1,4 @@
+import { SessionWorkRefs } from "./SessionWorkRefs.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { SessionModelBadge } from "./SessionModelBadge.tsx";
 import { useId, useLayoutEffect, useRef, useState } from "react";
@@ -159,6 +160,7 @@ export function MobileSessionList({
                       onNewSession={() => onNewSession(session)} mobile descriptionId={promptPreview ? promptId : undefined}
                     />
                   )}
+                  <SessionWorkRefs title={session.title} work={session.work} />
                 </div>
                 <div className="mobile-session-card-row-two">
                   <IconButton preset="compact" type="button" className="agent-retitle-button" aria-label={`Retitle ${sessionLabel(session)}`} title={`Retitle ${sessionLabel(session)}`} onClick={() => onRetitle(session)}>

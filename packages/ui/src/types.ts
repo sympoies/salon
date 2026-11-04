@@ -96,6 +96,7 @@ export interface Session {
   /** Daemon-recorded console role and lineage (session-lineage-work-v1). */
   readonly role?: SessionRole;
   readonly lineage?: SessionLineage;
+  readonly work?: import("@agent-console/shared/lineage").SessionWork | null;
   readonly lineage_adoption?: import("@agent-console/shared/lineage").SessionLineageAdoption;
   /** UI-owned rolling-upgrade selection; daemon v2 or the existing edge fallback. */
   readonly retitle_path?: SessionRetitlePath;
