@@ -115,14 +115,16 @@ test("message Markdown renders a quoted voice transcript as one blockquote after
 
 const OWN_DIR = "/state/sessions/s-1/attachments";
 
-test("an owned quoted upload path renders as a short chip and hides the full path", async () => {
+test("owned uploads render an image chip and neutral file card while hiding transport names", async () => {
   const { container } = await renderMarkdown(`look at\n'${OWN_DIR}/shot.png'\n'${OWN_DIR}/notes.txt'`, { uploadSessionId: "s-1" });
   const chips = [...container.querySelectorAll<HTMLButtonElement>("button.attachment-chip")];
-  assert.deepEqual(chips.map((chip) => chip.textContent), ["[Image shot.png]", "[File notes.txt]"]);
-  assert.doesNotMatch(container.textContent ?? "", /\/state\/sessions/);
+  assert.deepEqual(chips.map((chip) => chip.textContent), ["[Image shot.png]"]);
+  assert.equal(container.querySelector(".file-card-name")?.textContent, "Document");
+  assert.equal(container.querySelector(".file-card-details")?.textContent, "Document");
+  assert.doesNotMatch(container.textContent ?? "", /notes\.txt|\/state\/sessions/);
 });
 
-test("selecting a chip copies the exact full path and shows feedback", async () => {
+test("selecting an image chip or file card copies the exact path and shows feedback", async () => {
   const copied: string[] = [];
   const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (value: string) => { copied.push(value); } } } });
@@ -133,6 +135,12 @@ test("selecting a chip copies the exact full path and shows feedback", async () 
   await act(async () => { chip?.dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
   assert.deepEqual(copied, [`${OWN_DIR}/my shot it's.png`]);
   assert.match(container.querySelector("button.attachment-chip")?.textContent ?? "", /Copied/);
+  const document = await renderMarkdown(`'${OWN_DIR}/notes.txt'`, { uploadSessionId: "s-1" });
+  const card = document.container.querySelector<HTMLButtonElement>(".file-card");
+  assert.ok(card);
+  await act(async () => card.dispatchEvent(new document.window.MouseEvent("click", { bubbles: true })));
+  assert.deepEqual(copied, [`${OWN_DIR}/my shot it's.png`, `${OWN_DIR}/notes.txt`]);
+  assert.equal(card.querySelector(".file-card-details")?.textContent, "Copied");
 });
 
 test("paths outside the session upload directory, code and unowned messages stay plain text", async () => {

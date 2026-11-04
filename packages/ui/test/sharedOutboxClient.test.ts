@@ -977,6 +977,7 @@ test("composer uploads retain original names and local previews through admissio
     const metadata = restored.state(h.target).attachments?.[h.admissions[0]!.id];
     assert.equal(metadata?.[0]?.original_name, "Design draft.png");
     assert.equal(metadata?.[0]?.preview?.size, 3);
+    assert.equal(metadata?.[0]?.bytes, 3, "upload size remains available to local file cards");
     const item = h.snapshot().items[0]!;
     await act(async () => { await h.client.actOnRefused(session, h.target, item, "retry_refused"); }); await h.showReplies();
     assert.ok(h.container.querySelector(".outgoing-attachment-preview"));

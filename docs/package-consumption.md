@@ -126,6 +126,11 @@ missing metadata retains the neutral image label. Successful attachment uploads
 return `data.attachment.original_name` beside the stored `path` and `bytes`.
 The composer keeps names and supported raster blobs in its browser-local outbox
 journal; provider prompts and server admissions still contain only text.
+Non-image uploads render shared file cards in outgoing and history bubbles.
+Cards show a known original name or neutral kind, keep long-name extensions
+visible, and copy the original transport path. Upload byte counts stay in the
+browser-local journal for the optional size line; history without size metadata
+shows only the kind. Multiple cards stack below message text.
 Local preview URLs are released when the echo unmounts, and local metadata is
 removed on transcript proof, dismissal or eviction.
 Descriptors contain neither paths nor bytes;

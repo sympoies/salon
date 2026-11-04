@@ -42,6 +42,7 @@ function editOutsideCode(text: string, edit: (quoted: string, whole: string) => 
 export interface OutgoingAttachment {
   readonly path: string;
   readonly original_name?: string;
+  readonly bytes?: number;
   readonly preview?: Blob;
 }
 
@@ -70,6 +71,21 @@ export function linkUploadedFiles(text: string, owner: string): { readonly text:
     return `[file](#salon-attachment-${files.length - 1})`;
   });
   return { text: linked, files };
+}
+
+/** Keep image tokens inline; file cards follow the message's literal text. */
+export function separateFileUploads(linked: { readonly text: string; readonly files: readonly UploadedFile[] }): { text: string; files: readonly UploadedFile[] } {
+  const files: UploadedFile[] = [];
+  const text = linked.text.split("\n").flatMap(line => {
+    let removed = false;
+    const remaining = line.replace(/\[file\]\(#salon-attachment-(\d+)\)/g, (token, index: string) => {
+      const file = linked.files[Number(index)];
+      if (!file || file.label.startsWith("[Image ")) return token;
+      files.push(file); removed = true; return "";
+    });
+    return removed && !remaining.trim() ? [] : [remaining];
+  }).join("\n");
+  return { text, files };
 }
 
 /** A prompt preview with each quoted upload path shortened to its chip label. */

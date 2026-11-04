@@ -54,6 +54,7 @@ test("outgoing attachments show original names and local raster previews at phon
             window.publish({width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,
               chips:[...document.querySelectorAll('.attachment-chip')].map(n=>n.textContent),
               history:[...document.querySelectorAll('.history-image-label')].map(n=>n.textContent),
+              files:[...document.querySelectorAll('.file-card-name')].map(n=>n.textContent),
               previews:previews.length,decoded:previews.every(n=>n.complete&&n.naturalWidth>0)});
           }catch(error){window.publish({error:String(error)})}})();`;
       },
@@ -88,7 +89,8 @@ test("outgoing attachments show original names and local raster previews at phon
         assert.equal(result.error, undefined);
         assert.equal(result.width, width);
         assert.equal(result.overflow, false);
-        assert.deepEqual(result.chips, ["Design draft.png", "Design draft.png", "Project notes.txt"]);
+        assert.deepEqual(result.chips, ["Design draft.png", "Design draft.png"]);
+        assert.deepEqual(result.files, ["Project notes.txt"]);
         assert.deepEqual(result.history, ["Design draft.png", "Image"]);
         assert.equal(result.previews, 2);
         assert.equal(result.decoded, true);

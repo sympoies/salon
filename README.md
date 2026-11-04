@@ -50,7 +50,10 @@ send the draft.
 Outgoing attachments show their sanitized upload names in this browser's outbox.
 Newly attached raster images also have a local preview while the reply is pending
 or refused. History shows the original name when the session runtime supplies
-it; otherwise it uses the neutral image label.
+it; otherwise it uses the neutral image label. Other files appear as cards with
+an original name or neutral kind, their size when known, and a copy icon. Long
+names stay on one line while keeping the extension visible. Select a file card
+to copy its file path.
 
 ## Contributing
 

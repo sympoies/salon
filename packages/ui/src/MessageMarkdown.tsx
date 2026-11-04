@@ -1,6 +1,7 @@
+import { AttachmentFileCard } from "./AttachmentFileCard.tsx";
 import { Component, createElement, Fragment, memo, useEffect, useMemo, useState, type ElementType, type MouseEvent, type ReactNode } from "react";
 import Markdown, { type MarkdownToJSX } from "markdown-to-jsx/react";
-import { linkUploadedFiles, type UploadedFile } from "./attachmentPaths.ts";
+import { linkUploadedFiles, separateFileUploads, type UploadedFile } from "./attachmentPaths.ts";
 import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 import { openExternalTerminalUrl, validateTerminalUrl } from "./terminalLinks.ts";
 
@@ -108,21 +109,23 @@ export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressIma
   readonly uploadSessionId?: string;
 }) {
   const linked = useMemo(() => uploadSessionId === undefined ? { text, files: [] } : linkUploadedFiles(text, uploadSessionId), [text, uploadSessionId]);
+  const cards = useMemo(() => separateFileUploads(linked), [linked]);
   const options = useMemo<MarkdownToJSX.Options>(() => {
     const image = suppressImages ? HiddenMessageImage : MessageImage;
     if (linked.files.length === 0) return suppressImages ? { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: MessageLink, img: image } } : MESSAGE_MARKDOWN_OPTIONS;
     const link = (props: { readonly href?: string; readonly title?: string; readonly children?: ReactNode }) => {
       const file = /^#salon-attachment-(\d+)$/.exec(props.href ?? "")?.[1];
       const chip = file === undefined ? undefined : linked.files[Number(file)];
-      return chip ? <AttachmentChip file={neutralUploads ? { ...chip, label: chip.label.startsWith("[Image ") ? "[Image]" : "[Attachment]" } : chip} /> : <MessageLink {...props} />;
+      return chip ? <AttachmentChip file={neutralUploads ? { ...chip, label: "[Image]" } : chip} /> : <MessageLink {...props} />;
     };
     return { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: link, img: image } };
   }, [linked.files, suppressImages, neutralUploads]);
   return (
     <div className="message-markdown">
       <MessageMarkdownBoundary key={text} text={text}>
-        <Markdown options={options}>{linked.text}</Markdown>
+        <Markdown options={options}>{cards.text}</Markdown>
       </MessageMarkdownBoundary>
+      {cards.files.length ? <div className="attachment-file-list">{cards.files.map((file, index) => <AttachmentFileCard key={index} file={file} />)}</div> : null}
     </div>
   );
 });

@@ -7750,3 +7750,16 @@ textarea {
 .outgoing-attachment { display:inline-flex; flex-direction:column; max-width:100%; vertical-align:top; }
 .outgoing-attachment-preview { display:block; width:auto; max-width:100%; max-height:40vh; object-fit:contain; border-radius:var(--r-conversation); }
 .outgoing-attachment .attachment-chip, .history-image-label { overflow-wrap:anywhere; white-space:normal; }
+
+.attachment-file-list { display:flex; flex-direction:column; gap:6px; width:320px; max-width:100%; margin-top:6px; white-space:normal; }
+.file-card { display:grid; grid-template-columns:20px minmax(0,1fr) 16px; align-items:center; gap:8px; width:100%; max-width:320px; padding:8px 10px; border:0; border-radius:var(--r-md); background:color-mix(in srgb,var(--conversation-user-bubble) 88%,#fff); color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.file-card-kind { width:20px; height:20px; }
+.file-card-content { min-width:0; }
+.file-card-name { display:flex; min-width:0; white-space:nowrap; font-size:var(--text-sm); }
+.file-card-stem { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.file-card-extension { flex:none; }
+.file-card-details { display:block; margin-top:2px; color:inherit; opacity:.85; font-size:var(--text-xs); }
+.file-card-copy { display:flex; color:inherit; opacity:.75; }
+.file-card-copy svg { width:16px; height:16px; }
+
+.history-bubble:has(.attachment-file-list):not(:has(.conversation-images,.attachment-chip)) { max-width:320px; }

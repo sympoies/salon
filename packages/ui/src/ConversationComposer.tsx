@@ -272,7 +272,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
           return;
         }
         paths.push(result.path);
-        attachments.push({ path: result.path, original_name: result.original_name,
+        attachments.push({ path: result.path, original_name: result.original_name, bytes: result.bytes,
           ...(CONVERSATION_IMAGE_TYPES.some(type => type === file.type) ? { preview: file } : {}) });
       }
       // One path per line, then an empty line where the message goes (#963).
