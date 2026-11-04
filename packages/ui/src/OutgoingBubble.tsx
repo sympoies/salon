@@ -1,8 +1,9 @@
+import { AttachmentFileCard } from "./AttachmentFileCard.tsx";
 import { sanitizeAttachmentName, CONVERSATION_IMAGE_TYPES } from "@agent-console/shared/conversation-images";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { AttachmentChip } from "./MessageMarkdown.tsx";
-import { linkUploadedFiles, type OutgoingAttachment } from "./attachmentPaths.ts";
+import { linkUploadedFiles, separateFileUploads, type OutgoingAttachment } from "./attachmentPaths.ts";
 import { useDismissOnOutside } from "./useDismissOnOutside.ts";
 import { useMenuFocus } from "./useMenuFocus.ts";
 
@@ -43,19 +44,21 @@ export function OutgoingBubble({ text, onDismiss, uploadSessionId, attachments =
   const cancelPress = () => { clearTimeout(press.current); press.current = undefined; };
   useEffect(() => cancelPress, []);
   const linked = linkUploadedFiles(text, uploadSessionId);
-  const parts = linked.text.split(/(\[file\]\(#salon-attachment-\d+\))/g);
+  const cards = separateFileUploads(linked);
+  const parts = cards.text.split(/(\[file\]\(#salon-attachment-\d+\))/g);
   const content = <div className="history-outgoing-text message-markdown">{parts.map((part, index) => {
     const number = /^\[file\]\(#salon-attachment-(\d+)\)$/.exec(part)?.[1];
     const file = number === undefined ? undefined : linked.files[Number(number)];
     if (!file) return part;
     const attachment = attachments.find(value => value.path === file.path);
     const name = sanitizeAttachmentName(attachment?.original_name);
-    const label = name ?? (file.label.startsWith("[Image ") ? "[Image]" : "[Attachment]");
+    const label = name ?? "[Image]";
     return <span className="outgoing-attachment" key={index}>
       {attachment?.preview ? <LocalImagePreview blob={attachment.preview} name={name ?? "Image"} /> : null}
       <AttachmentChip file={{ ...file, label }} />
     </span>;
-  })}</div>;
+  })}{cards.files.length ? <div className="attachment-file-list">{cards.files.map((file, index) =>
+    <AttachmentFileCard key={index} file={file} attachment={attachments.find(value => value.path === file.path)} />)}</div> : null}</div>;
   if (!onDismiss) return <div className="history-bubble history-outgoing-bubble">{content}</div>;
   const openAt = (x: number, y: number) => setAt({
     x: Math.max(8, Math.min(x, window.innerWidth - MENU_WIDTH - 8)),
