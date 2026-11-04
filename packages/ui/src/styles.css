@@ -7746,3 +7746,7 @@ textarea {
 .session-activity-trigger.activity-unresponsive .session-activity-text { display: inline; }
 
 .history-image-label { display:block; color:var(--conversation-meta); font-size:var(--text-2xs); text-align:right; }
+
+.outgoing-attachment { display:inline-flex; flex-direction:column; max-width:100%; vertical-align:top; }
+.outgoing-attachment-preview { display:block; width:auto; max-width:100%; max-height:40vh; object-fit:contain; border-radius:var(--r-conversation); }
+.outgoing-attachment .attachment-chip, .history-image-label { overflow-wrap:anywhere; white-space:normal; }

@@ -47,6 +47,11 @@ time. Open its conversation to read saved drafts and restore one to the reply
 composer; replacing existing text requires confirmation. Restoring does not
 send the draft.
 
+Outgoing attachments show their sanitized upload names in this browser's outbox.
+Newly attached raster images also have a local preview while the reply is pending
+or refused. History shows the original name when the session runtime supplies
+it; otherwise it uses the neutral image label.
+
 ## Contributing
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for prerequisites and validation, and

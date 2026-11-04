@@ -1,3 +1,5 @@
+import { CONVERSATION_IMAGE_TYPES } from "@agent-console/shared/conversation-images";
+import { uploadedFilePaths, type OutgoingAttachment } from "./attachmentPaths.ts";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ClipboardEvent, DragEvent } from "react";
@@ -25,6 +27,7 @@ const UNKNOWN_REPLY_OUTCOME = "The reply may have been sent. A busy session show
 
 export interface ConversationReplyDraft {
   readonly text: string;
+  readonly attachments?: readonly OutgoingAttachment[];
   readonly incarnation: string | undefined;
   readonly error: string;
   readonly outcomeUnknown: boolean;
@@ -141,7 +144,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const restoreSavedDraft = () => {
     if (savedText === null || sending) return;
     if (readDraft().text && !window.confirm("Replace the current composer text with this saved draft?")) return;
-    updateReply({ text: savedText, incarnation: session.session_incarnation, error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
+    updateReply({ text: savedText, attachments: [], incarnation: session.session_incarnation, error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
     savedRequest.current++; setSavedOpen(false); setSavedText(null);
   };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -249,7 +252,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   }, [outbox, outboxVersion, session, machineReachable, readDraft, draft]);
 
   const updateDraft = (text: string) => {
-    updateReply({ text, incarnation: draft ? draftIncarnation : session.session_incarnation, error: outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
+    updateReply({ text, attachments: readDraft().attachments?.filter(file => uploadedFilePaths(text, session.id).includes(file.path)), incarnation: draft ? draftIncarnation : session.session_incarnation, error: outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
   };
   // Files go to the session's host; their quoted paths join the draft, as the
   // terminal's Upload does, and are sent with the next reply (#942).
@@ -260,6 +263,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     setUploading(files.length === 1 ? "Uploading file…" : `Uploading ${files.length} files…`);
     updateReply({ error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
     const paths: string[] = [];
+    const attachments: OutgoingAttachment[] = [];
     try {
       for (const file of files) {
         const result = await uploadAttachment(session.machine, session.id, file);
@@ -268,12 +272,15 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
           return;
         }
         paths.push(result.path);
+        attachments.push({ path: result.path, original_name: result.original_name,
+          ...(CONVERSATION_IMAGE_TYPES.some(type => type === file.type) ? { preview: file } : {}) });
       }
       // One path per line, then an empty line where the message goes (#963).
       const current = readDraft();
       const separator = current.text && !current.text.endsWith("\n") ? "\n" : "";
       caretToEnd.current = true;
       updateReply({ text: `${current.text}${separator}${paths.map(shellQuotePathForTerminal).join("\n")}\n`,
+        attachments: [...(current.attachments ?? []), ...attachments],
         incarnation: current.text ? current.incarnation : session.session_incarnation });
     } catch {
       failed(files.length === 1 ? "Upload failed" : "Some uploads failed");
@@ -319,8 +326,8 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     const incarnation = currentDraft.incarnation;
     updateReply({ sending: true, error: "" });
     try {
-      await shared.enqueue(session, plainVoiceOnlyMessage(content.trim()));
-      if (currentIncarnation.current === incarnation) updateReply({ text: "", error: "", outcomeUnknown: false });
+      await shared.enqueue(session, plainVoiceOnlyMessage(content.trim()), currentDraft.attachments);
+      if (currentIncarnation.current === incarnation) updateReply({ text: "", attachments: [], error: "", outcomeUnknown: false });
       return true;
     } catch (cause) {
       updateReply({ error: cause instanceof Error ? cause.message : "Could not save the reply. Your draft has been kept." });
@@ -397,7 +404,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
       {status ? <p className={error ? "history-error" : "conversation-hint"} role={error ? "alert" : "status"}>{status}</p> : null}
       <div className="conversation-composer-actions">
         {restarted ? <button type="button" className="btn ghost" disabled={sending} onClick={() => {
-          updateReply({ text: "", incarnation: session.session_incarnation, error: "", outcomeUnknown: false });
+          updateReply({ text: "", attachments: [], incarnation: session.session_incarnation, error: "", outcomeUnknown: false });
         }}>Discard draft</button> : null}
         {outcomeUnknown ? <button type="button" className="btn ghost" onClick={() => {
           updateReply({ outcomeUnknown: false, error: "" });

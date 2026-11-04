@@ -119,7 +119,16 @@ claimed by source-package validation.
 
 The SDK preserves bounded opaque image selectors through history HTTP and SSE.
 The explicit `@agent-console/shared/conversation-images` export provides the
-shared normalization contract. Descriptors contain neither paths nor bytes;
+shared normalization contract. Descriptors preserve optional sanitized
+`original_name` display basenames when the runtime supplies upload metadata
+([runtime contract work](https://github.com/sympoies/nils-cli/issues/3331));
+missing metadata retains the neutral image label. Successful attachment uploads
+return `data.attachment.original_name` beside the stored `path` and `bytes`.
+The composer keeps names and supported raster blobs in its browser-local outbox
+journal; provider prompts and server admissions still contain only text.
+Local preview URLs are released when the echo unmounts, and local metadata is
+removed on transcript proof, dismissal or eviction.
+Descriptors contain neither paths nor bytes;
 unsupported URLs are not fetched. Image bytes use the authenticated history
 ownership route, injected daemon credentials, bounded raster admission and
 private no-store responses. Deleted images remain distinct from unavailable

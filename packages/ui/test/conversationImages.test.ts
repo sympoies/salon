@@ -433,3 +433,17 @@ test("standalone history hides represented image upload paths without an upload 
     assert.doesNotMatch(row.textContent ?? '', /12345|\/state\/sessions/);
   }
 });
+
+
+test("outgoing history labels show original names and keep a neutral label for unnamed images", async () => {
+  const { window } = await mountImages(undefined, false, [], [
+    { id: "named", role: "user", text: "", images: [{ id: imageId(0), original_name: "Design draft.png" }] },
+    { id: "unnamed", role: "user", text: "Caption", images: [{ id: imageId(1) }] },
+    { id: "multiple", role: "user", text: "Two drafts", images: [
+      { id: imageId(2), original_name: "First.png" }, { id: imageId(3), original_name: "Second.png" },
+    ] },
+  ]);
+  assert.deepEqual([...window.document.querySelectorAll(".history-image-label")].map(node => node.textContent),
+    ["Design draft.png", "Image", "First.png · Second.png"]);
+  assert.equal(window.document.querySelectorAll(".conversation-image-thumbnail").length, 4);
+});

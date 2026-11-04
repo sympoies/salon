@@ -1,6 +1,8 @@
 /** Opaque daemon selectors; image bytes and paths never enter history snapshots. */
 export interface ConversationImage {
   readonly id: string;
+  /** Sanitized original display basename, when the runtime has upload metadata. */
+  readonly original_name?: string;
   /** Proven provenance; absent for ordinary images and unknown producer values. */
   readonly origin?: ConversationImageOrigin;
   /** Opaque same-history upload identity shared by an attachment and its tool re-read. */
@@ -22,6 +24,13 @@ export function conversationImageFilename(disposition: string | null): string | 
   name = name.trim();
   return name.length <= 255 && name !== "." && name !== ".." ? name || undefined : undefined;
 }
+/** Matches agent-session's display-name sanitizer; never use a stored path as a name. */
+export function sanitizeAttachmentName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const leaf = value.split(/[\\/]/).at(-1)!;
+  const name = Array.from(leaf.replace(/\p{Cc}/gu, "")).slice(0, 255).join("").trim();
+  return name && name !== "." && name !== ".." ? name : undefined;
+}
 export function isConversationImageId(value: unknown): value is string {
   if (typeof value !== "string" || value.length > 96) return false;
   const match = /^[a-f0-9]{16}\.(\d{1,20})\.(?:[0-9]|1[0-5]|u(0|[1-9]\d{0,19})-(0|[1-9]\d{0,19}))\.[a-f0-9]{32}$/.exec(value);
@@ -34,8 +43,10 @@ export function normalizeConversationImages(value: unknown): ConversationImage[]
   return value.slice(0,16).flatMap((image: unknown) => {
     const id = image && typeof image === "object" ? (image as { id?: unknown }).id : undefined;
     if (!isConversationImageId(id)) return [];
+    const original_name = sanitizeAttachmentName((image as { original_name?: unknown }).original_name);
     const { origin, attachment_ref: ref } = image as { origin?: unknown; attachment_ref?: unknown };
     return [{ id,
+      ...(original_name ? { original_name } : {}),
       ...(origin === "user_attachment" || origin === "tool_result" ? { origin } : {}),
       ...(typeof ref === "string" && /^[A-Za-z0-9._~-]{1,128}$/.test(ref) ? { attachment_ref: ref } : {}) }];
   });
