@@ -399,3 +399,37 @@ test("Copy file path copies the exact upload path only for a known attached imag
   const none = await macMenu({name:"shot.png",text:"no path here",owner:"s-1"});
   assert.ok(!none.items().includes("Copy file path"),"an image without a known path does not offer it");
 });
+
+test("outgoing upload paths without selectors use neutral labels", async () => {
+  const {window} = await mountImages(undefined, false, [], [
+    {id:"pending",role:"user",text:"'/state/sessions/fixture/attachments/12345.png'"},
+  ], "fixture");
+  const row = window.document.querySelector('[data-history-message-id="pending"]')!;
+  assert.equal(row.querySelector('.attachment-chip')?.textContent, '[Image]');
+  assert.doesNotMatch(row.textContent ?? '', /12345/);
+});
+
+test("history images replace their stored upload path with a thumbnail and neutral label", async () => {
+  const {window} = await mountImages(undefined, false, [], [
+    {id:"image",role:"user",text:"'/state/sessions/fixture/attachments/12345.png'",images:[{id:imageId(0)}]},
+    {id:"caption",role:"user",text:"'/state/sessions/fixture/attachments/12345.png'\nHello",images:[{id:imageId(1)}]},
+  ], "fixture");
+  for (const row of window.document.querySelectorAll('[data-history-message-id]')) {
+    assert.ok(row.querySelector('.history-bubble .conversation-image-thumbnail'));
+    assert.equal(row.querySelector('.history-image-label')?.textContent, 'Image');
+    assertNoElement(row, '.attachment-chip');
+    assert.doesNotMatch(row.textContent ?? '', /12345/);
+  }
+});
+
+test("standalone history hides represented image upload paths without an upload owner", async () => {
+  const {window} = await mountImages(undefined, false, [], [
+    {id:"image",role:"user",text:"'/state/sessions/fixture/attachments/12345.png'",images:[{id:imageId(0)}]},
+    {id:"caption",role:"user",text:"'/state/sessions/fixture/attachments/12345.png'\nHello",images:[{id:imageId(1)}]},
+  ]);
+  for (const row of window.document.querySelectorAll('[data-history-message-id]')) {
+    assert.ok(row.querySelector('.history-bubble .conversation-image-thumbnail'));
+    assert.equal(row.querySelector('.history-image-label')?.textContent, 'Image');
+    assert.doesNotMatch(row.textContent ?? '', /12345|\/state\/sessions/);
+  }
+});

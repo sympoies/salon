@@ -38,7 +38,7 @@ export function OutgoingReplies({ session, messages }: {
       className="history-message is-user history-outgoing-reply">
       {item.queuedAt === undefined ? null : <time>{timeLabel(item.queuedAt)}</time>}
       <div className="history-outgoing-body">
-        <OutgoingBubble text={item.text} onDismiss={outbox.canDismiss(item) ? () => {
+        <OutgoingBubble uploadSessionId={session.id} text={item.text} onDismiss={outbox.canDismiss(item) ? () => {
           void outbox.dismiss(session, item.id, item.incarnation, messages).then(dismissed => {
             if (!dismissed) setError("This reply changed or has an active attempt and was kept.");
           }).catch(cause => setError(String(cause)));

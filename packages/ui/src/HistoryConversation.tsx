@@ -9,7 +9,7 @@ import { SessionNotice } from "./SessionNotice.tsx";
 import { MailboxEventRow } from "./MailboxEventRow.tsx";
 import { boundHistoryMessages, mergeOlderHistoryMessages } from "./historyMessageWindow.ts";
 import { parseRuntimeCommand, parseSessionNotice } from "@agent-console/shared";
-import { uploadedFilePaths } from "./attachmentPaths.ts";
+import { hideUploadedImages, uploadedFilePaths } from "./attachmentPaths.ts";
 import { MessageMarkdown } from "./MessageMarkdown.tsx";
 import { unwrapPastedContent } from "./pastedContent.ts";
 import type { HistoryMessage, HistoryMessagesResponse, HistorySession } from "./types.ts";
@@ -399,7 +399,8 @@ export function HistoryConversationView({
           const sentAt = messageTimeLabel(date);
           const user = message.role === "user";
           const showAvatar = !user && (newDay || previous?.role !== message.role);
-          const caption = imageCaption(message.text, message.images?.length ?? 0);
+          const originalCaption = imageCaption(message.text, message.images?.length ?? 0);
+          const caption = user ? hideUploadedImages(originalCaption, uploadSessionId, (message.images ?? []).filter(image => image.origin !== "tool_result").length) : originalCaption;
           const { bubble: bubbleImages, reread, tool: toolImages } = split[index]!;
           const imageOnly = Boolean(session && bubbleImages.length && !caption.trim() && message.role !== "goal");
           const toolOnly = Boolean(session && (reread || toolImages.length) && !bubbleImages.length && !caption.trim());
@@ -417,8 +418,8 @@ export function HistoryConversationView({
                   {message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}
                 </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
-                {user && !imageOnly && !bubbleImages.length ? time : null}
-                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}{user && bubbleImages.length && !imageOnly ? <div className="history-image-caption"><MessageMarkdown text={unwrapPastedContent(caption)} suppressImages uploadSessionId={uploadSessionId} />{time}</div> : <MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} />}{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(unwrapPastedContent(caption), uploadSessionId) : undefined} /> : null}{imageOnly ? time : null}</div>}
+                {user ? time : null}
+                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} neutralUploads={user} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(unwrapPastedContent(originalCaption), uploadSessionId) : undefined} /> : null}{user && bubbleImages.length ? <span className="history-image-label">Image</span> : null}{imageOnly && !user ? time : null}</div>}
                 {!user && !imageOnly ? time : null}
                 {session && (reread || toolImages.length) ? <div className="history-tool-output">
                   {reread ? <p className="history-tool-reread">Read attachment</p> : null}

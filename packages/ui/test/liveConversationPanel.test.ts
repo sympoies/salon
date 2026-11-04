@@ -317,7 +317,7 @@ test("the live panel shows chips for the live session's own uploads in user mess
   await act(async () => { mounted.root.render(createElement(LiveConversationPanel, { session: liveSession(), onClose: () => {} })); await flush(); });
   await act(async () => flush());
   const chips = [...mounted.container.querySelectorAll('button.attachment-chip')].map(chip => chip.textContent);
-  assert.deepEqual(chips, ['[Image shot.png]']);
+  assert.deepEqual(chips, ['[Image]']);
   assert.match(mounted.container.textContent ?? '', /other\/attachments\/old\.png/);
   assert.match(mounted.container.textContent ?? '', /\[語音\] see this/);
 });

@@ -42,19 +42,17 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
   return <section ref={section} className="history-outgoing history-shared-outgoing" aria-label="Shared replies">
     {retainedEdits.map(draft => <div key={draft.id} className="history-outgoing-body">
       <p role="alert" className="history-outgoing-note">An earlier edit was not confirmed. Its text is preserved below.</p>
-      <div className="history-bubble history-outgoing-bubble"><span className="history-outgoing-text">{draft.text}</span></div>
+      <OutgoingBubble text={draft.text} uploadSessionId={session.id} />
     </div>)}
     {visibleRows.map(row => <div key={row.key}>
       {client.error(row.target) ? <p role="alert" className="history-outgoing-note">{client.error(row.target)}</p> : null}
       {row.admissions.map(item => <article key={item.id} className="history-message is-user history-outgoing-reply">
-        <div className="history-outgoing-body"><div className="history-bubble history-outgoing-bubble">
-          <span className="history-outgoing-text">{item.text}</span>
-        </div></div>
+        <div className="history-outgoing-body"><OutgoingBubble text={item.text} uploadSessionId={session.id} /></div>
       </article>)}
       {row.items.map(item =>
         <article key={item.id} className="history-message is-user history-outgoing-reply" data-status={item.state}>
           <div className="history-outgoing-body">
-            <OutgoingBubble text={item.text} onDismiss={client.canDismiss(row, item) ? () => { void client.dismiss(row.target, item.id).catch(() => {}); } : undefined} />
+            <OutgoingBubble uploadSessionId={session.id} text={item.text} onDismiss={client.canDismiss(row, item) ? () => { void client.dismiss(row.target, item.id).catch(() => {}); } : undefined} />
             {item.state === "refused" ? <>
               <p role="alert" className="history-outgoing-note">{item.error_code === "busy"
                 ? 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'

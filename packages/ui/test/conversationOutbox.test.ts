@@ -1997,3 +1997,27 @@ test("unresponsive phase permits idle-guarded outbox admission", async () => {
     assert.equal(h.queueModule.queuedReplyTargetAllowed(h.session(), true), true);
   } finally { await h.close(); }
 });
+
+test("queued outgoing image uses a neutral attachment chip", async () => {
+  const h = await mount();
+  try {
+    await h.render("working", 1);
+    await h.write("'/state/sessions/outbox/attachments/12345.png'");
+    await h.reply();
+    const row = h.container.querySelector('[aria-label="Your replies"] article')!;
+    assert.equal(row.querySelector('.attachment-chip')?.textContent, '[Image]');
+    assert.doesNotMatch(row.textContent ?? '', /12345/);
+  } finally { await h.close(); }
+});
+
+test("queued outgoing text remains literal while attachment paths become chips", async () => {
+  const h = await mount();
+  try {
+    await h.render("working", 1);
+    await h.write("**literal**\n'/state/sessions/outbox/attachments/12345.png'");
+    await h.reply();
+    const row = h.container.querySelector('[aria-label="Your replies"] article')!;
+    assert.match(row.textContent ?? '', /\*\*literal\*\*/);
+    assert.equal(row.querySelector('.attachment-chip')?.textContent, '[Image]');
+  } finally { await h.close(); }
+});
