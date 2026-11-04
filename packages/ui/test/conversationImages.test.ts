@@ -176,6 +176,18 @@ test("image-only messages survive the HTTP client normalizer",async () => {
   } finally { await ssr.close(); globalThis.fetch = previous; }
 });
 
+test("the image viewer suppresses the native context menu on its image and surface",async () => {
+  const {window} = await mountImages();
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
+  const viewer = window.document.querySelector('[aria-label="Conversation images"]')!;
+  for (const target of [viewer.querySelector("img")!,viewer.querySelector(".conversation-image-stage")!]) {
+    const event = new window.MouseEvent("contextmenu",{bubbles:true,cancelable:true});
+    await act(async () => { target.dispatchEvent(event); });
+    assert.equal(event.defaultPrevented,true);
+  }
+  assertNoElement(window.document,'[role="menu"]');
+});
+
 test("native Back closes only the image viewer",async () => {
   const {window} = await mountImages();
   Object.defineProperty(window,"__TAURI__",{value:{},configurable:true});
