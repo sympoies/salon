@@ -85,6 +85,10 @@ const TERMINAL_DRAFT_ERRORS: Readonly<Record<string, string>> = {
   "composer-not-empty": "Terminal has a draft, so this reply was not sent. Clear it in the terminal, then Retry.",
   "composer-unobservable": "Console cannot read the terminal input, so this reply was not sent. Check the terminal, then Retry.",
 };
+/** The reason a refused reply was not sent, shared by the per-browser and shared outboxes. */
+export const refusalReason = (code: string): string =>
+  Object.hasOwn(TERMINAL_DRAFT_ERRORS, code) ? TERMINAL_DRAFT_ERRORS[code]!
+    : `Not sent (code: ${code}). Retry when the session is idle.`;
 const provable = (item: QueuedReply) => item.state === "unknown" || item.state === "dispatching" || item.state === "delivered"
   || (item.state === "refused" && item.unconfirmed === true)
   || (item.state === "queued" && imageOnly(item.text));
