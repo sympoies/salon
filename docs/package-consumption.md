@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.40 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.41 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -156,12 +156,14 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.40`; its release is a GitHub
+merge. The checked-in SDK version is `0.1.41`; its release is a GitHub
 prerelease with `latest=false`. Sessions carry a marker for a draft the runtime
 saved, and the composer can show and restore it (#282). A refused shared reply
-always names its refusal reason (#298).
+always names its refusal reason (#298). Settings shows the server version and
+build when the consumer supplies them (#297), and session cards show the
+session's current work issue references (#293).
 Existing
-`v0.1.0` through `v0.1.39` tags and assets stay immutable. The visibility transition does not
+`v0.1.0` through `v0.1.40` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
