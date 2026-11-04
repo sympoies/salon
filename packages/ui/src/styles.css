@@ -7762,4 +7762,4 @@ textarea {
 .file-card-copy { display:flex; color:inherit; opacity:.75; }
 .file-card-copy svg { width:16px; height:16px; }
 
-.history-bubble:has(.attachment-file-list):not(:has(.conversation-images,.attachment-chip)) { max-width:320px; }
+.history-bubble:has(.attachment-file-list):not(:has(.conversation-images,.attachment-chip)) { max-width:min(320px,100%); }

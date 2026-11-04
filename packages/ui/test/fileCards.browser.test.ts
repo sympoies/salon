@@ -42,7 +42,7 @@ test("non-image file cards retain names, extensions and stacking at phone and de
             window.publish({width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,
               literal:document.querySelector('#root').textContent.includes('[File')||document.querySelector('#root').textContent.includes('stored-'),
               cards:cards.map(card=>{const name=card.querySelector('.file-card-name'),stem=card.querySelector('.file-card-stem'),extension=card.querySelector('.file-card-extension');
-                return {name:name?.textContent,details:card.querySelector('.file-card-details')?.textContent,box:rect(card),bubble:rect(card.closest('.history-bubble')),
+                return {name:name?.textContent,details:card.querySelector('.file-card-details')?.textContent,box:rect(card),bubble:rect(card.closest('.history-bubble')),time:rect(card.closest('article').querySelector('time')),
                   icon:rect(card.querySelector('.file-card-kind')),radius:getComputedStyle(card).borderRadius,border:getComputedStyle(card).borderWidth,
                   stem:stem?{overflow:stem.scrollWidth>stem.clientWidth,ellipsis:getComputedStyle(stem).textOverflow,nowrap:getComputedStyle(stem).whiteSpace}:null,
                   extension:extension?{text:extension.textContent,box:rect(extension)}:null};}),
@@ -87,6 +87,7 @@ test("non-image file cards retain names, extensions and stacking at phone and de
         for (const card of result.cards) {
           assert.ok(card.box.w <= 320 && card.box.right <= width);
           assert.ok(card.bubble.w <= 320, "file-only bubbles stay at the requested maximum width");
+          assert.ok(card.time.right <= card.bubble.x, "timestamp stays left of the file-card bubble");
           assert.equal(card.icon.w, 20);
           assert.equal(card.radius, "8px");
           assert.equal(card.border, "0px");
