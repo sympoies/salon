@@ -166,3 +166,6 @@ summary.mobile-session-card-open {
   font-size: 0.75rem;
   margin-inline-start: 0.5rem;
 }
+
+.session-work-refs { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; font-size: 0.75rem; }
+.session-work-refs a { color: var(--accent); }

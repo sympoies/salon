@@ -3781,3 +3781,14 @@ test("saved draft reads preserve UTF-8 text including a leading BOM and trailing
   setFetchMock(async () => new Response(new TextEncoder().encode("\ufeff雪  "), { status: 200 }));
   assert.equal(await fetchSavedDraftText("fixture", "session-1", "draft-1"), "\ufeff雪  ");
 });
+
+test("session list refresh projects current work and its removal", async () => {
+  const ref = (number: number) => ({ provider: "github", repository: "example/project", number });
+  let work: { program: null; issues: ReturnType<typeof ref>[]; inherited: boolean } | null = { program: null, issues: [ref(1)], inherited: false };
+  setFetchMock(async () => jsonResponse({ ok: true, data: { sessions: [{ id: "session-a", agent: "codex", status: "running", machine: "fixture", work }], machines: [{ name: "fixture", ok: true }] } }));
+  assert.deepEqual((await listSessions()).sessions[0]?.work, work);
+  work = { program: null, issues: [ref(2)], inherited: false };
+  assert.deepEqual((await listSessions()).sessions[0]?.work, work);
+  work = null;
+  assert.equal((await listSessions()).sessions[0]?.work, null);
+});
