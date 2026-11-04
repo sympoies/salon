@@ -400,7 +400,7 @@ export function HistoryConversationView({
           const user = message.role === "user";
           const showAvatar = !user && (newDay || previous?.role !== message.role);
           const originalCaption = imageCaption(message.text, message.images?.length ?? 0);
-          const caption = user && uploadSessionId ? hideUploadedImages(originalCaption, uploadSessionId, (message.images ?? []).filter(image => image.origin !== "tool_result").length) : originalCaption;
+          const caption = user ? hideUploadedImages(originalCaption, uploadSessionId, (message.images ?? []).filter(image => image.origin !== "tool_result").length) : originalCaption;
           const { bubble: bubbleImages, reread, tool: toolImages } = split[index]!;
           const imageOnly = Boolean(session && bubbleImages.length && !caption.trim() && message.role !== "goal");
           const toolOnly = Boolean(session && (reread || toolImages.length) && !bubbleImages.length && !caption.trim());

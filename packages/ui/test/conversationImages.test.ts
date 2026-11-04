@@ -409,3 +409,15 @@ test("history images replace their stored upload path with a thumbnail and neutr
     assert.doesNotMatch(row.textContent ?? '', /12345/);
   }
 });
+
+test("standalone history hides represented image upload paths without an upload owner", async () => {
+  const {window} = await mountImages(undefined, false, [], [
+    {id:"image",role:"user",text:"'/state/sessions/fixture/attachments/12345.png'",images:[{id:imageId(0)}]},
+    {id:"caption",role:"user",text:"'/state/sessions/fixture/attachments/12345.png'\nHello",images:[{id:imageId(1)}]},
+  ]);
+  for (const row of window.document.querySelectorAll('[data-history-message-id]')) {
+    assert.ok(row.querySelector('.history-bubble .conversation-image-thumbnail'));
+    assert.equal(row.querySelector('.history-image-label')?.textContent, 'Image');
+    assert.doesNotMatch(row.textContent ?? '', /12345|\/state\/sessions/);
+  }
+});
