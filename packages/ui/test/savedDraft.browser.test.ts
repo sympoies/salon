@@ -1,10 +1,10 @@
 import { strict as assert } from "node:assert";
+import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
-import { launchPage } from "../../../scripts/readme-previews/chrome.ts";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
 test("saved drafts show, read and restore with confirmation without sending", async t => {
@@ -97,18 +97,69 @@ test("saved drafts show, read and restore with confirmation without sending", as
   const code = output.output.filter(item => item.type === "chunk").map(item => item.code).join("\n");
   const css = ["styles.css", "sessionCardRows.css"].map(name => readFileSync(join(process.cwd(), "src", name), "utf8")).join("\n");
   const dir = mkdtempSync("/tmp/sd-");
-  let page: Awaited<ReturnType<typeof launchPage>> | undefined;
+  const browser = spawn(process.env.CHROME_BIN ?? "google-chrome", [
+    "--headless", "--disable-gpu", "--no-sandbox", "--remote-debugging-port=0",
+    `--user-data-dir=${dir}/profile`, "about:blank",
+  ], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, TMPDIR: "/tmp" } });
+  let socket: WebSocket | undefined;
   try {
-    page = await launchPage();
+    const endpoint = await new Promise<string>((resolve, reject) => {
+      let stderr = "";
+      const timeout = setTimeout(() => reject(new Error("timed out: start Chrome debugging")), 10_000);
+      browser.stderr.on("data", data => {
+        stderr += String(data);
+        const match = stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);
+        if (match) { clearTimeout(timeout); resolve(match[1]!); }
+      });
+      browser.once("error", error => { clearTimeout(timeout); reject(error); });
+      browser.once("exit", () => { clearTimeout(timeout); reject(new Error("Chrome exited before debugging was ready")); });
+    });
+    const targets = await (await fetch(new URL("/json/list", endpoint.replace("ws:", "http:")), {signal:AbortSignal.timeout(10_000)})).json() as Array<{type:string;webSocketDebuggerUrl:string}>;
+    const target = targets.find(item => item.type === "page"); assert.ok(target, "Chrome provides a fixture page");
+    const connection = new WebSocket(target.webSocketDebuggerUrl);
+    socket = connection;
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("timed out: connect Chrome debugging")), 10_000);
+      connection.addEventListener("open", () => { clearTimeout(timeout); resolve(); }, { once: true });
+      connection.addEventListener("error", () => { clearTimeout(timeout); reject(new Error("Chrome debugging connection failed")); }, { once: true });
+    });
+    let nextId = 0;
+    const pending = new Map<number, {resolve:(result:any)=>void;reject:(error:Error)=>void}>();
+    connection.addEventListener("message", event => {
+      const reply = JSON.parse(String(event.data)), waiter = pending.get(reply.id);
+      if (waiter) {
+        pending.delete(reply.id);
+        reply.error ? waiter.reject(new Error(reply.error.message)) : waiter.resolve(reply.result);
+      }
+    });
+    connection.addEventListener("close", () => {
+      for (const waiter of pending.values()) waiter.reject(new Error("Chrome debugging connection closed"));
+      pending.clear();
+    });
+    const send = (method:string, params:object = {}) => new Promise<any>((resolve, reject) => {
+      if (connection.readyState !== WebSocket.OPEN) return reject(new Error("Chrome debugging connection unavailable: " + method));
+      const id = ++nextId;
+      const timeout = setTimeout(() => { pending.delete(id); reject(new Error("timed out: " + method)); }, 90_000);
+      pending.set(id, {
+        resolve(result) { clearTimeout(timeout); resolve(result); },
+        reject(error) { clearTimeout(timeout); reject(error); },
+      });
+      connection.send(JSON.stringify({id, method, params}));
+    });
+    const evaluate = async (expression:string) => {
+      const result = await send("Runtime.evaluate", {expression, awaitPromise:true, returnByValue:true});
+      assert.equal(result.exceptionDetails, undefined, result.exceptionDetails?.exception?.description ?? "browser script completes");
+      return result.result.value;
+    };
     for (const width of [384, 1280]) {
-      const path = join(dir, `fixture-${width}.html`);
       const frame = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div><script>${code}</script>`;
-      writeFileSync(path, `<!doctype html><style>body{margin:0}#result{display:none}</style><pre id="result"></pre><iframe style="border:0;width:${width}px;height:800px" srcdoc="${frame.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></iframe>`);
+      const html = `<!doctype html><style>body{margin:0}#result{display:none}</style><pre id="result"></pre><iframe style="border:0;width:${width}px;height:800px" srcdoc="${frame.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></iframe>`;
       const capture = process.env.SAVED_DRAFT_CAPTURE;
-      await page.setViewport(Math.max(width, 800), 900, 1);
-      await page.navigate(`file://${path}`);
+      await send("Emulation.setDeviceMetricsOverride", {width:Math.max(width, 800), height:900, deviceScaleFactor:1, mobile:false});
+      const { frameTree } = await send("Page.getFrameTree");
+      await send("Page.setDocumentContent", {frameId:frameTree.frame.id, html});
       if (capture) {
-        await page.evaluate(`new Promise((resolve,reject)=>{
+        await evaluate(`new Promise((resolve,reject)=>{
           const frame=document.querySelector("iframe");
           const deadline=performance.now()+10000;
           const check=()=>{
@@ -117,12 +168,13 @@ test("saved drafts show, read and restore with confirmation without sending", as
             setTimeout(check,10);
           };check();
         })`);
-        writeFileSync(`${capture}-${width}.png`, await page.screenshot());
+        const screenshot = await send("Page.captureScreenshot", {format:"png"});
+        writeFileSync(`${capture}-${width}.png`, Buffer.from(screenshot.data, "base64"));
         continue;
       }
       // Keep the browser on its real clock: virtual timers can outrun React's
       // MessageChannel work under load even when no product operation is slow.
-      const result = await page.evaluate<any>(`new Promise((resolve,reject)=>{
+      const result = await evaluate(`new Promise((resolve,reject)=>{
         const output=document.querySelector("#result");
         const timeout=setTimeout(()=>{
           observer.disconnect();reject(Error("timed out: "+(output.dataset.step||"load fixture")));
@@ -148,5 +200,12 @@ test("saved drafts show, read and restore with confirmation without sending", as
       assert.equal(result.absent, true);
       assert.deepEqual(result.calls, ["list", "read", "list", "read", "confirm", "read", "confirm", "list", "read", "read", "read", "confirm", "list", "read", "list", "list"]);
     }
-  } finally { await page?.close(); rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    socket?.close();
+    if (browser.exitCode === null && browser.signalCode === null) {
+      const exited = new Promise<void>(resolve => browser.once("exit", () => resolve()));
+      browser.kill("SIGKILL"); await exited;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
