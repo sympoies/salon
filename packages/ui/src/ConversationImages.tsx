@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { ConversationImage } from "@agent-console/shared/conversation-images";
 import { Modal } from "./Modal.tsx";
 import { fetchConversationImage, type ConversationImageData } from "./conversationImageData.ts";
+import { conversationImageCache, type ImageTarget } from "./conversationImageCache.ts";
 import { saveConversationImage } from "./saveConversationImage.ts";
 import { copyConversationImage } from "./copyConversationImage.ts";
 import { isMacTauri } from "./runtime.ts";
@@ -11,31 +12,29 @@ import { IconButton } from "./IconButton.tsx";
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, DownloadIcon, FitImageIcon, ZoomInIcon, ZoomOutIcon } from "./icons.tsx";
 import "./ConversationImages.css";
 
-interface ImageTarget { readonly machine: string; readonly history: string; readonly image: string }
-function useImage(target: ImageTarget, enabled: boolean) {
-  const [data,setData] = useState<ConversationImageData>({state:"loading"});
-  const url = useRef<string | undefined>(undefined);
-  const release = useCallback(() => {
-    const owned = url.current;
-    url.current = undefined;
-    if (owned) URL.revokeObjectURL(owned);
-  },[]);
+function useImage(target: ImageTarget, visible: boolean) {
+  const key = JSON.stringify([target.machine,target.history,target.image]);
+  const [snapshot,setSnapshot] = useState(() => ({key,data:conversationImageCache.peek(target)}));
+  const watch = useRef<ReturnType<typeof conversationImageCache.watch> | null>(null);
   useEffect(() => {
-    if (!enabled) { setData({state:"loading"}); return; }
-    const controller = new AbortController();
-    setData({state:"loading"});
-    void fetchConversationImage(target.machine,target.history,target.image,controller.signal).then(result => {
-      if (controller.signal.aborted) { if (result.state === "ready") URL.revokeObjectURL(result.url); return; }
-      if (result.state === "ready") url.current = result.url;
-      setData(result);
-    });
-    return () => { controller.abort(); release(); };
-  },[target.machine,target.history,target.image,enabled,release]);
-  return {data,unavailable:(result: Exclude<ConversationImageData,{state:"ready"}>) => { release(); setData(result); },fail:() => { release(); setData({state:"unavailable"}); }};
+    const current = conversationImageCache.watch(target,data => setSnapshot({key,data}));
+    watch.current = current;
+    return () => { current.unsubscribe(); watch.current = null; };
+  },[target.machine,target.history,target.image,key]);
+  useEffect(() => { watch.current?.setVisible(visible); },[target.machine,target.history,target.image,visible]);
+  return {data:snapshot.key === key ? snapshot.data : conversationImageCache.peek(target),
+    retry:() => watch.current?.retry(),
+    unavailable:(data: Exclude<ConversationImageData,{state:"ready"}>) => watch.current?.update(data),
+    fail:() => watch.current?.update({state:"error"})};
 }
-function ImageContent({data,fail,onLoad}: { readonly data: ConversationImageData; readonly fail: () => void; readonly onLoad?: (image: HTMLImageElement) => void }) {
+function RetryImage({retry}: { readonly retry: () => void }) {
+  return <button type="button" className="conversation-image-retry" onClick={event => { event.stopPropagation(); retry(); }}>Retry</button>;
+}
+function ImageContent({data,fail,onLoad,retry}: { readonly data: ConversationImageData; readonly fail: () => void;
+  readonly onLoad?: (image: HTMLImageElement) => void; readonly retry?: () => void }) {
   return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} onLoad={event => onLoad?.(event.currentTarget)} />
-    : <span role="status">{data.state === "deleted" ? "Image deleted" : data.state === "unavailable" ? "Image unavailable" : "Loading image…"}</span>;
+    : <span role="status">{data.state === "deleted" ? "Image deleted" : data.state === "unavailable" ? "Image unavailable" : data.state === "error" ? "Couldn't load" : "Loading image…"}
+      {data.state === "error" && retry ? <RetryImage retry={retry} /> : null}</span>;
 }
 type ReadyImage = Extract<ConversationImageData,{state:"ready"}>;
 interface MenuState { readonly index: number; readonly x: number; readonly y: number; readonly image: ReadyImage }
@@ -86,7 +85,7 @@ function Thumbnail({target,index,onOpen,onMenu}: { readonly target: ImageTarget;
     observer.observe(ref.current);
     return () => observer.disconnect();
   },[]);
-  const {data,fail} = useImage(target,visible);
+  const {data,fail,retry} = useImage(target,visible);
   const sizing = size ? {"--image-width":`${size.width}px`,"--image-ratio":size.width / size.height} as CSSProperties : undefined;
   // The macOS shell's native web view menu offers commands it cannot run; show
   // our own there. Browsers and Android keep theirs.
@@ -95,11 +94,11 @@ function Thumbnail({target,index,onOpen,onMenu}: { readonly target: ImageTarget;
     event.preventDefault();
     if (data.state === "ready") onMenu({index,x:event.clientX,y:event.clientY,image:data});
   };
-  return <button ref={ref} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }} onContextMenu={contextMenu}>
+  return <div className="conversation-image-frame"><button ref={ref} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }} onContextMenu={contextMenu}>
     <ImageContent data={data} fail={fail} onLoad={image => {
       if (image.naturalWidth && image.naturalHeight) setSize({width:image.naturalWidth,height:image.naturalHeight});
     }} />
-  </button>;
+  </button>{data.state === "error" ? <RetryImage retry={retry} /> : null}</div>;
 }
 const clampZoom = (scale: number) => Math.max(1,Math.min(6,scale));
 interface Point { x: number; y: number }
@@ -115,7 +114,7 @@ function ImageViewer({machine,history,images,initial,onClose}: {
   const points = useRef(new Map<number,Point>());
   const gesture = useRef<{start:Point;previous:Point;distance:number;pinched:boolean;moved:boolean;outside:boolean} | null>(null);
   const current = images[Math.min(index,images.length - 1)]!;
-  const {data,fail,unavailable} = useImage({machine,history,image:current.id},true);
+  const {data,fail,unavailable,retry} = useImage({machine,history,image:current.id},true);
   const [saving,setSaving] = useState(false);
   const [saveError,setSaveError] = useState(false);
   const downloadController = useRef<AbortController | null>(null);
@@ -132,6 +131,7 @@ function ImageViewer({machine,history,images,initial,onClose}: {
     const fresh = await fetchConversationImage(machine,history,current.id,controller.signal);
     try {
       if (controller.signal.aborted) return;
+      if (fresh.state === "error") { setSaveError(true); return; }
       if (fresh.state !== "ready") { unavailable(fresh); return; }
       await saveConversationImage(fresh.blob,fresh.filename,fresh.url);
     } catch { if (!controller.signal.aborted) setSaveError(true); }
@@ -214,7 +214,7 @@ function ImageViewer({machine,history,images,initial,onClose}: {
       onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget && !gesture.current?.moved && gesture.current?.outside) onClose(); }}
       onDoubleClick={event => { event.stopPropagation(); setScale(value => value === 1 ? 2 : 1); setPan({x:0,y:0}); }}>
       <div className="conversation-image-canvas" style={{transform:`translate(${scale === 1 ? 0 : pan.x}px, ${scale === 1 ? 0 : pan.y}px) scale(${scale})`}}>
-        <ImageContent data={data} fail={fail} />
+        <ImageContent data={data} fail={fail} retry={retry} />
       </div>
     </div>
     {images.length > 1 ? <div className="conversation-image-navigation">

@@ -124,6 +124,25 @@ test("download derives a safe filename from the validated image MIME when upstre
   assert.deepEqual(downloads,[{name:"image-bbbbbb.png",bytes}]);
 });
 
+test("a transient Download failure preserves the shared preview and viewer",async () => {
+  let failDownload = false;
+  const {window,requests} = await mountImages(() => failDownload
+    ? new Response("",{status:503})
+    : new Response(new Uint8Array([137,80,78,71]),{headers:{"content-type":"image/png"}}),false,[{id:imageId(0)}]);
+  const thumbnail = window.document.querySelector('[aria-label="Open image 1"]')!;
+  const url = thumbnail.querySelector("img")?.src;
+  assert.ok(url);
+  await act(async () => thumbnail.dispatchEvent(new window.MouseEvent("click",{bubbles:true})));
+  const count = requests.length;
+  failDownload = true;
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Download image"]')!.click());
+  assert.equal(thumbnail.querySelector("img")?.src,url,"a transient save error retains the loaded thumbnail URL");
+  const viewer = window.document.querySelector('[aria-label="Conversation images"]')!;
+  assert.equal(viewer.querySelector("img")?.src,url);
+  assert.match(viewer.textContent ?? "",/Image could not be saved/);
+  assert.equal(requests.length,count + 1,"only the fresh authenticated download is sent, with no preview refetch");
+});
+
 for (const status of [401,404]) test(`download does not save after image read returns ${status}`,async () => {
   let unavailable = false;
   const {window} = await mountImages(() => unavailable
@@ -234,7 +253,7 @@ test("decode failure immediately releases its object URL exactly once",async () 
   const img = thumbnail.querySelector("img")!;
   const url = img.src;
   await act(async () => img.dispatchEvent(new window.Event("error")));
-  assert.match(thumbnail.textContent ?? "",/Image unavailable/);
+  assert.match(thumbnail.textContent ?? "",/Couldn't load/);
   assert.deepEqual(revoked,[url],"decode failure releases the blob before unmount");
   await cleanups.pop()?.();
   assert.deepEqual(revoked,[url],"unmount does not release the failed URL twice");

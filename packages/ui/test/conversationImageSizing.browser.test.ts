@@ -21,8 +21,9 @@ test("image previews fit column, natural dimensions and viewport without croppin
         return `import React from 'react';
           import {createRoot} from 'react-dom/client';
           import {ConversationImages} from '/src/ConversationImages.tsx';
+          import {conversationImageCache} from '/src/conversationImageCache.ts';
           const sizes=[[1600,600],[600,1000],[32,24],[200,4000]];
-          const blobs=sizes.map(([w,h],i)=>{
+          let requests=0;const blobs=sizes.map(([w,h],i)=>{
             const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
             const c=canvas.getContext('2d');c.fillStyle=['#164e63','#6b21a8','#166534','#9a3412'][i];c.fillRect(0,0,w,h);
             c.fillStyle='white';c.font='40px sans-serif';c.fillText('Synthetic screenshot — full width',24,60);
@@ -32,7 +33,7 @@ test("image previews fit column, natural dimensions and viewport without croppin
           let observers=[];
           window.IntersectionObserver=class {constructor(callback){this.callback=callback;observers.push(this)}
             observe(){this.callback([{isIntersecting:true}])}disconnect(){}};
-          window.fetch=async path=>new Response(blobs[Number(path.split('/').pop().split('.')[2])],{headers:{'content-type':'image/png'}});
+          window.fetch=async path=>{requests++;return new Response(blobs[Number(path.split('/').pop().split('.')[2])%4],{headers:{'content-type':'image/png'}})};
           const image=i=>({id:'a'.repeat(16)+'.0.'+i+'.'+'b'.repeat(32)});
           const attachments=indices=>React.createElement(ConversationImages,{machine:'fixture',history:'sample',images:indices.map(image)});
           createRoot(document.querySelector('#root')).render(React.createElement(React.Fragment,null,
@@ -41,7 +42,7 @@ test("image previews fit column, natural dimensions and viewport without croppin
               React.createElement('div',{className:'history-bubble'},
                 React.createElement('div',{className:'message-markdown'},'Synthetic attachment '+(i+1)),attachments(indices))))));
           const wait=condition=>new Promise((resolve,reject)=>{let attempts=200;function check(){if(condition())resolve();
-            else if(--attempts)setTimeout(check,10);else reject(Error('fixture did not settle'));}check()});
+            else if(--attempts)setTimeout(check,10);else reject(Error('fixture did not settle: '+requests+' reads, '+document.querySelectorAll('.conversation-image-thumbnail img').length+' thumbnails; '+[...document.querySelectorAll('[role=status]')].map(x=>x.textContent).join(',')));}check()});
           const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}};
           void (async()=>{try {
             await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===7 &&
@@ -50,12 +51,23 @@ test("image previews fit column, natural dimensions and viewport without croppin
             const boxes=[...document.querySelectorAll('.conversation-image-thumbnail')].map(button=>({
               ...rect(button),image:rect(button.querySelector('img')),natural:[button.querySelector('img').naturalWidth,button.querySelector('img').naturalHeight]}));
             const before=rect(document.querySelector('.conversation-image-thumbnail'));
+            const loadedRequests=requests;
             observers.forEach(o=>o.callback([{isIntersecting:false}]));
+            await new Promise(resolve=>setTimeout(resolve,20));
+            const retained=Boolean(document.querySelector('.conversation-image-thumbnail img'));
+            // Fill the real cache past its count bound to exercise a decoded
+            // thumbnail's dimensions during eviction and its subsequent reload.
+            const warm=[];
+            for(let i=4;i<54;i++) {
+              const handle=conversationImageCache.watch({machine:'fixture',history:'sample',image:'a'.repeat(16)+'.'+i+'.0.'+'b'.repeat(32)},()=>{});
+              warm.push(handle);handle.setVisible(true);
+            }
             await wait(()=>document.querySelector('.conversation-image-thumbnail [role=status]'));
+            warm.forEach(handle=>handle.unsubscribe());
             const loading=rect(document.querySelector('.conversation-image-thumbnail'));
             observers.forEach(o=>o.callback([{isIntersecting:true}]));
             await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===7 && [...document.images].every(img=>img.complete));
-            window.publishFixtureResult({boxes,before,loading,
+            window.publishFixtureResult({boxes,before,loading,retained,loadedRequests,after:rect(document.querySelector('.conversation-image-thumbnail')),
               column:rect(document.querySelector('article')),overflow:document.documentElement.scrollWidth>innerWidth,viewportWidth:innerWidth});
           } catch(error){window.publishFixtureResult({error:String(error)})}})();
         `;
@@ -111,7 +123,10 @@ test("image previews fit column, natural dimensions and viewport without croppin
         assert.ok(Math.abs(tall.h-550)<1,"very tall image reaches the height cap");
         assert.ok(grid[1].x>grid[0].x && Math.abs(grid[1].y-grid[0].y)<1,"multiple images share two tracks");
         assert.ok(grid[2].y>grid[0].y,"third image wraps to a new row");
-        assert.deepEqual(measured.loading,measured.before,"known dimensions reserve the box during a later load");
+        assert.equal(measured.retained,true,"leaving the viewport retains the decoded thumbnail");
+        assert.equal(measured.loadedRequests,4,"duplicate thumbnails share the cached read");
+        assert.deepEqual(measured.loading,measured.before,"known dimensions reserve the box after eviction");
+        assert.deepEqual(measured.after,measured.before,"reloading an evicted image causes no layout jump");
       });
     }
   } finally {rmSync(temp,{recursive:true,force:true});}
