@@ -415,17 +415,17 @@ export function HistoryConversationView({
                   <h3 className="session-notice-title"><span className="session-notice-label">{runtime.title}</span>{time}</h3>
                   <code className="runtime-command-text">{runtime.text}</code>
                 </div> : notice && message.mailbox ? <MailboxEventRow event={message.mailbox} body={notice.body} time={time} /> : notice ? <SessionNotice notice={notice} raw={message.text} time={time} suppressImages={Boolean(message.images?.length)}>
-                  {message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} /> : null}
+                  {message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} markdownSource={message} /> : null}
                 </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
                 {user ? time : null}
-                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} neutralUploads={user} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(unwrapPastedContent(originalCaption), uploadSessionId) : undefined} /> : null}{user && bubbleImages.length ? <span className="history-image-label">{bubbleImages.map(image => image.original_name ?? "Image").join(" · ")}</span> : null}{imageOnly && !user ? time : null}</div>}
+                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} neutralUploads={user} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} markdownSource={message} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(unwrapPastedContent(originalCaption), uploadSessionId) : undefined} /> : null}{user && bubbleImages.length ? <span className="history-image-label">{bubbleImages.map(image => image.original_name ?? "Image").join(" · ")}</span> : null}{imageOnly && !user ? time : null}</div>}
                 {!user && !imageOnly ? time : null}
                 {session && (reread || toolImages.length) ? <div className="history-tool-output">
                   {reread ? <p className="history-tool-reread">Read attachment</p> : null}
                   {toolImages.length ? <>
                     <span className="history-tool-label">Tool output</span>
-                    <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={toolImages} />
+                    <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={toolImages} markdownSource={message} />
                   </> : null}
                 </div> : null}
                 </>}
