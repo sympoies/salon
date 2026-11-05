@@ -328,7 +328,7 @@ test("TerminalPane falls back to the send route when the attach WebSocket is not
   assert.match(transportSource, /sendSessionInputViaWebSocket\(ws, body\);/);
   assert.match(
     transportSource,
-    /const result = await sendFallback\(body\)\.catch\(\(\) => \(\{\s*ok: false,\s*error: "Terminal input failed\.",\s*outcomeUnknown: false,\s*\}\)\);/,
+    /const result: ApiResultLike = await sendFallback\(body\)\.catch\(\(\) => \(\{\s*ok: false,\s*error: "Terminal input failed\.",\s*outcomeUnknown: false,\s*\}\)\);/,
   );
   assert.match(transportSource, /if \(!result\.ok && isMounted\(\)\) \{\s*onInputRejected\?\.\(\{/);
   assert.match(transportSource, /pendingSends === 0 && ws\?\.readyState === openState/);

@@ -1,4 +1,5 @@
 import type { SpecialKey } from "./frames.ts";
+import { AUTH_QUARANTINE_TERMINAL_TEXT } from "./authQuarantine.ts";
 
 // These commands replace/select a provider conversation without informing the
 // managed session lifecycle. This is a local-input guard, not a PTY parser or
@@ -28,6 +29,7 @@ interface Draft {
   /** Tab or Up/Down chose an item in the slash menu; the typed text is unchanged. */
   selection: boolean;
 }
+interface DraftSnapshot { draft: Draft; inputUncertain: boolean }
 const emptyDraft = (): Draft => ({chars: [], cursor: 0, uncertain: false, slash: false,
   leadingClassified: false, overflowed: false, unverifiable: false, multiline: false, completed: false, selection: false});
 
@@ -48,6 +50,17 @@ export interface TerminalContextCommandGuard {
   clearDraft(): DraftClear | null;
   noteNavigation(): void;
   markInputUncertain(): string | null;
+  /** Remembers the draft state once, when a quarantine begins; later input is refused and not part of it. */
+  enterQuarantine(): void;
+  /**
+   * A quarantine refusal arrived before the session was known to be quarantined.
+   * The refused frame never reached the provider, so a draft it seemed to
+   * clear is still there: the most guarded state since the last provider-confirmed
+   * submission is kept, however long the refusal took.
+   */
+  refusedByQuarantine(): void;
+  /** Restores the state from before the quarantine, so a draft accepted earlier stays guarded. */
+  releaseQuarantine(): void;
   uncertaintyMessage(): string | null;
   confirmSubmission(submittedAt: string): boolean;
 }
@@ -57,7 +70,31 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
   let draft = emptyDraft();
   let inputUncertain = false;
   let uncertainSince = 0;
-  const uncertaintyMessage = () => inputUncertain && commands.length > 0
+  let beforeQuarantine: DraftSnapshot | null = null;
+  // The most guarded draft seen since a provider-confirmed submission. A refused frame
+  // is not told apart from the accepted ones, and a local edit that seems to clear a
+  // draft proves nothing about the provider, so this is what stays guarded.
+  // Enter-safe drafts never outrank refused drafts. Within refused drafts,
+  // preserve the most restrictive Clear draft mode and enough tracked text.
+  const guarded = (state: DraftSnapshot) => {
+    if (state.inputUncertain) return 4;
+    if (refusal(state.draft, false) === null) return 0;
+    if (!state.draft.multiline) return 1;
+    return state.draft.uncertain || state.draft.overflowed ? 3 : 2;
+  };
+  const moreGuarded = (candidate: DraftSnapshot, current: DraftSnapshot) => {
+    const candidateRisk = guarded(candidate), currentRisk = guarded(current);
+    return candidateRisk > currentRisk
+      || (candidateRisk === currentRisk && candidate.draft.chars.length > current.draft.chars.length);
+  };
+  let peak: DraftSnapshot | null = null;
+  let lastInputAt = 0;
+  const remember = () => {
+    lastInputAt = Date.now();
+    const state = {draft: structuredClone(draft), inputUncertain};
+    if (!peak || moreGuarded(state, peak)) peak = state;
+  };
+  const uncertaintyMessage = (uncertain = inputUncertain) => uncertain && commands.length > 0
     ? "The provider draft is uncertain after rejected or unconfirmed input. Enter is blocked. "
       + "Send a reply from Conversation after the provider recovers; a confirmed submission unlocks Enter. "
       + "Clear draft alone does not confirm recovery."
@@ -74,9 +111,9 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
     for (const char of command) if (char === token[matched]) matched++;
     return matched === token.length;
   });
-  const refusal = (next: Draft): string | null => {
+  const refusal = (next: Draft, uncertain = inputUncertain): string | null => {
     if (commands.length === 0) return null;
-    const uncertainty = uncertaintyMessage();
+    const uncertainty = uncertaintyMessage(uncertain);
     if (uncertainty) return uncertainty;
     const value = next.chars.join("").trimStart();
     const token = value.split(/\s/, 1)[0] ?? "";
@@ -93,6 +130,24 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
     return `${subject} may replace the managed session's provider thread. Enter was not sent. `
       + "Use Console's New session action or the managed role restart flow. "
       + "Clear this draft before continuing; type safe commands in full.";
+  };
+  // A known refusal fences new submissions too, even before the prop refresh.
+  // Keep the cause (and hidden Clear draft) until release or consumption proof.
+  const submissionRefusal = (next: Draft): string | null => {
+    const retained = beforeQuarantine && refusal(beforeQuarantine.draft, beforeQuarantine.inputUncertain);
+    const message = retained || refusal(next);
+    return beforeQuarantine && message ? AUTH_QUARANTINE_TERMINAL_TEXT : message;
+  };
+  const captureQuarantine = () => {
+    if (beforeQuarantine) return;
+    const current: DraftSnapshot = {draft: structuredClone(draft), inputUncertain};
+    const best = peak && moreGuarded(peak, current) ? peak : current;
+    beforeQuarantine = {draft: structuredClone(best.draft), inputUncertain: best.inputUncertain};
+    // A refused cursor move may leave the provider elsewhere than this local
+    // snapshot. Exact multiline deletion cannot prove clearing after capture.
+    if (beforeQuarantine.draft.multiline && guarded(beforeQuarantine) > 0) {
+      beforeQuarantine.draft.uncertain = true;
+    }
   };
   // While a typed slash token opens the provider's slash menu, Up/Down move
   // only its highlight and Tab completes the highlighted item; the typed text
@@ -141,6 +196,7 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
 
   return {
     acceptText(text) {
+      remember();
       if (commands.length === 0) return null;
       const next = {...draft, chars: [...draft.chars]};
       const bracketed = isBracketedTerminalPaste(text);
@@ -157,7 +213,7 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
         for (let index = 0; index < content.length; index++) {
           const char = content[index]!;
           if (char === "\r" || char === "\n") {
-            const message = refusal(next);
+            const message = submissionRefusal(next);
             if (message) return message; // The entire unsent frame stays unsent.
             Object.assign(next, emptyDraft());
           } else if (char === "\x7f" || char === "\b") backspace(next);
@@ -201,9 +257,10 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
       return null;
     },
     acceptKey(key) {
+      remember();
       if (commands.length === 0) return null;
       if (key === "enter") {
-        const message = refusal(draft);
+        const message = submissionRefusal(draft);
         if (message) return message;
         draft = emptyDraft();
       } else if (key === "c-c") draft = emptyDraft();
@@ -246,12 +303,28 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
       uncertainSince = Date.now();
       return uncertaintyMessage();
     },
+    // A quarantined session accepts no input, so what is typed under it never
+    // reached the provider; a draft accepted before it still sits there.
+    enterQuarantine: captureQuarantine,
+    refusedByQuarantine: captureQuarantine,
+    releaseQuarantine() {
+      if (!beforeQuarantine) return;
+      ({draft, inputUncertain} = beforeQuarantine);
+      beforeQuarantine = null;
+      peak = null;
+    },
     confirmSubmission(submittedAt) {
+      // Only a submission newer than the local input can have consumed the
+      // guarded draft. Replayed events must preserve it for a late refusal.
+      const newer = Date.parse(submittedAt) > lastInputAt;
+      const quarantineConsumed = newer && beforeQuarantine !== null && guarded(beforeQuarantine) > 0;
+      if (newer) peak = null;
+      if (quarantineConsumed) beforeQuarantine = null;
       // Attach prompt events come from provider history, not terminal pixels or
       // a transport write acknowledgement. Replayed/older events cannot prove
       // that a rejected input has since been consumed. Keep local draft tracking:
       // a slash command typed meanwhile still needs its ordinary refusal/clear.
-      if (!inputUncertain || !(Date.parse(submittedAt) > uncertainSince)) return false;
+      if (!inputUncertain || !(Date.parse(submittedAt) > uncertainSince)) return quarantineConsumed && !inputUncertain;
       inputUncertain = false;
       return true;
     },

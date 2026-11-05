@@ -53,6 +53,8 @@ import { useSessionSwipe } from "./useSessionSwipe.ts";
 import { useSharedClock } from "./useSharedClock.ts";
 import { startupCleanupCaveat, startupFailureAction, startupStageLabel } from "./startupFailure.ts";
 import { codexRuntimeFallbackMessage } from "./codexRuntimeFallback.ts";
+import { AuthQuarantineNotice } from "./AuthQuarantineNotice.tsx";
+import { isAuthQuarantined } from "./authQuarantine.ts";
 import { SessionAccountBadge, SessionAccountQuota } from "./SessionAccountBadge.tsx";
 import { useHarnessCompact } from "./harnessCompact.ts";
 import { SessionMenuOption, SessionTitleMenu, useSessionMenuCompact } from "./SessionTitleMenu.tsx";
@@ -414,6 +416,8 @@ interface SessionSlotActions {
   readonly reportExtensionError?: (message: string | null) => void;
   readonly onAutoResume: (session: Session, enabled: boolean) => Promise<boolean>;
   readonly onAccount: (session: Session, account: string) => Promise<void>;
+  /** Re-verifies a quarantined session; resolves to a safe error text, or null after the refresh. */
+  readonly onReverify: (session: Session) => Promise<string | null>;
   readonly onKill: (session: Session) => Promise<void>;
   readonly copySessionCommand: (session: Session, action?: SessionCardCopyAction) => Promise<boolean>;
   readonly copyStartupDiagnostics: (session: Session) => Promise<void>;
@@ -536,6 +540,7 @@ export function SessionSlot({
     reportExtensionError,
     onAutoResume,
     onAccount,
+    onReverify,
     onKill,
     copySessionCommand,
     copyStartupDiagnostics,
@@ -989,6 +994,7 @@ export function SessionSlot({
       </div>
 
 
+      {s ? <AuthQuarantineNotice session={s} onReverify={onReverify} /> : null}
       {s ? (
         showPhoneConversation ? (
           <PhoneConversationPane key={`${sessionKey(s)}:${s.provider_resume?.session_id ?? ""}`}
@@ -1022,6 +1028,7 @@ export function SessionSlot({
               id={s.id}
               sessionIncarnation={s.session_incarnation}
               agent={s.agent}
+              authQuarantined={isAuthQuarantined(s)}
               autoFocus={focused || gridFocusTarget || cmdFocusTarget}
               fontSize={fontSize}
               interactive={terminalInteractive}

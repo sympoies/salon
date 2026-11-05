@@ -8,6 +8,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Plugin } from "vite";
 import type { ProviderPromptSubmittedFrame, SpecialKey } from "../src/frames.ts";
+import { createTerminalContextCommandGuard } from "../src/terminalContextCommandGuard.ts";
+import { createOrderedSessionInputSender, type ApiResultLike } from "../src/terminalTransport.ts";
 import type { TerminalPaneProps } from "../src/TerminalPane.tsx";
 import { createUiSsrHarness } from "./support/ssr.ts";
 import { hasHeadlessChrome, measureUiMarkup } from "./support/browserLayout.ts";
@@ -18,6 +20,7 @@ interface Fixture {
   inputs: Input[];
   rejectNext?: boolean;
   rejectionUnknown?: boolean;
+  rejectionCode?: string;
   deferNext?: boolean;
   rejectDeferred?: () => void;
   deps?: {
@@ -26,7 +29,7 @@ interface Fixture {
     terminalPasteInputRef: { current: boolean };
     onProviderPromptCapability(mode: "fallback"): void;
     onProviderPromptEvent(event: ProviderPromptSubmittedFrame): void;
-    onInputRejected(rejection: {message: string; outcomeUnknown?: boolean}): void;
+    onInputRejected(rejection: {message: string; code?: string; outcomeUnknown?: boolean}): void;
   };
 }
 declare global { var __terminalContextFixture: Fixture | undefined; }
@@ -60,8 +63,8 @@ const terminalAdapter: Plugin = {
 
 async function withPane(agent: string, socket: boolean, run: (fixture: {
   inputs: Input[];
-  rejectNext(unknown?: boolean): void;
-  rejectLater(unknown?: boolean): Promise<void>;
+  rejectNext(unknown?: boolean, code?: string): void;
+  rejectLater(unknown?: boolean, code?: string): Promise<void>;
   deferNext(): void;
   rejectDeferred(): Promise<void>;
   text(text: string, paste?: boolean): Promise<void>;
@@ -96,7 +99,7 @@ async function withPane(agent: string, socket: boolean, run: (fixture: {
       });
     }
     assert.equal(body.allow_blocked, true, "human permission replies retain their HTTP intent");
-    if(fixture.rejectNext){fixture.rejectNext=false;return new Response(JSON.stringify({error:'not sent'}),{status:fixture.rejectionUnknown ? 503 : 409});}
+    if(fixture.rejectNext){fixture.rejectNext=false;return new Response(JSON.stringify({error:fixture.rejectionCode ? {code:fixture.rejectionCode,message:'not sent'} : 'not sent'}),{status:fixture.rejectionUnknown ? 503 : 409});}
     fixture.inputs.push({ ...(body.text === undefined ? {} : {text: body.text}),
       ...(body.keys === undefined ? {} : {keys: body.keys}) });
     return new Response(JSON.stringify({ ok: true }), {status: 200});
@@ -131,10 +134,10 @@ async function withPane(agent: string, socket: boolean, run: (fixture: {
       })); },
       deferNext: () => {fixture.deferNext=true;},
       rejectDeferred: async () => {await act(async () => fixture.rejectDeferred!());},
-      rejectNext: (unknown = false) => {fixture.rejectNext=true;fixture.rejectionUnknown=unknown;},
-      rejectLater: async (unknown = false) => {await act(async () => {
+      rejectNext: (unknown = false, code?: string) => {fixture.rejectNext=true;fixture.rejectionUnknown=unknown;fixture.rejectionCode=code;},
+      rejectLater: async (unknown = false, code?: string) => {await act(async () => {
         await Promise.resolve();
-        fixture.deps!.onInputRejected({message: "rejected callback", outcomeUnknown: unknown});
+        fixture.deps!.onInputRejected({message: "rejected callback", outcomeUnknown: unknown, ...(code ? {code} : {})});
       });},
       text: async (text, paste = false) => {
         await act(async () => {
@@ -936,5 +939,336 @@ for (const agent of ["claude", "codex"]) for (const socket of [false, true]) {
       await p.text("hello"); await p.enter();
       assert.doesNotMatch(p.notice(), /provider draft is uncertain|Enter is blocked/, "ordinary input recovers without a remount");
     });
+  });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: input refused by auth quarantine names it, offers no Clear draft and leaves no uncertain draft`, async () => {
+    await withPane(agent, true, async p => {
+      await p.remount({ authQuarantined: true });
+      for (const char of command) await p.text(char);
+      await p.rejectLater(false, "auth-quarantined");
+      assert.match(p.notice(), /authentication quarantine/i);
+      assert.doesNotMatch(p.html(), /<button[^>]*>Clear draft<\/button>/);
+      assert.doesNotMatch(p.notice(), /draft is uncertain/);
+      await p.remount({ authQuarantined: false });
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before + 1, "Enter is not blocked once the quarantine is released");
+      assert.equal(p.notice(), "");
+    });
+  });
+
+  test(`${agent}: an uncertain draft recorded under quarantine clears when the release is confirmed`, async () => {
+    await withPane(agent, true, async p => {
+      await p.remount({ authQuarantined: true });
+      for (const char of command) await p.text(char);
+      await p.rejectLater();
+      assert.match(p.notice(), /draft is uncertain/);
+      assert.doesNotMatch(p.html(), /<button[^>]*>Clear draft<\/button>/, "Clear draft is no way out of a quarantine");
+      await p.remount({ authQuarantined: false });
+      assert.doesNotMatch(p.notice(), /draft is uncertain/);
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before + 1);
+    });
+  });
+
+  test(`${agent}: Clear draft returns for an uncertain draft when no quarantine applies`, async () => {
+    await withPane(agent, true, async p => {
+      for (const char of command) await p.text(char);
+      await p.rejectLater();
+      assert.match(p.html(), /<button[^>]*>Clear draft<\/button>/);
+    });
+  });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: a ${command} draft accepted before the quarantine stays guarded after the release`, async () => {
+    await withPane(agent, true, async p => {
+      for (const char of command) await p.text(char);
+      await p.remount({ authQuarantined: true });
+      await p.text("x");
+      await p.rejectLater(false, "auth-quarantined");
+      await p.remount({ authQuarantined: false });
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before, "Enter is still refused for the earlier slash command");
+      assert.match(p.notice(), /managed|thread|context/i);
+    });
+  });
+
+  test(`${agent}: direct HTTP input refused by auth quarantine names it without latching an uncertain draft`, async () => {
+    await withPane(agent, false, async p => {
+      await p.remount({ authQuarantined: true });
+      for (const char of command) await p.text(char);
+      p.rejectNext(false, "auth-quarantined");
+      await p.text("x");
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+      assert.match(p.notice(), /authentication quarantine/i);
+      assert.doesNotMatch(p.notice(), /draft is uncertain/);
+      assert.doesNotMatch(p.html(), /<button[^>]*>Clear draft<\/button>/);
+    });
+  });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: a refused Ctrl+U before the quarantine is known leaves the ${command} draft guarded after the release`, async () => {
+    await withPane(agent, true, async p => {
+      for (const char of command) await p.text(char);
+      // The prop is still false: the control text clears the local draft, then the daemon refuses it.
+      await p.text("\x15");
+      await p.rejectLater(false, "auth-quarantined");
+      await p.remount({ authQuarantined: true });
+      await p.remount({ authQuarantined: false });
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before, "Enter is still refused: the provider draft was never cleared");
+    });
+  });
+
+  test(`${agent}: an older prompt between Ctrl+U and quarantine refusal keeps the ${command} draft guarded`, async () => {
+    await withPane(agent, true, async p => {
+      const olderPrompt = new Date(Date.now() - 60_000).toISOString();
+      for (const char of command) await p.text(char);
+      await p.text("\x15");
+      await p.confirmPrompt(olderPrompt);
+      await p.rejectLater(false, "auth-quarantined");
+      await p.remount({ authQuarantined: true });
+      await p.remount({ authQuarantined: false });
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before, "a replayed prompt cannot prove the provider draft was consumed");
+    });
+  });
+
+  test(`${agent}: a ${command} draft stays guarded when the refusal arrives long after the frame`, async () => {
+    await withPane(agent, true, async p => {
+      for (const char of command) await p.text(char);
+      await p.text("\x15");
+      // The send route may wait up to ten seconds for a daemon answer.
+      const real = Date.now;
+      Date.now = () => real() + 9_000;
+      try { await p.rejectLater(false, "auth-quarantined"); } finally { Date.now = real; }
+      await p.remount({ authQuarantined: true });
+      await p.remount({ authQuarantined: false });
+      const before = p.inputs.length;
+      await p.key("enter");
+      assert.equal(p.inputs.length, before, "Enter is still refused however late the refusal came");
+    });
+  });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  for (const text of ["ok", "x".repeat(1500)]) {
+    test(`${agent}: ${text.length} safe characters queued during a pending quarantine refusal keep the command guarded`, async () => {
+      const guard = createTerminalContextCommandGuard(agent);
+      const requests: Input[] = [];
+      let clearStarted!: () => void;
+      const started = new Promise<void>(resolve => { clearStarted = resolve; });
+      let refuseClear!: (result: ApiResultLike) => void;
+      const sender = createOrderedSessionInputSender({
+        getWebSocket: () => null,
+        isMounted: () => true,
+        sendFallback: async body => {
+          requests.push(body);
+          if (requests.length === 1) return { ok: true };
+          if (body.text === "\x15") {
+            clearStarted();
+            return new Promise<ApiResultLike>(resolve => { refuseClear = resolve; });
+          }
+          return { ok: false, code: "auth-quarantined" };
+        },
+        onInputRejected: rejection => {
+          assert.equal(rejection.code, "auth-quarantined");
+          guard.refusedByQuarantine();
+        },
+      });
+      const sendText = (value: string) => {
+        assert.equal(guard.acceptText(value), null);
+        return sender.send({ text: value });
+      };
+      await sendText(command);
+      const clearing = sendText("\x15");
+      await started;
+      const typing = sendText(text);
+      assert.equal(guard.acceptKey("enter"), null, "the queued local draft is Enter-safe");
+      const submitting = sender.send({ keys: ["enter"] });
+      assert.equal(requests.length, 2, "later frames wait for the pending Ctrl+U response");
+      refuseClear({ ok: false, code: "auth-quarantined" });
+      await Promise.all([clearing, typing, submitting]);
+      guard.enterQuarantine();
+      guard.releaseQuarantine();
+      assert.notEqual(guard.acceptKey("enter"), null,
+        "safe queued edits cannot replace the context command retained by the provider");
+    });
+  }
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: release between refused edits and queued Enter cannot submit the retained command`, async () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    const requests: Input[] = [];
+    const submitted: string[] = [];
+    let providerDraft = "";
+    let quarantined = false;
+    let clearStarted!: () => void;
+    const started = new Promise<void>(resolve => { clearStarted = resolve; });
+    let refuseClear!: (result: ApiResultLike) => void;
+    const sender = createOrderedSessionInputSender({
+      getWebSocket: () => null,
+      isMounted: () => true,
+      sendFallback: async body => {
+        requests.push(body);
+        if (requests.length === 2) {
+          quarantined = true;
+          clearStarted();
+          return new Promise<ApiResultLike>(resolve => { refuseClear = resolve; });
+        }
+        if (quarantined && body.keys?.includes("enter")) {
+          // Re-verify completes after the refused edits, before this request.
+          quarantined = false;
+          guard.enterQuarantine();
+          guard.releaseQuarantine();
+        }
+        if (quarantined) return { ok: false, code: "auth-quarantined" };
+        if (body.text === "\x05\x15") providerDraft = "";
+        else if (body.text) providerDraft += body.text;
+        if (body.keys?.includes("enter")) { submitted.push(providerDraft); providerDraft = ""; }
+        return { ok: true };
+      },
+      onInputRejected: rejection => {
+        assert.equal(rejection.code, "auth-quarantined");
+        guard.refusedByQuarantine();
+      },
+    });
+    const sendText = (text: string) => {
+      assert.equal(guard.acceptText(text), null);
+      return sender.send({ text });
+    };
+    await sendText(command);
+    const clearing = sendText("\x15");
+    await started;
+    const typing = sendText("safe queued reply");
+    const clearingAgain = sendText("\x15");
+    assert.equal(guard.acceptKey("enter"), null);
+    const entering = sender.send({ keys: ["enter"] });
+    assert.equal(requests.length, 2, "the edits and Enter remain queued");
+    refuseClear({ ok: false, code: "auth-quarantined" });
+    await Promise.all([clearing, typing, clearingAgain, entering]);
+    assert.deepEqual(submitted, [], "release must not let queued Enter submit the retained context command");
+    assert.deepEqual(requests, [{ text: command }, { text: "\x15" }], "every later queued frame is dropped");
+    assert.equal(sender.pendingCount(), 0);
+    quarantined = false;
+    assert.notEqual(guard.acceptKey("enter"), null,
+      "a fresh Enter before the quarantine prop refresh must still guard the retained command");
+    guard.enterQuarantine();
+    guard.releaseQuarantine();
+    assert.notEqual(guard.acceptKey("enter"), null, "release still guards the provider's old command");
+    const clear = guard.clearDraft();
+    assert.ok(clear?.cleared);
+    await sender.send({ text: clear.text });
+    await sendText("fresh reply");
+    assert.equal(guard.acceptKey("enter"), null);
+    await sender.send({ keys: ["enter"] });
+    assert.deepEqual(submitted, ["fresh reply"], "a new user action after release is not dropped");
+  });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  for (const submission of ["key", "raw"] as const) {
+    test(`${agent}: known quarantine blocks fresh ${submission} submission before prop refresh`, async () => {
+      await withPane(agent, true, async p => {
+        await p.text(command);
+        await p.text("\x15");
+        await p.text("safe queued reply");
+        await p.key("enter");
+        await p.rejectLater(false, "auth-quarantined");
+        const before = p.inputs.length;
+        if (submission === "key") await p.key("enter");
+        else await p.text("\r");
+        assert.equal(p.inputs.length, before, "known auth refusal guards submissions before the prop refresh");
+        assert.match(p.notice(), /authentication quarantine/i);
+        assert.doesNotMatch(p.html(), /<button[^>]*>Clear draft<\/button>/);
+        await p.remount({ authQuarantined: true });
+        await p.remount({ authQuarantined: false });
+        await p.key("enter");
+        assert.equal(p.inputs.length, before, "the retained context command stays guarded after release");
+      });
+    });
+  }
+
+  test(`${agent}: provider consumption proof releases a known quarantine snapshot`, () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    guard.acceptText(command);
+    guard.acceptText("\x15");
+    guard.refusedByQuarantine();
+    assert.notEqual(guard.acceptKey("enter"), null, "known refusal guards the retained command");
+    assert.equal(guard.confirmSubmission(new Date(Date.now() + 1000).toISOString()), true);
+    assert.equal(guard.acceptKey("enter"), null, "proof of consumption retires the old snapshot");
+  });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: quarantine prop refresh before refusal retains the provider command`, () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    guard.acceptText(command);
+    guard.acceptText("\x15");
+    guard.enterQuarantine();
+    guard.refusedByQuarantine();
+    guard.releaseQuarantine();
+    assert.notEqual(guard.acceptKey("enter"), null, "prop refresh must capture the risky pre-frame state");
+  });
+
+  test(`${agent}: quarantine retains multiline clearing requirements`, () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    guard.acceptText("/");
+    guard.acceptText(command.slice(1));
+    guard.acceptText("\x1b[200~\nsecond line\x1b[201~");
+    guard.acceptText("\x15");
+    guard.refusedByQuarantine();
+    guard.enterQuarantine();
+    guard.releaseQuarantine();
+    const clear = guard.clearDraft();
+    assert.ok(clear);
+    if (!clear.cleared) {
+      assert.notEqual(guard.acceptKey("enter"), null, "an unproven multiline clear must keep Enter refused");
+      return;
+    }
+    // A line editor applies the clear to the provider's retained multiline draft.
+    let providerDraft = command + "\nsecond line";
+    let cursor = providerDraft.length;
+    for (const char of clear.text.replace(/\x1b\[C/g, "")) {
+      if (char === "\x05") cursor = providerDraft.indexOf("\n", cursor) < 0 ? providerDraft.length : providerDraft.indexOf("\n", cursor);
+      else if (char === "\x15") {
+        const start = providerDraft.lastIndexOf("\n", cursor - 1) + 1;
+        providerDraft = providerDraft.slice(0, start) + providerDraft.slice(cursor);
+        cursor = start;
+      } else if (char === "\x7f" && cursor > 0) {
+        providerDraft = providerDraft.slice(0, cursor - 1) + providerDraft.slice(cursor);
+        cursor -= 1;
+      } else assert.fail("Clear draft emitted a non-editing byte");
+    }
+    assert.equal(providerDraft, "", "a claimed clear must remove the provider's context command on every line");
+  });
+
+  test(`${agent}: a refused multiline cursor move cannot make Clear draft claim success`, () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    const value = command + "\nsecond line";
+    const accepted = [{text: `\x1b[200~${value}\x1b[201~`}, {text: "\x1b[D".repeat(value.length)}];
+    for (const input of accepted) assert.equal(guard.acceptText(input.text), null);
+    // The provider accepted Left to its start, but refuses Right before the
+    // quarantine prop refresh. Local tracking alone reaches the end.
+    assert.equal(guard.acceptText("\x1b[C".repeat(value.length)), null);
+    guard.refusedByQuarantine();
+    guard.enterQuarantine();
+    guard.releaseQuarantine();
+    const clear = guard.clearDraft();
+    assert.ok(clear);
+    const remaining = providerBuffer([...accepted, {text: clear.text}]);
+    assert.equal(clear.cleared && remaining !== "", false,
+      "a claimed clear must empty the provider draft despite the refused cursor move");
+    assert.equal(clear.cleared, false, "unknown multiline cursor fate cannot prove clearing");
+    assert.notEqual(guard.acceptKey("enter"), null, "an unproven clear keeps Enter refused");
   });
 }

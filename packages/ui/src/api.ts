@@ -950,6 +950,11 @@ export interface IndeterminateApiResult extends ApiResult {
   readonly outcomeUnknown?: boolean;
 }
 
+export interface SendSessionInputResult extends IndeterminateApiResult {
+  /** The refusal code, such as `auth-quarantined`, when the daemon named one. */
+  readonly code?: string;
+}
+
 export type AutoResumeMutationResult = IndeterminateApiResult;
 
 export interface AccountMutationResult<P extends AccountProvider> extends IndeterminateApiResult {
@@ -1639,12 +1644,40 @@ export async function switchSessionAccount<P extends AccountProvider>(
     : { ok: false, error: `${label} account switch was not confirmed` };
 }
 
+/**
+ * Asks the daemon to re-run the credential check of a quarantined Claude
+ * session by switching it to the account it already uses. Whether that
+ * released the quarantine is read from the refreshed session, never from this
+ * answer.
+ */
+export async function reverifySessionAccount(
+  machine: string,
+  id: string,
+  account: string,
+  expectedSessionIncarnation: string,
+): Promise<ApiResult> {
+  let response: Json;
+  try {
+    response = await req(
+      `/api/sessions/${encodeURIComponent(machine)}/${encodeURIComponent(id)}/account`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ account, expected_session_incarnation: expectedSessionIncarnation }),
+        signal: AbortSignal.timeout(ACCOUNT_SWITCH_REQUEST_TIMEOUT_MS),
+      },
+    );
+  } catch {
+    return { ok: false, error: "Re-verify outcome is unknown. Check the session again." };
+  }
+  return resultOf(response);
+}
+
 export interface SendSessionInputBody {
   readonly text?: string;
   readonly keys?: readonly SpecialKey[];
 }
 
-export type SendSessionInputResult = IndeterminateApiResult;
 
 export async function sendSessionInput(
   machine: string,
@@ -1665,7 +1698,10 @@ export async function sendSessionInput(
     signal,
   );
   const result = resultOf(response);
-  return !result.ok && response.status >= 500 ? { ...result, outcomeUnknown: true } : result;
+  if (result.ok) return result;
+  const code = (response.body as { error?: { code?: unknown } } | undefined)?.error?.code;
+  const coded = typeof code === "string" ? { ...result, code } : result;
+  return response.status >= 500 ? { ...coded, outcomeUnknown: true } : coded;
 }
 
 export type SubmitSessionPromptBody = {readonly text: string} & (

@@ -8,6 +8,7 @@ import {
   type ProviderPromptSubmittedFrame,
 } from "./frames.ts";
 import type { DebugEventInput } from "./debugLog.ts";
+import { AUTH_QUARANTINED_CODE } from "./authQuarantine.ts";
 import { defaultScheduler, type TimeoutScheduler } from "./scheduler.ts";
 
 export type TerminalTransportStatus = "connecting" | "open" | "closed";
@@ -45,6 +46,7 @@ export type TerminalTransportSocketFactory = (
 export interface ApiResultLike {
   readonly ok: boolean;
   readonly error?: string;
+  readonly code?: string;
   readonly outcomeUnknown?: boolean;
 }
 
@@ -89,24 +91,31 @@ export function createOrderedSessionInputSender({
 }: OrderedSessionInputSenderOptions): OrderedSessionInputSender {
   let queue = Promise.resolve();
   let pendingSends = 0;
+  let inputGeneration = 0;
 
   const enqueue = (body: SendSessionInputBody): Promise<void> => {
+    const generation = inputGeneration;
     pendingSends += 1;
     const run = queue
       .catch(() => undefined)
       .then(async () => {
+        if (generation !== inputGeneration) return;
         const ws = getWebSocket();
         if (ws?.readyState === openState) {
           sendSessionInputViaWebSocket(ws, body);
           return;
         }
-        const result = await sendFallback(body).catch(() => ({
+        const result: ApiResultLike = await sendFallback(body).catch(() => ({
           ok: false,
           error: "Terminal input failed.",
           outcomeUnknown: false,
         }));
+        // A release cannot make old queued input safe. Drop it before either
+        // HTTP or WebSocket dispatch; a fresh user action gets the new generation.
+        if (!result.ok && result.code === AUTH_QUARANTINED_CODE) inputGeneration += 1;
         if (!result.ok && isMounted()) {
           onInputRejected?.({
+            ...(result.code ? { code: result.code } : {}),
             message: result.error,
             retryable: result.outcomeUnknown !== true,
             outcomeUnknown: result.outcomeUnknown === true,

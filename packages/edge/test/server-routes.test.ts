@@ -6,6 +6,7 @@ import { createEdgeServer } from "../src/server.ts";
 import { closeServers, jsonReader, listenOnLoopback, loginCookie, makeEdgeConfig } from "./support.ts";
 
 let refusalDetails: unknown = {};
+let recheckReason: unknown = "credentials_not_republished";
 
 // Every browser create is a console root (session-lineage-work-v1).
 const CONSOLE_ROOT_LINEAGE = {
@@ -176,6 +177,7 @@ before(async () => {
       res.end(JSON.stringify({ ok: true, data: { sessions: [{
         id: "s1",
         title: "Main session",
+        auth_incident: { status: "auth_failed", incident_id: "must-not-cross-edge", recovery: { token: "must-not-cross-edge" } },
         codex_account: {
           schema_version: "agent-session.codex-account.v1",
           supported: true,
@@ -484,6 +486,18 @@ before(async () => {
           res.end(JSON.stringify({
             ok: false,
             error: { code: "claude-account-unknown", message: "private broker inventory" },
+          }));
+          return;
+        }
+        if (requested.account === "recheck-refused") {
+          res.writeHead(422);
+          res.end(JSON.stringify({
+            ok: false,
+            error: {
+              code: "claude-account-recheck-refused",
+              message: "private broker detail /home/runner/.claude-accounts/x",
+              details: { id: "claude-1", reason: recheckReason },
+            },
           }));
           return;
         }
@@ -985,6 +999,7 @@ test("API route matrix exercises read-route success paths", async () => {
   assert.deepEqual(sessions.data.sessions, [{
     id: "s1",
     title: "Main session",
+    auth_incident: { status: "auth_failed" },
     codex_account: {
       schema_version: "agent-session.codex-account.v1",
       supported: true,
@@ -995,6 +1010,7 @@ test("API route matrix exercises read-route success paths", async () => {
     },
     machine: "maple",
   }]);
+  assert.equal(JSON.stringify(sessions).includes("must-not-cross-edge"), false);
   assert.deepEqual(sessions.data.machines, [{ name: "maple", ok: true }]);
   assert.deepEqual(sessions.data.capabilities, {
     auto_resume_control: true,
@@ -1844,6 +1860,30 @@ test("Claude account switch confirms queued and applied outcomes and maps Claude
     assert.deepEqual(await bodyOf(refused), { ok: false, error: { code: "claude-account-switch-refused", message: refusedUnsafe } }, "an unknown or missing cause keeps the existing message");
   }
   refusalDetails = {};
+});
+
+test("a refused Claude re-verify names a safe cause and drops unlisted reasons", async () => {
+  const put = () => request({
+    method: "PUT",
+    path: "/api/sessions/maple/claude-1/account",
+    ...jsonBody({ account: "recheck-refused", expected_session_incarnation: "launch-claude-1" }),
+  }, authHeaders({ origin: base }));
+  const expected: Array<[unknown, string, Record<string, string> | undefined]> = [
+    ["credentials_not_republished", "the account credentials have not been republished yet; the authentication quarantine was left unchanged", { reason: "credentials_not_republished" }],
+    ["recovery_in_progress", "an automatic recovery is still running; the authentication quarantine was left unchanged", { reason: "recovery_in_progress" }],
+    ["/private/path", "the account credentials could not be confirmed; the authentication quarantine was left unchanged", undefined],
+    [undefined, "the account credentials could not be confirmed; the authentication quarantine was left unchanged", undefined],
+  ];
+  for (const [reason, message, details] of expected) {
+    recheckReason = reason;
+    const refused = await put();
+    assert.equal(refused.status, 422);
+    assert.deepEqual(await bodyOf(refused), {
+      ok: false,
+      error: { code: "claude-account-recheck-refused", message, ...(details ? { details } : {}) },
+    });
+  }
+  recheckReason = "credentials_not_republished";
 });
 
 test("maintenance inspection serializes behind Resume and Delete for the same session", async () => {
