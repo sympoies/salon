@@ -1104,3 +1104,71 @@ for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as cons
     });
   }
 }
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: release between refused edits and queued Enter cannot submit the retained command`, async () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    const requests: Input[] = [];
+    const submitted: string[] = [];
+    let providerDraft = "";
+    let quarantined = false;
+    let clearStarted!: () => void;
+    const started = new Promise<void>(resolve => { clearStarted = resolve; });
+    let refuseClear!: (result: ApiResultLike) => void;
+    const sender = createOrderedSessionInputSender({
+      getWebSocket: () => null,
+      isMounted: () => true,
+      sendFallback: async body => {
+        requests.push(body);
+        if (requests.length === 2) {
+          quarantined = true;
+          clearStarted();
+          return new Promise<ApiResultLike>(resolve => { refuseClear = resolve; });
+        }
+        if (quarantined && body.keys?.includes("enter")) {
+          // Re-verify completes after the refused edits, before this request.
+          quarantined = false;
+          guard.enterQuarantine();
+          guard.releaseQuarantine();
+        }
+        if (quarantined) return { ok: false, code: "auth-quarantined" };
+        if (body.text === "\x05\x15") providerDraft = "";
+        else if (body.text) providerDraft += body.text;
+        if (body.keys?.includes("enter")) { submitted.push(providerDraft); providerDraft = ""; }
+        return { ok: true };
+      },
+      onInputRejected: rejection => {
+        assert.equal(rejection.code, "auth-quarantined");
+        guard.refusedByQuarantine();
+      },
+    });
+    const sendText = (text: string) => {
+      assert.equal(guard.acceptText(text), null);
+      return sender.send({ text });
+    };
+    await sendText(command);
+    const clearing = sendText("\x15");
+    await started;
+    const typing = sendText("safe queued reply");
+    const clearingAgain = sendText("\x15");
+    assert.equal(guard.acceptKey("enter"), null);
+    const entering = sender.send({ keys: ["enter"] });
+    assert.equal(requests.length, 2, "the edits and Enter remain queued");
+    refuseClear({ ok: false, code: "auth-quarantined" });
+    await Promise.all([clearing, typing, clearingAgain, entering]);
+    assert.deepEqual(submitted, [], "release must not let queued Enter submit the retained context command");
+    assert.deepEqual(requests, [{ text: command }, { text: "\x15" }], "every later queued frame is dropped");
+    assert.equal(sender.pendingCount(), 0);
+    guard.enterQuarantine();
+    quarantined = false;
+    guard.releaseQuarantine();
+    assert.notEqual(guard.acceptKey("enter"), null, "release still guards the provider's old command");
+    const clear = guard.clearDraft();
+    assert.ok(clear?.cleared);
+    await sender.send({ text: clear.text });
+    await sendText("fresh reply");
+    assert.equal(guard.acceptKey("enter"), null);
+    await sender.send({ keys: ["enter"] });
+    assert.deepEqual(submitted, ["fresh reply"], "a new user action after release is not dropped");
+  });
+}

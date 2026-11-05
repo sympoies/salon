@@ -10,6 +10,7 @@ import {
   createOrderedSessionInputSender,
   createTerminalTransportController,
   sendSessionInputViaWebSocket,
+  type ApiResultLike,
   type TerminalTransportSocket,
   type TerminalTransportStatus,
 } from "../src/terminalTransport.ts";
@@ -933,3 +934,34 @@ test("stale socket close and error cannot mutate a newer attach attempt", async 
 
   controller.dispose();
 });
+
+for (const code of ["auth-quarantined", "busy"]) {
+  test(`${code} refusal ${code === "auth-quarantined" ? "drops" : "preserves"} queued reconnect frames`, async () => {
+    const socket = new FakeSocket();
+    let started!: () => void;
+    const pending = new Promise<void>(resolve => { started = resolve; });
+    let finish!: (result: ApiResultLike) => void;
+    const sender = createOrderedSessionInputSender({
+      getWebSocket: () => socket,
+      isMounted: () => true,
+      sendFallback: async () => {
+        started();
+        return new Promise<ApiResultLike>(resolve => { finish = resolve; });
+      },
+    });
+    const first = sender.send({ text: "pending edit" });
+    await pending;
+    const text = sender.send({ text: "queued text" });
+    const control = sender.send({ text: "\x15" });
+    const enter = sender.send({ keys: ["enter"] });
+    socket.open();
+    finish({ ok: false, code });
+    await Promise.all([first, text, control, enter]);
+    assert.deepEqual(socket.sent, code === "auth-quarantined" ? [] : [
+      JSON.stringify({ text: "queued text" }), JSON.stringify({ text: "\x15" }), JSON.stringify({ key: "enter" }),
+    ]);
+    assert.equal(sender.pendingCount(), 0);
+    await sender.send({ text: "fresh action" });
+    assert.equal(socket.sent.at(-1), JSON.stringify({ text: "fresh action" }));
+  });
+}
