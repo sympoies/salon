@@ -7,7 +7,7 @@ import { OutboxStore } from "./outboxStore.ts";
 export function planLegacyLifecycleRepair(store: OutboxStore, machine: string, sessionId: string, proofText: string) {
   const proof = JSON.parse(proofText);
   const fence = store.lifecycle(machine, sessionId);
-  if (!fence || fence.incarnation !== null || fence.incarnationBound) throw new Error("legacy fence required");
+  if (!fence || fence.incarnation !== null || fence.operation !== null) throw new Error("legacy fence required");
   if (proof?.schema_version !== "outbox-archive-proof.v1" || proof.machine !== machine || proof.session_id !== sessionId
     || proof.owner_token !== fence.ownerToken || proof.verified_completed_archive !== true
     || !isPromptIncarnation(proof.fenced_incarnation)

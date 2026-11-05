@@ -61,7 +61,7 @@ test("repair refuses absent provenance, malformed acknowledgements and a stale d
   assert.throws(() => applyLegacyLifecycleRepair(first, "fixture", "selected", text + " ", plan), /plan changed/);
   assert.deepEqual(first.lifecycle("fixture", "selected"), fence);
   assert.equal(second.releaseLifecycle(fence), true);
-  const current = second.beginLifecycle("fixture", "selected", "inc-current", true);
+  const current = second.beginLifecycle("fixture", "selected", "inc-current", "archive");
   assert.throws(() => applyLegacyLifecycleRepair(first, "fixture", "selected", text, plan), /legacy fence required/);
   assert.deepEqual(first.lifecycle("fixture", "selected"), current);
 });
@@ -73,9 +73,19 @@ test("two stores cannot double-release or release a re-acquired fence with old p
   const a = first.lifecycle("fixture", "selected")!, b = second.lifecycle("fixture", "selected")!;
   assert.equal(first.releaseObsoleteLifecycle(a, "inc-new"), true);
   assert.equal(second.releaseObsoleteLifecycle(b, "inc-new"), false);
-  const next = second.beginLifecycle("fixture", "selected", "inc-new", true);
+  const next = second.beginLifecycle("fixture", "selected", "inc-new", "archive");
   assert.notEqual(next.ownerToken, fence.ownerToken);
   assert.equal(first.releaseLifecycle(a), false);
   assert.equal(first.releaseObsoleteLifecycle(b, "inc-new"), false);
   assert.deepEqual(second.lifecycle("fixture", "selected"), next);
+});
+
+test("a new unguarded delete with no incarnation cannot be repaired as legacy", t => {
+  const { first, fence, proof } = fixture(t);
+  assert.equal(first.releaseLifecycle(fence), true);
+  const deletion = first.beginLifecycle("fixture", "selected", null, "delete");
+  proof.owner_token = deletion.ownerToken;
+  assert.throws(() => planLegacyLifecycleRepair(first, "fixture", "selected", JSON.stringify(proof)), /legacy fence required/);
+  assert.equal(first.repairLegacyLifecycle(deletion, "inc-old"), false);
+  assert.deepEqual(first.lifecycle("fixture", "selected"), deletion);
 });

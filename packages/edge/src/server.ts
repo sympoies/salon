@@ -390,7 +390,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     store: outboxStore, access: outboxAccess, intervalMs: options.outboxPollIntervalMs,
   }) : null;
   const protectOutboxLifecycle = async (machine: MachineConfig, sessionId: string, incarnation: string | null,
-    incarnationBound: boolean, action: () => Promise<DaemonResult>, archive = false) => {
+    operation: "archive" | "delete", action: () => Promise<DaemonResult>) => {
     // Capture before observation: a replacement operation must never inherit
     // another owner's stale asynchronous proof.
     const previous = outboxStore?.lifecycle(machine.name, sessionId);
@@ -401,7 +401,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         outboxStore?.releaseObsoleteLifecycle(previous, session.session_incarnation);
       }
     }
-    const fence = outboxStore?.beginLifecycle(machine.name, sessionId, incarnation, incarnationBound);
+    const fence = outboxStore?.beginLifecycle(machine.name, sessionId, incarnation, operation);
     const result = await action();
     const code = (result.body as { error?: { code?: unknown } } | undefined)?.error?.code;
     // These responses reject before any lifecycle action. Uncertain outcomes
@@ -411,7 +411,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       || (result.status >= 400 && result.status < 500 && [
         "invalid-json-body", "invalid-maintenance-action-request", "session-incarnation-mismatch",
       ].includes(String(code)))
-      || (archive && daemonSucceeded(result) && projectArchiveDaemonData(
+      || (operation === "archive" && daemonSucceeded(result) && projectArchiveDaemonData(
         (result.body as { data?: unknown } | undefined)?.data, sessionId,
       ))) {
       if (fence) outboxStore?.releaseLifecycle(fence);
@@ -2074,14 +2074,14 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             const archiveOwner = actsForAnotherOwner(_principal, machine.name, sessionId)
               ? archiveGrant?.incarnation === expected ? archiveGrant.principalId : undefined
               : _principal.id;
-            const daemonResult = await protectOutboxLifecycle(machine, sessionId, expected, true, () => daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}/archive`, {
+            const daemonResult = await protectOutboxLifecycle(machine, sessionId, expected, "archive", () => daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}/archive`, {
               method: "POST",
               body: {
                 expected_session_incarnation: expected,
                 ...(starred === true ? { starred: true } : {}),
               },
               debug: daemonDebug(requestId),
-            }), true);
+            }));
             if (config.multiUser && accessStore) {
               const archived = (daemonResult.body as {
                 ok?: unknown;
@@ -2185,7 +2185,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             // Tracks what was actually sent, so the echoed contract is checked
             // against the negotiated one even after a fallback.
             let outgoing = body;
-            if (body.operation === "delete") outboxStore?.beginLifecycle(machine.name, sessionId, body.expected_session_incarnation, true);
+            if (body.operation === "delete") outboxStore?.beginLifecycle(machine.name, sessionId, body.expected_session_incarnation, "maintenance-delete");
             try {
               let result = await daemonFetch(
                 machine,
@@ -2487,7 +2487,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             }
             forwardSessionDeleteDaemon(
               res,
-              await protectOutboxLifecycle(machine, sessionId, rootSessionIncarnation ?? null, false, () => daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}`, {
+              await protectOutboxLifecycle(machine, sessionId, rootSessionIncarnation ?? null, "delete", () => daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}`, {
                 method: "DELETE",
                 debug: daemonDebug(requestId),
               })),

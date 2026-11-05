@@ -2,12 +2,12 @@
 
 Archive and delete acquire a durable machine/session fence before upstream
 mutation. New fences record a unique ownership token, the expected incarnation
-when available, and whether the upstream operation is incarnation-bound.
+when available, and the operation kind: archive, maintenance-delete or delete.
 
 Admission and explicit Retry capture the fence before querying the daemon.
 They may release it only when the daemon successfully reports the same session
 running with a different incarnation and the exact stored token, incarnation
-and binding flag still match. A concurrent acquisition or repair invalidates
+and operation still match. A concurrent acquisition or repair invalidates
 that proof. The admission transaction checks the fence again, so an operation
 acquired after observation still blocks input.
 
@@ -25,8 +25,8 @@ automatically from replacement while its outcome is uncertain.
 
 Opening an existing store adds the provenance columns transactionally. Every
 legacy row receives a unique, persistent ownership token. Its incarnation
-remains null and its binding flag remains false. Nothing infers provenance from
-old reply targets, history, elapsed time or the currently running incarnation:
+and operation remain null. Nothing infers provenance from old reply targets,
+history, elapsed time or the currently running incarnation:
 a legacy fence could protect a later uncertain operation that admitted no
 replies. All edge writers must be upgraded together; do not run an old writer
 against the migrated store.
@@ -114,10 +114,10 @@ they are operational evidence and must not be committed or posted publicly.
    ```
 
    This compare-and-swap only assigns the verified archive incarnation and
-   binding to the named legacy row. Missing proof, an invalid acknowledgement,
-   changed proof or a changed row refuses repair. Other rows remain untouched.
+   archive operation to the named legacy row. Missing proof, an invalid
+   acknowledgement, changed proof or a changed row refuses repair. Other rows remain untouched.
    The command cannot repair an uncertain direct DELETE or a new provenance-bearing
-   fence.
+   fence, including a new unguarded DELETE with no recorded incarnation.
 
 6. Send a deliberate reply or explicitly Retry through the edge. The edge must
    independently confirm a different running incarnation before releasing the
