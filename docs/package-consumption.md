@@ -202,6 +202,9 @@ incarnation are cancelled on the server, so every client drops them (#333).
 After an archive and a resume of the same session, a successful archive
 releases its outbox lifecycle fence, so replies of the new incarnation are
 admitted and refused ones keep Discard and Retry (#339).
+[Outbox lifecycle recovery](outbox-lifecycle-recovery.md) defines incarnation-bound
+replacement recovery and the owner-local repair procedure for verified legacy
+archive fences.
 Existing
 `v0.1.0` through `v0.1.47` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing

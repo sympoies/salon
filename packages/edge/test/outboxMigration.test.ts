@@ -62,7 +62,7 @@ test("archive and delete wait only for replies that may still be handed to the p
       edit_hold: "old-edit", error_code: null }));
   old.close();
   const store = new OutboxStore(path);
-  const lifecycle = () => { try { store.beginLifecycle(target.machine, target.sessionId); store.releaseLifecycle(target.machine, target.sessionId); return "open"; }
+  const lifecycle = () => { try { const fence = store.beginLifecycle(target.machine, target.sessionId, target.incarnation, true); store.releaseLifecycle(fence); return "open"; }
     catch (error) { return (error as { code?: string }).code; } };
   try {
     assert.equal(lifecycle(), "open", "a migrated held row is never dispatched, so it cannot hold archive or delete");

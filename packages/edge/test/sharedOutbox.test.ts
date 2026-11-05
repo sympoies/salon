@@ -603,3 +603,22 @@ test("#339 F1 a duplicate archive refused as session-not-found cannot re-fence t
     assert.equal(f.posts(), 2);
   } finally { await f.close(); }
 });
+
+test("#340 upgrade repairs a verified completed legacy archive after resume and edge restart", async () => {
+  const f = await archiveResumeOutbox();
+  try {
+    await f.archiveAndResume({ legacyFence: true });
+    await f.restart();
+    const blocked = await f.request("/api/sessions/fixture/shared-reply/outbox/unverified", {
+      method: "PUT", body: JSON.stringify({ text: "Unverified legacy input", expected_session_incarnation: "inc-2" }),
+    });
+    assert.equal(blocked.status, 409, "a new incarnation alone cannot identify the operation protected by a legacy row");
+    assert.equal((await blocked.json() as { error: { code: string } }).error.code, "outbox-lifecycle-pending");
+    f.repairLegacyFence();
+    await f.restart();
+    const response = await f.request("/api/sessions/fixture/shared-reply/outbox/upgrade", {
+      method: "PUT", body: JSON.stringify({ text: "A deliberate reply after upgrade", expected_session_incarnation: "inc-2" }),
+    });
+    assert.equal(response.status, 201, `completed legacy archive must not block replacement input: ${await response.text()}`);
+  } finally { await f.close(); }
+});
