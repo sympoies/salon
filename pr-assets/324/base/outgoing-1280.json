@@ -1,0 +1,388 @@
+{
+  "boxes": [
+    {
+      "id": "image-only",
+      "images": [
+        {
+          "x": 440.328125,
+          "y": 60,
+          "w": 823.671875,
+          "h": 308.875
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 60,
+        "w": 1248,
+        "h": 321.875
+      },
+      "bubble": {
+        "x": 440.328125,
+        "y": 60,
+        "w": 823.671875,
+        "h": 321.875
+      },
+      "image": {
+        "x": 440.328125,
+        "y": 60,
+        "w": 823.671875,
+        "h": 308.875
+      },
+      "time": {
+        "x": 402.984375,
+        "y": 366.875,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "textBackground": "rgba(0, 0, 0, 0)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "10px",
+      "imageRadius": "10px",
+      "caption": "",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "image-text",
+      "images": [
+        {
+          "x": 440.328125,
+          "y": 437.0625,
+          "w": 823.671875,
+          "h": 308.875
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 391.875,
+        "w": 1248,
+        "h": 367.0625
+      },
+      "bubble": {
+        "x": 440.328125,
+        "y": 391.875,
+        "w": 823.671875,
+        "h": 367.0625
+      },
+      "image": {
+        "x": 440.328125,
+        "y": 437.0625,
+        "w": 823.671875,
+        "h": 308.875
+      },
+      "time": {
+        "x": 402.984375,
+        "y": 743.9375,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 440.328125,
+        "y": 391.875,
+        "w": 164.03125,
+        "h": 39.1875
+      },
+      "textBackground": "rgb(42, 84, 140)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "Synthetic caption",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "short",
+      "images": [],
+      "article": {
+        "x": 16,
+        "y": 768.9375,
+        "w": 1248,
+        "h": 39.1875
+      },
+      "bubble": {
+        "x": 1199.4375,
+        "y": 768.9375,
+        "w": 64.5625,
+        "h": 39.1875
+      },
+      "image": null,
+      "time": {
+        "x": 1162.09375,
+        "y": 793.125,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 1211.4375,
+        "y": 776.9375,
+        "w": 40.5625,
+        "h": 23.1875
+      },
+      "textBackground": "rgba(0, 0, 0, 0)",
+      "background": "rgb(42, 84, 140)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": null,
+      "caption": "Hello",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "multiline",
+      "images": [
+        {
+          "x": 1024,
+          "y": 886.5,
+          "w": 240,
+          "h": 400
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 818.125,
+        "w": 1248,
+        "h": 481.375
+      },
+      "bubble": {
+        "x": 1024,
+        "y": 818.125,
+        "w": 240,
+        "h": 481.375
+      },
+      "image": {
+        "x": 1024,
+        "y": 886.5,
+        "w": 240,
+        "h": 400
+      },
+      "time": {
+        "x": 986.65625,
+        "y": 1284.5,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 1024,
+        "y": 818.125,
+        "w": 116.84375,
+        "h": 62.375
+      },
+      "textBackground": "rgb(42, 84, 140)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "First line\nSecond line",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "narrow-image",
+      "images": [
+        {
+          "x": 1232,
+          "y": 1354.6875,
+          "w": 32,
+          "h": 24
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 1309.5,
+        "w": 1248,
+        "h": 82.1875
+      },
+      "bubble": {
+        "x": 939.953125,
+        "y": 1309.5,
+        "w": 324.046875,
+        "h": 82.1875
+      },
+      "image": {
+        "x": 1232,
+        "y": 1354.6875,
+        "w": 32,
+        "h": 24
+      },
+      "time": {
+        "x": 902.609375,
+        "y": 1376.6875,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 939.953125,
+        "y": 1309.5,
+        "w": 324.046875,
+        "h": 39.1875
+      },
+      "textBackground": "rgb(42, 84, 140)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "A caption wider than the small image",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "several-images",
+      "images": [
+        {
+          "x": 440.328125,
+          "y": 1446.875,
+          "w": 407.828125,
+          "h": 152.921875
+        },
+        {
+          "x": 1024,
+          "y": 1446.875,
+          "w": 240,
+          "h": 400
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 1401.6875,
+        "w": 1248,
+        "h": 458.1875
+      },
+      "bubble": {
+        "x": 440.328125,
+        "y": 1401.6875,
+        "w": 823.671875,
+        "h": 458.1875
+      },
+      "image": {
+        "x": 440.328125,
+        "y": 1446.875,
+        "w": 407.828125,
+        "h": 152.921875
+      },
+      "time": {
+        "x": 402.984375,
+        "y": 1844.875,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 440.328125,
+        "y": 1401.6875,
+        "w": 185.421875,
+        "h": 39.1875
+      },
+      "textBackground": "rgb(42, 84, 140)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "Two image previews",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "agent-text",
+      "images": [],
+      "article": {
+        "x": 16,
+        "y": 1869.875,
+        "w": 1248,
+        "h": 39.1875
+      },
+      "bubble": {
+        "x": 50,
+        "y": 1869.875,
+        "w": 174.15625,
+        "h": 39.1875
+      },
+      "image": null,
+      "time": {
+        "x": 230.15625,
+        "y": 1894.0625,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 62,
+        "y": 1877.875,
+        "w": 150.15625,
+        "h": 23.1875
+      },
+      "textBackground": "rgba(0, 0, 0, 0)",
+      "background": "rgb(27, 58, 85)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": null,
+      "caption": "An agent response",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "agent-image",
+      "images": [
+        {
+          "x": 50,
+          "y": 1964.25,
+          "w": 801.234375,
+          "h": 300.453125
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 1919.0625,
+        "w": 1248,
+        "h": 345.640625
+      },
+      "bubble": {
+        "x": 50,
+        "y": 1919.0625,
+        "w": 801.234375,
+        "h": 345.640625
+      },
+      "image": {
+        "x": 50,
+        "y": 1964.25,
+        "w": 801.234375,
+        "h": 300.453125
+      },
+      "time": {
+        "x": 857.234375,
+        "y": 2249.703125,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 50,
+        "y": 1919.0625,
+        "w": 190.78125,
+        "h": 39.1875
+      },
+      "textBackground": "rgb(27, 58, 85)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "Agent image caption",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    }
+  ],
+  "overflow": false,
+  "viewportWidth": 1280
+}
