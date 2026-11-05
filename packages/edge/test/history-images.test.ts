@@ -103,3 +103,30 @@ test("closing an image client cancels a pending upstream transfer",async () => {
     await Promise.all([new Promise<void>(r=>edge.close(()=>r())),new Promise<void>(r=>daemon.close(()=>r()))]);
   }
 });
+
+test("history image refusals forward only the typed outside-root reason without upstream details",async () => {
+  const seen: string[] = [];
+  const daemon = createServer((req,res) => {
+    seen.push(req.url ?? "");
+    const history = req.url?.split("/")[3];
+    res.writeHead(history === "not-found" ? 404 : 422,{"content-type":"application/json"});
+    res.end(JSON.stringify({ok:false,error:{code:history === "wrong-code" ? "other-error" : "history-image-unavailable",
+      reason:history === "unknown" ? "unknown-reason" : "outside-allowed-roots",
+      message:"Refused /restricted/mock.png",path:"/restricted/mock.png"}}));
+  });
+  const {base:upstream} = await listenOnLoopback(daemon);
+  const edge = createEdgeServer(makeEdgeConfig({openAccess:true,machines:[{name:"fixture",url:upstream}]}));
+  const {base} = await listenOnLoopback(edge);
+  try {
+    for (const history of ["outside","unknown","wrong-code","not-found"]) {
+      const response = await fetch(`${base}/api/history/sessions/fixture/${history}/images/${image}`);
+      assert.equal(response.status,422);
+      assert.deepEqual(await response.json(),{ok:false,error:{code:"history-image-unavailable",message:"Image unavailable",
+        ...(history === "outside" ? {reason:"outside-allowed-roots"} : {})}},history);
+    }
+    assert.deepEqual(seen,["outside","unknown","wrong-code","not-found"].map(history => `/history/sessions/${history}/images/${image}`));
+  } finally {
+    edge.closeAllConnections();daemon.closeAllConnections();
+    await Promise.all([new Promise<void>(r=>edge.close(()=>r())),new Promise<void>(r=>daemon.close(()=>r()))]);
+  }
+});
