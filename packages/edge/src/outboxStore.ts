@@ -239,6 +239,16 @@ export class OutboxStore {
       this.#write(attempt.target, { ...current, state: "refused", error_code: code, receipt: null, edit_hold: null });
     });
   }
+  /** Retire obsolete intentions without retracting a confirmed provider outcome. */
+  cancelUnconfirmed(target: OutboxTarget): void {
+    this.#transaction(() => {
+      for (const row of this.#rows(target)) {
+        const current = item(row);
+        if (["submitted", "command_dispatched", "cancelled"].includes(current.state)) continue;
+        this.#write(target, { ...current, state: "cancelled", error_code: "outbox-session-changed", edit_hold: null });
+      }
+    });
+  }
   uncertain(target: OutboxTarget): OutboxAttempt[] {
     return this.#rows(target).filter(row => ["sending", "unknown"].includes(item(row).state))
       .map(row => ({ target, item: item(row), credentialGeneration: row.credential_generation }));

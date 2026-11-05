@@ -47,6 +47,11 @@ time. Open its conversation to read saved drafts and restore one to the reply
 composer; replacing existing text requires confirmation. Restoring does not
 send the draft.
 
+When a session is replaced or removed, Salon automatically clears its
+unconfirmed outgoing replies across clients once the server confirms the
+change. Cached replies disappear when the conversation next syncs. This does
+not retract messages already delivered.
+
 Outgoing attachments show their sanitized upload names in this browser's outbox.
 Newly attached raster images also have a local preview while the reply is pending
 or refused. History shows the original name when the session runtime supplies
