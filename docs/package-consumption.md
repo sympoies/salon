@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.48 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.49 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -70,13 +70,16 @@ later history window must retain the journaled handover. Unexpected reads,
 writes and browser errors fail the probe. No internal imports or source aliases
 replace the installed implementation.
 
-The installed edge package exposes two owner-local commands:
+The installed edge package exposes three owner-local commands:
 `agent-console-test-credential` for creating, revoking and auditing test
-credentials, and `agent-console-machine-preferences` for enabling or disabling
-a machine preference. Both invoke the compiled package files and retain their
-existing explicit database, principal and operation arguments. Invalid or
-empty invocations fail before opening a store; the package-consumer smoke
-probes both commands without supplying a database.
+credentials, `agent-console-machine-preferences` for enabling or disabling
+a machine preference, and `agent-console-outbox-lifecycle` for the guarded
+one-row repair of a legacy outbox lifecycle fence
+([Outbox lifecycle recovery](outbox-lifecycle-recovery.md)). The first two
+invoke the compiled package files and retain their existing explicit database,
+principal and operation arguments. Invalid or empty invocations of those two
+fail before opening a store; the package-consumer smoke probes those two
+commands without supplying a database.
 
 The local override of the shared dependency ensures both edge and UI resolve the
 same tarball. It is a proof for unpublished packages, with no registry fallback.
@@ -170,7 +173,7 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.48`; its release is a GitHub
+merge. The checked-in SDK version is `0.1.49`; its release is a GitHub
 prerelease with `latest=false`. Sessions carry a marker for a draft the runtime
 saved, and the composer can show and restore it (#282). A refused shared reply
 always names its refusal reason (#298). Settings shows the server version and
@@ -202,11 +205,16 @@ incarnation are cancelled on the server, so every client drops them (#333).
 After an archive and a resume of the same session, a successful archive
 releases its outbox lifecycle fence, so replies of the new incarnation are
 admitted and refused ones keep Discard and Retry (#339).
+Fences left by older edges no longer block a session forever: new fences
+carry an ownership token and their operation kind, archive and maintenance
+fences recover on a confirmed different running incarnation through an
+exact-row compare-and-swap, and an operator-invoked one-row repair tool handles
+legacy rows (#340).
 [Outbox lifecycle recovery](outbox-lifecycle-recovery.md) defines incarnation-bound
 replacement recovery and the owner-local repair procedure for verified legacy
 archive fences.
 Existing
-`v0.1.0` through `v0.1.47` tags and assets stay immutable. The visibility transition does not
+`v0.1.0` through `v0.1.48` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
