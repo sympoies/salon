@@ -84,6 +84,7 @@ import { MachinePreferenceInitializedError, MachinePreferencesStore, applyMachin
 import {
   forwardAutoResumeDaemon,
   forwardArchiveDaemon,
+  projectArchiveDaemonData,
   forwardAccountsDaemon,
   forwardSessionAccountDaemon,
   forwardCreateDaemon,
@@ -2062,6 +2063,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               },
               debug: daemonDebug(requestId),
             }));
+            // A confirmed archive has finished deleting the old receipt store.
+            // Its session-wide fence must not block a later incarnation's input.
+            // Failed or malformed acknowledgements retain the durable fence.
+            if (daemonSucceeded(daemonResult) && projectArchiveDaemonData(
+              (daemonResult.body as { data?: unknown } | undefined)?.data, sessionId,
+            )) outboxStore?.releaseLifecycle(machine.name, sessionId);
             if (config.multiUser && accessStore) {
               const archived = (daemonResult.body as {
                 ok?: unknown;

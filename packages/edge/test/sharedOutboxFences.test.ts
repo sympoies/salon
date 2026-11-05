@@ -110,3 +110,16 @@ test("expected principal binds every outbox read and mutation across a shared-co
     assert.deepEqual((await response.json() as { data: { items: { id: string }[] } }).data.items.map(item => item.id), [id]);
   }
 });
+
+for (const outcome of ["malformed", "uncertain"] as const) test(`#339 ${outcome} archive acknowledgement retains the admission fence`, async t => {
+  const f = await fixture(t, (_req, res) => {
+    res.writeHead(outcome === "malformed" ? 200 : 503);
+    res.end(JSON.stringify(outcome === "malformed" ? { ok: true, data: {} } : { ok: false, error: { code: "uncertain-archive" } }));
+    return true;
+  });
+  assert.equal((await f.request(0, "/archive", "POST", { expected_session_incarnation: incarnation })).status,
+    outcome === "malformed" ? 502 : 503);
+  const admissionResult = await f.request(1, "/outbox/after", "PUT", admission);
+  assert.equal(admissionResult.status, 409);
+  assert.equal((await admissionResult.json() as { error: { code: string } }).error.code, "outbox-lifecycle-pending");
+});

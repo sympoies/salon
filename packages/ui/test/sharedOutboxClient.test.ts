@@ -18,9 +18,10 @@ const session = makeSession({ machine: "fixture", id: "shared-reply", agent: "co
     phase_changed_at: new Date().toISOString(), current_turn: { started_at: new Date().toISOString() },
     source: { kind: "provider_hook", provider: "codex", confidence: "authoritative" } } });
 
-// Only HTTP is simulated here. The production composer, runtime, API and IDB
-// admission journal run unchanged. Real edge/browser isolation is a separate test.
-async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComposer = true, activeSession = session) {
+// HTTP is normally simulated; the archive/resume regression uses a real edge.
+// The production composer, runtime, API and IDB journal run unchanged.
+async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComposer = true, activeSession = session,
+  transport?: (path: string, init?: RequestInit) => Promise<Response>) {
   const window = new Window({ url: "http://localhost" });
   Object.defineProperty(window.navigator, "locks", { configurable: true, value: { request: async (_n: unknown, _o: unknown, cb: (v: object) => unknown) => cb({}) } });
   const admissions: { id: string; text: string }[] = [];
@@ -32,9 +33,12 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
   let nextRead: (() => Promise<Response>) | undefined;
   let transcript: readonly HistoryMessage[] = [];
   let snapshot: SharedOutboxSnapshot = { revision: 0, items: [], compose_holds: [] };
+  const network = globalThis.fetch;
   const fetch = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost"), method = init?.method ?? "GET";
+    if (transport && url.hostname !== "localhost") return network(input, init);
     requests.push(method);
+    if (transport) return transport(`${url.pathname}${url.search}`, init);
     const principal = new Headers(init?.headers).get("x-console-expected-principal");
     principalHeaders.push(principal);
     if (remotePrincipal !== undefined && principal !== remotePrincipal) {
@@ -98,7 +102,7 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
   window.document.body.append(container);
   const root = createRoot(container);
   const storage = await ssr.loadModule<typeof import("../src/storage.ts")>("/src/storage.ts");
-  storage.setPrincipalStorageNamespace("alice");
+  storage.setPrincipalStorageNamespace(transport ? "legacy" : "alice");
   const { ConversationComposer } = await ssr.loadModule<typeof import("../src/ConversationComposer.tsx")>("/src/ConversationComposer.tsx");
   const settle = async () => { await act(async () => { for (let i = 0; i < 30; i++) await new Promise<void>(resolve => setImmediate(resolve)); }); };
   if (renderComposer) await act(async () => root.render(createElement(ConversationComposer, { session: activeSession, machineReachable: true, onBusyChange() {}, onVoiceOpenChange() {} })));
@@ -1100,5 +1104,55 @@ test("#333 the current view refreshes cached previous-incarnation rows and hides
     await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
     await h.showReplies(replacement);
     assertNoElement(h.container, ".history-outgoing-reply", "the cancellation stays hidden across reload");
+  } finally { await h.close(); }
+});
+
+
+import { archiveResumeOutbox } from "../../edge/test/support/archiveResumeOutbox.ts";
+test("#339 mounted archive/resume refusal keeps Discard and Retry through reload", async t => {
+  const edge = await archiveResumeOutbox(), factory = new IDBFactory();
+  t.after(() => edge.close());
+  const replacement = { ...session, session_incarnation: "inc-2" };
+  let h = await fixture(factory, false, session, edge.request);
+  const actions = () => [...h.container.querySelectorAll("button")].map(button => button.textContent);
+  const refresh = async (shown = session) => {
+    await act(async () => { await h.client.sync(h.module.sharedOutboxTarget(shown)); });
+    await h.showReplies(shown);
+  };
+  try {
+    await h.client.enqueue(session, "Earlier refused reply");
+    await h.client.sync(h.target);
+    await edge.until(async () => (await edge.list("inc-1")).items[0]?.state === "refused");
+    await refresh();
+    assert.ok(actions().includes("Discard") && actions().includes("Retry"), "never-resumed refusal has both actions");
+    await edge.archiveAndResume();
+    await act(async () => { await h.client.enqueue(replacement, "Current refused reply"); });
+    await refresh(replacement);
+    assert.doesNotMatch(h.container.textContent ?? "", /The reply changed on the server/, "new incarnation is not a revision conflict");
+    await edge.until(async () => (await edge.list()).items[0]?.state === "refused");
+    await edge.until(async () => (await edge.list("inc-1")).items[0]?.state === "cancelled");
+    const view = h.container.ownerDocument.defaultView!;
+    await act(async () => view.dispatchEvent(new view.Event("focus"))); await h.settle();
+    await refresh(replacement);
+    assert.ok(actions().includes("Discard") && actions().includes("Retry"));
+    assert.match(h.container.textContent ?? "", /Terminal has a draft/);
+    assert.doesNotMatch(h.container.textContent ?? "", /Earlier refused reply/);
+    assert.equal(edge.posts(), 2);
+    await h.close(); await edge.restart();
+    h = await fixture(factory, false, replacement, edge.request);
+    await refresh(replacement);
+    assert.ok(actions().includes("Discard") && actions().includes("Retry"), "reload restores both actions");
+    assert.doesNotMatch(h.container.textContent ?? "", /The reply changed on the server|Earlier refused reply/);
+    const click = async (label: string) => {
+      const button = [...h.container.querySelectorAll("button")].find(button => button.textContent === label);
+      assert.ok(button); await act(async () => button.click()); await h.settle();
+    };
+    await click("Retry");
+    await edge.until(async () => (await edge.list()).items[0]?.state === "refused" && edge.posts() === 3);
+    await refresh(replacement);
+    await click("Discard");
+    await refresh(replacement);
+    assertNoElement(h.container, ".history-outgoing-reply");
+    assert.equal(edge.posts(), 3, "reload, stale-target polling and Discard never submit input");
   } finally { await h.close(); }
 });
