@@ -1471,6 +1471,21 @@ test("#921 a turn that failed at model capacity offers Resend, which sends the l
   }finally{await h.close();}
 });
 
+for (const [name, text, expected] of [
+  ["single wrapper", '<pasted_content id="paste">\nRun the build\n</pasted_content id="paste">', "Run the build"],
+  ["typed text plus wrapper", 'Review: <pasted_content id="paste">\npasted text\n</pasted_content id="paste">', "Review: pasted text"],
+  ["unmatched wrapper", '<pasted_content id="paste">Run the build', '<pasted_content id="paste">Run the build'],
+  ["mismatched wrapper", '<pasted_content id="paste">Run the build</pasted_content id="other">', '<pasted_content id="paste">Run the build</pasted_content id="other">'],
+]) test(`#351 failed-turn Resend preserves the displayed text: ${name}`, async () => {
+  const h = await mount(); try {
+    await h.render("idle", 1, failedTurn(1, {}, claude));
+    await h.transcript([{id:"u1", role:"user", text}]);
+    await h.click("Resend");
+    assert.equal(h.requests.length, 1);
+    assert.equal((h.requests[0] as PromptBody).text, expected);
+  } finally { await h.close(); }
+});
+
 test("#921 after a partial answer the card offers Continue instead of a resend",async()=>{
   const h=await mount();try{
     await h.render("idle",1,failedTurn(1,{},claude));
