@@ -130,3 +130,72 @@ test("two clients reconcile delivered replies across history windows, reconnect 
     await window.happyDOM.close(); await stop(edge); await stop(daemon); rmSync(directory, { recursive: true, force: true });
   }
 });
+
+import { archiveResumeOutbox } from "../../packages/edge/test/support/archiveResumeOutbox.ts";
+test("#339 mounted archive/resume refusal keeps Discard and Retry through reload", async t => {
+  const edge = await archiveResumeOutbox();
+  t.after(() => edge.close());
+  const session = makeSession({ machine: "fixture", id: "shared-reply", agent: "codex", session_incarnation: "inc-1",
+    provider_resume: { provider: "codex", session_id: "fixture-thread" } });
+  const replacement = { ...session, session_incarnation: "inc-2" };
+  const factory = new IDBFactory(), window = new Window({ url: "http://localhost" }), nativeFetch = globalThis.fetch;
+  const globals = { window, navigator: window.navigator, document: window.document, HTMLElement: window.HTMLElement,
+    indexedDB: factory, IS_REACT_ACT_ENVIRONMENT: true,
+    fetch: (input, init) => {
+      const url = new URL(String(input), "http://localhost");
+      return url.hostname === "localhost" ? edge.request(`${url.pathname}${url.search}`, init) : nativeFetch(input, init);
+    } };
+  const saved = new Map(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  const container = window.document.createElement("div"); window.document.body.append(container);
+  let root = createRoot(container), ssr = createUiSsrHarness(), client, module;
+  const settle = async () => act(async () => { for (let i = 0; i < 30; i++) await new Promise(resolve => setImmediate(resolve)); });
+  const load = async () => {
+    const storage = await ssr.loadModule("/src/storage.ts"); storage.setPrincipalStorageNamespace("legacy");
+    module = await ssr.loadModule("/src/sharedOutboxClient.ts"); client = module.sharedOutboxClient(); await client.ready;
+  };
+  const actions = () => [...container.querySelectorAll("button")].map(button => button.textContent);
+  const refresh = async (shown = session) => {
+    await act(async () => { await client.sync(module.sharedOutboxTarget(shown)); });
+    const { SharedOutgoingReplies } = await ssr.loadModule("/src/SharedOutgoingReplies.tsx");
+    await act(async () => root.render(createElement(SharedOutgoingReplies, { session: shown }))); await settle();
+  };
+  try {
+    await load();
+    await act(async () => { await client.enqueue(session, "Earlier refused reply"); await client.sync(module.sharedOutboxTarget(session)); });
+    await edge.until(async () => (await edge.list("inc-1")).items[0]?.state === "refused");
+    await refresh();
+    assert.ok(actions().includes("Discard") && actions().includes("Retry"), "never-resumed refusal has both actions");
+    await edge.archiveAndResume();
+    await act(async () => { await client.enqueue(replacement, "Current refused reply"); });
+    await refresh(replacement);
+    assert.doesNotMatch(container.textContent ?? "", /The reply changed on the server/, "new incarnation is not a revision conflict");
+    await edge.until(async () => (await edge.list()).items[0]?.state === "refused");
+    await edge.until(async () => (await edge.list("inc-1")).items[0]?.state === "cancelled");
+    await act(async () => window.dispatchEvent(new window.Event("focus"))); await settle();
+    await refresh(replacement);
+    assert.ok(actions().includes("Discard") && actions().includes("Retry"));
+    assert.match(container.textContent ?? "", /Terminal has a draft/);
+    assert.doesNotMatch(container.textContent ?? "", /Earlier refused reply/);
+    assert.equal(edge.posts(), 2);
+    await act(async () => root.unmount()); client.close(); await ssr.close(); await edge.restart();
+    root = createRoot(container); ssr = createUiSsrHarness(); await load();
+    await refresh(replacement);
+    assert.ok(actions().includes("Discard") && actions().includes("Retry"), "reload restores both actions");
+    assert.doesNotMatch(container.textContent ?? "", /The reply changed on the server|Earlier refused reply/);
+    const click = async label => {
+      const button = [...container.querySelectorAll("button")].find(button => button.textContent === label);
+      assert.ok(button); await act(async () => button.click()); await settle();
+    };
+    await click("Retry");
+    await edge.until(async () => (await edge.list()).items[0]?.state === "refused" && edge.posts() === 3);
+    await refresh(replacement);
+    await click("Discard"); await refresh(replacement);
+    assert.equal(container.querySelectorAll(".history-outgoing-reply").length, 0);
+    assert.equal(edge.posts(), 3, "reload, stale-target polling and Discard never submit input");
+  } finally {
+    await act(async () => root.unmount()); client?.close(); await ssr.close();
+    for (const [key, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, key, descriptor) : Reflect.deleteProperty(globalThis, key);
+    await window.happyDOM.close();
+  }
+});

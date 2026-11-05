@@ -555,3 +555,51 @@ for (const order of ["queued-before", "admitted-during"] as const) test(`#333 F1
   assert.equal(store.get(current, "new")?.state, "submitted");
   assert.equal(posts, 1);
 });
+
+// Exercise the lifecycle endpoint: replacing a daemon snapshot alone does not
+// acquire the durable archive fence that caused this regression.
+import { archiveResumeOutbox } from "./support/archiveResumeOutbox.ts";
+test("#339 archive and resume admit a new refused reply with revision-valid actions after restart", async () => {
+  const f = await archiveResumeOutbox();
+  const put = (id: string, expected: string) => f.request(`/api/sessions/fixture/shared-reply/outbox/${id}`, {
+    method: "PUT", body: JSON.stringify({ text: "Synthetic refused reply", expected_session_incarnation: expected }),
+  });
+  try {
+    assert.equal((await put("earlier", "inc-1")).status, 201);
+    await f.until(async () => (await f.list("inc-1")).items[0]?.state === "refused");
+    await f.archiveAndResume();
+    await f.restart();
+    const response = await put("current", "inc-2");
+    assert.equal(response.status, 201, `new incarnation must admit input: ${await response.text()}`);
+    await f.until(async () => (await f.list()).items[0]?.state === "refused");
+    await f.until(async () => (await f.list("inc-1")).items[0]?.state === "cancelled");
+    await f.restart();
+    const item = (await f.list()).items[0]!;
+    assert.equal(item.state, "refused"); assert.equal(item.error_code, "composer-not-empty");
+    const patch = (operation: string, revision: number) => f.request("/api/sessions/fixture/shared-reply/outbox/current", {
+      method: "PATCH", body: JSON.stringify({ operation, base_revision: revision, expected_session_incarnation: "inc-2" }),
+    });
+    assert.equal((await patch("retry_refused", item.revision)).status, 200);
+    await f.until(async () => (await f.list()).items[0]?.state === "refused");
+    assert.equal((await patch("discard_refused", (await f.list()).items[0]!.revision)).status, 200);
+    assert.equal((await f.list()).items[0]?.state, "cancelled");
+    assert.equal(f.posts(), 3, "reload never resends a refusal; only explicit Retry sends again");
+  } finally { await f.close(); }
+});
+
+
+test("#339 F1 a duplicate archive refused as session-not-found cannot re-fence the resumed incarnation", async () => {
+  const f = await archiveResumeOutbox();
+  try {
+    const put = (id: string, expected: string) => f.request(`/api/sessions/fixture/shared-reply/outbox/${id}`, {
+      method: "PUT", body: JSON.stringify({ text: "Synthetic refused reply", expected_session_incarnation: expected }),
+    });
+    assert.equal((await put("earlier", "inc-1")).status, 201);
+    await f.until(async () => (await f.list("inc-1")).items[0]?.state === "refused");
+    await f.archiveAndResume({ duplicateArchive: true });
+    const response = await put("current", "inc-2");
+    assert.equal(response.status, 201, `duplicate archive must not block the new incarnation: ${await response.text()}`);
+    await f.until(async () => (await f.list()).items[0]?.state === "refused");
+    assert.equal(f.posts(), 2);
+  } finally { await f.close(); }
+});

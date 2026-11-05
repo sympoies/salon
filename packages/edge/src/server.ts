@@ -84,6 +84,7 @@ import { MachinePreferenceInitializedError, MachinePreferencesStore, applyMachin
 import {
   forwardAutoResumeDaemon,
   forwardArchiveDaemon,
+  projectArchiveDaemonData,
   forwardAccountsDaemon,
   forwardSessionAccountDaemon,
   forwardCreateDaemon,
@@ -395,6 +396,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // These responses reject before any lifecycle action. Uncertain outcomes
     // retain the fence; a later admission must not race deletion of receipts.
     if (result.status === 401 || result.status === 403
+      || (result.status === 404 && code === "session-not-found")
       || (result.status >= 400 && result.status < 500 && [
         "invalid-json-body", "invalid-maintenance-action-request", "session-incarnation-mismatch",
       ].includes(String(code)))) outboxStore?.releaseLifecycle(machine, sessionId);
@@ -2062,6 +2064,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               },
               debug: daemonDebug(requestId),
             }));
+            // A confirmed archive has finished deleting the old receipt store.
+            // Its session-wide fence must not block a later incarnation's input.
+            // Failed or malformed acknowledgements retain the durable fence.
+            if (daemonSucceeded(daemonResult) && projectArchiveDaemonData(
+              (daemonResult.body as { data?: unknown } | undefined)?.data, sessionId,
+            )) outboxStore?.releaseLifecycle(machine.name, sessionId);
             if (config.multiUser && accessStore) {
               const archived = (daemonResult.body as {
                 ok?: unknown;
