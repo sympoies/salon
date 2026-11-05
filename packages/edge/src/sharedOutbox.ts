@@ -42,6 +42,7 @@ export class SharedOutboxDispatcher {
   #timer: NodeJS.Timeout | undefined;
   #running = false;
   #reconciling = false;
+  #sweeping = false;
   #stopped = false;
   readonly #active = new Set<string>();
   constructor(options: OutboxDispatchOptions) { this.#options = options; }
@@ -71,7 +72,8 @@ export class SharedOutboxDispatcher {
         const generation = outboxCredentialGeneration(allowed.principal, allowed.machine);
         if (this.#stopped) return;
         const candidate = store.candidate(target);
-        if (candidate && candidate.credentialGeneration !== generation) { store.refuse(candidate, "outbox-authorization-changed"); continue; }
+        if (!candidate) continue;
+        if (candidate.credentialGeneration !== generation) { store.refuse(candidate, "outbox-authorization-changed"); continue; }
         let observed = observations.get(target.machine);
         if (!observed) {
           observed = await aggregateSessions([allowed.machine]);
@@ -83,7 +85,6 @@ export class SharedOutboxDispatcher {
         if (!observed.machines.some(machine => machine.name === target.machine && machine.ok)) continue;
         const session = observed.sessions.find(session => session.id === target.sessionId);
         if (!session || session.session_incarnation !== target.incarnation) { store.cancelUnconfirmed(target); continue; }
-        if (!candidate) continue;
         const current = access(target, "dispatch");
         if (!current || outboxCredentialGeneration(current.principal, current.machine) !== generation) {
           store.refuse(candidate, "outbox-authorization-changed"); continue;
@@ -116,8 +117,38 @@ export class SharedOutboxDispatcher {
     } finally {
       this.#running = false;
       // Recovery I/O must never block a distinct new user input.
+      void this.#sweep();
       void this.#reconcile();
     }
+  }
+  /** Historical cleanup has its own bounded probes and never holds the dispatch guard. */
+  async #sweep(): Promise<void> {
+    if (this.#sweeping || this.#stopped) return;
+    this.#sweeping = true;
+    const { store, access } = this.#options;
+    try {
+      const observations = new Map<string, Awaited<ReturnType<typeof aggregateSessions>>>();
+      for (const target of store.targets()) {
+        if (this.#stopped) return;
+        if (store.candidate(target) || store.snapshot(target).items.every(item => ["submitted", "command_dispatched", "cancelled"].includes(item.state))) continue;
+        const allowed = access(target, "observe");
+        if (!allowed) continue;
+        const generation = outboxCredentialGeneration(allowed.principal, allowed.machine);
+        let observed = observations.get(target.machine);
+        if (!observed) {
+          observed = await aggregateSessions([allowed.machine]);
+          observations.set(target.machine, observed);
+        }
+        if (this.#stopped) return;
+        const current = access(target, "observe");
+        if (!current || outboxCredentialGeneration(current.principal, current.machine) !== generation) continue;
+        if (!observed.machines.some(machine => machine.name === target.machine && machine.ok)) continue;
+        const session = observed.sessions.find(session => session.id === target.sessionId);
+        if (!session || session.session_incarnation !== target.incarnation) store.cancelUnconfirmed(target);
+      }
+    } catch {
+      // Failed cleanup leaves durable rows for a later successful observation.
+    } finally { this.#sweeping = false; }
   }
   async #reconcile(): Promise<void> {
     if (this.#reconciling || this.#stopped) return;

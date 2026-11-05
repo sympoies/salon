@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { outboxCredentialGeneration } from "../src/sharedOutbox.ts";
+import { outboxCredentialGeneration, SharedOutboxDispatcher } from "../src/sharedOutbox.ts";
 import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, loginCookie, makeEdgeConfig } from "./support.ts";
 
@@ -503,4 +503,55 @@ test("#333 a failed session observation preserves queued replies until the targe
   f.state.sessionsAvailable = true;
   await f.until(async () => (await f.list()).items[0]?.state === "cancelled");
   assert.equal(f.state.posts.length, 0);
+});
+
+
+for (const order of ["queued-before", "admitted-during"] as const) test(`#333 F1 ${order}: deferred stale cleanup cannot block healthy dispatch`, { timeout: 10_000 }, async t => {
+  const directory = mkdtempSync(join(tmpdir(), "console-outbox-sweep-"));
+  const store = new OutboxStore(join(directory, "state.sqlite"));
+  let release = () => {}, entered = () => {}, posts = 0;
+  const deferred = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const stale = createServer(async (_req, res) => {
+    entered(); await deferred;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ ok: true, data: { sessions: [] } }));
+  });
+  const healthy = createServer(async (req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/sessions") return void res.end(JSON.stringify({ ok: true, data: { sessions: [
+      { id: "current", status: "running", agent: "codex", session_incarnation: "current-incarnation" },
+    ] } }));
+    let text = ""; for await (const chunk of req) text += String(chunk);
+    const body = JSON.parse(text); posts++;
+    res.end(JSON.stringify({ ok: true, data: { submitted: true, session_incarnation: "current-incarnation",
+      receipt: { request_id: body.request_id, session_id: "current", session_incarnation: "current-incarnation", outcome: "submitted", code: null } } }));
+  });
+  const machines = [
+    { name: "a-stale", url: (await listenOnLoopback(stale)).base, token: "synthetic-stale" },
+    { name: "z-healthy", url: (await listenOnLoopback(healthy)).base, token: "synthetic-healthy" },
+  ];
+  const principal = { id: "owner", token: "synthetic-principal", machines: machines.map(machine => machine.name), permissions: [] };
+  const oldTarget = { principalId: principal.id, machine: machines[0]!.name, sessionId: "earlier", incarnation: "earlier-incarnation" };
+  const current = { principalId: principal.id, machine: machines[1]!.name, sessionId: "current", incarnation: "current-incarnation" };
+  store.admit(oldTarget, "old", "Earlier refused reply", outboxCredentialGeneration(principal, machines[0]!));
+  store.refuse(store.candidate(oldTarget)!, "busy");
+  const admitHealthy = () => store.admit(current, "new", "New deliberate reply", outboxCredentialGeneration(principal, machines[1]!));
+  if (order === "queued-before") admitHealthy();
+  const dispatcher = new SharedOutboxDispatcher({ store, access: target => ({ principal, machine: machines.find(machine => machine.name === target.machine)! }) });
+  let running: Promise<void> | undefined;
+  t.after(async () => {
+    dispatcher.stop(); release(); await running;
+    await stop(stale); await stop(healthy); store.close(); rmSync(directory, { recursive: true, force: true });
+  });
+  running = dispatcher.tick();
+  await started;
+  if (order === "admitted-during") { admitHealthy(); await dispatcher.tick(); }
+  assert.equal(posts, 1, "healthy POST completes before the unrelated stale observation resolves");
+  assert.equal(store.get(oldTarget, "old")?.state, "refused", "cleanup is still deferred");
+  release(); await running;
+  for (let n = 0; n < 150 && store.get(oldTarget, "old")?.state !== "cancelled"; n++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(store.get(oldTarget, "old")?.state, "cancelled", "successful obsolete observation still retires the stale row");
+  assert.equal(store.get(current, "new")?.state, "submitted");
+  assert.equal(posts, 1);
 });
