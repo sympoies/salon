@@ -18,6 +18,10 @@ export async function archiveResumeOutbox() {
     res.setHeader("content-type", "application/json");
     if (req.url === "/sessions") return void res.end(JSON.stringify({ ok: true, data: { sessions: present ? [session()] : [] } }));
     if (req.url === "/sessions/shared-reply/archive") {
+      if (!present) {
+        res.writeHead(404);
+        return void res.end(JSON.stringify({ ok: false, error: { code: "session-not-found" } }));
+      }
       present = false;
       return void res.end(JSON.stringify({ ok: true, data: {
         archived: { history_id: "fixture-history", provider: "codex", provider_session_id: "fixture-thread",
@@ -63,10 +67,16 @@ export async function archiveResumeOutbox() {
     assert.fail("expected shared reply transition");
   };
   return { request, list, until, posts: () => posts,
-    async archiveAndResume() {
+    async archiveAndResume({ duplicateArchive = false } = {}) {
       const archived = await request("/api/sessions/fixture/shared-reply/archive", { method: "POST",
         body: JSON.stringify({ expected_session_incarnation: incarnation }) });
       assert.equal(archived.status, 200);
+      if (duplicateArchive) {
+        const duplicate = await request("/api/sessions/fixture/shared-reply/archive", { method: "POST",
+          body: JSON.stringify({ expected_session_incarnation: incarnation }) });
+        assert.equal(duplicate.status, 404);
+        assert.equal((await duplicate.json() as { error: { code: string } }).error.code, "session-not-found");
+      }
       const resumed = await request("/api/history/sessions/fixture/fixture-history/resume", { method: "POST" });
       assert.equal(resumed.status, 200);
     },

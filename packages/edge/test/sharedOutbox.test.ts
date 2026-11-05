@@ -586,3 +586,20 @@ test("#339 archive and resume admit a new refused reply with revision-valid acti
     assert.equal(f.posts(), 3, "reload never resends a refusal; only explicit Retry sends again");
   } finally { await f.close(); }
 });
+
+
+test("#339 F1 a duplicate archive refused as session-not-found cannot re-fence the resumed incarnation", async () => {
+  const f = await archiveResumeOutbox();
+  try {
+    const put = (id: string, expected: string) => f.request(`/api/sessions/fixture/shared-reply/outbox/${id}`, {
+      method: "PUT", body: JSON.stringify({ text: "Synthetic refused reply", expected_session_incarnation: expected }),
+    });
+    assert.equal((await put("earlier", "inc-1")).status, 201);
+    await f.until(async () => (await f.list("inc-1")).items[0]?.state === "refused");
+    await f.archiveAndResume({ duplicateArchive: true });
+    const response = await put("current", "inc-2");
+    assert.equal(response.status, 201, `duplicate archive must not block the new incarnation: ${await response.text()}`);
+    await f.until(async () => (await f.list()).items[0]?.state === "refused");
+    assert.equal(f.posts(), 2);
+  } finally { await f.close(); }
+});
