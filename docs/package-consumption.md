@@ -34,7 +34,7 @@ command entrypoints, and existing license/comment/EOF adjustments. It records
 implementation input/final hashes for the image-toolbar files and preserves
 the original reviewed snapshot and completed downstream distribution-test
 transfer. The three package metadata adaptation hashes reflect the final
-0.1.44 versions; upstream hashes and historical/input identities remain unchanged.
+0.1.45 versions; upstream hashes and historical/input identities remain unchanged.
 No upstream Git history, private composition or environment files
 are imported. The Sign out fixture adaptation
 gives each synthetic fresh document its own boot clock, preserving all native
@@ -170,7 +170,7 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Public SDK release
 
 Publication is reserved for the authorized publisher after designated review and
-merge. The checked-in SDK version is `0.1.44`; its release is a GitHub
+merge. The checked-in SDK version is `0.1.45`; its release is a GitHub
 prerelease with `latest=false`. Sessions carry a marker for a draft the runtime
 saved, and the composer can show and restore it (#282). A refused shared reply
 always names its refusal reason (#298). Settings shows the server version and
@@ -183,8 +183,12 @@ pending outgoing replies keep that name and a local image preview, and history
 rows show an optional runtime-supplied original name (#307).
 Non-image attachments render as file cards with a kind icon, a one-line
 name that keeps its extension, kind and size, and a copy action (#312).
+In multi-user mode a principal receives the authoritative turn state of its
+own sessions on the activity stream (#320). An auth-quarantined session names
+the quarantine, offers Re-verify for bound Claude sessions, and the terminal
+keeps a refused context-command draft and blocks Enter until release (#265).
 Existing
-`v0.1.0` through `v0.1.43` tags and assets stay immutable. The visibility transition does not
+`v0.1.0` through `v0.1.44` tags and assets stay immutable. The visibility transition does not
 republish those releases, change their source or digests, or reuse an existing
 tag. A future publication requires separately approved version metadata and an
 unused tag. This preparation does not establish version-merge or
