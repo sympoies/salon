@@ -9,6 +9,7 @@ import {
   WORKING_ATTENTION_PROGRESS_FRESH_MS,
   STARTING_PHASE_FRESH_MS,
   selectSessionActivity,
+  cardActivityPresentation,
 } from "../src/sessionActivity.ts";
 import { makeSession } from "./support/fixtures.ts";
 import { DASHBOARD_UNAVAILABLE_SINCE, type DashboardSession } from "../src/types.ts";
@@ -71,6 +72,24 @@ test("idle turn state uses waiting completion and acknowledgement behavior", () 
   const activity = selectSessionActivity({ session, machineReachable: true, focused: false, nowMs: now });
   assert.equal(activity.kind, "completed");
   assert.ok(completionAcknowledgementKey(session));
+});
+
+test("provider waiting before the first turn shows Waiting without completion or attention", () => {
+  const session = makeSession({ turn_state: {
+    ...providerState("waiting"), current_turn: undefined, last_turn: undefined,
+  } });
+  const input = { session, machineReachable: true, focused: false, nowMs: now };
+  const activity = selectSessionActivity(input);
+  assert.equal(activity.kind, "waiting");
+  assert.equal(activity.primaryText, "Waiting 2m");
+  assert.equal(activity.pendingCount, undefined);
+  assert.equal(activity.attentionText, undefined);
+  assert.equal(activity.ripple, false);
+  assert.equal(completionAcknowledgementKey(session), null);
+  const card = cardActivityPresentation(activity, session, true);
+  assert.equal(card.state, "waiting");
+  assert.equal(card.group, "waiting");
+  assert.doesNotThrow(() => buildSessionActivityDetails({ ...input, effective: activity }));
 });
 
 test("selectSessionActivity maps provider phases to semantic timers", () => {

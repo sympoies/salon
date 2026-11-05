@@ -337,7 +337,7 @@ export function normalizeActivityTurnState(value: unknown): ActivityTurnState | 
   if (currentTurn === null || lastTurn === null) return null;
   if (state.phase === "working" && !currentTurn) return null;
   if (state.phase === "needs_input" && (!currentTurn || !currentTurn.attention)) return null;
-  if (state.phase === "waiting" && !lastTurn) return null;
+  // SessionStart can report provider readiness before any turn has completed.
   return {
     schema_version: TURN_STATE_SCHEMA,
     phase,

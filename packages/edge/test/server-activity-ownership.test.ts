@@ -21,12 +21,17 @@ const starting: ActivityTurnState = {
   schema_version: waiting.schema_version, source: waiting.source,
   phase: "starting", phase_changed_at: "2026-10-01T00:00:00Z", revision: 1,
 };
+const freshWaiting: ActivityTurnState = {
+  schema_version: waiting.schema_version, source: waiting.source,
+  phase: "waiting", phase_changed_at: waiting.phase_changed_at, revision: 2,
+};
 
-for (const listState of [undefined, starting]) {
-  test(`owned activity keeps stream state when the session list state is ${listState ? "older" : "absent"}`,
+for (const listState of [undefined, starting, freshWaiting]) {
+  test(`owned activity keeps stream state when the session list state is ${listState === freshWaiting ? "fresh idle" : listState ? "older" : "absent"}`,
     { timeout: 15000 }, async t => {
       const root = mkdtempSync(join(tmpdir(), "activity-ownership-"));
       const statePath = join(root, "access.sqlite");
+      const streamState = listState === freshWaiting ? freshWaiting : waiting;
       const sessions = [
         { id: "first-session", session_incarnation: "first-inc", agent: "claude", status: "running" },
         { id: "second-session", session_incarnation: "second-inc", agent: "claude", status: "running" },
@@ -58,7 +63,7 @@ for (const listState of [undefined, starting]) {
             schema_version: "agent-session.activity-stream.event.v1", type,
             stream_id: "fixture-boot", sequence, machine: "daemon-local",
             observed_at: "2026-10-01T00:00:04Z",
-            sessions: sessions.map(session => ({ id: session.id, turn_state: waiting })),
+            sessions: sessions.map(session => ({ id: session.id, turn_state: streamState })),
           })}\n\n`);
         }, 20);
         res.on("close", () => clearInterval(timer));
@@ -94,6 +99,18 @@ for (const listState of [undefined, starting]) {
         }
       };
       try {
+        if (listState === freshWaiting) {
+          for (const principal of ["first", "second"]) {
+            const response = await fetch(`${base}/api/sessions`, {
+              headers: { authorization: `Bearer ${principal}-token` },
+            });
+            assert.equal(response.status, 200);
+            const body = await response.json() as { data: { sessions: Array<{ id: string; turn_state: unknown }> } };
+            assert.deepEqual(body.data.sessions.map(session => ({ id: session.id, turn_state: session.turn_state })),
+              [{ id: `${principal}-session`, turn_state: freshWaiting }],
+              "the list must retain pre-first-turn waiting and hide other identities");
+          }
+        }
         const results = await Promise.all([readActivity("first"), readActivity("second")]);
         for (const [index, principal] of ["first", "second"].entries()) {
           const events = results[index]!;
@@ -107,7 +124,7 @@ for (const listState of [undefined, starting]) {
             assert.equal(event.machine, "hub");
             assert.deepEqual(event.sessions?.map(session => session.id), [`${principal}-session`],
               "other principals, unowned sessions and replaced incarnations must stay hidden");
-            assert.deepEqual(event.sessions?.[0]?.turn_state, waiting,
+            assert.deepEqual(event.sessions?.[0]?.turn_state, streamState,
               "the ownership lookup must not replace the authoritative event state");
           }
         }

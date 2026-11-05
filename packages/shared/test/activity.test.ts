@@ -110,6 +110,19 @@ test("turn-state normalization preserves the idle phase for Waiting classificati
   assert.equal(state?.phase, "idle");
 });
 
+test("provider waiting before the first turn does not require a last turn", () => {
+  const waiting = {
+    schema_version: "agent-session.turn-state.v1",
+    phase: "waiting",
+    phase_changed_at: "2026-07-11T12:00:00Z",
+    revision: 2,
+    source: { kind: "provider_hook", provider: "claude", confidence: "authoritative" },
+  };
+  assert.deepEqual(normalizeActivityTurnState(waiting), waiting);
+  assert.equal(normalizeActivityTurnState({ ...waiting, last_turn: { outcome: "completed" } }), null,
+    "a supplied last turn must still have valid completion metadata");
+});
+
 test("turn-state evidence metadata drops free-form optional enums and defaults old attention conservatively", () => {
   const oldState = normalizeActivityTurnState({
     ...waitingState,
