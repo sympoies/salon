@@ -433,6 +433,28 @@ export function normalizeSessionLaunchEnv(value: unknown): Readonly<Record<strin
 }
 
 /**
+ * The public part of a session's authentication incident: its status only.
+ * Identity, receipts and failover detail stay with the daemon.
+ */
+export interface PublicAuthIncident {
+  readonly status: string;
+}
+
+function normalizePublicAuthIncident(value: unknown): PublicAuthIncident | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const status = publicSessionString((value as Record<string, unknown>).status, 64);
+  return status === undefined ? undefined : { status };
+}
+
+/**
+ * agent-session fences prompt input while the session's current incident has
+ * status `auth_failed`; a settled one reads `recovered`.
+ */
+export function isAuthQuarantined(session: { readonly auth_incident?: PublicAuthIncident | null }): boolean {
+  return session.auth_incident?.status === "auth_failed";
+}
+
+/**
  * Explicit public projection for daemon session records. Unknown fields and
  * unknown nested members are dropped so schema drift cannot expose host-only
  * launcher, provider-root, readiness, or environment details.
@@ -495,6 +517,8 @@ export function projectPublicAgentSession(value: unknown): Record<string, unknow
   if (blockedReason !== undefined) out.resume_blocked_reason = blockedReason;
   const titleState = normalizeSessionTitleState(raw.title_state);
   if (titleState) out.title_state = titleState;
+  const authIncident = normalizePublicAuthIncident(raw.auth_incident);
+  if (authIncident) out.auth_incident = authIncident;
 
   if (Object.hasOwn(raw, "provider_resume")) {
     out.provider_resume = normalizePublicProviderResume(raw.provider_resume);

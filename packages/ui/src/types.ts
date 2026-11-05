@@ -2,6 +2,7 @@ import type {
   AutoResumeStatus,
   ClaudeAccountStatus,
   CodexAccountStatus,
+  PublicAuthIncident,
   MachineStatus,
   AgentSessionContextUsage,
   SessionLastPromptState,
@@ -77,6 +78,8 @@ export interface Session {
    */
   readonly codex_account?: CodexAccountStatus | null;
   readonly claude_account?: ClaudeAccountStatus | null;
+  /** Authentication incident status from the daemon; absent when none is recorded. */
+  readonly auth_incident?: PublicAuthIncident;
   /** Edge-added daemon observation anchor; absent for old daemons. */
   readonly activity_observed_at?: string;
   /** Most-recent user prompt preview from the edge (capability-gated); absent for old daemons/edge. */

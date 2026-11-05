@@ -48,6 +48,17 @@ export interface TerminalContextCommandGuard {
   clearDraft(): DraftClear | null;
   noteNavigation(): void;
   markInputUncertain(): string | null;
+  /** Remembers the draft state once, when a quarantine begins; later input is refused and not part of it. */
+  enterQuarantine(): void;
+  /**
+   * A quarantine refusal arrived before the session was known to be quarantined.
+   * The refused frame never reached the provider, so a draft it seemed to
+   * clear is still there: the most guarded state since the last provider-confirmed
+   * submission is kept, however long the refusal took.
+   */
+  refusedByQuarantine(): void;
+  /** Restores the state from before the quarantine, so a draft accepted earlier stays guarded. */
+  releaseQuarantine(): void;
   uncertaintyMessage(): string | null;
   confirmSubmission(submittedAt: string): boolean;
 }
@@ -57,6 +68,18 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
   let draft = emptyDraft();
   let inputUncertain = false;
   let uncertainSince = 0;
+  let beforeQuarantine: {draft: Draft; inputUncertain: boolean} | null = null;
+  // The most guarded draft seen since a provider-confirmed submission. A refused frame
+  // is not told apart from the accepted ones, and a local edit that seems to clear a
+  // draft proves nothing about the provider, so this is what stays guarded.
+  const guarded = (state: {draft: Draft}) => (state.draft.slash ? 1000 : 0) + state.draft.chars.length;
+  let peak: {draft: Draft; inputUncertain: boolean} | null = null;
+  let lastInputAt = 0;
+  const remember = () => {
+    lastInputAt = Date.now();
+    const state = {draft: structuredClone(draft), inputUncertain};
+    if (!peak || guarded(state) > guarded(peak)) peak = state;
+  };
   const uncertaintyMessage = () => inputUncertain && commands.length > 0
     ? "The provider draft is uncertain after rejected or unconfirmed input. Enter is blocked. "
       + "Send a reply from Conversation after the provider recovers; a confirmed submission unlocks Enter. "
@@ -141,6 +164,7 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
 
   return {
     acceptText(text) {
+      remember();
       if (commands.length === 0) return null;
       const next = {...draft, chars: [...draft.chars]};
       const bracketed = isBracketedTerminalPaste(text);
@@ -201,6 +225,7 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
       return null;
     },
     acceptKey(key) {
+      remember();
       if (commands.length === 0) return null;
       if (key === "enter") {
         const message = refusal(draft);
@@ -246,7 +271,29 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
       uncertainSince = Date.now();
       return uncertaintyMessage();
     },
+    // A quarantined session accepts no input, so what is typed under it never
+    // reached the provider; a draft accepted before it still sits there.
+    enterQuarantine() {
+      beforeQuarantine ??= {draft: structuredClone(draft), inputUncertain};
+    },
+    refusedByQuarantine() {
+      if (beforeQuarantine) return;
+      // Which frame was refused, and how long ago, is unknown: keep the most guarded
+      // state. Clear draft is available once the quarantine is released.
+      let best: {draft: Draft; inputUncertain: boolean} = {draft: structuredClone(draft), inputUncertain};
+      if (peak && guarded(peak) > guarded(best)) best = peak;
+      beforeQuarantine = {draft: structuredClone(best.draft), inputUncertain: best.inputUncertain};
+    },
+    releaseQuarantine() {
+      if (!beforeQuarantine) return;
+      ({draft, inputUncertain} = beforeQuarantine);
+      beforeQuarantine = null;
+      peak = null;
+    },
     confirmSubmission(submittedAt) {
+      // Only a submission newer than the local input can have consumed the
+      // guarded draft. Replayed events must preserve it for a late refusal.
+      if (Date.parse(submittedAt) > lastInputAt) peak = null;
       // Attach prompt events come from provider history, not terminal pixels or
       // a transport write acknowledgement. Replayed/older events cannot prove
       // that a rejected input has since been consumed. Keep local draft tracking:

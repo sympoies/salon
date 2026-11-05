@@ -30,6 +30,7 @@ import {
   resumeSession,
   setSessionAutoResume,
   switchSessionAccount,
+  reverifySessionAccount,
   submitSessionPrompt,
 } from "./api.ts";
 import { recordDebugEvent } from "./debugLog.ts";
@@ -98,6 +99,7 @@ import { Modal } from "./Modal.tsx";
 import { DashboardUsageProvider, HeaderUsage } from "./HeaderUsage.tsx";
 import { mergeRefreshedSession } from "./sessionRefresh.ts";
 import { SessionRefreshContext, type SessionRefreshControl } from "./useSessionRefresh.ts";
+import { reverifyTarget } from "./authQuarantine.ts";
 import { accountRecoveryPolicy, sessionAccountChoices, sessionAccountProvider } from "./sessionAccounts.ts";
 import { accountMachineKeys, useAccountInventories } from "./useAccountInventories.ts";
 import { SessionSlot } from "./SessionSlot.tsx";
@@ -2054,6 +2056,16 @@ export function Dashboard({
     }
   };
 
+  // Whether Re-verify released the quarantine is read from the refreshed
+  // session's incident, so any answer here is followed by a refresh.
+  const onReverify = async (s: Session): Promise<string | null> => {
+    const target = reverifyTarget(s);
+    if (!target) return "Re-verify is not available for this session.";
+    const result = await reverifySessionAccount(s.machine, s.id, target.account, target.incarnation);
+    await refresh();
+    return result.ok ? null : result.error ?? "Re-verify failed.";
+  };
+
   const copySessionCommand = async (s: Session, action?: SessionCardCopyAction) => {
     clearCopiedCommandKey();
     const result = action ? await copySessionCardActionToClipboard(action) : await copySessionCommandToClipboard(s);
@@ -3222,6 +3234,7 @@ export function Dashboard({
                   reportExtensionError: setError,
                   onAutoResume,
                   onAccount,
+                  onReverify,
                   onKill,
                   copySessionCommand,
                   copyStartupDiagnostics,
