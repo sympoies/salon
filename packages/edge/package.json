@@ -6,7 +6,8 @@
   "type": "module",
   "bin": {
     "agent-console-test-credential": "./dist-package/scripts/test-credential.js",
-    "agent-console-machine-preferences": "./dist-package/src/machinePreferencesCli.js"
+    "agent-console-machine-preferences": "./dist-package/src/machinePreferencesCli.js",
+    "agent-console-outbox-lifecycle": "./dist-package/scripts/outbox-lifecycle.js"
   },
   "exports": {
     "./extensions": {

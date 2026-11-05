@@ -13,12 +13,16 @@ const admission = { text: "Retained original account intention", expected_sessio
 async function fixture(t: TestContext, handle?: (req: IncomingMessage, res: ServerResponse) => boolean) {
   const directory = mkdtempSync(join(tmpdir(), "console-outbox-fences-"));
   const statePath = join(directory, "state.sqlite");
+  const observation = { incarnation, status: "running", present: true, available: true };
   const daemon = createServer((req, res) => {
     res.setHeader("content-type", "application/json");
-    if (req.url === "/sessions") return void res.end(JSON.stringify({ ok: true, data: { sessions: [
-      { id: "session-a", status: "running", agent: "codex", session_incarnation: incarnation,
-        provider_resume: { provider: "codex", session_id: "fixture-provider" } },
-    ] } }));
+    if (req.url === "/sessions") {
+      if (!observation.available) { res.writeHead(503); return void res.end("{}"); }
+      return void res.end(JSON.stringify({ ok: true, data: { sessions: observation.present ? [
+        { id: "session-a", status: observation.status, agent: "codex", session_incarnation: observation.incarnation,
+          provider_resume: { provider: "codex", session_id: "fixture-provider" } },
+      ] : [] } }));
+    }
     if (handle?.(req, res)) return;
     res.writeHead(404); res.end("{}");
   });
@@ -46,7 +50,7 @@ async function fixture(t: TestContext, handle?: (req: IncomingMessage, res: Serv
       headers: { cookie, origin: bases[edge]!, "content-type": "application/json",
         ...(expected === null ? {} : { "x-console-expected-principal": expected }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  return { request, alice };
+  return { request, alice, observation };
 }
 
 test("a competing lifecycle refusal cannot release another edge's in-flight or uncertain fence", async t => {
@@ -122,4 +126,62 @@ for (const outcome of ["malformed", "uncertain"] as const) test(`#339 ${outcome}
   const admissionResult = await f.request(1, "/outbox/after", "PUT", admission);
   assert.equal(admissionResult.status, 409);
   assert.equal((await admissionResult.json() as { error: { code: string } }).error.code, "outbox-lifecycle-pending");
+});
+
+// A stale response can arrive after another edge has recovered and acquired anew.
+test("an old archive refusal cannot release a re-acquired current-incarnation fence", async t => {
+  const responses: ServerResponse[] = [];
+  let notify = () => {};
+  const entered = () => new Promise<void>(resolve => { notify = resolve; });
+  const f = await fixture(t, (req, res) => {
+    if (!req.url?.endsWith("/archive")) return false;
+    responses.push(res); notify(); return true;
+  });
+  const firstEntered = entered();
+  const first = f.request(1, "/archive", "POST", { expected_session_incarnation: incarnation });
+  await firstEntered;
+  assert.equal((await f.request(0, "/outbox/current", "PUT", admission)).status, 409);
+  f.observation.incarnation = "incarnation-b";
+  const secondEntered = entered();
+  const second = f.request(0, "/archive", "POST", { expected_session_incarnation: "incarnation-b" });
+  try {
+    await secondEntered;
+    responses[0]!.writeHead(409);
+    responses[0]!.end(JSON.stringify({ ok: false, error: { code: "session-incarnation-mismatch" } }));
+    assert.equal((await first).status, 409);
+    const reply = { ...admission, expected_session_incarnation: "incarnation-b" };
+    assert.equal((await f.request(1, "/outbox/reacquired", "PUT", reply)).status, 409,
+      "the first owner's late refusal must not release the second owner's fence");
+  } finally {
+    for (const res of responses) if (!res.writableEnded) {
+      res.writeHead(503); res.end(JSON.stringify({ ok: false, error: { code: "uncertain-archive" } }));
+    }
+    await Promise.all([first, second]);
+  }
+});
+
+for (const kind of ["archive", "delete", "maintenance"] as const) test(`an uncertain ${kind} stays fenced until sufficient replacement proof`, async t => {
+  const f = await fixture(t, (_req, res) => {
+    res.writeHead(503); res.end(JSON.stringify({ ok: false, error: { code: "uncertain-lifecycle" } })); return true;
+  });
+  const path = kind === "archive" ? "/archive" : kind === "maintenance" ? "/maintenance/actions" : "";
+  const body = kind === "archive" ? { expected_session_incarnation: incarnation } : kind === "maintenance" ? {
+    operation: "delete", action: "retry_delete", expected_session_incarnation: incarnation,
+    expected_session_generation: 1, expected_preview_digest: `sha256:${"a".repeat(64)}`, confirmed: true,
+  } : undefined;
+  assert.equal((await f.request(1, path, kind === "delete" ? "DELETE" : "POST", body)).status, 503);
+  assert.equal((await f.request(0, "/outbox/same", "PUT", admission)).status, 409);
+  f.observation.incarnation = "incarnation-b";
+  const reply = { ...admission, expected_session_incarnation: "incarnation-b" };
+  for (const status of ["stopped", "unknown"]) {
+    f.observation.status = status;
+    assert.equal((await f.request(0, `/outbox/${status}`, "PUT", reply)).status, 409, "only running proves a replacement");
+  }
+  f.observation.available = false;
+  assert.equal((await f.request(0, "/outbox/unavailable", "PUT", reply)).status, 404);
+  f.observation.available = true; f.observation.present = false;
+  assert.equal((await f.request(0, "/outbox/absent", "PUT", reply)).status, 404);
+  f.observation.present = true; f.observation.status = "running";
+  assert.equal((await f.request(0, "/outbox/replacement", "PUT", reply)).status, kind === "delete" ? 409 : 201,
+    "unguarded direct DELETE may still act on a replacement and cannot recover automatically");
 });

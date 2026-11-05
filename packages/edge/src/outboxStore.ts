@@ -10,6 +10,13 @@ export interface OutboxTarget {
   readonly sessionId: string;
   readonly incarnation: string;
 }
+export interface OutboxLifecycle {
+  readonly machine: string;
+  readonly sessionId: string;
+  readonly incarnation: string | null;
+  readonly ownerToken: string;
+  readonly operation: "archive" | "maintenance-delete" | "delete" | null;
+}
 export interface OutboxAttempt {
   readonly target: OutboxTarget;
   readonly item: SharedOutboxItem;
@@ -76,6 +83,17 @@ export class OutboxStore {
       const columns = this.#db.prepare("PRAGMA table_info(outbox_items)").all() as { name: string }[];
       if (!columns.some(column => column.name === "native_handoff")) {
         this.#db.exec("ALTER TABLE outbox_items ADD COLUMN native_handoff INTEGER NOT NULL DEFAULT 0");
+      }
+      const lifecycle = this.#db.prepare("PRAGMA table_info(outbox_lifecycle)").all() as { name: string }[];
+      if (!lifecycle.some(column => column.name === "incarnation")) {
+        this.#db.exec("ALTER TABLE outbox_lifecycle ADD COLUMN incarnation TEXT");
+        this.#db.exec("ALTER TABLE outbox_lifecycle ADD COLUMN owner_token TEXT");
+        this.#db.exec("ALTER TABLE outbox_lifecycle ADD COLUMN operation TEXT");
+      }
+      // Legacy rows gain identity, never guessed operation provenance.
+      for (const row of this.#db.prepare("SELECT machine,session_id FROM outbox_lifecycle WHERE owner_token IS NULL").all() as { machine: string; session_id: string }[]) {
+        this.#db.prepare("UPDATE outbox_lifecycle SET owner_token=? WHERE machine=? AND session_id=?")
+          .run(randomUUID(), row.machine, row.session_id);
       }
     });
   }
@@ -257,19 +275,39 @@ export class OutboxStore {
     return (this.#db.prepare("SELECT target FROM outbox_targets ORDER BY scope").all() as { target: string }[])
       .map(row => JSON.parse(row.target) as OutboxTarget);
   }
-  /** Permanent until a definite lifecycle refusal; an uncertain destructive call never reopens admission. */
-  beginLifecycle(machine: string, sessionId: string): void {
-    this.#transaction(() => {
+  lifecycle(machine: string, sessionId: string): OutboxLifecycle | undefined {
+    const row = this.#db.prepare("SELECT incarnation,owner_token,operation FROM outbox_lifecycle WHERE machine=? AND session_id=?")
+      .get(machine, sessionId) as { incarnation: string | null; owner_token: string; operation: OutboxLifecycle["operation"] } | undefined;
+    return row ? { machine, sessionId, incarnation: row.incarnation, ownerToken: row.owner_token, operation: row.operation } : undefined;
+  }
+  /** Uncertain unguarded deletion cannot be retired by an incarnation change. */
+  beginLifecycle(machine: string, sessionId: string, incarnation: string | null, operation: NonNullable<OutboxLifecycle["operation"]>): OutboxLifecycle {
+    return this.#transaction(() => {
       for (const target of this.targets().filter(target => target.machine === machine && target.sessionId === sessionId)) {
         if (this.#rows(target).some(mayReachProvider)) throw new OutboxError("outbox-pending-replies", 409);
       }
       // Only the operation that acquires this fence may reach upstream and
       // subsequently release it. A competing refusal cannot clear its owner.
-      const acquired = this.#db.prepare("INSERT OR IGNORE INTO outbox_lifecycle(machine,session_id) VALUES(?,?)").run(machine, sessionId);
+      const fence = { machine, sessionId, incarnation, operation, ownerToken: randomUUID() };
+      const acquired = this.#db.prepare("INSERT OR IGNORE INTO outbox_lifecycle(machine,session_id,incarnation,owner_token,operation) VALUES(?,?,?,?,?)")
+        .run(machine, sessionId, incarnation, fence.ownerToken, operation);
       if (acquired.changes !== 1) throw new OutboxError("outbox-lifecycle-pending", 409);
+      return fence;
     });
   }
-  releaseLifecycle(machine: string, sessionId: string): void {
-    this.#db.prepare("DELETE FROM outbox_lifecycle WHERE machine=? AND session_id=?").run(machine, sessionId);
+  /** The snapshot must be captured before the asynchronous proof or operation. */
+  releaseLifecycle(fence: OutboxLifecycle): boolean {
+    return this.#db.prepare("DELETE FROM outbox_lifecycle WHERE machine=? AND session_id=? AND owner_token=? AND incarnation IS ? AND operation IS ?")
+      .run(fence.machine, fence.sessionId, fence.ownerToken, fence.incarnation, fence.operation).changes === 1;
+  }
+  releaseObsoleteLifecycle(fence: OutboxLifecycle, runningIncarnation: string): boolean {
+    if (!["archive", "maintenance-delete"].includes(fence.operation ?? "") || fence.incarnation === null || fence.incarnation === runningIncarnation) return false;
+    return this.releaseLifecycle(fence);
+  }
+  /** Owner-local repair supplies verified archive provenance; admission still needs replacement proof. */
+  repairLegacyLifecycle(fence: OutboxLifecycle, incarnation: string): boolean {
+    if (fence.incarnation !== null || fence.operation !== null) return false;
+    return this.#db.prepare("UPDATE outbox_lifecycle SET incarnation=?,operation='archive' WHERE machine=? AND session_id=? AND owner_token=? AND incarnation IS NULL AND operation IS NULL")
+      .run(incarnation, fence.machine, fence.sessionId, fence.ownerToken).changes === 1;
   }
 }

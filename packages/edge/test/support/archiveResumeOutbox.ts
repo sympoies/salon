@@ -3,6 +3,10 @@ import { createServer, type Server } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { execFileSync } from "node:child_process";
+import { chmodSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
 import { createEdgeServer } from "../../src/server.ts";
 import { listenOnLoopback, loginCookie, makeEdgeConfig } from "../support.ts";
@@ -12,6 +16,7 @@ export async function archiveResumeOutbox() {
   const directory = mkdtempSync(join(tmpdir(), "salon-archive-outbox-"));
   const network = globalThis.fetch;
   let incarnation = "inc-1", present = true, posts = 0;
+  let archiveResult: unknown;
   const session = () => ({ id: "shared-reply", agent: "codex", status: "running", session_incarnation: incarnation,
     provider_resume: { provider: "codex", session_id: "fixture-thread" } });
   const daemon = createServer(async (req, res) => {
@@ -23,11 +28,13 @@ export async function archiveResumeOutbox() {
         return void res.end(JSON.stringify({ ok: false, error: { code: "session-not-found" } }));
       }
       present = false;
-      return void res.end(JSON.stringify({ ok: true, data: {
+      const body = { ok: true, data: {
         archived: { history_id: "fixture-history", provider: "codex", provider_session_id: "fixture-thread",
           cwd: "/work/example", created_at: "2030-01-01T00:00:00Z", updated_at: "2030-01-01T00:00:01Z", archived_at: "2030-01-01T00:00:02Z" },
         deleted: { id: "shared-reply", deleted: true, killed: true, cleanup_pending: false },
-      } }));
+      } };
+      archiveResult = { status: 200, body };
+      return void res.end(JSON.stringify(body));
     }
     if (req.url === "/history/sessions/fixture-history/resume") {
       incarnation = "inc-2"; present = true;
@@ -67,7 +74,7 @@ export async function archiveResumeOutbox() {
     assert.fail("expected shared reply transition");
   };
   return { request, list, until, posts: () => posts,
-    async archiveAndResume({ duplicateArchive = false } = {}) {
+    async archiveAndResume({ duplicateArchive = false, legacyFence = false } = {}) {
       const archived = await request("/api/sessions/fixture/shared-reply/archive", { method: "POST",
         body: JSON.stringify({ expected_session_incarnation: incarnation }) });
       assert.equal(archived.status, 200);
@@ -77,8 +84,27 @@ export async function archiveResumeOutbox() {
         assert.equal(duplicate.status, 404);
         assert.equal((await duplicate.json() as { error: { code: string } }).error.code, "session-not-found");
       }
+      if (legacyFence) {
+        // Recreate the pre-fix durable row after its archive has completed.
+        const db = new DatabaseSync(config.accessDbPath!);
+        db.prepare("INSERT INTO outbox_lifecycle(machine,session_id) VALUES(?,?)").run("fixture", "shared-reply");
+        db.close();
+      }
       const resumed = await request("/api/history/sessions/fixture/fixture-history/resume", { method: "POST" });
       assert.equal(resumed.status, 200);
+    },
+    repairLegacyFence() {
+      chmodSync(config.accessDbPath!, 0o600);
+      const cli = fileURLToPath(new URL("../../scripts/outbox-lifecycle.ts", import.meta.url));
+      const args = ["--conditions=source", cli, "--db", config.accessDbPath!, "--machine", "fixture", "--session", "shared-reply"];
+      const run = (extra: string[]) => execFileSync(process.execPath, [...args, ...extra], { encoding: "utf8" });
+      const { fence } = JSON.parse(run([]));
+      const proofPath = join(directory, "proof.json"), planPath = join(directory, "plan.json");
+      writeFileSync(proofPath, JSON.stringify({ schema_version: "outbox-archive-proof.v1", machine: "fixture", session_id: "shared-reply",
+        owner_token: fence.ownerToken, fenced_incarnation: "inc-1", verified_completed_archive: true, archive_result: archiveResult }), { mode: 0o600 });
+      writeFileSync(planPath, run(["--proof-file", proofPath]), { mode: 0o600 });
+      assert.equal(JSON.parse(run([])).fence.incarnation, null, "dry-run retains the fence without assigning provenance");
+      assert.deepEqual(JSON.parse(run(["--proof-file", proofPath, "--apply-plan", planPath])), { repaired: true });
     },
     async restart() {
       await stop(edge); edge = createEdgeServer(config, { outboxPollIntervalMs: 10 });

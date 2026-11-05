@@ -389,8 +389,19 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   const outboxDispatcher = outboxStore ? new SharedOutboxDispatcher({
     store: outboxStore, access: outboxAccess, intervalMs: options.outboxPollIntervalMs,
   }) : null;
-  const protectOutboxLifecycle = async (machine: string, sessionId: string, action: () => Promise<DaemonResult>) => {
-    outboxStore?.beginLifecycle(machine, sessionId);
+  const protectOutboxLifecycle = async (machine: MachineConfig, sessionId: string, incarnation: string | null,
+    operation: "archive" | "delete", action: () => Promise<DaemonResult>) => {
+    // Capture before observation: a replacement operation must never inherit
+    // another owner's stale asynchronous proof.
+    const previous = outboxStore?.lifecycle(machine.name, sessionId);
+    if (previous) {
+      const observed = await aggregateSessions([machine]);
+      const session = observed.sessions.find(s => s.id === sessionId);
+      if (observed.machines.some(m => m.ok) && session?.status === "running" && isPromptIncarnation(session.session_incarnation)) {
+        outboxStore?.releaseObsoleteLifecycle(previous, session.session_incarnation);
+      }
+    }
+    const fence = outboxStore?.beginLifecycle(machine.name, sessionId, incarnation, operation);
     const result = await action();
     const code = (result.body as { error?: { code?: unknown } } | undefined)?.error?.code;
     // These responses reject before any lifecycle action. Uncertain outcomes
@@ -399,7 +410,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       || (result.status === 404 && code === "session-not-found")
       || (result.status >= 400 && result.status < 500 && [
         "invalid-json-body", "invalid-maintenance-action-request", "session-incarnation-mismatch",
-      ].includes(String(code)))) outboxStore?.releaseLifecycle(machine, sessionId);
+      ].includes(String(code)))
+      || (operation === "archive" && daemonSucceeded(result) && projectArchiveDaemonData(
+        (result.body as { data?: unknown } | undefined)?.data, sessionId,
+      ))) {
+      if (fence) outboxStore?.releaseLifecycle(fence);
+    }
     return result;
   };
 
@@ -896,6 +912,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             sendJson(res, 200, { ok: true, data: intent ? { item: value } : value }); return;
           }
           if (admission || action?.operation === "retry_refused") {
+            const fence = outboxStore.lifecycle(machine.name, sessionId);
             const observed = await aggregateSessions([machine]);
             if (!observed.machines.some(m => m.ok)) throw new OutboxError("outbox-target-unavailable", 503);
             const session = observed.sessions.find(s => s.id === sessionId);
@@ -905,6 +922,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               throw new OutboxError("outbox-provider-unsupported", 409);
             }
             if (!outboxAccess(target, "dispatch")) throw new OutboxError("outbox-authorization-changed", 403);
+            if (fence && session.status === "running") outboxStore.releaseObsoleteLifecycle(fence, incarnation);
           }
           if (action && intent) {
             // Route authorization and the principal-scoped target already fence
@@ -2056,7 +2074,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             const archiveOwner = actsForAnotherOwner(_principal, machine.name, sessionId)
               ? archiveGrant?.incarnation === expected ? archiveGrant.principalId : undefined
               : _principal.id;
-            const daemonResult = await protectOutboxLifecycle(machine.name, sessionId, () => daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}/archive`, {
+            const daemonResult = await protectOutboxLifecycle(machine, sessionId, expected, "archive", () => daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}/archive`, {
               method: "POST",
               body: {
                 expected_session_incarnation: expected,
@@ -2064,12 +2082,6 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               },
               debug: daemonDebug(requestId),
             }));
-            // A confirmed archive has finished deleting the old receipt store.
-            // Its session-wide fence must not block a later incarnation's input.
-            // Failed or malformed acknowledgements retain the durable fence.
-            if (daemonSucceeded(daemonResult) && projectArchiveDaemonData(
-              (daemonResult.body as { data?: unknown } | undefined)?.data, sessionId,
-            )) outboxStore?.releaseLifecycle(machine.name, sessionId);
             if (config.multiUser && accessStore) {
               const archived = (daemonResult.body as {
                 ok?: unknown;
@@ -2173,7 +2185,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             // Tracks what was actually sent, so the echoed contract is checked
             // against the negotiated one even after a fallback.
             let outgoing = body;
-            if (body.operation === "delete") outboxStore?.beginLifecycle(machine.name, sessionId);
+            if (body.operation === "delete") outboxStore?.beginLifecycle(machine.name, sessionId, body.expected_session_incarnation, "maintenance-delete");
             try {
               let result = await daemonFetch(
                 machine,
@@ -2475,7 +2487,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             }
             forwardSessionDeleteDaemon(
               res,
-              await protectOutboxLifecycle(machine.name, sessionId, () => daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}`, {
+              await protectOutboxLifecycle(machine, sessionId, rootSessionIncarnation ?? null, "delete", () => daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}`, {
                 method: "DELETE",
                 debug: daemonDebug(requestId),
               })),
