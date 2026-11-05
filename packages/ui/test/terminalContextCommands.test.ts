@@ -1251,4 +1251,24 @@ for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as cons
     }
     assert.equal(providerDraft, "", "a claimed clear must remove the provider's context command on every line");
   });
+
+  test(`${agent}: a refused multiline cursor move cannot make Clear draft claim success`, () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    const value = command + "\nsecond line";
+    const accepted = [{text: `\x1b[200~${value}\x1b[201~`}, {text: "\x1b[D".repeat(value.length)}];
+    for (const input of accepted) assert.equal(guard.acceptText(input.text), null);
+    // The provider accepted Left to its start, but refuses Right before the
+    // quarantine prop refresh. Local tracking alone reaches the end.
+    assert.equal(guard.acceptText("\x1b[C".repeat(value.length)), null);
+    guard.refusedByQuarantine();
+    guard.enterQuarantine();
+    guard.releaseQuarantine();
+    const clear = guard.clearDraft();
+    assert.ok(clear);
+    const remaining = providerBuffer([...accepted, {text: clear.text}]);
+    assert.equal(clear.cleared && remaining !== "", false,
+      "a claimed clear must empty the provider draft despite the refused cursor move");
+    assert.equal(clear.cleared, false, "unknown multiline cursor fate cannot prove clearing");
+    assert.notEqual(guard.acceptKey("enter"), null, "an unproven clear keeps Enter refused");
+  });
 }

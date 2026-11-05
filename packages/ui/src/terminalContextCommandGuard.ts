@@ -143,6 +143,11 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
     const current: DraftSnapshot = {draft: structuredClone(draft), inputUncertain};
     const best = peak && moreGuarded(peak, current) ? peak : current;
     beforeQuarantine = {draft: structuredClone(best.draft), inputUncertain: best.inputUncertain};
+    // A refused cursor move may leave the provider elsewhere than this local
+    // snapshot. Exact multiline deletion cannot prove clearing after capture.
+    if (beforeQuarantine.draft.multiline && guarded(beforeQuarantine) > 0) {
+      beforeQuarantine.draft.uncertain = true;
+    }
   };
   // While a typed slash token opens the provider's slash menu, Up/Down move
   // only its highlight and Tab completes the highlighted item; the typed text
