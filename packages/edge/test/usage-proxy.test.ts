@@ -233,7 +233,7 @@ test("usage: the configured reader token is forwarded as an Authorization: Beare
   }
 });
 
-test("usage: multi-user principals only see Claude hosts they may access", async () => {
+test("usage: root keeps every host while non-root principals retain scoped usage", async () => {
   const reader = fakeReader(() => ({
     status: 200,
     body: {
@@ -241,7 +241,7 @@ test("usage: multi-user principals only see Claude hosts they may access", async
         { provider: "claude", account: "max@example.com", hosts: ["summit"] },
         { provider: "claude", account: "team@example.com", hosts: ["cedar", "mesa"] },
         { provider: "claude", label: "Claude" },
-        { provider: "codex", account: "galaxy" },
+        { provider: "codex", account: "galaxy", hosts: ["cedar", "mesa"] },
       ],
     },
   }));
@@ -251,6 +251,7 @@ test("usage: multi-user principals only see Claude hosts they may access", async
     multiUser: true,
     usage: { url: readerBase, token: null },
     principals: [
+      { id: "root", token: "root-token", machines: [], permissions: [...PRINCIPAL_PERMISSIONS] },
       { id: "tess", token: "tess-token", machines: ["summit", "cedar", "mesa"], permissions: [...PRINCIPAL_PERMISSIONS] },
       { id: "dana", token: "dana-token", machines: ["summit", "mesa"], permissions: [...PRINCIPAL_PERMISSIONS] },
       { id: "guest", token: "guest-token", machines: ["maple"], permissions: [...PRINCIPAL_PERMISSIONS] },
@@ -263,11 +264,14 @@ test("usage: multi-user principals only see Claude hosts they may access", async
     return body.data.providers.map((p) => `${p.provider}:${p.account}:${p.hosts?.join(",") ?? "-"}`);
   };
   try {
+    assert.deepEqual(await read("root-token"), [
+      "claude:max@example.com:summit", "claude:team@example.com:cedar,mesa", "claude:null:-", "codex:galaxy:cedar,mesa",
+    ]);
     assert.deepEqual(await read("tess-token"), [
-      "claude:max@example.com:summit", "claude:team@example.com:cedar,mesa", "claude:null:-", "codex:galaxy:-",
+      "claude:max@example.com:summit", "claude:team@example.com:cedar,mesa", "claude:null:-", "codex:galaxy:cedar,mesa",
     ]);
     assert.deepEqual(await read("dana-token"), [
-      "claude:max@example.com:summit", "claude:team@example.com:mesa", "claude:null:-", "codex:galaxy:-",
+      "claude:max@example.com:summit", "claude:team@example.com:mesa", "claude:null:-", "codex:galaxy:mesa",
     ]);
     assert.deepEqual(await read("guest-token"), ["claude:null:-", "codex:galaxy:-"]);
   } finally {
