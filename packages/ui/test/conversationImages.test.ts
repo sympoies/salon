@@ -466,3 +466,35 @@ test("outgoing history labels show original names and keep a neutral label for u
     ["Design draft.png", "Image", "First.png · Second.png"]);
   assert.equal(window.document.querySelectorAll(".conversation-image-thumbnail").length, 4);
 });
+
+for (const [reason,status,expected] of [
+  ["outside-allowed-roots",422,"Not shared: outside the session folder · mock.png"],
+  ["unknown-reason",422,"Image unavailable"],
+  [undefined,422,"Image unavailable"],
+  ["outside-allowed-roots",404,"Image deleted"],
+] as const) test(`assistant Markdown image refusal: ${status} ${reason ?? "no reason"}`,async () => {
+  const source = "/restricted/mock.png";
+  const {window,requests} = await mountImages(() => new Response(JSON.stringify({ok:false,error:{
+    code:status === 404 ? "history-image-deleted" : "history-image-unavailable",reason,
+  }}),{status}),false,[],[{id:"reply",role:"assistant",text:`![](<${source}>)`,images:[{id:imageId(0)}]}]);
+  assert.equal(window.document.querySelector('.conversation-image-thumbnail [role="status"]')?.textContent,expected);
+  assert.doesNotMatch(window.document.body.innerHTML,/restricted/);
+  assert.deepEqual(requests,[`/api/history/sessions/fixture/history/images/${imageId(0)}`]);
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
+  assert.equal(window.document.querySelector('.conversation-image-canvas [role="status"]')?.textContent,expected);
+  assert.doesNotMatch(window.document.body.innerHTML,/restricted/);
+  assertNoElement(window.document,'.conversation-image-retry');
+});
+
+test("Markdown refusal names stay with their descriptors when tool images leave the bubble",async () => {
+  const {window} = await mountImages(() => new Response(JSON.stringify({error:{
+    code:"history-image-unavailable",reason:"outside-allowed-roots",
+  }}),{status:422}),false,[],[{id:"reply",role:"assistant",
+    text:"![](/restricted/first.png) ![](</restricted/second plot.png>)",
+    images:[{id:imageId(0)},{id:imageId(1),origin:"tool_result"}]}]);
+  assert.equal(window.document.querySelector('.history-bubble [role="status"]')?.textContent,
+    "Not shared: outside the session folder · first.png");
+  assert.equal(window.document.querySelector('.history-tool-output [role="status"]')?.textContent,
+    "Not shared: outside the session folder · second plot.png");
+  assert.doesNotMatch(window.document.body.innerHTML,/restricted/);
+});

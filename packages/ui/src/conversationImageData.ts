@@ -2,7 +2,8 @@ import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, conversationIma
 import { appFetch } from "./runtime.ts";
 
 export type ConversationImageData = { readonly state: "ready"; readonly url: string; readonly blob: Blob; readonly filename: string }
-  | { readonly state: "loading" | "deleted" | "unavailable" | "error" };
+  | { readonly state: "unavailable"; readonly reason?: "outside-allowed-roots" }
+  | { readonly state: "loading" | "deleted" | "error" };
 
 interface ImageRequest {
   readonly signal: AbortSignal;
@@ -46,6 +47,11 @@ async function readConversationImage(machine: string, history: string, image: st
     if (response.status === 404) {
       const error = await response.json().catch(() => null) as { error?: { code?: string } } | null;
       return {state:error?.error?.code === "history-image-deleted" ? "deleted" : "unavailable"};
+    }
+    if (response.status === 422) {
+      const error = await response.json().catch(() => null) as { error?: { code?: unknown; reason?: unknown } } | null;
+      return {state:"unavailable",...(error?.error?.code === "history-image-unavailable" && error.error.reason === "outside-allowed-roots"
+        ? {reason:"outside-allowed-roots" as const} : {})};
     }
     if (response.status >= 500 || response.status === 408 || response.status === 429) return {state:"error"};
     const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
