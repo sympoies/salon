@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { DatabaseSync } from "node:sqlite";
+import { outboxCredentialGeneration, SharedOutboxDispatcher } from "../src/sharedOutbox.ts";
 import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, loginCookie, makeEdgeConfig } from "./support.ts";
 
@@ -80,18 +82,21 @@ async function fixture(t: import("node:test").TestContext, multiUser = false) {
   t.mock.timers.enable({ apis: ["Date"], now: 1_900_000_000_000 });
   const directory = mkdtempSync(join(tmpdir(), "console-shared-delivery-"));
   const statePath = join(directory, "state.sqlite");
-  const state = { incarnation, provider: "codex", phase: "working", revision: 1, mode: "busy", posts: [] as Record<string, unknown>[],
+  const state = { incarnation, sessionPresent: true, sessionsAvailable: true, provider: "codex", phase: "working", revision: 1, mode: "busy", posts: [] as Record<string, unknown>[],
     lookups: [] as string[], receipts: new Map<string, unknown>(), submitted: 0, lookup: "normal", lookupWait: undefined as Promise<void> | undefined };
   const daemon = createServer(async (req, res) => {
     res.setHeader("content-type", "application/json");
-    if (req.url === "/sessions") return void res.end(JSON.stringify({ ok: true, data: { sessions: [
+    if (req.url === "/sessions" && !state.sessionsAvailable) {
+      res.writeHead(503); return void res.end(JSON.stringify({ ok: false, error: { code: "unavailable" } }));
+    }
+    if (req.url === "/sessions") return void res.end(JSON.stringify({ ok: true, data: { sessions: state.sessionPresent ? [
       { id: "session-a", status: "running", agent: state.provider, session_incarnation: state.incarnation,
         provider_resume: { provider: state.provider, session_id: "provider-a" },
         turn_state: { schema_version: "agent-session.turn-state.v1", phase: state.phase, revision: state.revision,
           phase_changed_at: new Date(Date.now() - 10_000).toISOString(),
           ...(state.phase === "working" ? { current_turn: { started_at: new Date(Date.now() - 10_000).toISOString() } } : {}),
           source: { kind: "provider_hook", provider: state.provider, confidence: "authoritative" } } },
-    ] } }));
+    ] : [] } }));
     if (req.method === "POST" && req.url === "/sessions/session-a/prompt/v2") {
       let text = ""; for await (const chunk of req) text += String(chunk);
       const body = JSON.parse(text) as Record<string, unknown>; state.posts.push(body);
@@ -151,6 +156,14 @@ async function fixture(t: import("node:test").TestContext, multiUser = false) {
   };
   t.after(async () => { await stop(edge); await stop(daemon); rmSync(directory, { recursive: true, force: true }); });
   return { state, request, admit, list, until, config, statePath,
+    async otherReader() {
+      const auth = await loginCookie(base, multiUser ? "alice-secret" : "client-secret");
+      return async () => {
+        const response = await request(`?expected_session_incarnation=${incarnation}`, "GET", undefined, auth);
+        assert.equal(response.status, 200);
+        return (await response.json() as { data: SharedOutboxSnapshot }).data;
+      };
+    },
     lifecycle: (suffix: string, method: string, body?: unknown) => fetch(`${base}/api/sessions/fixture/session-a${suffix}`,
       { method, headers: { cookie, origin: base, "content-type": "application/json" },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }) }),
@@ -370,18 +383,12 @@ test("client-supplied authority and stale compose targets are rejected before st
   assert.equal((await f.list()).items.length, 0);
 });
 
-test("discard of a refused reply is durable and shared, including an old incarnation, and sends nothing", async t => {
+test("discard of a current refused reply is durable and shared, and sends nothing", async t => {
   for (const multiUser of [false, true]) await t.test(multiUser ? "session owner" : "legacy principal", async t => {
     const f = await fixture(t, multiUser);
     await f.admit();
     await f.until(async () => (await f.list()).items[0]?.state === "refused");
     const refused = (await f.list()).items[0]!;
-    f.state.incarnation = "replacement";
-    if (multiUser) {
-      const ownership = new AccessStore(f.statePath);
-      ownership.claimSession({ principalId: "alice", machine: "fixture", sessionId: "session-a", incarnation: "replacement" });
-      ownership.close();
-    }
     const posts = f.state.posts.length;
     const response = await f.request("/intent-a", "PATCH", { operation: "discard_refused", base_revision: refused.revision,
       expected_session_incarnation: incarnation });
@@ -399,10 +406,9 @@ test("retry of a refused reply is incarnation fenced, revision fenced, and uses 
   await f.until(async () => (await f.list()).items[0]?.state === "refused");
   const refused = (await f.list()).items[0]!;
   const action = { operation: "retry_refused", base_revision: refused.revision, expected_session_incarnation: incarnation };
-  f.state.incarnation = "replacement";
-  assert.equal((await f.request("/intent-a", "PATCH", action)).status, 409);
+  assert.equal((await f.request("/intent-a", "PATCH", { ...action, expected_session_incarnation: "stale-incarnation" })).status, 409);
   assert.equal(f.state.posts.length, 1);
-  f.state.incarnation = incarnation; f.state.mode = "submitted";
+  f.state.mode = "submitted";
   assert.equal((await f.request("/intent-a", "PATCH", action)).status, 200);
   assert.equal((await f.request("/intent-a", "PATCH", action)).status, 409, "double click or lost-ack replay cannot schedule another attempt");
   await f.until(async () => (await f.list()).items[0]?.state === "submitted");
@@ -412,4 +418,140 @@ test("retry of a refused reply is incarnation fenced, revision fenced, and uses 
   const submitted = (await f.list()).items[0]!;
   assert.equal((await f.request("/intent-a", "PATCH", { ...action, operation: "discard_refused", base_revision: submitted.revision })).status, 409,
     "discard must never hide an input that may have been sent");
+});
+
+
+for (const change of ["replaced", "removed"] as const) test(`#333 ${change} target cancels queued replies for every reader`, async t => {
+  const f = await fixture(t);
+  const scope = { principalId: "legacy", machine: "fixture", sessionId: "session-a", incarnation };
+  await f.restart(() => {
+    const store = new OutboxStore(f.statePath);
+    store.admit(scope, "obsolete", "Earlier queued reply", outboxCredentialGeneration(
+      { id: "legacy", token: f.config.clientToken, machines: ["fixture"], permissions: [] }, f.config.machines[0]!));
+    store.close();
+    if (change === "replaced") f.state.incarnation = "replacement";
+    else f.state.sessionPresent = false;
+  });
+  const readOther = await f.otherReader();
+  await f.until(async () => (await f.list()).items[0]?.state !== "queued");
+  const cancelled = (await f.list()).items[0]!;
+  assert.equal(cancelled.state, "cancelled", "obsolete queued rows must disappear on every client");
+  assert.equal(cancelled.error_code, "outbox-session-changed");
+  assert.deepEqual((await readOther()).items, [cancelled]);
+  assert.equal(f.state.posts.length, 0, "obsolete text is never dispatched");
+  await f.restart();
+  assert.deepEqual((await f.list()).items, [cancelled], "cancellation survives restart without revision churn");
+  const store = new OutboxStore(f.statePath);
+  try {
+    const replay = store.admit(scope, cancelled.id, cancelled.text, "credentials");
+    assert.equal(replay.created, false);
+    assert.deepEqual(replay.item, cancelled, "the same ID cannot recreate a cancelled intention");
+  } finally { store.close(); }
+});
+
+for (const multiUser of [false, true]) test(`#333 sweeps stored obsolete rows without a candidate for ${multiUser ? "an updated owner grant" : "the legacy principal"}`, async t => {
+  const f = await fixture(t, multiUser);
+  const scope = { principalId: multiUser ? "alice" : "legacy", machine: "fixture", sessionId: "session-a", incarnation };
+  const generation = outboxCredentialGeneration(multiUser ? f.config.principals[0]! :
+    { id: "legacy", token: f.config.clientToken, machines: ["fixture"], permissions: [] }, f.config.machines[0]!);
+  let preserved: SharedOutboxItem[] = [];
+  await f.restart(() => {
+    const store = new OutboxStore(f.statePath);
+    for (const state of ["sending", "refused", "unknown", "submitted", "command_dispatched"] as const) {
+      store.admit(scope, state, `Earlier ${state} reply`, generation);
+      const attempt = store.claim(store.candidate(scope)!)!;
+      if (state !== "sending") store.settle(attempt, { request_id: attempt.item.request_id, session_id: scope.sessionId,
+        session_incarnation: incarnation, outcome: state, code: state === "refused" ? "busy" : state === "unknown" ? "structured-prompt-outcome-unknown" : null });
+    }
+    store.admit(scope, "held", "Earlier held reply", generation);
+    preserved = store.snapshot(scope).items.filter(item => item.state === "submitted" || item.state === "command_dispatched");
+    store.close();
+    // Represent a stored intention held by the retired editor: no candidate.
+    const db = new DatabaseSync(f.statePath);
+    db.prepare("UPDATE outbox_items SET native_handoff=0,value=json_set(value,'$.edit_hold','earlier-hold') WHERE id='held'").run(); db.close();
+    if (multiUser) {
+      const ownership = new AccessStore(f.statePath);
+      ownership.claimSession({ principalId: scope.principalId, machine: scope.machine, sessionId: scope.sessionId, incarnation: "replacement" });
+      ownership.close();
+    }
+    f.state.incarnation = "replacement";
+  });
+  await f.until(async () => (await f.list()).items.find(item => item.id === "held")?.state === "cancelled");
+  const snapshot = await f.list();
+  for (const id of ["sending", "refused", "unknown", "held"]) {
+    const row = snapshot.items.find(item => item.id === id)!;
+    assert.equal(row.state, "cancelled", id);
+    assert.equal(row.error_code, "outbox-session-changed", id);
+    assert.equal(row.edit_hold, null, id);
+  }
+  assert.deepEqual(snapshot.items.filter(item => item.state === "submitted" || item.state === "command_dispatched"), preserved);
+  assert.deepEqual((await (await f.otherReader())()).items, snapshot.items);
+  assert.equal(f.state.posts.length, 0);
+});
+
+test("#333 a failed session observation preserves queued replies until the target is confirmed obsolete", async t => {
+  const f = await fixture(t);
+  const scope = { principalId: "legacy", machine: "fixture", sessionId: "session-a", incarnation };
+  await f.restart(() => {
+    const store = new OutboxStore(f.statePath);
+    store.admit(scope, "unobserved", "Keep until confirmed", outboxCredentialGeneration(
+      { id: "legacy", token: f.config.clientToken, machines: ["fixture"], permissions: [] }, f.config.machines[0]!)); store.close();
+    f.state.incarnation = "replacement"; f.state.sessionsAvailable = false;
+  });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal((await f.list()).items[0]?.state, "queued", "an unavailable machine is not a missing session");
+  f.state.sessionsAvailable = true;
+  await f.until(async () => (await f.list()).items[0]?.state === "cancelled");
+  assert.equal(f.state.posts.length, 0);
+});
+
+
+for (const order of ["queued-before", "admitted-during"] as const) test(`#333 F1 ${order}: deferred stale cleanup cannot block healthy dispatch`, { timeout: 10_000 }, async t => {
+  const directory = mkdtempSync(join(tmpdir(), "console-outbox-sweep-"));
+  const store = new OutboxStore(join(directory, "state.sqlite"));
+  let release = () => {}, entered = () => {}, posts = 0;
+  const deferred = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const stale = createServer(async (_req, res) => {
+    entered(); await deferred;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ ok: true, data: { sessions: [] } }));
+  });
+  const healthy = createServer(async (req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/sessions") return void res.end(JSON.stringify({ ok: true, data: { sessions: [
+      { id: "current", status: "running", agent: "codex", session_incarnation: "current-incarnation" },
+    ] } }));
+    let text = ""; for await (const chunk of req) text += String(chunk);
+    const body = JSON.parse(text); posts++;
+    res.end(JSON.stringify({ ok: true, data: { submitted: true, session_incarnation: "current-incarnation",
+      receipt: { request_id: body.request_id, session_id: "current", session_incarnation: "current-incarnation", outcome: "submitted", code: null } } }));
+  });
+  const machines = [
+    { name: "a-stale", url: (await listenOnLoopback(stale)).base, token: "synthetic-stale" },
+    { name: "z-healthy", url: (await listenOnLoopback(healthy)).base, token: "synthetic-healthy" },
+  ];
+  const principal = { id: "owner", token: "synthetic-principal", machines: machines.map(machine => machine.name), permissions: [] };
+  const oldTarget = { principalId: principal.id, machine: machines[0]!.name, sessionId: "earlier", incarnation: "earlier-incarnation" };
+  const current = { principalId: principal.id, machine: machines[1]!.name, sessionId: "current", incarnation: "current-incarnation" };
+  store.admit(oldTarget, "old", "Earlier refused reply", outboxCredentialGeneration(principal, machines[0]!));
+  store.refuse(store.candidate(oldTarget)!, "busy");
+  const admitHealthy = () => store.admit(current, "new", "New deliberate reply", outboxCredentialGeneration(principal, machines[1]!));
+  if (order === "queued-before") admitHealthy();
+  const dispatcher = new SharedOutboxDispatcher({ store, access: target => ({ principal, machine: machines.find(machine => machine.name === target.machine)! }) });
+  let running: Promise<void> | undefined;
+  t.after(async () => {
+    dispatcher.stop(); release(); await running;
+    await stop(stale); await stop(healthy); store.close(); rmSync(directory, { recursive: true, force: true });
+  });
+  running = dispatcher.tick();
+  await started;
+  if (order === "admitted-during") { admitHealthy(); await dispatcher.tick(); }
+  assert.equal(posts, 1, "healthy POST completes before the unrelated stale observation resolves");
+  assert.equal(store.get(oldTarget, "old")?.state, "refused", "cleanup is still deferred");
+  release(); await running;
+  for (let n = 0; n < 150 && store.get(oldTarget, "old")?.state !== "cancelled"; n++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(store.get(oldTarget, "old")?.state, "cancelled", "successful obsolete observation still retires the stale row");
+  assert.equal(store.get(current, "new")?.state, "submitted");
+  assert.equal(posts, 1);
 });

@@ -371,7 +371,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     const owner = actingOwnerOf(principal, machine, sessionId);
     return owner !== undefined && Boolean(accessStore?.ownsSession(owner, machine, sessionId, incarnation));
   };
-  const outboxAccess = (target: OutboxTarget) => {
+  // Machine access permits a read-only observation after an ownership change.
+  // Dispatch and admission still require ownership of the exact incarnation.
+  const outboxAccess = (target: OutboxTarget, purpose: "observe" | "dispatch") => {
     const principal = config.openAccess ? (target.principalId === openPrincipal.id ? openPrincipal : undefined)
       : config.multiUser ? principalById(target.principalId)
       : target.principalId === legacyPrincipal.id ? legacyPrincipal : undefined;
@@ -379,7 +381,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     if (!principal || principal.managedCredential || !machine || machine.active === false
       || !principalCanAccessMachine(principal, target.machine)
       || machinePreferences?.disabled(principal.id).has(target.machine)
-      || (config.multiUser && !isRootPrincipal(principal)
+      || (purpose === "dispatch" && config.multiUser && !isRootPrincipal(principal)
         && !principalMayUseSession(principal, target.machine, target.sessionId, target.incarnation))) return null;
     return { principal, machine };
   };
@@ -900,12 +902,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             if (provider !== "codex" && provider !== "claude") {
               throw new OutboxError("outbox-provider-unsupported", 409);
             }
-            if (!outboxAccess(target)) throw new OutboxError("outbox-authorization-changed", 403);
+            if (!outboxAccess(target, "dispatch")) throw new OutboxError("outbox-authorization-changed", 403);
           }
           if (action && intent) {
             // Route authorization and the principal-scoped target already fence
             // discard. It sends nothing and may retire an earlier incarnation.
-            const allowed = action.operation === "retry_refused" ? outboxAccess(target) : null;
+            const allowed = action.operation === "retry_refused" ? outboxAccess(target, "dispatch") : null;
             if (action.operation === "retry_refused" && !allowed) throw new OutboxError("outbox-authorization-changed", 403);
             const item = outboxStore.actOnRefused(target, intent, action,
               allowed ? outboxCredentialGeneration(allowed.principal, allowed.machine) : undefined);
@@ -913,7 +915,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             sendJson(res, 200, { ok: true, data: { item } }); return;
           }
           if (admission && intent) {
-            const allowed = outboxAccess(target);
+            const allowed = outboxAccess(target, "dispatch");
             if (!allowed) throw new OutboxError("outbox-authorization-changed", 403);
             const result = outboxStore.admit(target, intent, admission.text, outboxCredentialGeneration(allowed.principal, allowed.machine));
             void outboxDispatcher?.tick();

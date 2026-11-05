@@ -1075,3 +1075,30 @@ for (const removal of ["dismiss", "evict"] as const) test(`local attachment meta
     assert.deepEqual(revoked.sort(), created.sort());
   } finally { await h.close(); URL.createObjectURL = create; URL.revokeObjectURL = revoke; }
 });
+
+
+test("#333 the current view refreshes cached previous-incarnation rows and hides shared cancellation", async () => {
+  const factory = new IDBFactory();
+  let h = await fixture(factory, false);
+  const replacement = { ...session, session_incarnation: "inc-2" };
+  try {
+    const id = crypto.randomUUID(), text = "Earlier queued reply";
+    await h.ownServer({ revision: 1, compose_holds: [], items: [sharedItem(id, text, "queued", Date.now())] });
+    await h.client.sync(h.target); h.online(false);
+    await h.showReplies(replacement);
+    assert.ok(h.container.textContent?.includes(text), "the cached row is initially visible");
+    const transport = globalThis.fetch;
+    globalThis.fetch = async (input, init) => new URL(String(input), "http://localhost").searchParams.get("expected_session_incarnation") === replacement.session_incarnation
+      ? Response.json({ ok: true, data: { revision: 0, items: [], compose_holds: [] } }) : transport(input, init);
+    const snapshot = h.snapshot();
+    h.server({ ...snapshot, revision: 2, items: snapshot.items.map(item => ({ ...item, state: "cancelled", error_code: "outbox-session-changed" })) });
+    const view = h.container.ownerDocument.defaultView!;
+    await act(async () => { h.online(true); view.dispatchEvent(new view.Event("focus")); }); await h.settle();
+    assert.equal(h.client.state(h.target).snapshot.items[0]?.state, "cancelled", "refresh reads the old target as well as the current one");
+    assertNoElement(h.container, ".history-outgoing-reply", "shared cancellation removes the cached echo without a device action");
+    assert.ok(h.requests.every(method => method === "GET"), "refresh sends or mutates nothing");
+    await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
+    await h.showReplies(replacement);
+    assertNoElement(h.container, ".history-outgoing-reply", "the cancellation stays hidden across reload");
+  } finally { await h.close(); }
+});

@@ -31,8 +31,8 @@ export function outboxReceipt(result: DaemonResult, attempt: OutboxAttempt, look
 interface DispatchAccess { readonly machine: MachineConfig; readonly principal: PrincipalConfig }
 export interface OutboxDispatchOptions {
   readonly store: OutboxStore;
-  /** Synchronous, fresh permission + ownership check, including after I/O. */
-  readonly access: (target: OutboxTarget) => DispatchAccess | null;
+  /** Check machine access for observation and exact ownership for dispatch, including after I/O. */
+  readonly access: (target: OutboxTarget, purpose: "observe" | "dispatch") => DispatchAccess | null;
   readonly intervalMs?: number;
 }
 
@@ -42,6 +42,7 @@ export class SharedOutboxDispatcher {
   #timer: NodeJS.Timeout | undefined;
   #running = false;
   #reconciling = false;
+  #sweeping = false;
   #stopped = false;
   readonly #active = new Set<string>();
   constructor(options: OutboxDispatchOptions) { this.#options = options; }
@@ -60,7 +61,8 @@ export class SharedOutboxDispatcher {
       const observations = new Map<string, Awaited<ReturnType<typeof aggregateSessions>>>();
       for (const target of store.targets()) {
         if (this.#stopped) return;
-        const allowed = access(target);
+        if (store.snapshot(target).items.every(item => ["submitted", "command_dispatched", "cancelled"].includes(item.state))) continue;
+        const allowed = access(target, "observe");
         if (!allowed) {
           for (const attempt of store.uncertain(target)) store.settle(attempt, null);
           const pending = store.candidate(target);
@@ -78,11 +80,15 @@ export class SharedOutboxDispatcher {
           observations.set(target.machine, observed);
         }
         if (this.#stopped) return;
-        const current = access(target);
-        if (!current || outboxCredentialGeneration(current.principal, current.machine) !== generation) continue;
+        const observer = access(target, "observe");
+        if (!observer || outboxCredentialGeneration(observer.principal, observer.machine) !== generation) continue;
         if (!observed.machines.some(machine => machine.name === target.machine && machine.ok)) continue;
         const session = observed.sessions.find(session => session.id === target.sessionId);
-        if (!session || session.session_incarnation !== target.incarnation) { store.refuse(candidate, "outbox-session-changed"); continue; }
+        if (!session || session.session_incarnation !== target.incarnation) { store.cancelUnconfirmed(target); continue; }
+        const current = access(target, "dispatch");
+        if (!current || outboxCredentialGeneration(current.principal, current.machine) !== generation) {
+          store.refuse(candidate, "outbox-authorization-changed"); continue;
+        }
         const provider = (session.provider_resume as { provider?: unknown } | undefined)?.provider ?? session.agent;
         if (provider !== "codex" && provider !== "claude") { store.refuse(candidate, "outbox-provider-changed"); continue; }
         if (session.status !== "running") continue;
@@ -111,8 +117,38 @@ export class SharedOutboxDispatcher {
     } finally {
       this.#running = false;
       // Recovery I/O must never block a distinct new user input.
+      void this.#sweep();
       void this.#reconcile();
     }
+  }
+  /** Historical cleanup has its own bounded probes and never holds the dispatch guard. */
+  async #sweep(): Promise<void> {
+    if (this.#sweeping || this.#stopped) return;
+    this.#sweeping = true;
+    const { store, access } = this.#options;
+    try {
+      const observations = new Map<string, Awaited<ReturnType<typeof aggregateSessions>>>();
+      for (const target of store.targets()) {
+        if (this.#stopped) return;
+        if (store.candidate(target) || store.snapshot(target).items.every(item => ["submitted", "command_dispatched", "cancelled"].includes(item.state))) continue;
+        const allowed = access(target, "observe");
+        if (!allowed) continue;
+        const generation = outboxCredentialGeneration(allowed.principal, allowed.machine);
+        let observed = observations.get(target.machine);
+        if (!observed) {
+          observed = await aggregateSessions([allowed.machine]);
+          observations.set(target.machine, observed);
+        }
+        if (this.#stopped) return;
+        const current = access(target, "observe");
+        if (!current || outboxCredentialGeneration(current.principal, current.machine) !== generation) continue;
+        if (!observed.machines.some(machine => machine.name === target.machine && machine.ok)) continue;
+        const session = observed.sessions.find(session => session.id === target.sessionId);
+        if (!session || session.session_incarnation !== target.incarnation) store.cancelUnconfirmed(target);
+      }
+    } catch {
+      // Failed cleanup leaves durable rows for a later successful observation.
+    } finally { this.#sweeping = false; }
   }
   async #reconcile(): Promise<void> {
     if (this.#reconciling || this.#stopped) return;
@@ -120,7 +156,7 @@ export class SharedOutboxDispatcher {
     const { store, access } = this.#options;
     try {
       for (const target of store.targets()) {
-        const allowed = access(target);
+        const allowed = access(target, "dispatch");
         if (!allowed) continue;
         const generation = outboxCredentialGeneration(allowed.principal, allowed.machine);
         for (const attempt of store.uncertain(target)) {
@@ -134,7 +170,7 @@ export class SharedOutboxDispatcher {
             receipt = outboxReceipt(result, attempt, true);
           } catch { /* Missing/unavailable claims stay unknown, never replay. */ }
           if (this.#stopped) return;
-          const current = access(target);
+          const current = access(target, "dispatch");
           if (current && outboxCredentialGeneration(current.principal, current.machine) === generation) store.settle(attempt, receipt);
         }
       }

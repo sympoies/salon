@@ -302,7 +302,13 @@ export class SharedOutboxClient {
     await this.ready;
     await this.reload().catch(() => {});
     const targets = new Map([...this.watched].map(([key, value]) => [key, value.target]));
-    for (const row of this.rows.values()) if (row.admissions.length) targets.set(row.key, row.target);
+    for (const row of this.rows.values()) {
+      // A replacement view must learn when the server retires its cached echo.
+      const previous = [...this.watched.values()].some(({ target }) => target.machine === row.target.machine
+        && target.id === row.target.id && target.incarnation !== row.target.incarnation);
+      if (row.admissions.length || (previous && this.outgoingItems(row).some(item =>
+        !["submitted", "command_dispatched", "cancelled"].includes(item.state) && !this.isDismissed(row, item)))) targets.set(row.key, row.target);
+    }
     // Serial target polling bounds outstanding native requests on reconnect.
     for (const target of targets.values()) { if (!this.active()) return; await this.sync(target); }
   }
