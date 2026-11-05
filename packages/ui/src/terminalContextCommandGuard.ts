@@ -72,7 +72,10 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
   // The most guarded draft seen since a provider-confirmed submission. A refused frame
   // is not told apart from the accepted ones, and a local edit that seems to clear a
   // draft proves nothing about the provider, so this is what stays guarded.
-  const guarded = (state: {draft: Draft}) => (state.draft.slash ? 1000 : 0) + state.draft.chars.length;
+  // Prefer input uncertainty, then actual Enter refusal. A sticky slash flag
+  // or a longer draft can also describe Enter-safe edits.
+  const guarded = (state: {draft: Draft; inputUncertain: boolean}) =>
+    state.inputUncertain ? 2 : Number(refusal(state.draft) !== null);
   let peak: {draft: Draft; inputUncertain: boolean} | null = null;
   let lastInputAt = 0;
   const remember = () => {

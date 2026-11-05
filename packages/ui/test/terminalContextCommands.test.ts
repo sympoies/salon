@@ -8,6 +8,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Plugin } from "vite";
 import type { ProviderPromptSubmittedFrame, SpecialKey } from "../src/frames.ts";
+import { createTerminalContextCommandGuard } from "../src/terminalContextCommandGuard.ts";
+import { createOrderedSessionInputSender, type ApiResultLike } from "../src/terminalTransport.ts";
 import type { TerminalPaneProps } from "../src/TerminalPane.tsx";
 import { createUiSsrHarness } from "./support/ssr.ts";
 import { hasHeadlessChrome, measureUiMarkup } from "./support/browserLayout.ts";
@@ -1055,4 +1057,50 @@ for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as cons
       assert.equal(p.inputs.length, before, "Enter is still refused however late the refusal came");
     });
   });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  for (const text of ["ok", "x".repeat(1500)]) {
+    test(`${agent}: ${text.length} safe characters queued during a pending quarantine refusal keep the command guarded`, async () => {
+      const guard = createTerminalContextCommandGuard(agent);
+      const requests: Input[] = [];
+      let clearStarted!: () => void;
+      const started = new Promise<void>(resolve => { clearStarted = resolve; });
+      let refuseClear!: (result: ApiResultLike) => void;
+      const sender = createOrderedSessionInputSender({
+        getWebSocket: () => null,
+        isMounted: () => true,
+        sendFallback: async body => {
+          requests.push(body);
+          if (requests.length === 1) return { ok: true };
+          if (body.text === "\x15") {
+            clearStarted();
+            return new Promise<ApiResultLike>(resolve => { refuseClear = resolve; });
+          }
+          return { ok: false, code: "auth-quarantined" };
+        },
+        onInputRejected: rejection => {
+          assert.equal(rejection.code, "auth-quarantined");
+          guard.refusedByQuarantine();
+        },
+      });
+      const sendText = (value: string) => {
+        assert.equal(guard.acceptText(value), null);
+        return sender.send({ text: value });
+      };
+      await sendText(command);
+      const clearing = sendText("\x15");
+      await started;
+      const typing = sendText(text);
+      assert.equal(guard.acceptKey("enter"), null, "the queued local draft is Enter-safe");
+      const submitting = sender.send({ keys: ["enter"] });
+      assert.equal(requests.length, 2, "later frames wait for the pending Ctrl+U response");
+      refuseClear({ ok: false, code: "auth-quarantined" });
+      await Promise.all([clearing, typing, submitting]);
+      guard.enterQuarantine();
+      guard.releaseQuarantine();
+      assert.notEqual(guard.acceptKey("enter"), null,
+        "safe queued edits cannot replace the context command retained by the provider");
+    });
+  }
 }
