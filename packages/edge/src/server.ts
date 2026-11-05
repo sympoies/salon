@@ -1669,7 +1669,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           const providers = await pending;
           return {
             data: {
-              providers: config.multiUser
+              providers: config.multiUser && !isRootPrincipal(_principal)
                 ? scopeProviderHosts(providers, _principal.machines)
                 : providers,
             },
