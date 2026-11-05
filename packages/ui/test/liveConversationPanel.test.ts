@@ -376,6 +376,41 @@ test("the live panel reports a true history miss (a stopped session) instead of 
   assert.match(mounted.container.textContent ?? "", /No Codex session with ID provider-7 is in maple history\./);
 });
 
+test("compaction keeps daemon order through reload and older prepend alongside ordinary messages", async () => {
+  const mounted = installDom();
+  cleanups.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([conversationApiMockPlugin()]);
+  cleanups.push(ssr.close);
+  // v1.40.9 projects the echo before its boundary while retaining both original IDs and timestamps.
+  const command = { id: "command-480", role: "user" as const, text: "/compact", row_class: "runtime_command" as const, timestamp: "2026-10-01T00:00:03Z" };
+  const compaction = { id: "compaction-160", role: "notice" as const, text: "Synthetic summary", row_class: "compaction" as const,
+    compaction: { summary_truncated: false }, timestamp: "2026-10-01T00:00:02Z" };
+  const opening = { id: "opening", role: "user" as const, text: "ordinary question" };
+  const answer = { id: "answer", role: "assistant" as const, text: "ordinary answer" };
+  let wholePage = false;
+  globalThis.__agentConsoleConversationApiMock = {
+    listHistorySessions: async () => ({ ok: true, truncated: false, latestMessagePaging: true, sessions: [historyEntry()] }),
+    listHistoryMessages: async (_machine, _id, options) => options?.direction === "older"
+      ? { ok: true, messages: [opening, answer, command] }
+      : { ok: true, messages: wholePage ? [opening, answer, command, compaction] : [compaction], olderCursor: wholePage ? undefined : "480" },
+  };
+  const { LiveConversationPanel } = await ssr.loadModule<typeof import("../src/LiveConversationPanel.tsx")>("/src/LiveConversationPanel.tsx");
+  const render = async () => {
+    await act(async () => { mounted.root.render(createElement(LiveConversationPanel, { session: liveSession(), onClose() {} })); await flush(); });
+    await act(async () => flush());
+  };
+  const ids = () => [...mounted.container.querySelectorAll<HTMLElement>("[data-history-message-id]")].map(row => row.dataset.historyMessageId);
+  await render();
+  assert.deepEqual(ids(), [compaction.id]);
+  await act(async () => { findButton(mounted.container, "Load older").click(); await flush(); });
+  assert.deepEqual(ids(), [opening.id, answer.id, command.id, compaction.id]);
+  assert.equal(mounted.container.querySelector("details")?.open, false);
+  await act(async () => { mounted.root.render(null); });
+  wholePage = true;
+  await render();
+  assert.deepEqual(ids(), [opening.id, answer.id, command.id, compaction.id], "fresh reload keeps logical provider order, regardless of timestamps and ID offsets");
+});
+
 test("the live panel reloads the latest page when a turn finishes, but not while browsing older", async () => {
   const mounted = installDom();
   cleanups.push(mounted.cleanup);

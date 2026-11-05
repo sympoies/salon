@@ -34,3 +34,23 @@ test("a mailbox read event is not an agent turn: stuck-turn detection and reply 
   const reply = { id: "r1", text: "x", incarnation: "inc-1", requestId: "req-1", state: "delivered", attemptedAt: Date.parse("2026-01-01T00:00:00Z") } as QueuedReply;
   assert.equal(transcriptProof([reply], [event]).size, 0);
 });
+
+test("a classified command only takes over an exact, acknowledged attempt at or before its timestamp", () => {
+  const at = Date.parse("2026-01-01T00:00:00Z");
+  const reply: QueuedReply = { id: "command", text: "/compact keep focus", incarnation: "inc-1", requestId: "request",
+    state: "delivered", attemptedAt: at };
+  const command: HistoryMessage = { id: "echo", role: "user", text: reply.text, row_class: "runtime_command", timestamp: new Date(at).toISOString() };
+  assert.equal(transcriptProof([reply], [command]).size, 1, "a receipt-acknowledged command can hand over its echo");
+  for (const state of ["queued", "dispatching", "unknown", "refused"] as const) {
+    assert.equal(transcriptProof([{ ...reply, state, unconfirmed: true }], [command]).size, 0, state);
+  }
+  for (const row of [
+    { ...command, text: "/compact other focus" },
+    { ...command, text: "/compact  keep focus" },
+    { ...command, timestamp: new Date(at - 1).toISOString() },
+    { ...command, timestamp: undefined },
+    { ...command, role: "assistant" as const },
+    { ...command, row_class: "notice" as const },
+    { ...command, row_class: "compaction" as const },
+  ]) assert.equal(transcriptProof([reply], [row]).size, 0, JSON.stringify(row));
+});
