@@ -29,6 +29,7 @@ interface Draft {
   /** Tab or Up/Down chose an item in the slash menu; the typed text is unchanged. */
   selection: boolean;
 }
+interface DraftSnapshot { draft: Draft; inputUncertain: boolean }
 const emptyDraft = (): Draft => ({chars: [], cursor: 0, uncertain: false, slash: false,
   leadingClassified: false, overflowed: false, unverifiable: false, multiline: false, completed: false, selection: false});
 
@@ -69,20 +70,29 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
   let draft = emptyDraft();
   let inputUncertain = false;
   let uncertainSince = 0;
-  let beforeQuarantine: {draft: Draft; inputUncertain: boolean} | null = null;
+  let beforeQuarantine: DraftSnapshot | null = null;
   // The most guarded draft seen since a provider-confirmed submission. A refused frame
   // is not told apart from the accepted ones, and a local edit that seems to clear a
   // draft proves nothing about the provider, so this is what stays guarded.
-  // Prefer input uncertainty, then actual Enter refusal. A sticky slash flag
-  // or a longer draft can also describe Enter-safe edits.
-  const guarded = (state: {draft: Draft; inputUncertain: boolean}) =>
-    state.inputUncertain ? 2 : Number(refusal(state.draft, false) !== null);
-  let peak: {draft: Draft; inputUncertain: boolean} | null = null;
+  // Enter-safe drafts never outrank refused drafts. Within refused drafts,
+  // preserve the most restrictive Clear draft mode and enough tracked text.
+  const guarded = (state: DraftSnapshot) => {
+    if (state.inputUncertain) return 4;
+    if (refusal(state.draft, false) === null) return 0;
+    if (!state.draft.multiline) return 1;
+    return state.draft.uncertain || state.draft.overflowed ? 3 : 2;
+  };
+  const moreGuarded = (candidate: DraftSnapshot, current: DraftSnapshot) => {
+    const candidateRisk = guarded(candidate), currentRisk = guarded(current);
+    return candidateRisk > currentRisk
+      || (candidateRisk === currentRisk && candidate.draft.chars.length > current.draft.chars.length);
+  };
+  let peak: DraftSnapshot | null = null;
   let lastInputAt = 0;
   const remember = () => {
     lastInputAt = Date.now();
     const state = {draft: structuredClone(draft), inputUncertain};
-    if (!peak || guarded(state) > guarded(peak)) peak = state;
+    if (!peak || moreGuarded(state, peak)) peak = state;
   };
   const uncertaintyMessage = (uncertain = inputUncertain) => uncertain && commands.length > 0
     ? "The provider draft is uncertain after rejected or unconfirmed input. Enter is blocked. "
@@ -127,6 +137,12 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
     const retained = beforeQuarantine && refusal(beforeQuarantine.draft, beforeQuarantine.inputUncertain);
     const message = retained || refusal(next);
     return beforeQuarantine && message ? AUTH_QUARANTINE_TERMINAL_TEXT : message;
+  };
+  const captureQuarantine = () => {
+    if (beforeQuarantine) return;
+    const current: DraftSnapshot = {draft: structuredClone(draft), inputUncertain};
+    const best = peak && moreGuarded(peak, current) ? peak : current;
+    beforeQuarantine = {draft: structuredClone(best.draft), inputUncertain: best.inputUncertain};
   };
   // While a typed slash token opens the provider's slash menu, Up/Down move
   // only its highlight and Tab completes the highlighted item; the typed text
@@ -284,17 +300,8 @@ export function createTerminalContextCommandGuard(agent: string | undefined): Te
     },
     // A quarantined session accepts no input, so what is typed under it never
     // reached the provider; a draft accepted before it still sits there.
-    enterQuarantine() {
-      beforeQuarantine ??= {draft: structuredClone(draft), inputUncertain};
-    },
-    refusedByQuarantine() {
-      if (beforeQuarantine) return;
-      // Which frame was refused, and how long ago, is unknown: keep the most guarded
-      // state. Clear draft is available once the quarantine is released.
-      let best: {draft: Draft; inputUncertain: boolean} = {draft: structuredClone(draft), inputUncertain};
-      if (peak && guarded(peak) > guarded(best)) best = peak;
-      beforeQuarantine = {draft: structuredClone(best.draft), inputUncertain: best.inputUncertain};
-    },
+    enterQuarantine: captureQuarantine,
+    refusedByQuarantine: captureQuarantine,
     releaseQuarantine() {
       if (!beforeQuarantine) return;
       ({draft, inputUncertain} = beforeQuarantine);

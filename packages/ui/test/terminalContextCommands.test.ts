@@ -1208,3 +1208,47 @@ for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as cons
     assert.equal(guard.acceptKey("enter"), null, "proof of consumption retires the old snapshot");
   });
 }
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  test(`${agent}: quarantine prop refresh before refusal retains the provider command`, () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    guard.acceptText(command);
+    guard.acceptText("\x15");
+    guard.enterQuarantine();
+    guard.refusedByQuarantine();
+    guard.releaseQuarantine();
+    assert.notEqual(guard.acceptKey("enter"), null, "prop refresh must capture the risky pre-frame state");
+  });
+
+  test(`${agent}: quarantine retains multiline clearing requirements`, () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    guard.acceptText("/");
+    guard.acceptText(command.slice(1));
+    guard.acceptText("\x1b[200~\nsecond line\x1b[201~");
+    guard.acceptText("\x15");
+    guard.refusedByQuarantine();
+    guard.enterQuarantine();
+    guard.releaseQuarantine();
+    const clear = guard.clearDraft();
+    assert.ok(clear);
+    if (!clear.cleared) {
+      assert.notEqual(guard.acceptKey("enter"), null, "an unproven multiline clear must keep Enter refused");
+      return;
+    }
+    // A line editor applies the clear to the provider's retained multiline draft.
+    let providerDraft = command + "\nsecond line";
+    let cursor = providerDraft.length;
+    for (const char of clear.text.replace(/\x1b\[C/g, "")) {
+      if (char === "\x05") cursor = providerDraft.indexOf("\n", cursor) < 0 ? providerDraft.length : providerDraft.indexOf("\n", cursor);
+      else if (char === "\x15") {
+        const start = providerDraft.lastIndexOf("\n", cursor - 1) + 1;
+        providerDraft = providerDraft.slice(0, start) + providerDraft.slice(cursor);
+        cursor = start;
+      } else if (char === "\x7f" && cursor > 0) {
+        providerDraft = providerDraft.slice(0, cursor - 1) + providerDraft.slice(cursor);
+        cursor -= 1;
+      } else assert.fail("Clear draft emitted a non-editing byte");
+    }
+    assert.equal(providerDraft, "", "a claimed clear must remove the provider's context command on every line");
+  });
+}
