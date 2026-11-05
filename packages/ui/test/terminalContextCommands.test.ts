@@ -1159,8 +1159,10 @@ for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as cons
     assert.deepEqual(submitted, [], "release must not let queued Enter submit the retained context command");
     assert.deepEqual(requests, [{ text: command }, { text: "\x15" }], "every later queued frame is dropped");
     assert.equal(sender.pendingCount(), 0);
-    guard.enterQuarantine();
     quarantined = false;
+    assert.notEqual(guard.acceptKey("enter"), null,
+      "a fresh Enter before the quarantine prop refresh must still guard the retained command");
+    guard.enterQuarantine();
     guard.releaseQuarantine();
     assert.notEqual(guard.acceptKey("enter"), null, "release still guards the provider's old command");
     const clear = guard.clearDraft();
@@ -1170,5 +1172,39 @@ for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as cons
     assert.equal(guard.acceptKey("enter"), null);
     await sender.send({ keys: ["enter"] });
     assert.deepEqual(submitted, ["fresh reply"], "a new user action after release is not dropped");
+  });
+}
+
+for (const [agent, command] of [["claude", "/clear"], ["codex", "/new"]] as const) {
+  for (const submission of ["key", "raw"] as const) {
+    test(`${agent}: known quarantine blocks fresh ${submission} submission before prop refresh`, async () => {
+      await withPane(agent, true, async p => {
+        await p.text(command);
+        await p.text("\x15");
+        await p.text("safe queued reply");
+        await p.key("enter");
+        await p.rejectLater(false, "auth-quarantined");
+        const before = p.inputs.length;
+        if (submission === "key") await p.key("enter");
+        else await p.text("\r");
+        assert.equal(p.inputs.length, before, "known auth refusal guards submissions before the prop refresh");
+        assert.match(p.notice(), /authentication quarantine/i);
+        assert.doesNotMatch(p.html(), /<button[^>]*>Clear draft<\/button>/);
+        await p.remount({ authQuarantined: true });
+        await p.remount({ authQuarantined: false });
+        await p.key("enter");
+        assert.equal(p.inputs.length, before, "the retained context command stays guarded after release");
+      });
+    });
+  }
+
+  test(`${agent}: provider consumption proof releases a known quarantine snapshot`, () => {
+    const guard = createTerminalContextCommandGuard(agent);
+    guard.acceptText(command);
+    guard.acceptText("\x15");
+    guard.refusedByQuarantine();
+    assert.notEqual(guard.acceptKey("enter"), null, "known refusal guards the retained command");
+    assert.equal(guard.confirmSubmission(new Date(Date.now() + 1000).toISOString()), true);
+    assert.equal(guard.acceptKey("enter"), null, "proof of consumption retires the old snapshot");
   });
 }
