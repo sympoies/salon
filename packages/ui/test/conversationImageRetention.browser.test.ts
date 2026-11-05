@@ -62,6 +62,7 @@ async function launchImageFixture(profile: string) {
         const result = await send("Runtime.evaluate",{expression,returnByValue:true,awaitPromise:true});
         assert.equal(result.exceptionDetails,undefined,"image fixture executes successfully"); return result.result.value;
       },
+      send,
       screenshot:async () => Buffer.from((await send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"),
       close,
     };
@@ -69,8 +70,8 @@ async function launchImageFixture(profile: string) {
 }
 
 // A real scroll through thirteen synthetic image messages; production component,
-// observer and CSS. Only image HTTP is substituted, with one persistent 503.
-test("loaded conversation images survive a real scroll at phone and desktop widths",async t => {
+// observer and CSS. Only image HTTP is substituted, with a recoverable 503.
+test("conversation images retain loaded previews and Retry works through real browser input",async t => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
   const bundled = await build({
     resolve:{conditions:["source"]},configFile:false,logLevel:"silent",define:{"process.env.NODE_ENV":JSON.stringify("production")},
@@ -90,9 +91,9 @@ test("loaded conversation images survive a real scroll at phone and desktop widt
           window.fetch=async path=>{
             const index=Number(path.split('/').pop().split('.')[2]);
             window.imageRequests[index]=(window.imageRequests[index]||0)+1;
-            if(index===0)return new Response('',{status:503});
+            if(index===0&&!window.recoverImage)return new Response('',{status:503});
             // Hold any redundant read so the regression's loading flash is observable.
-            if(window.imageRequests[index]>1)return new Promise(()=>{});
+            if(index!==0&&window.imageRequests[index]>1)return new Promise(()=>{});
             return new Response(blob,{headers:{'content-type':'image/png'}});
           };
           const image=i=>({id:'a'.repeat(16)+'.0.'+i+'.'+'b'.repeat(32)});
@@ -113,7 +114,7 @@ test("loaded conversation images survive a real scroll at phone and desktop widt
   const page = await launchImageFixture(temp);
   const evidence = process.env.AGENT_CONSOLE_UI_SCREENSHOT_DIR;
   const until = async (expression: string) => {
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 400; i++) {
       if (await page.evaluate<boolean>(expression)) return;
       await new Promise(resolve => setTimeout(resolve,25));
     }
@@ -124,7 +125,9 @@ test("loaded conversation images survive a real scroll at phone and desktop widt
     writeFileSync(file,`<!doctype html><html data-theme="dark"><meta name="viewport" content="width=device-width,initial-scale=1">
       <style>${css}html,body{margin:0}body{padding:16px}header,#root{max-width:960px;margin:auto}header{padding:8px 0 20px}h1{font-size:20px;margin:0 0 8px}article{margin-bottom:24px}</style>
       <header><h1>Conversation attachments</h1><p>Synthetic conversation · 13 images</p></header><div id="root"></div><script>${code}</script></html>`);
-    for (const width of [384,1280]) {
+    for (const [width,reducedMotion] of [[384,false],[1280,false],[1280,true]] as const) {
+      const scenario = `${width}${reducedMotion ? "-reduced-motion" : ""}`;
+      await page.send("Emulation.setEmulatedMedia",{features:[{name:"prefers-reduced-motion",value:reducedMotion ? "reduce" : "no-preference"}]});
       await page.setViewport(width,960,1);
       await page.navigate(`file://${file}`);
       await until(`document.querySelector('[data-image-index="1"] img')?.complete && document.querySelector('[data-image-index="1"] img')?.naturalWidth>0`);
@@ -140,15 +143,69 @@ test("loaded conversation images survive a real scroll at phone and desktop widt
         overflow:document.documentElement.scrollWidth>innerWidth})`);
       if (evidence) {
         mkdirSync(evidence,{recursive:true});
-        writeFileSync(join(evidence,`conversation-images-${width}.png`),await page.screenshot());
-        writeFileSync(join(evidence,`conversation-images-${width}.json`),JSON.stringify(measured,null,2));
+        writeFileSync(join(evidence,`conversation-images-${scenario}.png`),await page.screenshot());
+        writeFileSync(join(evidence,`conversation-images-${scenario}.json`),JSON.stringify(measured,null,2));
       }
-      await t.test(`${width}px scroll retention`,() => {
+      await t.test(`${width}px${reducedMotion ? " reduced motion" : ""} scroll retention`,() => {
         assert.equal(measured.width,width); assert.equal(measured.images,13); assert.equal(measured.overflow,false);
         assert.equal(measured.ready,true,"a loaded thumbnail stays visible after scrolling back");
         assert.equal(measured.requests,1,"scrolling does not refetch the image");
         assert.match(measured.error,/Couldn't load/);
       });
+      for (const input of ["mouse","touch","Enter","Space"] as const) {
+        await t.test(`${width}px${reducedMotion ? " reduced motion" : ""} Retry via ${input}`,async () => {
+          await page.navigate(`file://${file}`);
+          // Exhaust automatic backoff before recovery so it cannot mask a lost click.
+          await until(`window.imageRequests[0]===3 && !!document.querySelector('[data-image-index="0"] .conversation-image-retry')`);
+          const before = await page.evaluate<number>("window.imageRequests[0]");
+          await page.evaluate("window.recoverImage=true");
+          const selector = '[data-image-index="0"] .conversation-image-retry';
+          const point = await page.evaluate<{x:number;y:number}>(`(() => {
+            const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+            return {x:r.x+r.width/2,y:r.y+r.height/2};
+          })()`);
+          if (evidence && input === "mouse") {
+            writeFileSync(join(evidence,`image-retry-${scenario}-before.png`),await page.screenshot());
+          }
+          if (input === "mouse") {
+            await page.send("Input.dispatchMouseEvent",{type:"mouseMoved",...point});
+            await page.send("Input.dispatchMouseEvent",{type:"mousePressed",...point,button:"left",buttons:1,clickCount:1});
+            // Capture the pressed hit target before releasing the same pointer.
+            const pressed = await page.evaluate<string>(`document.elementFromPoint(${point.x},${point.y})?.className`);
+            if (evidence) writeFileSync(join(evidence,`image-retry-${scenario}-pressed.json`),JSON.stringify({point,pressed}));
+            await page.send("Input.dispatchMouseEvent",{type:"mouseReleased",...point,button:"left",buttons:0,clickCount:1});
+          } else if (input === "touch") {
+            await page.send("Emulation.setTouchEmulationEnabled",{enabled:true});
+            await page.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{...point,id:1}]});
+            await page.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
+            await page.send("Emulation.setTouchEmulationEnabled",{enabled:false});
+          } else {
+            await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).focus()`);
+            const key = input === "Enter" ? {key:"Enter",code:"Enter",windowsVirtualKeyCode:13} : {key:" ",code:"Space",windowsVirtualKeyCode:32};
+            await page.send("Input.dispatchKeyEvent",{type:"keyDown",...key,text:input === "Enter" ? "\r" : " "});
+            await page.send("Input.dispatchKeyEvent",{type:"keyUp",...key});
+          }
+          await until(`document.querySelector('[data-image-index="0"] img')?.naturalWidth>0`);
+          const recovered = await page.evaluate<{requests:number;ready:boolean;viewer:boolean}>(`({
+            requests:window.imageRequests[0],
+            ready:!!document.querySelector('[data-image-index="0"] img')?.naturalWidth,
+            viewer:!!document.querySelector('[role="dialog"]')})`);
+          if (evidence && input === "mouse") {
+            writeFileSync(join(evidence,`image-retry-${scenario}-after.png`),await page.screenshot());
+          }
+          assert.equal(recovered.requests,before+1,"one user activation sends exactly one new image request");
+          assert.equal(recovered.ready,true,"the recovered image renders");
+          assert.equal(recovered.viewer,false,"Retry does not open the viewer");
+          const imagePoint = await page.evaluate<{x:number;y:number}>(`(() => {
+            const r=document.querySelector('[data-image-index="0"] img').getBoundingClientRect();
+            return {x:r.x+r.width/2,y:r.y+r.height/2};
+          })()`);
+          await page.send("Input.dispatchMouseEvent",{type:"mousePressed",...imagePoint,button:"left",clickCount:1});
+          await page.send("Input.dispatchMouseEvent",{type:"mouseReleased",...imagePoint,button:"left",clickCount:1});
+          await until(`document.querySelector('.conversation-image-canvas img')?.naturalWidth>0`);
+          assert.equal(await page.evaluate<number>("window.imageRequests[0]"),before+1,"opening the viewer reuses the loaded image");
+        });
+      }
     }
   } finally { await page.close(); rmSync(temp,{recursive:true,force:true}); }
 });
