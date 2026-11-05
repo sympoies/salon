@@ -91,22 +91,26 @@ test("non-notices keep the exact existing Markdown and paste-unwrapping display"
   }
 });
 
-test("labels follow the kind family; unknown and lookalike kinds stay generic plain text", async () => {
-  for (const [kind, label] of [["mailbox", "Mailbox"], ["mailbox.wake", "Mailbox"], ["mailbox.alert", "Mailbox"],
+for (const [kind, label] of [["mailbox", "Mailbox"], ["mailbox.wake", "Mailbox"], ["mailbox.alert", "Mailbox"],
     ["mailbox.bounce", "Mailbox"], ["schedule.pulse", "Scheduled update"], ["schedule.patrol", "Scheduled update"],
     ["schedule.tick", "Scheduled update"], ["compact.reminder", "Context"], ["compact.resume", "Context"],
     ["runtime.resume", "Resume"], ["dispatch.bootstrap", "Dispatch"], ["dispatch.role", "Dispatch"],
+    ["monitoring.service", "Monitoring"], ["monitoring.mirror", "Monitoring"], ["monitoring.delivery", "Monitoring"],
+    ["role.restart", "Role"], ["role.unavailable", "Role"], ["session.handover", "Session"],
     ["unknown", "System notice"], ["constructor", "System notice"], ["constructor.admin", "System notice"],
     ["mailboxes", "System notice"], ["scheduled.pulse", "System notice"], ["schedule", "System notice"],
     ["system.admin", "System notice"]]) {
-    const { container, window } = await mount(`<!-- agent-notice:v1 kind=${kind} source=fixture.admin -->\n\nBody`, true, "user", "notice");
-    assert.equal(container.querySelector(".session-notice-label")?.textContent, label);
-    assert.equal(container.querySelector(".session-notice-meta > span")?.textContent, `${kind} · fixture.admin`);
-    assert.equal(Boolean(container.querySelector("script, b")), false);
-    // The raw fields remain plain text in this mounted view.
-    assert.equal(window.document.querySelectorAll(".session-notice").length, 1);
-  }
-});
+  test(`${kind} renders as ${label} in live and history notices`, async () => {
+    for (const latestMessagePaging of [true, false]) {
+      const { container, window } = await mount(`<!-- agent-notice:v1 kind=${kind} source=fixture.admin -->\n\nBody`, latestMessagePaging, "user", "notice");
+      assert.equal(container.querySelector(".session-notice-label")?.textContent, label);
+      assert.equal(container.querySelector(".session-notice-meta > span")?.textContent, `${kind} · fixture.admin`);
+      assert.equal(Boolean(container.querySelector("script, b")), false);
+      // The raw fields remain plain text in this mounted view.
+      assert.equal(window.document.querySelectorAll(".session-notice").length, 1);
+    }
+  });
+}
 
 test("failed notice child renders the parsed body without exposing the envelope", async () => {
   const previous = console.error;

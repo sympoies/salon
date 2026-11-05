@@ -8,6 +8,9 @@ const KIND_FAMILY_LABELS = new Map([
   ["compact", "Context"],
   ["runtime", "Resume"],
   ["dispatch", "Dispatch"],
+  ["monitoring", "Monitoring"],
+  ["role", "Role"],
+  ["session", "Session"],
 ]);
 
 function noticeLabel(kind: string): string {
