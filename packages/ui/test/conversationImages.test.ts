@@ -234,7 +234,7 @@ test("decode failure immediately releases its object URL exactly once",async () 
   const img = thumbnail.querySelector("img")!;
   const url = img.src;
   await act(async () => img.dispatchEvent(new window.Event("error")));
-  assert.match(thumbnail.textContent ?? "",/Image unavailable/);
+  assert.match(thumbnail.textContent ?? "",/Couldn't load/);
   assert.deepEqual(revoked,[url],"decode failure releases the blob before unmount");
   await cleanups.pop()?.();
   assert.deepEqual(revoked,[url],"unmount does not release the failed URL twice");
