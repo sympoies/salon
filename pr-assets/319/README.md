@@ -35,3 +35,11 @@ breakpoint and a reload after real cache eviction. Toolbar and outgoing bubble
 fixtures retain their existing viewport coverage. Native shells, real devices
 and provider sessions have not been exercised by this evidence; packaged-client
 acceptance remains with the designated tester.
+
+The integrated tree also rechecks the outgoing caption fixture after the
+right-alignment change. At 384 and 1280 px its complete geometry JSON and PNG
+are byte-identical to the merged caption captures in
+[the outgoing layout evidence](../324/README.md). User captions align with the
+rightmost image at 368 and 1264 px respectively, each row retains one left-side
+timestamp, and neither viewport overflows. This check uses the new image frame
+wrapper together with the right-aligned caption CSS.
