@@ -982,12 +982,40 @@ export function forwardCreateDaemon(res: ServerResponse, requestBody: unknown, r
   const requestedAgentProfile = agentProfileOf(requestBody);
   const requestedAgent = agentOf(requestBody);
   const ok2xx = r.status >= 200 && r.status < 300;
-  const body = r.body as { ok?: boolean; data?: { session?: unknown }; error?: { code?: unknown; details?: { reason?: unknown } } } | undefined;
+  const body = r.body as {
+    ok?: boolean;
+    data?: { session?: unknown };
+    error?: {
+      code?: unknown;
+      details?: {
+        reason?: unknown;
+        max_active_sessions?: unknown;
+        active_sessions?: unknown;
+        retryable?: unknown;
+        recovery?: { safe_to_retry?: unknown };
+      };
+    };
+  } | undefined;
   if (!ok2xx || body?.ok === false || !body?.data?.session || typeof body.data.session !== "object" || Array.isArray(body.data.session)) {
     const error = safeDaemonError(body?.error?.code, "session creation failed", body?.error?.details?.reason);
+    const details = body?.error?.details;
+    // A complete runtime capacity refusal proves that creation never started.
+    // Project only its numeric counts and explicit safe-retry flags.
+    const capacityProof = error.code === "session-capacity-exceeded"
+      && typeof details?.max_active_sessions === "number" && Number.isFinite(details.max_active_sessions)
+      && typeof details.active_sessions === "number" && Number.isFinite(details.active_sessions)
+      && details.active_sessions >= details.max_active_sessions
+      && details.retryable === true && details.recovery?.safe_to_retry === true
+      ? {
+          max_active_sessions: details.max_active_sessions,
+          active_sessions: details.active_sessions,
+          retryable: true,
+          recovery: { safe_to_retry: true },
+        }
+      : undefined;
     sendJson(res, ok2xx ? 502 : r.status, {
       ok: false,
-      error,
+      error: { ...error, ...(capacityProof ? { details: capacityProof } : {}) },
     });
     return;
   }

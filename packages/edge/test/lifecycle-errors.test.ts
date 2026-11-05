@@ -131,3 +131,78 @@ test("#712 create, archive, delete and account switch keep an unlisted daemon er
     assert.doesNotMatch(payload, /private/, route);
   }
 });
+
+function forwardCreateError(code: string, details: unknown): { status: number; body: unknown } {
+  let status = 0;
+  let payload = "";
+  const response = {
+    writeHead(value: number) { status = value; },
+    end(value: string) { payload = value; },
+  } as unknown as ServerResponse;
+  forwardCreateDaemon(response, { agent: "claude" }, {
+    status: 409,
+    body: { ok: false, error: { code, message: "untrusted daemon text", details, extra: "discard" } },
+  });
+  return { status, body: JSON.parse(payload) };
+}
+
+test("create forwards only the validated capacity-refusal proof", () => {
+  for (const active_sessions of [2, 3]) {
+    assert.deepEqual(forwardCreateError("session-capacity-exceeded", {
+      max_active_sessions: 2,
+      active_sessions,
+      retryable: true,
+      next_action: "untrusted action",
+      recovery: { safe_to_retry: true, kind: "wait", condition: "active_sessions_below_limit", extra: "discard" },
+      reason: "untrusted reason",
+      extra: "discard",
+    }), {
+      status: 409,
+      body: {
+        ok: false,
+        error: {
+          code: "session-capacity-exceeded",
+          message: "session creation failed",
+          details: {
+            max_active_sessions: 2,
+            active_sessions,
+            retryable: true,
+            recovery: { safe_to_retry: true },
+          },
+        },
+      },
+    });
+  }
+});
+
+test("create drops malformed capacity-refusal proofs", () => {
+  const valid = { max_active_sessions: 2, active_sessions: 2, retryable: true, recovery: { safe_to_retry: true } };
+  for (const details of [
+    undefined, null, "invalid", [],
+    ...[undefined, null, "2", Number.NaN, Number.POSITIVE_INFINITY].flatMap((count) => [
+      { ...valid, max_active_sessions: count },
+      { ...valid, active_sessions: count },
+    ]),
+    { ...valid, active_sessions: 1 },
+    ...[undefined, false, "true", 1].map((retryable) => ({ ...valid, retryable })),
+    ...[undefined, null, "invalid", [], {}, { safe_to_retry: false }, { safe_to_retry: "true" }]
+      .map((recovery) => ({ ...valid, recovery })),
+  ]) {
+    assert.deepEqual(forwardCreateError("session-capacity-exceeded", details), {
+      status: 409,
+      body: { ok: false, error: { code: "session-capacity-exceeded", message: "session creation failed" } },
+    });
+  }
+});
+
+test("create does not attach capacity proof to other error codes", () => {
+  assert.deepEqual(forwardCreateError("coordination-runtime-unverified", {
+    max_active_sessions: 2,
+    active_sessions: 2,
+    retryable: true,
+    recovery: { safe_to_retry: true },
+  }), {
+    status: 409,
+    body: { ok: false, error: { code: "coordination-runtime-unverified", message: "session creation failed" } },
+  });
+});
