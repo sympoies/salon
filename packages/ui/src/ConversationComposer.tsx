@@ -114,7 +114,9 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const savedTargetRef = useRef(savedTarget);
   const savedRequest = useRef(0);
   savedTargetRef.current = savedTarget;
-  useEffect(() => {
+  // Reset before the mounted controls can be clicked: a passive effect can
+  // otherwise clear an immediately resolved list request after it opens.
+  useLayoutEffect(() => {
     setSavedDrafts(null); setSavedOpen(false); setSavedUnsupported(false); setSavedText(null); setSavedError("");
     return () => { savedRequest.current++; };
   }, [savedTarget]);

@@ -41,9 +41,17 @@ test("saved drafts show, read and restore with confirmation without sending", as
     };
     const button=text=>[...document.querySelectorAll("button")].find(b=>b.textContent===text);
     (async()=>{try{
-      await wait("mount saved-draft controls",()=>document.querySelector(".saved-draft-marker")&&button("Saved drafts"));
-      const result={marker:document.querySelector(".saved-draft-marker").textContent, initialCalls:[...window.calls]};
-      button("Saved drafts").click(); await wait("open initial draft list",()=>document.querySelector('[aria-label="Saved drafts"] button'));
+      // Click at the first observable commit, before passive mount effects.
+      // Timer polling makes that ordering depend on scheduler load (#325).
+      let initialCalls;
+      const mountedObserver=new MutationObserver(()=>{
+        const saved=button("Saved drafts");
+        if(saved){mountedObserver.disconnect();initialCalls=[...window.calls];saved.click();}
+      });
+      mountedObserver.observe(document.querySelector("#root"),{childList:true,subtree:true});
+      await wait("mount saved-draft controls",()=>initialCalls&&document.querySelector(".saved-draft-marker"));
+      const result={marker:document.querySelector(".saved-draft-marker").textContent, initialCalls};
+      await wait("open initial draft list",()=>document.querySelector('[aria-label="Saved drafts"] button'));
       result.listCalls=[...window.calls]; document.querySelector('[aria-label="Saved drafts"] button').click();
       await wait("read initial draft preview",()=>document.querySelector("pre")); result.preview=document.querySelector("pre").textContent;
       button("Restore").click(); await wait("restore into empty composer",()=>document.querySelector("textarea").value); result.empty=document.querySelector("textarea").value;
