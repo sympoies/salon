@@ -110,7 +110,8 @@ const MAILBOX_NUDGE = /^Mailbox: (?:\S+|[1-9]\d* unread); agent-session message 
  * turn can prove several replies; a turn with any other text proves none, so a
  * short reply is never proven by an unrelated message that starts with it. A
  * bare turn id in `proven` (as stored by 0.3.50) spends the whole turn (#969,
- * #973).
+ * #973). Classified commands only hand over exact echoes already acknowledged
+ * by their send receipt, spending that entire command row once.
  */
 export function transcriptProof(items: readonly QueuedReply[], messages: readonly HistoryMessage[],
   proven: readonly string[] = []): Map<string, string> {
@@ -125,6 +126,14 @@ export function transcriptProof(items: readonly QueuedReply[], messages: readonl
   for (const message of messages) {
     const at = Date.parse(message.timestamp ?? "");
     const parts = spent.get(message.id) ?? [];
+    // A command row only takes over an echo already acknowledged by its send
+    // receipt. Display classification never proves an uncertain delivery.
+    if (message.row_class === "runtime_command" && message.role === "user" && Number.isFinite(at) && parts.length === 0) {
+      const command = pending.find(item => item.state === "delivered" && !matched.has(item.id)
+        && attemptTime(item) > 0 && attemptTime(item) <= at && item.text === message.text);
+      if (command) matched.set(command.id, message.id);
+      continue;
+    }
     if (message.row_class || message.role !== "user" || !Number.isFinite(at) || parts.includes("")) continue;
     const candidates = pending.filter(item => !matched.has(item.id) && (untimedImage(item)
       ? Boolean(message.images?.length) : attemptTime(item) > 0

@@ -350,6 +350,57 @@ test("a command_dispatched shared reply is terminal: no bubble, no error, no pen
   } finally { await h.close(); }
 });
 
+test("a submitted compact command hands over once to classified history and stays settled after reload", async () => {
+  const factory = new IDBFactory();
+  let h = await fixture(factory, false);
+  const active = { ...session, agent: "claude", provider_resume: { provider: "claude", session_id: "fixture-thread" } };
+  const command: HistoryMessage = { id: "command-480", role: "user", text: "/compact keep focus",
+    row_class: "runtime_command", timestamp: new Date(3).toISOString() };
+  const compaction: HistoryMessage = { id: "compaction-160", role: "notice", text: "Synthetic summary",
+    row_class: "compaction", compaction: { summary_truncated: false }, timestamp: new Date(2).toISOString() };
+  const first = crypto.randomUUID(), second = crypto.randomUUID(), ordinary = crypto.randomUUID();
+  const item = (id: string, text: string): SharedOutboxItem => ({
+    id, text, state: "submitted", revision: 3, session_incarnation: "inc-1", created_at: 1, updated_at: 2,
+    request_id: id, edit_hold: null, error_code: null,
+    receipt: { request_id: id, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null },
+  });
+  try {
+    await h.ownServer({ revision: 3, compose_holds: [], items: [item(first, command.text), item(second, command.text), item(ordinary, "ordinary reply")] });
+    await h.client.sync(h.target);
+    await h.showReplies(active, []);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 3, "receipts keep echoes until history arrives");
+    await h.showReplies(active, [command, compaction]);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 2, "one classified command takes over one submitted echo");
+    assert.ok(h.container.textContent?.includes("ordinary reply"), "a system row cannot consume the ordinary reply");
+    assert.deepEqual(Object.keys(h.client.state(h.target).submittedProofs ?? {}), [first]);
+    await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
+    await h.showReplies(active, [command, compaction]);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 2, "reload cannot spend the command on the second invocation");
+    await h.showReplies(active, [{ ...command, id: "next-command-960" },
+      { id: "ordinary-turn", role: "user", text: "ordinary reply", timestamp: new Date(4).toISOString() }]);
+    assertNoElement(h.container, ".history-outgoing-reply");
+    await h.showReplies(active, []);
+    assertNoElement(h.container, ".history-outgoing-reply", "later unloaded history cannot resurrect settled echoes");
+    assert.deepEqual(h.requests.filter(method => method !== "GET"), [], "handover never resends or edits the server row");
+  } finally { await h.close(); }
+});
+
+for (const state of ["unknown", "refused"] as const) test(`classified commands never acknowledge ${state} delivery`, async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const id = crypto.randomUUID();
+    await h.ownServer({ revision: 3, compose_holds: [], items: [{
+      id, text: "/compact", state, revision: 3, session_incarnation: "inc-1", created_at: 1, updated_at: 2,
+      request_id: id, edit_hold: null, error_code: state === "unknown" ? "structured-prompt-outcome-unknown" : "provider-refused",
+      receipt: { request_id: id, session_id: session.id, session_incarnation: "inc-1", outcome: state, code: state === "unknown" ? "structured-prompt-outcome-unknown" : "provider-refused" },
+    }] });
+    await h.client.sync(h.target);
+    await h.showReplies(session, [{ id: "command", role: "user", text: "/compact", row_class: "runtime_command", timestamp: new Date(3).toISOString() }]);
+    assert.ok(h.container.querySelector(".history-outgoing-reply"), "classification is not transport acknowledgement");
+    assert.deepEqual(h.client.state(h.target).submittedProofs ?? {}, {});
+  } finally { await h.close(); }
+});
+
 // The transcript shows a submitted message; a second bubble would repeat it.
 for (const provider of ["codex", "claude"] as const) test(`a submitted ${provider} reply stays visible until its transcript arrives`, async () => {
   const factory = new IDBFactory();

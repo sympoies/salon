@@ -143,12 +143,13 @@ export class SharedOutboxClient {
    * submitted reply claims its turn first, so a genuine refusal of the same text
    * sent twice keeps its Retry. No echoed id exists, so a refused or uncertain
    * row also needs a turn within REPLY_PROOF_WINDOW_MS of its first attempt.
+   * Classified commands only take over echoes with a submitted receipt.
    */
   submittedProof(row: SharedClientTarget, messages: readonly HistoryMessage[]): Readonly<Record<string, string>> {
     const settled = row.submittedProofs ?? {};
     const outgoing = this.outgoingItems(row).filter(item => !Object.hasOwn(settled, item.id));
     const echo = (item: SharedOutboxItem) => ({ id: item.id, text: item.text, incarnation: item.session_incarnation,
-      requestId: item.request_id ?? item.id, state: "delivered" as const, attemptedAt: item.created_at });
+      requestId: item.request_id ?? item.id, state: item.state === "submitted" ? "delivered" as const : "unknown" as const, attemptedAt: item.created_at });
     const matches = transcriptProof(outgoing.filter(item => item.state === "submitted").map(echo), messages, Object.values(settled));
     for (const state of ["unknown", "refused"]) for (const item of outgoing.filter(candidate => candidate.state === state)) {
       const window = messages.filter(message => Date.parse(message.timestamp ?? "") <= item.created_at + REPLY_PROOF_WINDOW_MS);
