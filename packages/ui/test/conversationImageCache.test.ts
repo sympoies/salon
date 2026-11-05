@@ -37,16 +37,55 @@ for (const [name,count,bytes] of [["count",2,100],["bytes",10,8]] as const) test
   const watch = async (i: number) => {
     const handle = cache.watch(target(i),() => {}); handles.push(handle); handle.setVisible(true); await flush(); return handle;
   };
-  const first = await watch(0); await watch(1);
+  const first = await watch(0), second = await watch(1);
   const a = cache.peek(target(0)), b = cache.peek(target(1));
   assert.ok(a.state === "ready" && b.state === "ready");
   first.setVisible(false); first.setVisible(true);
+  second.setVisible(false);
   await watch(2);
   assert.deepEqual(revoked,[b.url]);
   assert.equal(cache.peek(target(0)),a); assert.equal(cache.peek(target(1)).state,"loading");
   first.unsubscribe();
   assert.deepEqual(revoked,[b.url],"unmount retains the cached URL");
   await watch(0); assert.equal(cache.peek(target(0)),a);
+});
+
+test("visible images survive eviction without another visibility notification",async t => {
+  const revoked: string[] = [], revoke = URL.revokeObjectURL;
+  t.mock.method(URL,"revokeObjectURL",(url: string) => { revoked.push(url); revoke(url); });
+  setup(t,async () => response());
+  const cache = new ConversationImageCache(2,8);
+  const first = cache.watch(target(0),() => {}); first.setVisible(true); await flush();
+  const shown = cache.peek(target(0)); assert.ok(shown.state === "ready");
+  const second = cache.watch(target(1),() => {}); second.setVisible(true); await flush(); second.setVisible(false);
+  const hidden = cache.peek(target(1)); assert.ok(hidden.state === "ready");
+  const third = cache.watch(target(2),() => {});
+  t.after(() => { first.unsubscribe(); second.unsubscribe(); third.unsubscribe(); });
+  third.setVisible(true); await flush();
+  assert.equal(cache.peek(target(0)).state,"ready","a visible viewer retains usable data without toggling visibility");
+  assert.equal(cache.peek(target(0)),shown);
+  assert.deepEqual(revoked,[hidden.url],"the non-visible image is evicted even though it was loaded more recently");
+});
+
+test("a full cache preserves visible images and offers bounded Retry for a new load",async t => {
+  let requests = 0;
+  setup(t,async () => { requests++; return response(); });
+  t.mock.timers.enable({apis:["setTimeout"]});
+  const cache = new ConversationImageCache(1,4);
+  const first = cache.watch(target(0),() => {}); first.setVisible(true); await flush();
+  const shown = cache.peek(target(0)); assert.ok(shown.state === "ready");
+  const second = cache.watch(target(1),() => {});
+  t.after(() => { first.unsubscribe(); second.unsubscribe(); });
+  second.setVisible(true); await flush();
+  assert.equal(cache.peek(target(0)).state,"ready","capacity never discards an already displayed image");
+  assert.equal(cache.peek(target(0)),shown);
+  assert.equal(cache.peek(target(1)).state,"error","a new image gets a Retry action instead of permanent loading");
+  t.mock.timers.tick(10000); await flush();
+  assert.equal(requests,2,"capacity pressure does not create an automatic fetch loop");
+  first.setVisible(false); second.retry(); await flush();
+  assert.equal(requests,3);
+  assert.equal(cache.peek(target(1)).state,"ready","Retry progresses once a resident image is no longer visible");
+  assert.equal(cache.peek(target(0)).state,"loading");
 });
 
 test("cache separates machine and history and deduplicates shared viewers",async t => {

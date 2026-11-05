@@ -131,6 +131,7 @@ function ImageViewer({machine,history,images,initial,onClose}: {
     const fresh = await fetchConversationImage(machine,history,current.id,controller.signal);
     try {
       if (controller.signal.aborted) return;
+      if (fresh.state === "error") { setSaveError(true); return; }
       if (fresh.state !== "ready") { unavailable(fresh); return; }
       await saveConversationImage(fresh.blob,fresh.filename,fresh.url);
     } catch { if (!controller.signal.aborted) setSaveError(true); }

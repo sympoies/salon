@@ -51,7 +51,8 @@ export class ConversationImageCache {
         }
       },
       retry:() => {
-        if (current.controller) return;
+        // Another observer may have completed the read before this click.
+        if (current.controller || current.data.state === "ready") return;
         clearTimeout(current.timer); current.timer = undefined; current.attempts = 0;
         this.load(current);
       },
@@ -79,12 +80,16 @@ export class ConversationImageCache {
     entry.observers.forEach(observer => observer.notify(data));
   }
 
-  private evict(entry: Entry) {
+  private isVisible(entry: Entry) {
+    return [...entry.observers].some(observer => observer.visible);
+  }
+
+  private evict(entry: Entry, state: "loading" | "error" = "loading") {
     const image = this.lru.get(entry);
     if (!image) return;
     this.lru.delete(entry); this.bytes -= image.blob.size;
     URL.revokeObjectURL(image.url);
-    this.publish(entry,{state:"loading"});
+    this.publish(entry,{state});
     if (!entry.observers.size) this.entries.delete(entry.key);
   }
 
@@ -94,19 +99,27 @@ export class ConversationImageCache {
     entry.controller = controller;
     this.publish(entry,{state:"loading"});
     void fetchConversationImage(entry.target.machine,entry.target.history,entry.target.image,controller.signal,
-      () => [...entry.observers].some(observer => observer.visible)).then(data => {
+      () => this.isVisible(entry)).then(data => {
       entry.controller = undefined;
       if (controller.signal.aborted) {
         if (data.state === "ready") URL.revokeObjectURL(data.url);
         return;
       }
-      this.publish(entry,data);
       if (data.state === "ready") {
         entry.attempts = 0;
         this.lru.set(entry,data); this.bytes += data.blob.size;
-        while (this.lru.size > this.maxCount || this.bytes > this.maxBytes) this.evict(this.lru.keys().next().value!);
-      } else if (data.state === "error" && entry.attempts < backoff.length && entry.observers.size) {
-        entry.timer = setTimeout(() => { entry.timer = undefined; this.load(entry); },backoff[entry.attempts++]!);
+        while (this.lru.size > this.maxCount || this.bytes > this.maxBytes) {
+          const victim = [...this.lru.keys()].find(candidate => !this.isVisible(candidate)) ?? entry;
+          // If every resident is visible, decline this new result with Retry
+          // rather than revoke a displayed image or loop through more reads.
+          this.evict(victim,this.isVisible(victim) ? "error" : "loading");
+        }
+        if (this.lru.has(entry)) this.publish(entry,data);
+      } else {
+        this.publish(entry,data);
+        if (data.state === "error" && entry.attempts < backoff.length && entry.observers.size) {
+          entry.timer = setTimeout(() => { entry.timer = undefined; this.load(entry); },backoff[entry.attempts++]!);
+        }
       }
     });
   }
