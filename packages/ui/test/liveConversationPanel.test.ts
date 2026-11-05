@@ -1555,7 +1555,7 @@ test('shared conversation rows expose every speaker to assistive technology with
 
 // #1043: Claude records a user turn that carried a paste wrapped in
 // <pasted_content id="…">; the tags are markup and are not shown.
-test('a user turn wrapped only by a paste marker shows its inner text without tags', async () => {
+test('user turns hide well-formed paste markers and preserve malformed markers', async () => {
   const mounted = installDom(); cleanups.push(mounted.cleanup);
   const ssr = createUiSsrHarness(); cleanups.push(ssr.close);
   const { HistoryConversationView } = await ssr.loadModule<typeof import('../src/HistoryConversation.tsx')>('/src/HistoryConversation.tsx');
@@ -1563,7 +1563,7 @@ test('a user turn wrapped only by a paste marker shows its inner text without ta
   const messages = [
     {id:'u1',role:'user',text:wrapped('Run the build')},
     {id:'u2',role:'user',text:wrapped('Run the build', 'a1b2', 'ffff')},
-    {id:'u3',role:'user',text:`See ${wrapped('this paste')}`},
+    {id:'u3',role:'user',text:'See <pasted_content id="a1b2">\nthis paste\n</pasted_content id="a1b2">'},
     {id:'a1',role:'assistant',text:wrapped('Agent text')},
     {id:'u4',role:'user',text:wrapped(wrapped('Nested', 'c3d4'))},
   ] as const;
@@ -1573,7 +1573,8 @@ test('a user turn wrapped only by a paste marker shows its inner text without ta
   })));
   const bubbles = [...mounted.container.querySelectorAll('.history-bubble')].map(node => node.textContent ?? '');
   assert.equal(bubbles[0], 'Run the build', 'the outer wrapper is removed');
-  for (const index of [1, 2, 3, 4]) assert.match(bubbles[index] ?? '', /pasted_content/, `message ${index} is shown unchanged`);
+  assert.equal(bubbles[2], 'See this paste');
+  for (const index of [1, 3, 4]) assert.match(bubbles[index] ?? '', /pasted_content/, `message ${index} is shown unchanged`);
   assert.match(bubbles[4] ?? '', /<pasted_content id="c3d4">/, 'only one wrapper layer is removed');
 });
 

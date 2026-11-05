@@ -1,5 +1,6 @@
 import type { AutoResumeStatus } from "@agent-console/shared/api";
 import type { HistoryMessage, TurnState } from "./types.ts";
+import { stripPasteWrappers } from "./pastedContent.ts";
 
 export interface StuckTurn {
   readonly text: string;
@@ -44,7 +45,8 @@ export function stuckTurn(state: TurnState | null, autoResume: AutoResumeStatus 
   if (lastMessage?.role === "assistant") return { text, action: { label: "Continue", text: "Continue" } };
   // An image is only its placeholder in the transcript, so it cannot be resent.
   if (lastMessage?.role !== "user" || !lastMessage.text.trim() || IMAGE_PLACEHOLDER.test(lastMessage.text)) return { text };
-  return { text, action: { label: pending ? "Resend now" : "Resend", text: lastMessage.text.trim() } };
+  const prompt = stripPasteWrappers(lastMessage.text).trim();
+  return prompt ? { text, action: { label: pending ? "Resend now" : "Resend", text: prompt } } : { text };
 }
 
 /** How long a working turn may go without activity before it may be stuck (#921). */

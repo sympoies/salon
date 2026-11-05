@@ -11,7 +11,7 @@ import { boundHistoryMessages, mergeOlderHistoryMessages } from "./historyMessag
 import { parseRuntimeCommand, parseSessionNotice } from "@agent-console/shared";
 import { hideUploadedImages, uploadedFilePaths } from "./attachmentPaths.ts";
 import { MessageMarkdown } from "./MessageMarkdown.tsx";
-import { unwrapPastedContent } from "./pastedContent.ts";
+import { stripPasteWrappers } from "./pastedContent.ts";
 import type { HistoryMessage, HistoryMessagesResponse, HistorySession } from "./types.ts";
 
 const HISTORY_PAGE_SIZE = 50;
@@ -419,7 +419,7 @@ export function HistoryConversationView({
                 </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
                 {user ? time : null}
-                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? unwrapPastedContent(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} neutralUploads={user} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} markdownSource={message} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(unwrapPastedContent(originalCaption), uploadSessionId) : undefined} /> : null}{user && bubbleImages.length ? <span className="history-image-label">{bubbleImages.map(image => image.original_name ?? "Image").join(" · ")}</span> : null}{imageOnly && !user ? time : null}</div>}
+                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? stripPasteWrappers(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} neutralUploads={user} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} markdownSource={message} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(stripPasteWrappers(originalCaption), uploadSessionId) : undefined} /> : null}{user && bubbleImages.length ? <span className="history-image-label">{bubbleImages.map(image => image.original_name ?? "Image").join(" · ")}</span> : null}{imageOnly && !user ? time : null}</div>}
                 {!user && !imageOnly ? time : null}
                 {session && (reread || toolImages.length) ? <div className="history-tool-output">
                   {reread ? <p className="history-tool-reread">Read attachment</p> : null}
