@@ -1630,13 +1630,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 if (!config.multiUser || !accessStore || event.type === "heartbeat" || !event.sessions) return event;
                 // Activity visibility is checked before this ownership read.
                 // The global helper also authorizes terminals and stays unchanged.
-                const currentOwned = await currentOwnedSessions(_principal, event.machine, requestId);
-                const byId = new Map(currentOwned.flatMap(session => typeof session.id === "string" ? [[session.id, session] as const] : []));
-                return { ...event, sessions: event.sessions.flatMap(session => {
-                  const current = byId.get(session.id);
-                  if (!current) return [];
-                  return [{ id: session.id, turn_state: normalizeActivityTurnState(current.turn_state) }];
-                }) };
+                const currentOwned = await currentOwnedSessionIds(_principal, event.machine, requestId);
+                // The list proves current ownership, but its turn state can lag
+                // behind the authoritative activity projection.
+                return { ...event, sessions: event.sessions.filter(session => currentOwned.has(session.id)) };
               },
             }).catch(disconnect).finally(() => { if (running.get(machine.name) === stream) running.delete(machine.name); });
           }
