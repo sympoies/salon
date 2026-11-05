@@ -9,7 +9,7 @@ import react from "@vitejs/plugin-react";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
 // Real component and CSS; raster bytes are generated locally, with no live data.
-test("outgoing rows keep image previews and timestamps together", async t => {
+test("outgoing captions align with wider, narrower and multiple images without moving other rows", async t => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
   const bundled = await build({
     resolve:{conditions:["source"]}, configFile:false, logLevel:"silent", define:{"process.env.NODE_ENV":JSON.stringify("production")},
@@ -39,6 +39,10 @@ test("outgoing rows keep image previews and timestamps together", async t => {
             {id:'image-text',role:'user',text:'[Image #1] Synthetic caption',images:[image(0)]},
             {id:'short',role:'user',text:'Hello',images:[]},
             {id:'multiline',role:'user',text:'[Image #1] First line\\nSecond line',images:[image(1)]},
+            {id:'narrow-image',role:'user',text:'A caption wider than the small image',images:[image(2)]},
+            {id:'several-images',role:'user',text:'Two image previews',images:[image(0),image(1)]},
+            {id:'agent-text',role:'assistant',text:'An agent response',images:[]},
+            {id:'agent-image',role:'assistant',text:'Agent image caption',images:[image(0)]},
           ].map(m=>({...m,timestamp:'2026-01-01T12:00:00'}));
           createRoot(document.querySelector('#root')).render(React.createElement(HistoryConversationView,{
             conversation:{session:{machine:'fixture',id:'sample'},messages,latestMessagePaging:true,
@@ -47,14 +51,14 @@ test("outgoing rows keep image previews and timestamps together", async t => {
             else if(--attempts)setTimeout(check,10);else reject(Error('fixture did not settle'));}check()});
           const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}};
           void (async()=>{try {
-            await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===3 &&
+            await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===7 &&
               [...document.images].every(img=>img.complete && img.naturalWidth));
             await new Promise(resolve=>setTimeout(resolve,50));
             const boxes=[...document.querySelectorAll('article')].map(article=>{
               const bubble=article.querySelector('.history-bubble');
               const image=bubble.querySelector('img');const time=article.querySelector('time');
               const style=getComputedStyle(bubble),metadata=getComputedStyle(time);
-              return {article:rect(article),bubble:rect(bubble),image:image ? rect(image) : null,time:rect(time), timeCount:article.querySelectorAll('time').length,
+              return {id:article.dataset.historyMessageId,images:[...bubble.querySelectorAll('img')].map(rect),article:rect(article),bubble:rect(bubble),image:image ? rect(image) : null,time:rect(time), timeCount:article.querySelectorAll('time').length,
                 text:rect(bubble.querySelector('.message-markdown')),
                 textBackground:getComputedStyle(bubble.querySelector('.message-markdown')).backgroundColor,
                 background:style.backgroundColor,border:style.borderWidth,radius:style.borderRadius,
@@ -105,13 +109,30 @@ test("outgoing rows keep image previews and timestamps together", async t => {
         assert.equal(measured.error,undefined);
         assert.equal(measured.viewportWidth,width);
         assert.equal(measured.overflow,false,"attachments never overflow the column");
-        assert.equal(measured.boxes.length,4);
-        for (const box of measured.boxes) {
+        assert.equal(measured.boxes.length,8);
+        for (const box of measured.boxes.slice(0,6)) {
           assert.equal(box.timeCount,1);
           assert.ok(box.time.x + box.time.w <= box.bubble.x + 1, "timestamp is left of the outgoing bubble");
         }
         for (const box of [measured.boxes[0],measured.boxes[1],measured.boxes[3]]) {
           assert.ok(box.image, "image selector renders a thumbnail inside its message bubble");
+        }
+        const right = (box: {x: number; w: number}) => box.x + box.w;
+        const plain = measured.boxes[2];
+        for (const index of [1,3,4,5]) {
+          const box = measured.boxes[index];
+          const label = `${width}px ${box.id}`;
+          assert.ok(Math.abs(right(box.text) - right(plain.bubble)) < 1, `${label}: caption aligns with plain user bubble`);
+          assert.ok(Math.abs(right(box.text) - Math.max(...box.images.map(right))) < 1, `${label}: caption aligns with rightmost image`);
+        }
+        assert.ok(measured.boxes[1].image.w > measured.boxes[1].text.w, "wider-image case exercises a short caption");
+        assert.ok(measured.boxes[4].image.w < measured.boxes[4].text.w, "narrower-image case exercises a longer caption");
+        assert.equal(measured.boxes[5].images.length, 2);
+        assert.ok(Math.abs(right(measured.boxes[0].image) - right(plain.bubble)) < 1, "image-only user preview retains the plain bubble right edge");
+        for (const box of measured.boxes.slice(6)) {
+          assert.equal(box.timeCount, 1);
+          assert.ok(box.time.x >= right(box.bubble), "agent time stays after the bubble");
+          if (box.image) assert.ok(Math.abs(box.text.x - box.image.x) < 1, "agent caption stays left-aligned with its image");
         }
         assert.equal(measured.boxes[0].caption, "", "image-only message has no provider label");
         assert.equal(measured.boxes[1].caption, "Synthetic caption");

@@ -2,7 +2,7 @@
 .history-message:has(.conversation-images) { container-type:inline-size; --preview-width:66cqw; }
 .history-message > .history-bubble:has(> .conversation-images) { width:fit-content; max-width:min(100%,var(--preview-width)); padding:0; background:transparent; }
 .history-bubble:has(> .conversation-images) > .message-markdown:not(:empty) { width:fit-content; max-width:100%; padding:8px 12px; border-radius:var(--r-conversation); background:var(--conversation-agent-bubble); }
-.is-user > .history-bubble:has(> .conversation-images) > .message-markdown:not(:empty) { background:var(--conversation-user-bubble); }
+.is-user > .history-bubble:has(> .conversation-images) > .message-markdown:not(:empty) { margin-left:auto; background:var(--conversation-user-bubble); }
 .history-message.is-user .conversation-images { justify-items:end; }
 .history-image-caption { display:flex; align-items:flex-end; justify-content:flex-end; gap:6px; }
 .history-image-caption > .message-markdown { width:fit-content; padding:8px 12px; border-radius:var(--r-conversation); background:var(--conversation-user-bubble); }

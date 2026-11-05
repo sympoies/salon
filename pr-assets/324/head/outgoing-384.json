@@ -1,0 +1,388 @@
+{
+  "boxes": [
+    {
+      "id": "image-only",
+      "images": [
+        {
+          "x": 86.40625,
+          "y": 60,
+          "w": 281.59375,
+          "h": 105.59375
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 60,
+        "w": 352,
+        "h": 118.59375
+      },
+      "bubble": {
+        "x": 86.40625,
+        "y": 60,
+        "w": 281.59375,
+        "h": 118.59375
+      },
+      "image": {
+        "x": 86.40625,
+        "y": 60,
+        "w": 281.59375,
+        "h": 105.59375
+      },
+      "time": {
+        "x": 49.0625,
+        "y": 163.59375,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0
+      },
+      "textBackground": "rgba(0, 0, 0, 0)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "10px",
+      "imageRadius": "10px",
+      "caption": "",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "image-text",
+      "images": [
+        {
+          "x": 86.40625,
+          "y": 233.78125,
+          "w": 281.59375,
+          "h": 105.59375
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 188.59375,
+        "w": 352,
+        "h": 163.78125
+      },
+      "bubble": {
+        "x": 86.40625,
+        "y": 188.59375,
+        "w": 281.59375,
+        "h": 163.78125
+      },
+      "image": {
+        "x": 86.40625,
+        "y": 233.78125,
+        "w": 281.59375,
+        "h": 105.59375
+      },
+      "time": {
+        "x": 49.0625,
+        "y": 337.375,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 203.96875,
+        "y": 188.59375,
+        "w": 164.03125,
+        "h": 39.1875
+      },
+      "textBackground": "rgb(42, 84, 140)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "Synthetic caption",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "short",
+      "images": [],
+      "article": {
+        "x": 16,
+        "y": 362.375,
+        "w": 352,
+        "h": 39.1875
+      },
+      "bubble": {
+        "x": 303.4375,
+        "y": 362.375,
+        "w": 64.5625,
+        "h": 39.1875
+      },
+      "image": null,
+      "time": {
+        "x": 266.09375,
+        "y": 386.5625,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 315.4375,
+        "y": 370.375,
+        "w": 40.5625,
+        "h": 23.1875
+      },
+      "textBackground": "rgba(0, 0, 0, 0)",
+      "background": "rgb(42, 84, 140)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": null,
+      "caption": "Hello",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "multiline",
+      "images": [
+        {
+          "x": 128,
+          "y": 479.9375,
+          "w": 240,
+          "h": 400
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 411.5625,
+        "w": 352,
+        "h": 481.375
+      },
+      "bubble": {
+        "x": 128,
+        "y": 411.5625,
+        "w": 240,
+        "h": 481.375
+      },
+      "image": {
+        "x": 128,
+        "y": 479.9375,
+        "w": 240,
+        "h": 400
+      },
+      "time": {
+        "x": 90.65625,
+        "y": 877.9375,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 251.15625,
+        "y": 411.5625,
+        "w": 116.84375,
+        "h": 62.375
+      },
+      "textBackground": "rgb(42, 84, 140)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "First line\nSecond line",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "narrow-image",
+      "images": [
+        {
+          "x": 336,
+          "y": 971.3125,
+          "w": 32,
+          "h": 24
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 902.9375,
+        "w": 352,
+        "h": 105.375
+      },
+      "bubble": {
+        "x": 86.40625,
+        "y": 902.9375,
+        "w": 281.59375,
+        "h": 105.375
+      },
+      "image": {
+        "x": 336,
+        "y": 971.3125,
+        "w": 32,
+        "h": 24
+      },
+      "time": {
+        "x": 49.0625,
+        "y": 993.3125,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 86.40625,
+        "y": 902.9375,
+        "w": 281.59375,
+        "h": 62.375
+      },
+      "textBackground": "rgb(42, 84, 140)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "A caption wider than the small image",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "several-images",
+      "images": [
+        {
+          "x": 86.40625,
+          "y": 1063.5,
+          "w": 136.796875,
+          "h": 51.296875
+        },
+        {
+          "x": 231.203125,
+          "y": 1063.5,
+          "w": 136.796875,
+          "h": 227.984375
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 1018.3125,
+        "w": 352,
+        "h": 286.171875
+      },
+      "bubble": {
+        "x": 86.40625,
+        "y": 1018.3125,
+        "w": 281.59375,
+        "h": 286.171875
+      },
+      "image": {
+        "x": 86.40625,
+        "y": 1063.5,
+        "w": 136.796875,
+        "h": 51.296875
+      },
+      "time": {
+        "x": 49.0625,
+        "y": 1289.484375,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 182.578125,
+        "y": 1018.3125,
+        "w": 185.421875,
+        "h": 39.1875
+      },
+      "textBackground": "rgb(42, 84, 140)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "Two image previews",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "agent-text",
+      "images": [],
+      "article": {
+        "x": 16,
+        "y": 1314.484375,
+        "w": 352,
+        "h": 39.1875
+      },
+      "bubble": {
+        "x": 50,
+        "y": 1314.484375,
+        "w": 174.15625,
+        "h": 39.1875
+      },
+      "image": null,
+      "time": {
+        "x": 230.15625,
+        "y": 1338.671875,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 62,
+        "y": 1322.484375,
+        "w": 150.15625,
+        "h": 23.1875
+      },
+      "textBackground": "rgba(0, 0, 0, 0)",
+      "background": "rgb(27, 58, 85)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": null,
+      "caption": "An agent response",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "id": "agent-image",
+      "images": [
+        {
+          "x": 50,
+          "y": 1408.859375,
+          "w": 280.65625,
+          "h": 105.234375
+        }
+      ],
+      "article": {
+        "x": 16,
+        "y": 1363.671875,
+        "w": 352,
+        "h": 150.421875
+      },
+      "bubble": {
+        "x": 50,
+        "y": 1363.671875,
+        "w": 280.65625,
+        "h": 150.421875
+      },
+      "image": {
+        "x": 50,
+        "y": 1408.859375,
+        "w": 280.65625,
+        "h": 105.234375
+      },
+      "time": {
+        "x": 336.65625,
+        "y": 1499.09375,
+        "w": 31.34375,
+        "h": 15
+      },
+      "timeCount": 1,
+      "text": {
+        "x": 50,
+        "y": 1363.671875,
+        "w": 190.78125,
+        "h": 39.1875
+      },
+      "textBackground": "rgb(27, 58, 85)",
+      "background": "rgba(0, 0, 0, 0)",
+      "border": "0px",
+      "radius": "18px",
+      "imageRadius": "10px",
+      "caption": "Agent image caption",
+      "metadataColor": "rgb(111, 135, 158)",
+      "metadataBackground": "rgba(0, 0, 0, 0)"
+    }
+  ],
+  "overflow": false,
+  "viewportWidth": 384
+}
