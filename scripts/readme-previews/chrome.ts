@@ -67,14 +67,23 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
     if (port === undefined) throw new Error("Chrome did not expose a DevTools port");
     let target: { webSocketDebuggerUrl: string } | undefined;
     for (let attempt = 0; attempt < 50 && !target; attempt++) {
-      const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as { type: string; webSocketDebuggerUrl: string }[];
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), options.protocolWaitMs ?? 10_000);
+      let list: { type: string; webSocketDebuggerUrl: string }[];
+      try { list = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: controller.signal })).json() as typeof list; }
+      catch (error) { if (controller.signal.aborted) throw new Error("DevTools target discovery timed out"); throw error; }
+      finally { clearTimeout(timer); }
       target = list.find(entry => entry.type === "page");
       if (!target) await sleep(100);
     }
     if (!target) throw new Error("Chrome has no page target");
     const connection = new WebSocket(target.webSocketDebuggerUrl);
     socket = connection;
-    await new Promise<void>((resolve, reject) => { connection.onopen = () => resolve(); connection.onerror = () => reject(new Error("DevTools connection failed")); });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("DevTools connection timed out")), options.protocolWaitMs ?? 10_000);
+      connection.onopen = () => { clearTimeout(timer); resolve(); };
+      connection.onerror = () => { clearTimeout(timer); reject(new Error("DevTools connection failed")); };
+    });
     let nextId = 1;
     const pending = new Map<number, { resolve(value: any): void; reject(error: Error): void }>();
     const loaded: { resolve(): void; reject(error: Error): void }[] = [];

@@ -86,17 +86,19 @@ test("stopping a live browser kills and reaps it before removing the profile", a
 });
 
 /** The smallest DevTools stand-in: one page target and a WebSocket that answers every command with an undefined result. */
-async function startFakeDevTools(ignore = ""): Promise<{ port: number; sockets: Set<Duplex>; close(): Promise<void> }> {
+async function startFakeDevTools(ignore = "", stall: "" | "body" | "upgrade" = ""): Promise<{ port: number; sockets: Set<Duplex>; close(): Promise<void> }> {
   const sockets = new Set<Duplex>();
   let port = 0;
   const server: Server = createServer((request, response) => {
     if (request.url === "/json/list") {
       response.setHeader("content-type", "application/json");
+      if (stall === "body") { response.write("["); return; }
       response.end(JSON.stringify([{ type: "page", webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/fake` }]));
     } else { response.statusCode = 404; response.end(); }
   });
   server.on("upgrade", (request, socket) => {
     sockets.add(socket); socket.on("close", () => sockets.delete(socket));
+    if (stall === "upgrade") return;
     const accept = createHash("sha1").update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
     socket.on("data", (chunk: Buffer) => {
@@ -150,5 +152,21 @@ for (const method of ["Page.navigate", "Runtime.evaluate", "Page.loadEventFired"
       const operation = method === "Runtime.evaluate" ? page.evaluate("1") : page.navigate("http://example.test/");
       await assert.rejects(operation, /timed out/);
     } finally { await page.close(); await devtools.close(); }
+  });
+}
+
+for (const stall of ["body", "upgrade"] as const) {
+  test(`a stalled DevTools ${stall} is bounded and reaps Chrome`, async () => {
+    const devtools = await startFakeDevTools("", stall);
+    const record = join(directory, `startup-${stall}.json`);
+    Object.assign(process.env, { CHROME_BIN: fake, FAKE_MODE: "devtools", FAKE_RECORD: record, FAKE_PORT: String(devtools.port) });
+    try {
+      const started = Date.now();
+      await assert.rejects(chrome.launchPage({ portWaitMs: 3000, protocolWaitMs: 150 }), /timed out/);
+      assert.ok(Date.now() - started < 2000, "startup fails promptly");
+      const { pid, profile } = JSON.parse(readFileSync(record, "utf8")) as { pid: number; profile: string };
+      assert.equal(alive(pid), false);
+      assert.equal(existsSync(profile), false);
+    } finally { await devtools.close(); }
   });
 }
