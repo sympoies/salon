@@ -498,3 +498,55 @@ test("Markdown refusal names stay with their descriptors when tool images leave 
     "Not shared: outside the session folder · second plot.png");
   assert.doesNotMatch(window.document.body.innerHTML,/restricted/);
 });
+
+test("refused remote Markdown images explain the source and open links only on request",async () => {
+  const urls = Array.from({length:6},(_,index) => `https://images.example.invalid/chart-${index + 1}.png`);
+  const images = urls.map((_,index) => ({id:imageId(index),origin:"tool_result"}));
+  const {window,requests} = await mountImages(() => new Response(JSON.stringify({error:{code:"history-image-unavailable"}}),{status:422}),
+    false,[],[{id:"remote-result",role:"assistant",text:urls.map(url => `![](<${url}>)`).join("\n"),images}]);
+  const group = window.document.querySelector(".history-tool-output");
+  assert.ok(group);
+  assert.deepEqual([...group.querySelectorAll('[role="status"]')].map(node => node.textContent),
+    urls.map(() => "External image, not loaded · https://images.example.invalid"));
+  const links = [...group.querySelectorAll<HTMLAnchorElement>("a")];
+  assert.deepEqual(links.map(link => link.href),urls);
+  assert.ok(links.every(link => link.textContent === "Open link" && link.target === "_blank" && link.rel === "noopener noreferrer"));
+  assertNoElement(group,"img, button a");
+  assert.deepEqual(requests.map(path => path.split("/").at(-1)).sort(),images.map(image => image.id).sort());
+  assert.ok(requests.every(path => path.startsWith("/api/history/sessions/fixture/history/images/")),"rendering never fetches external images");
+  const opened: unknown[][] = [];
+  window.open = ((...args: unknown[]) => { opened.push(args); return null; }) as never;
+  assert.deepEqual(opened,[]);
+  const click = new window.MouseEvent("click",{bubbles:true,cancelable:true});
+  await act(async () => links[3]!.dispatchEvent(click));
+  assert.equal(click.defaultPrevented,true);
+  assert.deepEqual(opened,[[urls[3],"_blank","noopener,noreferrer"]]);
+  assertNoElement(window.document,'[role="dialog"]');
+});
+
+test("remote source links are omitted for unsafe URLs and ambiguous image associations",async () => {
+  const {window} = await mountImages(() => new Response(JSON.stringify({error:{code:"history-image-unavailable"}}),{status:422}),false,[],[
+    {id:"unsafe",role:"assistant",text:"![](javascript:invalid)",images:[{id:imageId(0),origin:"tool_result"}]},
+    {id:"mixed",role:"assistant",text:"![](https://images.example.invalid/chart.png)",
+      images:[{id:imageId(1),origin:"tool_result"},{id:imageId(2),origin:"tool_result"}]},
+  ]);
+  assertNoElement(window.document,".history-tool-output a");
+  assert.deepEqual([...window.document.querySelectorAll('.conversation-image-thumbnail [role="status"]')].map(node => node.textContent),
+    ["Image unavailable","Image unavailable","Image unavailable"]);
+});
+
+test("viewer navigation explains a refused external image beside a readable local image",async () => {
+  const {window} = await mountImages(path => path.includes(imageId(0))
+    ? new Response(new Uint8Array([137,80,78,71]),{headers:{"content-type":"image/png"}})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched"}}),{status:422}),
+  false,[],[{id:"mixed-sources",role:"assistant",text:"![](/charts/local.png) ![](https://images.example.invalid/remote.png)",
+    images:[{id:imageId(0)},{id:imageId(1)}]}]);
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click());
+  const viewer = window.document.querySelector('[aria-label="Conversation images"]');
+  assert.ok(viewer);
+  assert.equal(viewer.querySelector('[role="status"]')?.textContent,"External image, not loaded · https://images.example.invalid");
+  assert.equal(viewer.querySelector("a")?.href,"https://images.example.invalid/remote.png");
+  assert.equal(viewer.querySelector<HTMLButtonElement>('[aria-label="Download image"]')?.disabled,true);
+  assertNoElement(viewer,"img");
+});

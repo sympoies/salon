@@ -68,6 +68,9 @@ Newly attached raster images also have a local preview while the reply is pendin
 or refused. History shows the original name when the session runtime supplies
 it; otherwise it uses the neutral image label.
 
+Refused external Markdown images show their source origin and an **Open link**
+action. Salon loads no external image; opening the link uses your browser.
+
 Other files appear as cards with an original name or neutral kind, their size
 when known, and a copy icon. Long names stay on one line while keeping the
 extension visible. Select a file card to copy its file path.
