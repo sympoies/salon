@@ -1726,3 +1726,41 @@ test("byte and time bounds preserve the first unread older page", async () => {
     }
   }
 });
+
+test("a supplemental page deadline returns the accepted window and its unread continuation", async () => {
+  const originalNow = Date.now;
+  const calls: string[] = [];
+  const daemon = createHttpServer((req, res) => {
+    const cursor = new URL(req.url!, "http://fixture").searchParams.get("cursor");
+    calls.push(cursor ?? "latest");
+    res.setHeader("content-type", "application/json");
+    if (!cursor) {
+      Date.now = () => originalNow() + 24_900;
+      res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "latest", role: "assistant", text: "latest" }], older_cursor: "next" } }));
+    } else if (calls.length === 2) {
+      setTimeout(() => res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "older", role: "assistant", text: "older" }] } })), 300);
+    } else {
+      res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "older", role: "assistant", text: "older" }] } }));
+    }
+  });
+  const { port: daemonPort } = await listenOnLoopback(daemon);
+  const edge = createEdgeServer({ ...config, machines: [{ name: "maple", url: `http://127.0.0.1:${daemonPort}`, token: "fixture" }] });
+  const { base: edgeBase } = await listenOnLoopback(edge);
+  try {
+    const headers = { authorization: "Bearer client-secret" };
+    const latestResponse = await fetch(`${edgeBase}/api/history/sessions/maple/h1/messages?direction=latest`, { headers });
+    Date.now = originalNow;
+    assert.equal(latestResponse.status, 200);
+    const latest = (await latestResponse.json() as { data: { messages: Array<{ id: string }>; older_cursor: string } }).data;
+    assert.deepEqual(latest.messages.map(message => message.id), ["latest"]);
+    assert.equal(latest.older_cursor, "next");
+    const olderResponse = await fetch(`${edgeBase}/api/history/sessions/maple/h1/messages?direction=older&cursor=next`, { headers });
+    const older = (await olderResponse.json() as { data: { messages: Array<{ id: string }> } }).data;
+    assert.deepEqual([...older.messages, ...latest.messages].map(message => message.id), ["older", "latest"]);
+    assert.deepEqual(calls, ["latest", "next", "next"]);
+  } finally {
+    Date.now = originalNow;
+    edge.closeAllConnections(); daemon.closeAllConnections();
+    await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+  }
+});

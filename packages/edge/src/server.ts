@@ -257,7 +257,15 @@ async function readConversationWindow(machine: MachineConfig, id: string, query:
     query.set("parts", "v1");
     const remaining = HISTORY_DAEMON_TIMEOUT_MS - (Date.now() - started);
     if (remaining <= 0) break;
-    const result = await daemonFetch(machine, `/history/sessions/${encodeURIComponent(id)}/messages?${query}`, { timeoutMs: remaining, signal });
+    let result: DaemonResult;
+    try {
+      result = await daemonFetch(machine, `/history/sessions/${encodeURIComponent(id)}/messages?${query}`, { timeoutMs: remaining, signal });
+    } catch (error) {
+      // Only the internal deadline on a supplemental page may return the
+      // accepted window. A first-page failure or caller abort still propagates.
+      if (page > 0 && !signal?.aborted && error instanceof Error && error.name === "AbortError") break;
+      throw error;
+    }
     const envelope = objectProp(result.body);
     const data = result.status === 200 && envelope?.ok !== false ? projectHistoryMessagesDaemonData(envelope?.data) : null;
     if (!data) return result.status === 200 && envelope?.ok !== false
