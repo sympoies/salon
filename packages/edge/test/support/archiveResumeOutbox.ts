@@ -12,16 +12,31 @@ import { createEdgeServer } from "../../src/server.ts";
 import { listenOnLoopback, loginCookie, makeEdgeConfig } from "../support.ts";
 
 /** Real edge/SQLite lifecycle; only the native provider is synthetic. */
-export async function archiveResumeOutbox() {
+export async function archiveResumeOutbox(options: { deleteFailure?: { status: number; code: string } } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "salon-archive-outbox-"));
   const network = globalThis.fetch;
   let incarnation = "inc-1", present = true, posts = 0;
   let archiveResult: unknown;
-  const session = () => ({ id: "shared-reply", agent: "codex", status: "running", session_incarnation: incarnation,
+  let deleteCalls = 0, status = "running";
+  const session = () => ({ id: "shared-reply", agent: "codex", status, session_incarnation: incarnation,
     provider_resume: { provider: "codex", session_id: "fixture-thread" } });
   const daemon = createServer(async (req, res) => {
     res.setHeader("content-type", "application/json");
     if (req.url === "/sessions") return void res.end(JSON.stringify({ ok: true, data: { sessions: present ? [session()] : [] } }));
+    if (req.url === "/sessions/shared-reply" && req.method === "DELETE") {
+      deleteCalls++;
+      if (deleteCalls === 1 && options.deleteFailure) {
+        // The daemon has finished this attempt, but stopped the runtime before
+        // its record-removal step failed. Retrying can finish removal.
+        status = "stopped";
+        res.writeHead(options.deleteFailure.status);
+        return void res.end(JSON.stringify({ ok: false, error: { code: options.deleteFailure.code } }));
+      }
+      present = false;
+      return void res.end(JSON.stringify({ ok: true, data: {
+        deleted: { id: "shared-reply", deleted: true, killed: true, cleanup_pending: false },
+      } }));
+    }
     if (req.url === "/sessions/shared-reply/archive") {
       if (!present) {
         res.writeHead(404);
@@ -37,7 +52,7 @@ export async function archiveResumeOutbox() {
       return void res.end(JSON.stringify(body));
     }
     if (req.url === "/history/sessions/fixture-history/resume") {
-      incarnation = "inc-2"; present = true;
+      incarnation = "inc-2"; present = true; status = "running";
       return void res.end(JSON.stringify({ ok: true, data: { session: session() } }));
     }
     if (req.url === "/sessions/shared-reply/prompt/v2") {
@@ -73,7 +88,12 @@ export async function archiveResumeOutbox() {
     for (let n = 0; n < 150; n++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 20)); }
     assert.fail("expected shared reply transition");
   };
-  return { request, list, until, posts: () => posts,
+  return { request, list, until, posts: () => posts, deleteCalls: () => deleteCalls,
+    fence() {
+      const db = new DatabaseSync(config.accessDbPath!, { readOnly: true });
+      try { return db.prepare("SELECT incarnation,operation,owner_token FROM outbox_lifecycle WHERE machine=? AND session_id=?")
+        .get("fixture", "shared-reply"); } finally { db.close(); }
+    },
     async archiveAndResume({ duplicateArchive = false, legacyFence = false } = {}) {
       const archived = await request("/api/sessions/fixture/shared-reply/archive", { method: "POST",
         body: JSON.stringify({ expected_session_incarnation: incarnation }) });
