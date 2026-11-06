@@ -516,3 +516,14 @@ test("delivered file parts show original names while unnamed and absent metadata
   assert.deepEqual(cards.map(card => card.querySelector(".file-card-name")?.textContent), ["notes.txt", "Document", "Document", "notes.txt", "Document", "Document", "Document"]);
   assert.doesNotMatch(window.document.body.textContent ?? "", /123-stored|future_field/);
 });
+
+test("file metadata from literal code or double-quoted paths never names another upload card", async () => {
+  const path = "/fixture/sessions/sample/attachments/missing.txt";
+  const hidden = "/fixture/sessions/sample/attachments/hidden.txt";
+  const file = { kind: "file", id: "message.file-0-60", original_name: "Hidden notes.txt", bytes: 5 };
+  const { window } = await mountImages(undefined, false, [], [
+    { id: "code", role: "user", text: `'${path}'\n\`'${hidden}'\``, files: [file] },
+    { id: "double", role: "user", text: `'${path}'\n"${hidden}"`, files: [file] },
+  ], "sample");
+  assert.deepEqual([...window.document.querySelectorAll(".file-card-name")].map(card => card.textContent), ["Document", "Document"]);
+});

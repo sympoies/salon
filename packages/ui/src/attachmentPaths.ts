@@ -115,3 +115,15 @@ export function hideUploadedImages(text: string, owner: string | undefined, coun
     return "";
   });
 }
+
+/** All quoted non-raster uploads, including literal code, in runtime part order. */
+export function historyFilePaths(text: string, owner: string): readonly string[] {
+  const paths: string[] = [];
+  // Match nils-cli f2e8f710's quoted_paths and raster exclusions. Its file parts
+  // can describe paths that the Markdown renderer intentionally leaves literal.
+  for (const match of text.matchAll(/(['"])(\/.*?)\1/gs)) {
+    const file = uploadedFile(match[2]!, owner);
+    if (file && !/\.(?:png|jpe?g|gif|webp)$/i.test(file.path)) paths.push(file.path);
+  }
+  return paths;
+}

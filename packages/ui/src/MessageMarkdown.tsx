@@ -2,7 +2,7 @@ import type { ConversationFile } from "@agent-console/shared/conversation-images
 import { AttachmentFileCard } from "./AttachmentFileCard.tsx";
 import { Component, createElement, Fragment, memo, useEffect, useMemo, useState, type ElementType, type MouseEvent, type ReactNode } from "react";
 import Markdown, { type MarkdownToJSX } from "markdown-to-jsx/react";
-import { linkUploadedFiles, separateFileUploads, type UploadedFile } from "./attachmentPaths.ts";
+import { historyFilePaths, linkUploadedFiles, separateFileUploads, type UploadedFile } from "./attachmentPaths.ts";
 import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 import { openExternalTerminalUrl, validateTerminalUrl } from "./terminalLinks.ts";
 
@@ -112,6 +112,9 @@ export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressIma
 }) {
   const linked = useMemo(() => uploadSessionId === undefined ? { text, files: [] } : linkUploadedFiles(text, uploadSessionId), [text, uploadSessionId]);
   const cards = useMemo(() => separateFileUploads(linked), [linked]);
+  const sourceFiles = useMemo(() => uploadSessionId === undefined ? [] : historyFilePaths(text, uploadSessionId), [text, uploadSessionId]);
+  const filesMatch = files?.length === cards.files.length && sourceFiles.length === cards.files.length
+    && sourceFiles.every((path, index) => path === cards.files[index]?.path);
   const options = useMemo<MarkdownToJSX.Options>(() => {
     const image = suppressImages ? HiddenMessageImage : MessageImage;
     if (linked.files.length === 0) return suppressImages ? { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: MessageLink, img: image } } : MESSAGE_MARKDOWN_OPTIONS;
@@ -122,14 +125,14 @@ export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressIma
     };
     return { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: link, img: image } };
   }, [linked.files, suppressImages, neutralUploads]);
-  // Runtime file parts follow source order and carry no path reference. A partial
-  // descriptor set cannot safely name an individual card, so keep neutral labels.
+  // File parts have no path reference. Require the complete source sequence to
+  // match visible cards, including references the renderer may leave literal.
   return (
     <div className="message-markdown">
       <MessageMarkdownBoundary key={text} text={text}>
         <Markdown options={options}>{cards.text}</Markdown>
       </MessageMarkdownBoundary>
-      {cards.files.length ? <div className="attachment-file-list">{cards.files.map((file, index) => <AttachmentFileCard key={index} file={file} attachment={files?.length === cards.files.length ? { ...files[index]!, path: file.path } : undefined} />)}</div> : null}
+      {cards.files.length ? <div className="attachment-file-list">{cards.files.map((file, index) => <AttachmentFileCard key={index} file={file} attachment={filesMatch ? { ...files![index]!, path: file.path } : undefined} />)}</div> : null}
     </div>
   );
 });
