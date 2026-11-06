@@ -15,8 +15,8 @@ import { MessageMarkdown } from "./MessageMarkdown.tsx";
 import { stripPasteWrappers } from "./pastedContent.ts";
 import type { HistoryMessage, HistoryMessagesResponse, HistorySession } from "./types.ts";
 
-const HISTORY_PAGE_SIZE = 50;
-const HISTORY_MESSAGE_WINDOW = 100;
+const HISTORY_PAGE_SIZE = 300;
+const HISTORY_MESSAGE_WINDOW = 300;
 // A reader this close to the bottom keeps following the newest message.
 const FOLLOW_LATEST_SLACK_PX = 48;
 

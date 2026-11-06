@@ -320,9 +320,15 @@
 }
 
 .history-messages {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   overflow: auto;
   padding: 16px;
+}
+
+.history-messages > * {
+  flex-shrink: 0;
 }
 
 .history-load-older {
@@ -1153,7 +1159,8 @@ button.history-outgoing-bubble {
      dot has no baseline of its own, so its bottom edge stands in for one. */
   align-items: baseline;
   gap: 6px;
-  margin: 4px 0 0;
+  margin: auto 0 0;
+  padding-top: 4px;
   color: var(--accent);
   font-size: var(--text-xs);
 }

@@ -33,3 +33,14 @@ test("a held event is replaced in place only by a higher revision", () => {
   assert.deepEqual(ids(lower), ["a", "c", "e1", "d"]);
   assert.equal(lower.find(message => message.id === "e1")?.mailbox?.revision, 1);
 });
+
+test("a full conversation window loads the next older page without gaps or duplicates", () => {
+  const page = (start: number) => Array.from({ length: 100 }, (_, index) => row(String(start + index)));
+  let window = page(300);
+  window = mergeOlderHistoryMessages(window, page(200), 300);
+  window = mergeOlderHistoryMessages(window, page(100), 300);
+  assert.deepEqual(ids(window), Array.from({ length: 300 }, (_, index) => String(index + 100)));
+  window = mergeOlderHistoryMessages(window, page(0), 300);
+  assert.deepEqual(ids(window), Array.from({ length: 300 }, (_, index) => String(index)));
+  assert.equal(new Set(ids(window)).size, 300);
+});

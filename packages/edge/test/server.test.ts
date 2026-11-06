@@ -301,7 +301,7 @@ test("history message paging forwards only the bounded daemon query contract", a
   const daemon = createHttpServer((req, res) => {
     seenUrl = req.url;
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ ok: true, data: { messages: [{ ...message, parts: [file] }], older_cursor: "21" } }));
+    res.end(JSON.stringify({ ok: true, data: { messages: [{ ...message, parts: [file] }] } }));
   });
   const { port: daemonPort } = await listenOnLoopback(daemon);
   const edge = createEdgeServer({
@@ -315,8 +315,8 @@ test("history message paging forwards only the bounded daemon query contract", a
       { headers: { authorization: "Bearer client-secret" } },
     );
     assert.equal(response.status, 200);
-    assert.equal(seenUrl, "/history/sessions/h1/messages?parts=v1&cursor=42&limit=50&direction=older");
-    assert.deepEqual(await response.json(), { ok: true, data: { messages: [{ ...message, files: [file] }], older_cursor: "21" } });
+    assert.equal(seenUrl, "/history/sessions/h1/messages?parts=v1&cursor=42&limit=100&direction=older");
+    assert.deepEqual(await response.json(), { ok: true, data: { messages: [{ ...message, files: [file] }] } });
   } finally {
     edge.close();
     daemon.close();
@@ -1655,4 +1655,112 @@ test("rejected upgrades do not crash the shared process", async () => {
   }
   const res = await fetch(`${base}/healthz`);
   assert.equal(res.status, 200);
+});
+
+test("latest and older history reads fill sparse pages without losing the continuation", async () => {
+  for (const direction of ["latest", "older"]) {
+    const calls: string[] = [];
+    const daemon = createHttpServer((req, res) => {
+      const query = new URL(req.url!, "http://fixture").searchParams;
+      calls.push(query.toString());
+      const page = calls.length;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true, data: {
+        messages: [{ id: `row-${page}`, role: "assistant", text: `row ${page}` },
+          ...Array.from({ length: 99 }, (_, i) => ({ id: `tool-${page}-${i}`, role: "assistant", text: "", parts: [{ type: "tool_call" }] }))],
+        older_cursor: `cursor-${page}`,
+      } }));
+    });
+    const { port: daemonPort } = await listenOnLoopback(daemon);
+    const edge = createEdgeServer({ ...config, machines: [{ name: "maple", url: `http://127.0.0.1:${daemonPort}`, token: "fixture" }] });
+    const { base: edgeBase } = await listenOnLoopback(edge);
+    try {
+      const response = await fetch(`${edgeBase}/api/history/sessions/maple/h1/messages?direction=${direction}&cursor=start&limit=100`, { headers: { authorization: "Bearer client-secret" } });
+      const body = await response.json() as { data: { messages: Array<{ id: string }>; older_cursor: string } };
+      assert.deepEqual(body.data.messages.map(message => message.id), ["row-3", "row-2", "row-1"]);
+      assert.equal(body.data.older_cursor, "cursor-3");
+      assert.equal(calls.length, 3);
+      assert.ok(calls.every(call => new URLSearchParams(call).get("limit") === "100"));
+    } finally {
+      edge.closeAllConnections(); daemon.closeAllConnections();
+      await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+    }
+  }
+});
+
+test("byte and time bounds preserve the first unread older page", async () => {
+  for (const bound of ["byte", "time"]) {
+    const originalNow = Date.now;
+    const calls: string[] = [];
+    const daemon = createHttpServer((req, res) => {
+      const cursor = new URL(req.url!, "http://fixture").searchParams.get("cursor");
+      calls.push(cursor ?? "latest");
+      const page = cursor === "next" ? "older" : "latest";
+      const text = bound === "byte" ? "x".repeat(60_000) : "visible";
+      const messages = Array.from({ length: bound === "byte" ? 9 : 1 }, (_, index) => ({ id: `${page}-${index}`, role: "assistant", text }));
+      if (bound === "time" && page === "latest") Date.now = () => originalNow() + 26_000;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true, data: { messages, ...(page === "latest" ? { older_cursor: "next" } : {}) } }));
+    });
+    const { port: daemonPort } = await listenOnLoopback(daemon);
+    const edge = createEdgeServer({ ...config, machines: [{ name: "maple", url: `http://127.0.0.1:${daemonPort}`, token: "fixture" }] });
+    const { base: edgeBase } = await listenOnLoopback(edge);
+    const read = async (query: string) => {
+      const response = await fetch(`${edgeBase}/api/history/sessions/maple/h1/messages?${query}`, { headers: { authorization: "Bearer client-secret" } });
+      assert.equal(response.status, 200);
+      return (await response.json() as { data: { messages: Array<{ id: string }>; older_cursor?: string } }).data;
+    };
+    try {
+      const latest = await read("direction=latest");
+      Date.now = originalNow;
+      assert.equal(latest.older_cursor, "next", `${bound} preserves the unread cursor`);
+      const older = await read(`direction=older&cursor=${latest.older_cursor}`);
+      assert.equal(older.messages[0]?.id, "older-0", `${bound} returns the first unread page`);
+      const ids = [...older.messages, ...latest.messages].map(message => message.id);
+      assert.equal(new Set(ids).size, ids.length, `${bound} has no duplicates`);
+      assert.deepEqual(calls, bound === "byte" ? ["latest", "next", "next"] : ["latest", "next"]);
+    } finally {
+      Date.now = originalNow;
+      edge.closeAllConnections(); daemon.closeAllConnections();
+      await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+    }
+  }
+});
+
+test("a supplemental page deadline returns the accepted window and its unread continuation", async () => {
+  const originalNow = Date.now;
+  const calls: string[] = [];
+  const daemon = createHttpServer((req, res) => {
+    const cursor = new URL(req.url!, "http://fixture").searchParams.get("cursor");
+    calls.push(cursor ?? "latest");
+    res.setHeader("content-type", "application/json");
+    if (!cursor) {
+      Date.now = () => originalNow() + 24_900;
+      res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "latest", role: "assistant", text: "latest" }], older_cursor: "next" } }));
+    } else if (calls.length === 2) {
+      setTimeout(() => res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "older", role: "assistant", text: "older" }] } })), 300);
+    } else {
+      res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "older", role: "assistant", text: "older" }] } }));
+    }
+  });
+  const { port: daemonPort } = await listenOnLoopback(daemon);
+  const edge = createEdgeServer({ ...config, machines: [{ name: "maple", url: `http://127.0.0.1:${daemonPort}`, token: "fixture" }] });
+  const { base: edgeBase } = await listenOnLoopback(edge);
+  try {
+    const headers = { authorization: "Bearer client-secret" };
+    const latestResponse = await fetch(`${edgeBase}/api/history/sessions/maple/h1/messages?direction=latest`, { headers });
+    Date.now = originalNow;
+    assert.equal(latestResponse.status, 200);
+    const latest = (await latestResponse.json() as { data: { messages: Array<{ id: string }>; older_cursor: string } }).data;
+    assert.deepEqual(latest.messages.map(message => message.id), ["latest"]);
+    assert.equal(latest.older_cursor, "next");
+    const olderResponse = await fetch(`${edgeBase}/api/history/sessions/maple/h1/messages?direction=older&cursor=next`, { headers });
+    const older = (await olderResponse.json() as { data: { messages: Array<{ id: string }> } }).data;
+    assert.deepEqual([...older.messages, ...latest.messages].map(message => message.id), ["older", "latest"]);
+    assert.deepEqual(calls, ["latest", "next", "next"]);
+  } finally {
+    Date.now = originalNow;
+    edge.closeAllConnections(); daemon.closeAllConnections();
+    await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+  }
 });
