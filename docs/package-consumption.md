@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.52 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.53 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,9 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.52`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.53`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.52
+### Changes retained in SDK 0.1.53
 
 Sessions carry a marker for a draft the runtime saved, and the composer can show and restore it
 (#282). A refused shared reply always names its refusal reason (#298). Settings shows the server
@@ -246,9 +246,21 @@ Session create forwards the validated capacity-refusal proof (#347).
 Resend of a failed turn and the user bubble drop paste wrapper tags, so the resent text matches what
 the user sent (#351).
 
+A delivered non-image upload shows its sanitized original name and size when the runtime supplies
+managed file parts, including archived History rows; otherwise it keeps the neutral file-kind label
+(#307).
+
+A conversation image whose source is a remote URL is never fetched. Its tile says the external
+image is not loaded, shows the origin and offers an explicit link to open it (#360).
+
+A completed delete or maintenance-delete refusal releases the session's outbox lifecycle fence, so
+a resumed session can be archived or deleted again; uncertain direct deletes stay fenced (#340).
+
+History card previews drop paste wrapper tags (#362).
+
 ### Preserve published releases
 
-Existing `v0.1.0` through `v0.1.51` tags and assets stay immutable. The visibility transition does
+Existing `v0.1.0` through `v0.1.52` tags and assets stay immutable. The visibility transition does
 not republish those releases, change their source or digests, or reuse an existing tag.
 
 A future publication requires separately approved version metadata and an unused tag. This
