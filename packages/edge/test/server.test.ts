@@ -1687,3 +1687,42 @@ test("latest and older history reads fill sparse pages without losing the contin
     }
   }
 });
+
+test("byte and time bounds preserve the first unread older page", async () => {
+  for (const bound of ["byte", "time"]) {
+    const originalNow = Date.now;
+    const calls: string[] = [];
+    const daemon = createHttpServer((req, res) => {
+      const cursor = new URL(req.url!, "http://fixture").searchParams.get("cursor");
+      calls.push(cursor ?? "latest");
+      const page = cursor === "next" ? "older" : "latest";
+      const text = bound === "byte" ? "x".repeat(60_000) : "visible";
+      const messages = Array.from({ length: bound === "byte" ? 9 : 1 }, (_, index) => ({ id: `${page}-${index}`, role: "assistant", text }));
+      if (bound === "time" && page === "latest") Date.now = () => originalNow() + 26_000;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true, data: { messages, ...(page === "latest" ? { older_cursor: "next" } : {}) } }));
+    });
+    const { port: daemonPort } = await listenOnLoopback(daemon);
+    const edge = createEdgeServer({ ...config, machines: [{ name: "maple", url: `http://127.0.0.1:${daemonPort}`, token: "fixture" }] });
+    const { base: edgeBase } = await listenOnLoopback(edge);
+    const read = async (query: string) => {
+      const response = await fetch(`${edgeBase}/api/history/sessions/maple/h1/messages?${query}`, { headers: { authorization: "Bearer client-secret" } });
+      assert.equal(response.status, 200);
+      return (await response.json() as { data: { messages: Array<{ id: string }>; older_cursor?: string } }).data;
+    };
+    try {
+      const latest = await read("direction=latest");
+      Date.now = originalNow;
+      assert.equal(latest.older_cursor, "next", `${bound} preserves the unread cursor`);
+      const older = await read(`direction=older&cursor=${latest.older_cursor}`);
+      assert.equal(older.messages[0]?.id, "older-0", `${bound} returns the first unread page`);
+      const ids = [...older.messages, ...latest.messages].map(message => message.id);
+      assert.equal(new Set(ids).size, ids.length, `${bound} has no duplicates`);
+      assert.deepEqual(calls, bound === "byte" ? ["latest", "next", "next"] : ["latest", "next"]);
+    } finally {
+      Date.now = originalNow;
+      edge.closeAllConnections(); daemon.closeAllConnections();
+      await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+    }
+  }
+});
