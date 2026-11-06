@@ -399,7 +399,7 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       term.refresh(0, Math.max(0, term.rows - 1));
       return true;
     };
-    const scheduler = createWindowScheduler(window);
+    const scheduler = createWindowScheduler<number, number, number>(window);
     const touchScrollScreen = term.element?.querySelector<HTMLElement>(".xterm-screen") ?? null;
     let tuiTouchLayers: HTMLElement[] = [];
     let tuiTouchCellHeightPx = TOUCH_WHEEL_STEP_PX;

@@ -181,7 +181,7 @@ test("upload status helper ignores stale completion timers", () => {
 test("TerminalPane centralizes fit and bottom scroll after attach and layout changes", () => {
   assert.match(source, /readonly layoutSyncKey\?: string;/);
   assert.match(source, /const requestTerminalLayoutSyncRef = useRef<\(\(\) => void\) \| null>\(null\);/);
-  assert.match(terminalInstanceSource, /const scheduler = createWindowScheduler\(window\);/);
+  assert.match(terminalInstanceSource, /const scheduler = createWindowScheduler<number, number, number>\(window\);/);
   assert.match(terminalInstanceSource, /const layoutSync = createTerminalLayoutSync\(/);
   assert.match(terminalInstanceSource, /const bottomPin = createTerminalBottomPin\(bottomPinTarget, scheduler\);/);
   assert.match(terminalInstanceSource, /bottomPin\.request\(\);/);

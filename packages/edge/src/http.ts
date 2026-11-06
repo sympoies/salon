@@ -31,7 +31,7 @@ export async function authedFetch<T>(
     const res = await fetch(url, {
       method: options.method,
       headers,
-      body: options.body,
+      body: options.body as RequestInit["body"],
       signal: options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal,
       redirect: options.redirect,
     });
