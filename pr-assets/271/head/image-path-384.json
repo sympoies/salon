@@ -1,0 +1,23 @@
+{
+  "items": [
+    "Copy image",
+    "Save image",
+    "Open in image viewer",
+    "Copy file path"
+  ],
+  "writes": [
+    "/state/sessions/session-1/attachments/20261106-000000-photo_1.png"
+  ],
+  "requests": [
+    "/api/history/sessions/fixture/history/messages?limit=50",
+    "/api/history/sessions/fixture/history/images/aaaaaaaaaaaaaaaa.0.0.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ],
+  "viewportWidth": 384,
+  "focused": "Copy image",
+  "menu": {
+    "left": 184,
+    "right": 384,
+    "bottom": 333
+  },
+  "overflow": false
+}

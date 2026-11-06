@@ -61,3 +61,19 @@ test("history image descriptors retain sanitized original upload names without c
   ]), [{ id, original_name: "Design draft.png" }, { id },
     { id, original_name: "Design draft.png" }, { id }, { id }, { id, original_name: "😀".repeat(255) }]);
 });
+
+// nils-cli 7beccf32: upload_path is selector-bound copy data, never a read target.
+test("owned image upload paths retain exact spaces and quoting without using other fields", () => {
+  const id = `${"a".repeat(16)}.0.0.${"b".repeat(32)}`;
+  const upload_path = "/state/sessions/session-1/attachments/photo 'one' \"two\".png";
+  const image = {id, origin:"user_attachment", original_name:"photo.png", upload_path};
+  assert.deepEqual(normalizeConversationImages([{...image, future:{version:2}}]), [image]);
+  for (const value of [undefined, null, 42, ""]) {
+    assert.deepEqual(normalizeConversationImages([{id, origin:"user_attachment", upload_path:value,
+      path:upload_path, attachment_ref:"upload-opaque", original_name:"photo.png"}]),
+      [{id, origin:"user_attachment", attachment_ref:"upload-opaque", original_name:"photo.png"}]);
+  }
+  for (const origin of [undefined, "tool_result", "future-origin"]) {
+    assert.ok(!("upload_path" in normalizeConversationImages([{id, origin, upload_path}])[0]!));
+  }
+});

@@ -333,10 +333,10 @@ test("images without provenance render in the bubble as before", async () => {
 const PNG = new Uint8Array([137,80,78,71,13,10,26,10]);
 const pngResponse = (name?: string, mime = "image/png") => new Response(PNG,{headers:{"content-type":mime,...(name ? {"content-disposition":`inline; filename="${name}"`} : {})}});
 
-async function macMenu(options: {name?: string; text?: string; owner?: string; saveFails?: boolean; mime?: string} = {}) {
+async function macMenu(options: {name?: string; text?: string; owner?: string; saveFails?: boolean; mime?: string; images?: Array<{id:string}>; index?: number} = {}) {
   const id = imageId(0);
   const {window} = await mountImages(() => pngResponse(options.name,options.mime),false,[{id}],[
-    {id:"message",role:"user",text:options.text ?? "Look at this",images:[{id}]},
+    {id:"message",role:"user",text:options.text ?? "Look at this",images:options.images ?? [{id}]},
   ],options.owner);
   const invoked: Array<[string,unknown]> = [];
   const written: Array<{type: string}[]> = [];
@@ -350,7 +350,7 @@ async function macMenu(options: {name?: string; text?: string; owner?: string; s
   const previousNavigator = Object.getOwnPropertyDescriptor(globalThis,"navigator");
   cleanups.push(() => { if (previousNavigator) Object.defineProperty(globalThis,"navigator",previousNavigator); else Reflect.deleteProperty(globalThis,"navigator"); });
   Object.defineProperty(globalThis,"navigator",{configurable:true,value:{userAgent:window.navigator.userAgent,clipboard:{async write(items: FakeClipboardItem[]) { written.push(items.map(item => ({type:Object.keys(item.items)[0]!}))); }}}});
-  const thumbnail = window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!;
+  const thumbnail = window.document.querySelector<HTMLButtonElement>(`[aria-label="Open image ${(options.index ?? 0) + 1}"]`)!;
   const event = new window.MouseEvent("contextmenu",{bubbles:true,cancelable:true,clientX:20,clientY:30});
   await act(async () => { thumbnail.dispatchEvent(event); });
   const menu = () => window.document.querySelector<HTMLElement>('[role="menu"]');
@@ -651,4 +651,21 @@ for (const associated of [false,true]) test(`invalid remote origins do not becom
   }
   assert.equal(requests.length,origins.length);
   assert.ok(requests.every(path => path.startsWith("/api/history/sessions/fixture/history/images/")));
+});
+
+test("image-block history copies selector-bound paths for duplicate display names after reload", async () => {
+  // Exact descriptor/parts shape frozen by nils-cli 7beccf32; opaque selectors are synthetic.
+  const frozen = JSON.parse(readFileSync(new URL("./fixtures/history-image-descriptor-v1.json", import.meta.url), "utf8"));
+  assert.deepEqual(frozen.parts[0], {kind:"image", id:"message-1", ref:frozen.images[0].id,
+    ...Object.fromEntries(Object.entries(frozen.images[0]).filter(([key]) => key !== "id"))});
+  const second = {...frozen.images[0], id:imageId(1), attachment_ref:"upload-second",
+    upload_path:"/state/sessions/session-1/attachments/photo 'one' \"two\".png"};
+  const images = [frozen.images[0], second];
+  for (const index of [0, 1, 1]) {
+    const menu = await macMenu({name:"photo 1.png", text:"caption only", images:JSON.parse(JSON.stringify(images)), index});
+    assert.ok(menu.items().includes("Copy file path"), "path survives image-block history without a quoted text token");
+    await menu.choose("Copy file path");
+    assert.deepEqual(menu.invoked.filter(([command]) => command === "write_macos_clipboard_text"),
+      [["write_macos_clipboard_text", {text:images[index].upload_path}]]);
+  }
 });

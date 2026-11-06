@@ -231,3 +231,14 @@ test("history projection retains frozen file descriptors without extra producer 
     { kind: "text", id: "message", text: row.text }, { ...file, future_field: true }, { kind: "future", extra: true },
   ] }] }), { messages: [{ ...row, files: [file] }] });
 });
+
+test("history projection preserves the frozen owned image path and ignores extra part fields", () => {
+  const image = {id:`${"a".repeat(16)}.0.0.${"b".repeat(32)}`, origin:"user_attachment",
+    attachment_ref:"upload-opaque", original_name:"photo 1.png",
+    upload_path:"/state/sessions/session-1/attachments/20261106-000000-photo_1.png"};
+  const row = {id:"message-1", role:"user", text:"caption", images:[image]};
+  const {id, ...metadata} = image;
+  assert.deepEqual(projectHistoryMessagesDaemonData({messages:[{...row,
+    images:[{...image, future:true}], parts:[{kind:"image", id:row.id, ref:id, ...metadata}, {kind:"future"}]}]}),
+    {messages:[row]});
+});

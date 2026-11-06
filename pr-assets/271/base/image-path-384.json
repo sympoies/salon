@@ -1,0 +1,20 @@
+{
+  "items": [
+    "Copy image",
+    "Save image",
+    "Open in image viewer"
+  ],
+  "writes": [],
+  "requests": [
+    "/api/history/sessions/fixture/history/messages?limit=50",
+    "/api/history/sessions/fixture/history/images/aaaaaaaaaaaaaaaa.0.0.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ],
+  "viewportWidth": 384,
+  "focused": "Copy image",
+  "menu": {
+    "left": 184,
+    "right": 384,
+    "bottom": 302
+  },
+  "overflow": false
+}

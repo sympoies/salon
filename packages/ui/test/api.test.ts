@@ -3840,3 +3840,12 @@ test("history page reads retain file metadata and leave missing metadata absent"
   ] } }));
   assert.deepEqual(await listHistoryMessages("fixture", "history"), { ok: true, messages: [{ ...row, files: [file] }, plain] });
 });
+
+test("history image page reads retain the frozen upload path after repeated reads", async () => {
+  const fixture = JSON.parse(await readFile(new URL("./fixtures/history-image-descriptor-v1.json", import.meta.url), "utf8"));
+  const row = {id:"message-1", role:"user", text:"caption only", images:fixture.images};
+  setFetchMock(async () => jsonResponse({ok:true, data:{messages:[{...row, parts:fixture.parts}]}}));
+  for (let read = 0; read < 2; read++) {
+    assert.deepEqual(await listHistoryMessages("fixture", "history"), {ok:true, messages:[row]});
+  }
+});

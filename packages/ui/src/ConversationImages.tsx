@@ -57,12 +57,13 @@ interface MenuState { readonly index: number; readonly x: number; readonly y: nu
 const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
 /** The macOS shell's own menu for an image: only actions that work there. */
-function ImageMenu({menu,paths,onOpen,onClose,onError}: {
-  readonly menu: MenuState; readonly paths: readonly string[];
+function ImageMenu({menu,paths,uploadPath,onOpen,onClose,onError}: {
+  readonly menu: MenuState; readonly paths: readonly string[]; readonly uploadPath?: string;
   readonly onOpen: (index: number) => void; readonly onClose: () => void; readonly onError: (message: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const path = paths.find(candidate => baseName(candidate) === menu.image.filename);
+  // Runtimes before nils-cli 1.40.12 supply only the quoted-text fallback.
+  const path = uploadPath ?? paths.find(candidate => baseName(candidate) === menu.image.filename);
   useEffect(() => {
     ref.current?.querySelector<HTMLButtonElement>("button")?.focus();
     const away = (event: Event) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
@@ -276,7 +277,7 @@ export function ConversationImages({machine,history,images,attachmentPaths = [],
   },[notice]);
   return <div className="conversation-images">
     {images.map((image,index) => <Thumbnail key={image.id} target={{machine,history,image:image.id}} index={index} sourceName={sourceNames[index]} sourceUrl={sourceUrls[index]} onOpen={() => setOpen(index)} onMenu={next => { setNotice(""); setMenu(next); }} />)}
-    {menu ? <ImageMenu menu={menu} paths={attachmentPaths} onOpen={setOpen} onClose={closeMenu} onError={setNotice} /> : null}
+    {menu ? <ImageMenu menu={menu} paths={attachmentPaths} uploadPath={images[menu.index]?.upload_path} onOpen={setOpen} onClose={closeMenu} onError={setNotice} /> : null}
     {notice ? <div className="conversation-image-menu-error" role="status">{notice}</div> : null}
     {open !== null ? <ImageViewer key={`${machine}/${history}`} machine={machine} history={history} images={images} sourceNames={sourceNames} sourceUrls={sourceUrls} initial={open} onClose={() => setOpen(null)} /> : null}
   </div>;
