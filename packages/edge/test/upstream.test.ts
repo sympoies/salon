@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test, afterEach } from "node:test";
 import { aggregateSessions, daemonFetch } from "../src/upstream.ts";
+import { DebugEventBuffer } from "../src/debugEvents.ts";
 import type { MachineConfig } from "../src/config.ts";
 
 const realFetch = globalThis.fetch;
@@ -21,6 +22,20 @@ test("explicitly inactive fleet machines are not probed or counted as offline", 
   assert.equal(probes, 0);
   assert.deepEqual(out.sessions, []);
   assert.deepEqual(out.machines, [{ name: "fixture-retired", ok: false, active: false }]);
+});
+
+test("daemon create failure projects the bounded error into debug events", async () => {
+  globalThis.fetch = (async () => new Response(JSON.stringify({ ok: false, error: {
+    code: "binding-failed", message: "message-canary", details: { secret: "body-canary" },
+  } }), { status: 502 })) as typeof fetch;
+  const events = new DebugEventBuffer();
+  await daemonFetch(m("summit"), "/sessions", { method: "POST", body: {},
+    debug: { requestId: "acreq_fixture123", record: events.record } });
+  const [event] = events.snapshot();
+  assert.equal(event?.code, "binding-failed");
+  assert.equal(event?.request_id, "acreq_fixture123");
+  assert.equal(event?.status, 502);
+  assert.doesNotMatch(JSON.stringify(event), /message-canary|body-canary/);
 });
 
 test("daemonFetch injects the machine bearer token", async () => {

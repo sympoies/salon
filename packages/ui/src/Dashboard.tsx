@@ -1799,6 +1799,10 @@ export function Dashboard({
           retainUnknownCreation(
             "Session creation outcome is unknown; inspect the session list and retained prompt before retrying.",
           );
+          if (r.id) {
+            pendingCreatedFocusKeyRef.current = sessionKey({ machine, id: r.id });
+            pendingCreatedFocusFulfilledRef.current = false;
+          }
         } else {
           setCreateError(r.error);
         }

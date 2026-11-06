@@ -181,6 +181,9 @@ export async function daemonFetch(
       ok: result.status >= 200 && result.status < 300,
       duration_ms: durationMs(started),
       machine: machine.name,
+      errorEnvelope: result.status >= 400 && result.body && typeof result.body === "object"
+        ? { ok: false, error: { code: (result.body as { error?: { code?: unknown } }).error?.code } }
+        : undefined,
     });
     return result;
   } catch (err) {

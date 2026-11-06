@@ -1006,6 +1006,7 @@ export interface CreateSessionResult extends IndeterminateApiResult {
   readonly alreadyLive?: true;
   readonly session?: CreatedSessionSnapshot;
   readonly errorCode?: string;
+  readonly sessionIncarnation?: string;
   /** Undefined means an old daemon omitted the projection; null means a supplied projection was invalid. */
   readonly startup?: StartupStatus | null;
 }
@@ -1102,7 +1103,12 @@ export async function createSession(
   if (!result.ok) {
     const code = (r.body as { error?: { code?: unknown } } | undefined)?.error?.code;
     const errorCode = typeof code === "string" ? code : undefined;
-    const failure = errorCode ? { ...result, errorCode } : result;
+    const error = (r.body as { error?: { session_id?: unknown; session_incarnation?: unknown } } | undefined)?.error;
+    const identity = errorCode === "create-outcome-unknown" && typeof error?.session_id === "string" && error.session_id
+      ? { id: error.session_id, ...(typeof error.session_incarnation === "string" && error.session_incarnation
+        ? { sessionIncarnation: error.session_incarnation } : {}) }
+      : {};
+    const failure = errorCode ? { ...result, errorCode, ...identity } : result;
     return r.status >= 500 && !DETERMINATE_CREATE_FAILURE_CODES.has(errorCode ?? "")
       ? { ...failure, outcomeUnknown: true }
       : failure;

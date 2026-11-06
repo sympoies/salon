@@ -1861,6 +1861,17 @@ test("createSession preserves the authoritative created-session CAS snapshot", a
   });
 });
 
+test("createSession exposes the identity of a claimed session after an unknown outcome", async () => {
+  setFetchMock(async () => jsonResponse({ ok: false, error: {
+    code: "create-outcome-unknown", message: "creation incomplete",
+    session_id: "created-1", session_incarnation: "inc-1",
+  } }, { status: 502 }));
+  assert.deepEqual(await createSession("maple", { agent: "codex" }), {
+    ok: false, error: "creation incomplete", errorCode: "create-outcome-unknown",
+    outcomeUnknown: true, id: "created-1", sessionIncarnation: "inc-1",
+  });
+});
+
 test("createSession rejects malformed created-session fields and drops unknown response data", async () => {
   const responses = [
     {

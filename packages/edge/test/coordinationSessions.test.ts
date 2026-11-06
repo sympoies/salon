@@ -708,6 +708,8 @@ for (const [name, failure] of [
       assert.equal(result.status, 502);
       assert.equal(result.body.ok, false);
       assert.equal(result.body.error.code, "create-outcome-unknown");
+      assert.equal(result.body.error.session_id, id);
+      assert.equal(result.body.error.session_incarnation, `inc-${id}`);
       assert.match(result.body.error.message, new RegExp(`session ${id} `));
       assert.equal(f.source.creates.length, 1);
       const child = (await listSessions(f.base, "browser-tess", "summit")).find((s: any) => s.id === id);
