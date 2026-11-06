@@ -390,7 +390,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     store: outboxStore, access: outboxAccess, intervalMs: options.outboxPollIntervalMs,
   }) : null;
   const protectOutboxLifecycle = async (machine: MachineConfig, sessionId: string, incarnation: string | null,
-    operation: "archive" | "delete", action: () => Promise<DaemonResult>) => {
+    operation: "archive" | "delete" | "maintenance-delete", action: () => Promise<DaemonResult>) => {
     // Capture before observation: a replacement operation must never inherit
     // another owner's stale asynchronous proof.
     const previous = outboxStore?.lifecycle(machine.name, sessionId);
@@ -403,10 +403,16 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     }
     const fence = outboxStore?.beginLifecycle(machine.name, sessionId, incarnation, operation);
     const result = await action();
-    const code = (result.body as { error?: { code?: unknown } } | undefined)?.error?.code;
-    // These responses reject before any lifecycle action. Uncertain outcomes
-    // retain the fence; a later admission must not race deletion of receipts.
-    if (result.status === 401 || result.status === 403
+    const envelope = objectProp(result.body);
+    const code = objectProp(envelope?.error)?.code;
+    // These daemon errors are returned after its synchronous lifecycle attempt
+    // has ended, including termination or lock failure after stopping a runtime.
+    // The session may need recovery, but no late record deletion remains.
+    const completedRefusal = envelope?.ok === false && result.status >= 400 && result.status <= 500
+      && ["session-termination-failed", "session-has-live-children", "coordination-lock-timeout", "session-record-lock-timeout"].includes(String(code));
+    // Unrecognized, malformed and transport failures retain the fence; a later
+    // admission must not race an uncertain deletion of receipts.
+    if (completedRefusal || result.status === 401 || result.status === 403
       || (result.status === 404 && code === "session-not-found")
       || (result.status >= 400 && result.status < 500 && [
         "invalid-json-body", "invalid-maintenance-action-request", "session-incarnation-mismatch",
@@ -2185,37 +2191,42 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             // Tracks what was actually sent, so the echoed contract is checked
             // against the negotiated one even after a fallback.
             let outgoing = body;
-            if (body.operation === "delete") outboxStore?.beginLifecycle(machine.name, sessionId, body.expected_session_incarnation, "maintenance-delete");
             try {
-              let result = await daemonFetch(
-                machine,
-                `/sessions/${encodeURIComponent(sessionId)}/maintenance/actions`,
-                { method: "POST", body: outgoing, debug: daemonDebug(requestId) },
-              );
-              if (
-                outgoing.schema_version !== undefined
-                && daemonRejectedContract(result, "invalid-maintenance-action-request")
-              ) {
-                if (maintenanceActionRequiresSuccessorContract(outgoing.action)) {
-                  // The action does not exist under v1, so there is nothing safe
-                  // to retry: report it as unavailable on this machine.
-                  sendJson(res, 501, {
-                    ok: false,
-                    error: {
-                      code: "maintenance-unsupported",
-                      message: "Session maintenance is unavailable on this machine.",
-                    },
-                  });
-                  return;
-                }
-                // The daemon rejected the body while decoding it, so nothing ran
-                // and the same action can be replayed under the contract it speaks.
-                outgoing = maintenanceRequestUnderV1(outgoing);
-                result = await daemonFetch(
+              const perform = async (): Promise<DaemonResult> => {
+                let result = await daemonFetch(
                   machine,
                   `/sessions/${encodeURIComponent(sessionId)}/maintenance/actions`,
                   { method: "POST", body: outgoing, debug: daemonDebug(requestId) },
                 );
+                if (
+                  outgoing.schema_version !== undefined
+                  && daemonRejectedContract(result, "invalid-maintenance-action-request")
+                ) {
+                  if (maintenanceActionRequiresSuccessorContract(outgoing.action)) {
+                    // The action does not exist under v1, so there is nothing safe
+                    // to retry: report it as unavailable on this machine.
+                    return result;
+                  }
+                  // The daemon rejected the body while decoding it, so nothing ran
+                  // and the same action can be replayed under the contract it speaks.
+                  outgoing = maintenanceRequestUnderV1(outgoing);
+                  result = await daemonFetch(
+                    machine,
+                    `/sessions/${encodeURIComponent(sessionId)}/maintenance/actions`,
+                    { method: "POST", body: outgoing, debug: daemonDebug(requestId) },
+                  );
+                }
+                return result;
+              };
+              const result = body.operation === "delete"
+                ? await protectOutboxLifecycle(machine, sessionId, body.expected_session_incarnation, "maintenance-delete", perform)
+                : await perform();
+              if (outgoing.schema_version !== undefined
+                && maintenanceActionRequiresSuccessorContract(outgoing.action)
+                && daemonRejectedContract(result, "invalid-maintenance-action-request")) {
+                sendJson(res, 501, { ok: false, error: { code: "maintenance-unsupported",
+                  message: "Session maintenance is unavailable on this machine." } });
+                return;
               }
               if (config.multiUser && accessStore && daemonSucceeded(result)) {
                 const actionResult = normalizeSessionMaintenanceActionResult(
@@ -2239,7 +2250,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 }
               }
               forwardMaintenanceActionDaemon(res, result, { sessionId, request: outgoing });
-            } catch {
+            } catch (err) {
+              if (err instanceof OutboxError) throw err;
               const contract = outgoing.schema_version ?? MAINTENANCE_SCHEMA_VERSION;
               let maintenance = null;
               try {

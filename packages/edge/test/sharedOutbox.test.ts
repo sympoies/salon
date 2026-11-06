@@ -622,3 +622,42 @@ test("#340 upgrade repairs a verified completed legacy archive after resume and 
     assert.equal(response.status, 201, `completed legacy archive must not block replacement input: ${await response.text()}`);
   } finally { await f.close(); }
 });
+
+// Exercise the tester's lifecycle orders without a browser or native runtime.
+test("#340 a fresh archived and resumed session can be archived again", async () => {
+  const f = await archiveResumeOutbox();
+  try {
+    await f.archiveAndResume();
+    assert.equal(f.fence(), undefined, "the first archive released its fence");
+    const response = await f.request("/api/sessions/fixture/shared-reply/archive", { method: "POST",
+      body: JSON.stringify({ expected_session_incarnation: "inc-2" }) });
+    assert.equal(response.status, 200);
+    assert.equal(f.fence(), undefined);
+  } finally { await f.close(); }
+});
+
+test("#340 a fresh archived and resumed session can be deleted", async () => {
+  const f = await archiveResumeOutbox();
+  try {
+    await f.archiveAndResume();
+    assert.equal(f.fence(), undefined);
+    assert.equal((await f.request("/api/sessions/fixture/shared-reply", { method: "DELETE" })).status, 200);
+    assert.equal(f.deleteCalls(), 1);
+  } finally { await f.close(); }
+});
+
+for (const next of ["delete", "archive"] as const) test(`#340 a completed delete failure after resume permits ${next} recovery`, async () => {
+  const f = await archiveResumeOutbox({ deleteFailure: { status: 500, code: "session-termination-failed" } });
+  try {
+    await f.archiveAndResume();
+    assert.equal(f.fence(), undefined, "no archive fence survives resume");
+    assert.equal((await f.request("/api/sessions/fixture/shared-reply", { method: "DELETE" })).status, 500);
+    const response = await f.request(`/api/sessions/fixture/shared-reply${next === "archive" ? "/archive" : ""}`, {
+      method: next === "archive" ? "POST" : "DELETE",
+      ...(next === "archive" ? { body: JSON.stringify({ expected_session_incarnation: "inc-2" }) } : {}),
+    });
+    assert.equal(response.status, 200, `completed delete must allow recovery; retained fence: ${JSON.stringify(f.fence())}`);
+    if (next === "delete") assert.equal(f.deleteCalls(), 2);
+    else assert.equal(f.fence(), undefined);
+  } finally { await f.close(); }
+});
