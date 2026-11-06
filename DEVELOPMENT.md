@@ -53,7 +53,7 @@ systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 bash .agents/scrip
 
 ### What the gate checks
 
-With Node 24 and pnpm on PATH, the gate checks Markdown links, its validation contract,
+With Node 24, npm and pnpm on PATH, the gate checks Markdown readability and links, its validation contract,
 shell lint, devlog structure and Git whitespace across both the committed change and
 working tree.
 
@@ -64,6 +64,28 @@ real provider acceptance remain separate.
 
 It removes any stale success marker before checking and writes
 `.cache/agent-validation/project-dev.ok` only after every check passes.
+
+### Check documentation readability
+
+The gate installs the shared lint from agent-runtime-kit commit
+`1a72ec42076f78bd79976c176911ac0fb2f3bbc1` using its upstream npm lockfile.
+The [consumer instructions][docs-lint-consumer] describe this mechanism.
+The pinned checkout and dependencies stay under ignored `node_modules/`; tests and lint do not fetch.
+The hosted cheap job uses the same gate, including for documentation-only PRs.
+
+To install and run the scoped check separately:
+
+```bash
+bash scripts/install-docs-lint.sh
+bash scripts/docs-lint.sh
+```
+
+`scripts/validation/docs-lint-files.txt` lists the twelve maintained docs cleaned for this rollout.
+To expand coverage, clean a maintained document, add its repository-relative file path on a new line,
+and run the scoped check. Keep development logs, PR assets, licenses and generated files out of the list.
+Do not add whole directories: historical and generated content must remain excluded.
+
+[docs-lint-consumer]: https://github.com/sympoies/agent-runtime-kit/blob/1a72ec42076f78bd79976c176911ac0fb2f3bbc1/tools/docs-readability/README.md#use-in-another-repository
 
 ### Handle a stalled validation step
 

@@ -37,6 +37,8 @@ done
 # is stopped and named instead of hanging the gate.
 step() { python3 scripts/stall-timeout.py "$@"; }
 
+bash scripts/install-docs-lint.sh
+bash scripts/docs-lint.sh
 python3 scripts/validation/check-scaffold.py
 step "validation unit tests" python3 -m unittest discover -s scripts/validation -p '*_test.py'
 while IFS= read -r -d '' script; do

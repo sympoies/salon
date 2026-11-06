@@ -4,6 +4,8 @@ Read [DEVELOPMENT.md](DEVELOPMENT.md) before editing. It owns contributor setup,
 validation commands and delivery boundaries. [README.md](README.md) describes
 project status and intended user behavior.
 
+Write human-readable docs using the [shared policy](https://github.com/sympoies/agent-runtime-kit/blob/1a72ec42076f78bd79976c176911ac0fb2f3bbc1/core/policies/human-docs.md).
+
 Keep changes focused on the requested milestone. Use English and generic,
 reusable examples in all repository content. Keep credentials, personal details,
 private environment information and provider payloads out of files and history.
