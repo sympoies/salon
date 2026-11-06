@@ -539,7 +539,7 @@ test("remote source links are omitted for unsafe URLs and ambiguous image associ
 test("viewer navigation explains a refused external image beside a readable local image",async () => {
   const {window} = await mountImages(path => path.includes(imageId(0))
     ? new Response(new Uint8Array([137,80,78,71]),{headers:{"content-type":"image/png"}})
-    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched"}}),{status:422}),
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:"https://images.example.invalid"}}),{status:422}),
   false,[],[{id:"mixed-sources",role:"assistant",text:"![](/charts/local.png) ![](https://images.example.invalid/remote.png)",
     images:[{id:imageId(0)},{id:imageId(1)}]}]);
   await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
@@ -592,4 +592,63 @@ test("archived History rows show frozen file metadata without a live upload owne
   assert.deepEqual(cards.map(card => card.querySelector(".file-card-name")?.textContent), ["notes.txt", "Document", "Document", "Document"]);
   assert.equal(cards[0]?.querySelector(".file-card-details")?.textContent, "Document · 5 B");
   assert.doesNotMatch(window.document.body.textContent ?? "", /123-stored|\/fixture/);
+});
+
+for (const associated of [false,true]) for (const sourceOrigin of [undefined,"https://images.example.invalid"]) {
+  test(`typed remote refusals render without depending on Markdown or origin (${associated}, ${Boolean(sourceOrigin)})`,async () => {
+    const url = "https://images.example.invalid/chart.png";
+    const {window,requests} = await mountImages(() => new Response(JSON.stringify({ok:false,error:{
+      code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:sourceOrigin,extra:"ignored",
+    }}),{status:422}),false,[],[{id:"remote",role:"assistant",text:associated ? `![](${url})` : "Remote chart",
+      images:[{id:imageId(0),origin:"tool_result"}]}]);
+    const tile = window.document.querySelector(".conversation-image-thumbnail");
+    assert.ok(tile);
+    assert.equal(tile.querySelector('[role="status"]')?.textContent,
+      `External image, not loaded${sourceOrigin ? ` · ${sourceOrigin}` : ""}`);
+    if (associated) assert.equal(tile.querySelector("a")?.href,url);
+    else assertNoElement(tile,"a");
+    assertNoElement(tile,"img, .conversation-image-retry");
+    assert.deepEqual(requests,[`/api/history/sessions/fixture/history/images/${imageId(0)}`]);
+  });
+}
+
+test("viewer navigation shows typed remote refusals without Markdown links",async () => {
+  const {window} = await mountImages(path => path.includes(imageId(0))
+    ? new Response(new Uint8Array([137,80,78,71]),{headers:{"content-type":"image/png"}})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",
+      ...(path.includes(imageId(1)) ? {source_origin:"https://images.example.invalid"} : {})}}),{status:422}),
+    false,[{id:imageId(0)},{id:imageId(1)},{id:imageId(2)}]);
+  // Keep a readable image as the viewer entry point; refused tiles have no open action.
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click());
+  const viewer = window.document.querySelector('[aria-label="Conversation images"]');
+  assert.ok(viewer);
+  assert.equal(viewer.querySelector('[role="status"]')?.textContent,"External image, not loaded · https://images.example.invalid");
+  assertNoElement(viewer,"a, img, .conversation-image-retry");
+  assert.equal(viewer.querySelector<HTMLButtonElement>('[aria-label="Download image"]')?.disabled,true);
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click());
+  assert.equal(viewer.querySelector('[role="status"]')?.textContent,"External image, not loaded");
+  assertNoElement(viewer,"a, img, .conversation-image-retry");
+});
+
+for (const associated of [false,true]) test(`invalid remote origins do not become source labels (${associated})`,async () => {
+  const origins = ["javascript:alert(1)","https://user:synthetic-password@example.com",
+    "https://images.example.invalid/private/chart.png","https://images.example.invalid?query=synthetic",
+    "https://images.example.invalid#fragment","https://images.example.invalid:443",
+    "HTTPS://images.example.invalid","https://Images.example.invalid"];
+  const url = "https://images.example.invalid/chart.png";
+  const {window,requests} = await mountImages(path => new Response(JSON.stringify({error:{
+    code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:origins[Number(path.split(".")[2])],
+  }}),{status:422}),false,[],origins.map((_,index) => ({id:`remote-${index}`,role:"assistant",
+    text:associated ? `![](${url})` : "Remote chart",images:[{id:imageId(index),origin:"tool_result"}]})));
+  const tiles = [...window.document.querySelectorAll(".conversation-image-thumbnail")];
+  assert.equal(tiles.length,origins.length);
+  assert.deepEqual(tiles.map(tile => tile.querySelector('[role="status"]')?.textContent),origins.map(() => "External image, not loaded"));
+  for (const tile of tiles) {
+    if (associated) assert.equal(tile.querySelector("a")?.href,url);
+    else assertNoElement(tile,"a");
+    assertNoElement(tile,"img, .conversation-image-retry");
+  }
+  assert.equal(requests.length,origins.length);
+  assert.ok(requests.every(path => path.startsWith("/api/history/sessions/fixture/history/images/")));
 });

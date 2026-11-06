@@ -130,3 +130,66 @@ test("history image refusals forward only the typed outside-root reason without 
     await Promise.all([new Promise<void>(r=>edge.close(()=>r())),new Promise<void>(r=>daemon.close(()=>r()))]);
   }
 });
+
+test("remote image refusals forward typed metadata without extra envelope fields",async () => {
+  const daemon = createServer((req,res) => {
+    res.writeHead(422,{"content-type":"application/json"});
+    res.end(JSON.stringify({ok:false,error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",
+      ...(req.url?.includes("/origin/") ? {source_origin:"https://images.example.invalid"} : {}),
+      message:"Upstream detail",extra:"ignored"}}));
+  });
+  const {base:upstream} = await listenOnLoopback(daemon);
+  const edge = createEdgeServer(makeEdgeConfig({openAccess:true,machines:[{name:"fixture",url:upstream}]}));
+  const {base} = await listenOnLoopback(edge);
+  try {
+    for (const history of ["origin","no-origin"]) {
+      const response = await fetch(`${base}/api/history/sessions/fixture/${history}/images/${image}`);
+      assert.equal(response.status,422);
+      assert.deepEqual(await response.json(),{ok:false,error:{code:"history-image-unavailable",message:"Image unavailable",
+        reason:"remote-url-not-fetched",...(history === "origin" ? {source_origin:"https://images.example.invalid"} : {})}});
+    }
+  } finally {
+    edge.closeAllConnections();daemon.closeAllConnections();
+    await Promise.all([new Promise<void>(r=>edge.close(()=>r())),new Promise<void>(r=>daemon.close(()=>r()))]);
+  }
+});
+
+test("remote refusal origins stay within the frozen scheme and host contract",async () => {
+  const cases = [
+    ["javascript:alert(1)",undefined],
+    ["https://user:synthetic-password@example.com",undefined],
+    ["https://images.example.invalid/private/chart.png",undefined],
+    ["https://images.example.invalid?query=synthetic",undefined],
+    ["https://images.example.invalid#fragment",undefined],
+    ["https://images.example.invalid:443",undefined],
+    ["HTTPS://images.example.invalid",undefined],
+    ["https://Images.example.invalid",undefined],
+    ["https://[not-ip]",undefined],
+    [42,undefined],
+    ["https://images.example.invalid\n",undefined],
+    [`https://${"a".repeat(254)}`,undefined],
+    [`https://${"a".repeat(253)}`,`https://${"a".repeat(253)}`],
+    ["http://images.example.invalid","http://images.example.invalid"],
+    ["https://[::1]","https://[::1]"],
+    ["http://[0:0:0:0:0:ffff:192.0.2.1]","http://[0:0:0:0:0:ffff:192.0.2.1]"],
+  ] as const;
+  const daemon = createServer((req,res) => {
+    const origin = cases[Number(req.url?.split("/")[3])]![0];
+    res.writeHead(422,{"content-type":"application/json"});
+    res.end(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:origin}}));
+  });
+  const {base:upstream} = await listenOnLoopback(daemon);
+  const edge = createEdgeServer(makeEdgeConfig({openAccess:true,machines:[{name:"fixture",url:upstream}]}));
+  const {base} = await listenOnLoopback(edge);
+  try {
+    for (const [index,[,expected]] of cases.entries()) {
+      const response = await fetch(`${base}/api/history/sessions/fixture/${index}/images/${image}`);
+      assert.equal(response.status,422);
+      assert.deepEqual(await response.json(),{ok:false,error:{code:"history-image-unavailable",message:"Image unavailable",
+        reason:"remote-url-not-fetched",...(expected ? {source_origin:expected} : {})}},`case ${index}`);
+    }
+  } finally {
+    edge.closeAllConnections();daemon.closeAllConnections();
+    await Promise.all([new Promise<void>(r=>edge.close(()=>r())),new Promise<void>(r=>daemon.close(()=>r()))]);
+  }
+});

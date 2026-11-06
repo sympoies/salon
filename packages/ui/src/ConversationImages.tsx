@@ -31,20 +31,21 @@ function useImage(target: ImageTarget, visible: boolean) {
 function RetryImage({retry}: { readonly retry: () => void }) {
   return <button type="button" className="conversation-image-retry" onClick={event => { event.stopPropagation(); retry(); }}>Retry</button>;
 }
-function ExternalImage({url}: { readonly url: string }) {
+function ExternalImage({url,origin}: { readonly url?: string; readonly origin?: string }) {
   return <div className="conversation-external-image">
-    <span role="status">External image, not loaded · {new URL(url).origin}</span>
-    <a href={url} target="_blank" rel="noopener noreferrer"
+    <span role="status">External image, not loaded{origin ? ` · ${origin}` : ""}</span>
+    {url ? <a href={url} target="_blank" rel="noopener noreferrer"
       onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
       onClick={event => {
         event.preventDefault(); event.stopPropagation();
         void openExternalTerminalUrl(url);
-      }}>Open link</a>
+      }}>Open link</a> : null}
   </div>;
 }
 function ImageContent({data,fail,onLoad,retry,sourceName,sourceUrl}: { readonly sourceUrl?: string; readonly data: ConversationImageData; readonly fail: () => void; readonly sourceName?: string;
   readonly onLoad?: (image: HTMLImageElement) => void; readonly retry?: () => void }) {
-  if (data.state === "unavailable" && sourceUrl) return <ExternalImage url={sourceUrl} />;
+  if (data.state === "unavailable" && (data.reason === "remote-url-not-fetched" || sourceUrl))
+    return <ExternalImage url={sourceUrl} origin={data.reason === "remote-url-not-fetched" ? data.sourceOrigin : sourceUrl ? new URL(sourceUrl).origin : undefined} />;
   const unavailable = data.state === "unavailable" && data.reason === "outside-allowed-roots"
     ? `Not shared: outside the session folder${sourceName ? ` · ${sourceName}` : ""}` : "Image unavailable";
   return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} onLoad={event => onLoad?.(event.currentTarget)} />
@@ -109,8 +110,8 @@ function Thumbnail({target,index,onOpen,onMenu,sourceName,sourceUrl}: { readonly
     event.preventDefault();
     if (data.state === "ready") onMenu({index,x:event.clientX,y:event.clientY,image:data});
   };
-  if (data.state === "unavailable" && sourceUrl) return <div className="conversation-image-frame">
-    <div className="conversation-image-thumbnail is-external"><ExternalImage url={sourceUrl} /></div>
+  if (data.state === "unavailable" && (data.reason === "remote-url-not-fetched" || sourceUrl)) return <div className="conversation-image-frame">
+    <div className="conversation-image-thumbnail is-external"><ImageContent data={data} fail={fail} sourceUrl={sourceUrl} /></div>
   </div>;
   return <div className="conversation-image-frame"><button ref={ref} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }} onContextMenu={contextMenu}>
     <ImageContent data={data} fail={fail} sourceName={sourceName} onLoad={image => {
