@@ -62,7 +62,7 @@ function uploadedFile(quoted: string, owner: string | undefined): UploadedFile |
 }
 
 /** Replace each quoted upload path in a message with a link the bubble renders as a chip. */
-export function linkUploadedFiles(text: string, owner: string): { readonly text: string; readonly files: readonly UploadedFile[] } {
+export function linkUploadedFiles(text: string, owner: string | undefined): { readonly text: string; readonly files: readonly UploadedFile[] } {
   const files: UploadedFile[] = [];
   const linked = editOutsideCode(text, (quoted, whole) => {
     const file = uploadedFile(quoted, owner);
@@ -114,4 +114,16 @@ export function hideUploadedImages(text: string, owner: string | undefined, coun
     count -= 1;
     return "";
   });
+}
+
+/** All quoted non-raster uploads, including literal code, in runtime part order. */
+export function historyFilePaths(text: string, owner: string | undefined): readonly string[] {
+  const paths: string[] = [];
+  // Match nils-cli f2e8f710's quoted_paths and raster exclusions. Its file parts
+  // can describe paths that the Markdown renderer intentionally leaves literal.
+  for (const match of text.matchAll(/(['"])(\/.*?)\1/gs)) {
+    const file = uploadedFile(match[2]!, owner);
+    if (file && !/\.(?:png|jpe?g|gif|webp)$/i.test(file.path)) paths.push(file.path);
+  }
+  return paths;
 }

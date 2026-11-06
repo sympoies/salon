@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { normalizeResourceEvent, ResourceSseDecoder, resourceKey } from "../src/resources.ts";
@@ -61,4 +62,15 @@ test("conversation snapshots retain classified rows including empty compactions"
   ] };
   assert.deepEqual(normalizeResourceEvent({ schema_version: "agent-console.resource-event.v1", type: "changed", resource: "conversation/a/b", revision: 1, conversation })?.conversation,
     { messages: [conversation.messages[0], conversation.messages[1], { id: "unknown", role: "user", text: "ordinary" }] });
+});
+
+test("conversation snapshots preserve sanitized file names and unnamed descriptor positions", () => {
+  const file = JSON.parse(readFileSync(new URL("./fixtures/history-file-part-v1.json", import.meta.url), "utf8"));
+  const metadata = { schema_version: "agent-console.resource-event.v1", type: "changed", resource: "conversation/fixture/history", revision: 1 };
+  const unnamed = { kind: "file", id: "unnamed.file-0-0", bytes: 0 };
+  const row = { id: "message", role: "user", text: "Synthetic uploads" };
+  assert.deepEqual(normalizeResourceEvent({ ...metadata, conversation: { messages: [{ ...row, files: [
+    { ...unnamed, original_name: ".." }, { ...file, original_name: "../folder\\notes\u0000.txt", future_field: true },
+    { ...file, kind: "future" }, { ...file, bytes: -1 },
+  ] }] } })?.conversation, { messages: [{ ...row, files: [unnamed, file] }] });
 });

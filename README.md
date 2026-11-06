@@ -66,7 +66,9 @@ not retract messages already delivered.
 Outgoing attachments show their sanitized upload names in this browser's outbox.
 Newly attached raster images also have a local preview while the reply is pending
 or refused. History shows the original name when the session runtime supplies
-it; otherwise it uses the neutral image label.
+it; otherwise it uses the neutral image label. Delivered non-image cards also use
+the original name when the runtime supplies managed file parts. Without that
+metadata, they keep the neutral file-kind label.
 
 Refused external Markdown images show their source origin and an **Open link**
 action. Salon loads no external image; opening the link uses your browser.
