@@ -3036,6 +3036,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           ok: false,
           error: {
             code: "create-outcome-unknown",
+            session_id: sessionId,
+            ...(typeof created.session_incarnation === "string" ? { session_incarnation: created.session_incarnation } : {}),
             message: `session ${sessionId} was created and claimed, but its create did not finish; check it before starting another`,
           },
         });
