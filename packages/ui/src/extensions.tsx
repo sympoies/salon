@@ -92,8 +92,20 @@ export interface SessionActionSlot {
   render(session: Session, context: SessionActionContext): ReactNode;
 }
 
+/** Presentation input for a user message or a classified notice. */
+export type ConversationRow =
+  | { readonly kind: "user"; readonly role: string; readonly text: string }
+  | { readonly kind: "notice"; readonly role: string; readonly text: string; readonly noticeKind: string | undefined };
+
+/** Display-only changes; the original row remains unchanged. */
+export type ConversationRowPresentation =
+  | { readonly label: string; readonly text: string }
+  | { readonly summary: string };
+
 export interface UiExtension {
   readonly id: string;
+  /** Pure display policy for conversation rows. */
+  readonly conversationRow?: (row: ConversationRow) => ConversationRowPresentation | null | undefined;
   readonly sessionBadges?: readonly SessionBadgeSlot[];
   readonly sessionActions?: readonly SessionActionSlot[];
   readonly diagnosticProbes?: readonly { readonly name: string; readonly route: string }[];

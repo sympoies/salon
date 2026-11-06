@@ -5,6 +5,7 @@ import type { ConversationSnapshot } from "@agent-console/shared/resources";
 import { normalizeActivityTurnState } from "@agent-console/shared/activity";
 import { listHistoryMessages } from "./api.ts";
 import { AgentBadge } from "./AgentBadge.tsx";
+import { useUiExtensions, type ConversationRow, type ConversationRowPresentation } from "./extensions.tsx";
 import { SessionNotice } from "./SessionNotice.tsx";
 import { MailboxEventRow } from "./MailboxEventRow.tsx";
 import { boundHistoryMessages, mergeOlderHistoryMessages } from "./historyMessageWindow.ts";
@@ -366,6 +367,16 @@ export function HistoryConversationView({
     messagePageCursors,
     loading,
   } = conversation;
+  const { extensions } = useUiExtensions();
+  const present = (row: ConversationRow): ConversationRowPresentation | null | undefined => {
+    try {
+      for (const extension of extensions) {
+        const result = extension.conversationRow?.(row);
+        if (result) return result;
+      }
+    } catch { return undefined; }
+    return undefined;
+  };
   const split = splitImages(messages);
   const showWorking = working && !browsingOlder && (latestMessagePaging || messageCursor === null);
   // Keep a reader who follows the latest messages at the bottom as the line appears.
@@ -398,8 +409,13 @@ export function HistoryConversationView({
           const newDay = Boolean(date && date.toDateString() !== previousDate?.toDateString());
           const sentAt = messageTimeLabel(date);
           const user = message.role === "user";
+          const presentation = !runtime && !compaction && (notice || plainNotice
+            ? present({ kind: "notice", role: message.role, text: message.text, noticeKind: notice?.kind })
+            : user ? present({ kind: "user", role: message.role, text: message.text }) : undefined);
+          const userPresentation = !notice && !plainNotice && user && presentation && "label" in presentation ? presentation : undefined;
+          const noticePresentation = (notice || plainNotice) && presentation && "summary" in presentation ? presentation : undefined;
           const showAvatar = !user && (newDay || previous?.role !== message.role);
-          const originalCaption = imageCaption(message.text, message.images?.length ?? 0);
+          const originalCaption = imageCaption(userPresentation?.text ?? message.text, message.images?.length ?? 0);
           const caption = user ? hideUploadedImages(originalCaption, uploadSessionId, (message.images ?? []).filter(image => image.origin !== "tool_result").length) : originalCaption;
           const { bubble: bubbleImages, reread, tool: toolImages } = split[index]!;
           const imageOnly = Boolean(session && bubbleImages.length && !caption.trim() && message.role !== "goal");
@@ -411,15 +427,16 @@ export function HistoryConversationView({
               <article data-history-message-id={message.id}
                 aria-label={compaction ? "Context compaction" : runtime ? "Runtime command" : notice || plainNotice ? message.mailbox ? "Mailbox read" : "System notice" : user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
                 className={notice || plainNotice || runtime || compaction ? "history-message is-notice" : `history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
-                {compaction ? <details className="session-notice mailbox-event-disclosure"><summary className="session-notice-title">Context compacted{time}</summary><div className="session-notice-body"><MessageMarkdown text={message.text} /></div></details> : plainNotice ? <div className="session-notice"><h3 className="session-notice-title"><span className="session-notice-label">System notice</span>{time}</h3><div className="session-notice-body"><MessageMarkdown text={message.text} /></div></div> : runtime ? <div className="session-notice runtime-command">
+                {compaction ? <details className="session-notice mailbox-event-disclosure"><summary className="session-notice-title">Context compacted{time}</summary><div className="session-notice-body"><MessageMarkdown text={message.text} /></div></details> : plainNotice && noticePresentation ? <details className="session-notice mailbox-event-disclosure"><summary className="session-notice-title">{noticePresentation.summary}{time}</summary><div className="session-notice-body"><MessageMarkdown text={message.text} /></div></details> : plainNotice ? <div className="session-notice"><h3 className="session-notice-title"><span className="session-notice-label">System notice</span>{time}</h3><div className="session-notice-body"><MessageMarkdown text={message.text} /></div></div> : runtime ? <div className="session-notice runtime-command">
                   <h3 className="session-notice-title"><span className="session-notice-label">{runtime.title}</span>{time}</h3>
                   <code className="runtime-command-text">{runtime.text}</code>
-                </div> : notice && message.mailbox ? <MailboxEventRow event={message.mailbox} body={notice.body} time={time} /> : notice ? <SessionNotice notice={notice} raw={message.text} time={time} suppressImages={Boolean(message.images?.length)}>
+                </div> : notice && message.mailbox && !noticePresentation ? <MailboxEventRow event={message.mailbox} body={notice.body} time={time} /> : notice ? <SessionNotice notice={notice} raw={message.text} time={time} summary={noticePresentation?.summary} suppressImages={Boolean(message.images?.length)}>
                   {message.images?.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={message.images} markdownSource={message} /> : null}
                 </SessionNotice> : <>
                 {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
                 {user ? time : null}
-                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? stripPasteWrappers(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} neutralUploads={user} files={user ? message.files : undefined} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} markdownSource={message} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(stripPasteWrappers(originalCaption), uploadSessionId) : undefined} /> : null}{user && bubbleImages.length ? <span className="history-image-label">{bubbleImages.map(image => image.original_name ?? "Image").join(" · ")}</span> : null}{imageOnly && !user ? time : null}</div>}
+                {userPresentation ? <span className="history-source-label">{userPresentation.label}</span> : null}
+                {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`} onCopy={userPresentation ? event => { event.clipboardData.setData("text/plain", message.text); event.preventDefault(); } : undefined}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? stripPasteWrappers(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} neutralUploads={user} files={user ? message.files : undefined} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} markdownSource={message} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(stripPasteWrappers(originalCaption), uploadSessionId) : undefined} /> : null}{user && bubbleImages.length ? <span className="history-image-label">{bubbleImages.map(image => image.original_name ?? "Image").join(" · ")}</span> : null}{imageOnly && !user ? time : null}</div>}
                 {!user && !imageOnly ? time : null}
                 {session && (reread || toolImages.length) ? <div className="history-tool-output">
                   {reread ? <p className="history-tool-reread">Read attachment</p> : null}

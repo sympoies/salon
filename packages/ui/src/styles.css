@@ -351,6 +351,11 @@
   color: var(--conversation-user-text);
 }
 
+.history-source-label {
+  color: var(--conversation-meta);
+  font-size: var(--text-xs);
+}
+
 .history-message:has(> .history-tool-output) {
   flex-wrap: wrap;
 }

@@ -19,13 +19,20 @@ function noticeLabel(kind: string): string {
   return family.length < kind.length ? KIND_FAMILY_LABELS.get(family) ?? "System notice" : "System notice";
 }
 
-function NoticeContent({ notice, time, suppressImages, children }: {
+function NoticeContent({ notice, time, suppressImages, children, summary }: {
   readonly notice: ParsedNotice;
   readonly raw: string;
   readonly time: ReactNode;
   readonly suppressImages: boolean;
   readonly children?: ReactNode;
+  readonly summary?: string;
 }) {
+  if (summary) return <details className="session-notice mailbox-event-disclosure">
+    <summary className="session-notice-title">{summary}{time}</summary>
+    <div className="session-notice-body"><MessageMarkdown text={notice.body} suppressImages={suppressImages} /></div>
+    {children}
+    <div className="session-notice-meta"><span>{notice.kind} · {notice.source}</span></div>
+  </details>;
   return <div className="session-notice">
     <h3 className="session-notice-title">
       <span className="session-notice-label">{noticeLabel(notice.kind)}</span>

@@ -43,5 +43,13 @@ extensions. A distribution owns its entry and passes those extensions.
 The UI exports its mount function, extension contracts, selected reusable components and
 Vite configuration. A distribution owns its page and mounts its extensions.
 
+The optional `UiExtension.conversationRow` pure function receives a `ConversationRow`
+with its role and original text. User rows have kind `user`; notice rows have kind
+`notice` and a `noticeKind` when one was parsed. Return `{ label, text }` for a user
+row to show a source label and display text, or `{ summary }` for a notice to show a
+closed disclosure. Return nothing to keep the default presentation. The original text
+remains available for copy and resend. Errors fall back to the default presentation.
+Extensions are consulted in registration order until one returns a result.
+
 See [package consumption](package-consumption.md) for the local producer and isolated
 installed-package check.
