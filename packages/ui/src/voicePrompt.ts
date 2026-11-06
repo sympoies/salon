@@ -1,4 +1,5 @@
 import { isUploadedPathLine, shortenUploadedFiles } from "./attachmentPaths.ts";
+import { stripPasteWrappers } from "./pastedContent.ts";
 
 /** Language-neutral marker prepended to voice-transcribed prompts so previews keep the transcript visible. */
 export const VOICE_PROMPT_TAG = "🎙️ ";
@@ -60,5 +61,5 @@ export function plainVoiceOnlyMessage(text: string): string {
 
 /** A stored prompt as the Session list and History previews show it. */
 export function compactPromptPreview(text: string): string {
-  return shortenUploadedFiles(compactVoicePromptNote(text));
+  return shortenUploadedFiles(compactVoicePromptNote(stripPasteWrappers(text)));
 }

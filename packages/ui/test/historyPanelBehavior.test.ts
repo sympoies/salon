@@ -83,7 +83,7 @@ test("HistoryPanel identifies sessions and opens the latest context before loadi
         provider_session_id: "private-provider-id",
         title: null,
         prompt_preview: "legacy wrapper",
-        first_user_prompt_preview: `${LEGACY_VOICE_NOTE}first human prompt`,
+        first_user_prompt_preview: `<pasted_content id="paste-1">\n${LEGACY_VOICE_NOTE}first human prompt\n</pasted_content id="paste-1">`,
         last_user_prompt_preview: "'/state/sessions/s-1/attachments/shot.png' > [語音·Fast] latest human prompt",
         cwd: "/home/runner/Project/exampleOrg/agent-console",
         repo_name: "agent-console",
@@ -135,7 +135,7 @@ test("HistoryPanel identifies sessions and opens the latest context before loadi
   assert.match(mounted.container.textContent ?? "", /Untitled session/);
   assert.match(mounted.container.textContent ?? "", /Start\[語音\] first human prompt/);
   assert.match(mounted.container.textContent ?? "", /Latest\[Image shot\.png\] \[語音·Fast\] latest human prompt/);
-  assert.doesNotMatch(mounted.container.textContent ?? "", /語音轉寫/);
+  assert.doesNotMatch(mounted.container.textContent ?? "", /語音轉寫|pasted_content/);
   const row = mounted.container.querySelector(".history-row");
   assert.ok(row);
   assert.equal(row.querySelector(".history-harness-badge")?.textContent, "Codex");
