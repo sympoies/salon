@@ -51,3 +51,26 @@ export function normalizeConversationImages(value: unknown): ConversationImage[]
       ...(typeof ref === "string" && /^[A-Za-z0-9._~-]{1,128}$/.test(ref) ? { attachment_ref: ref } : {}) }];
   });
 }
+
+/** Display-only parts from nils-cli's managed file contract (f2e8f710). */
+export interface ConversationFile {
+  readonly kind: "file";
+  readonly id: string;
+  readonly original_name?: string;
+  readonly bytes: number;
+  readonly mime?: string;
+}
+
+/** Unknown part kinds and extra fields do not change file display metadata. */
+export function normalizeConversationFiles(value: unknown): ConversationFile[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 256).flatMap((part: unknown) => {
+    if (!part || typeof part !== "object" || Array.isArray(part)) return [];
+    const { kind, id, original_name, bytes, mime } = part as Record<string, unknown>;
+    if (kind !== "file" || typeof id !== "string" || !id || id.length > 200
+      || typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes < 0) return [];
+    const name = sanitizeAttachmentName(original_name);
+    return [{ kind, id, bytes, ...(name ? { original_name: name } : {}),
+      ...(typeof mime === "string" && mime.length <= 128 ? { mime } : {}) }];
+  });
+}

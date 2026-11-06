@@ -295,11 +295,13 @@ test("device HTTP bearer writes are not rejected by the cross-origin gate", asyn
 });
 
 test("history message paging forwards only the bounded daemon query contract", async () => {
+  const file = JSON.parse(readFileSync(new URL("../../shared/test/fixtures/history-file-part-v1.json", import.meta.url), "utf8"));
+  const message = { id: "message", role: "user", text: "'/fixture/sessions/sample/attachments/stored.txt'" };
   let seenUrl: string | undefined;
   const daemon = createHttpServer((req, res) => {
     seenUrl = req.url;
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ ok: true, data: { messages: [], older_cursor: "21" } }));
+    res.end(JSON.stringify({ ok: true, data: { messages: [{ ...message, parts: [file] }], older_cursor: "21" } }));
   });
   const { port: daemonPort } = await listenOnLoopback(daemon);
   const edge = createEdgeServer({
@@ -313,8 +315,8 @@ test("history message paging forwards only the bounded daemon query contract", a
       { headers: { authorization: "Bearer client-secret" } },
     );
     assert.equal(response.status, 200);
-    assert.equal(seenUrl, "/history/sessions/h1/messages?cursor=42&limit=50&direction=older");
-    assert.deepEqual(await response.json(), { ok: true, data: { messages: [], older_cursor: "21" } });
+    assert.equal(seenUrl, "/history/sessions/h1/messages?parts=v1&cursor=42&limit=50&direction=older");
+    assert.deepEqual(await response.json(), { ok: true, data: { messages: [{ ...message, files: [file] }], older_cursor: "21" } });
   } finally {
     edge.close();
     daemon.close();

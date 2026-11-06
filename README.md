@@ -66,7 +66,9 @@ not retract messages already delivered.
 Outgoing attachments show their sanitized upload names in this browser's outbox.
 Newly attached raster images also have a local preview while the reply is pending
 or refused. History shows the original name when the session runtime supplies
-it; otherwise it uses the neutral image label.
+it; otherwise it uses the neutral image label. Delivered non-image cards also use
+the original name when the runtime supplies managed file parts. Without that
+metadata, they keep the neutral file-kind label.
 
 Other files appear as cards with an original name or neutral kind, their size
 when known, and a copy icon. Long names stay on one line while keeping the

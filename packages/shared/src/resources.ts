@@ -1,4 +1,4 @@
-import { normalizeConversationImages, type ConversationImage } from "./conversationImages.ts";
+import { normalizeConversationImages, normalizeConversationFiles, type ConversationImage, type ConversationFile } from "./conversationImages.ts";
 import { normalizeMailboxEvent, type MailboxEvent } from "./mailboxEvent.ts";
 import { NormalizedSseDecoder } from "./sse.ts";
 import { parseSessionNotice } from "./parseSessionNotice.ts";
@@ -29,7 +29,7 @@ export function normalizeHistoryCompaction(value: unknown, rowClass: HistoryRowC
 }
 
 export interface ConversationSnapshot {
-  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly row_class?: HistoryRowClass; readonly compaction?: HistoryCompaction; readonly images?: readonly ConversationImage[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent }>;
+  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly row_class?: HistoryRowClass; readonly compaction?: HistoryCompaction; readonly images?: readonly ConversationImage[]; readonly files?: readonly ConversationFile[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent }>;
   readonly next_cursor?: string;
   readonly older_cursor?: string;
 }
@@ -47,12 +47,13 @@ export function normalizeConversationSnapshot(value: unknown): ConversationSnaps
       || typeof item.text !== "string" || item.text.length > 64 * 1024
       || (item.timestamp !== undefined && (typeof item.timestamp !== "string" || item.timestamp.length > 64))) return undefined;
     const images = normalizeConversationImages(item.images);
+    const files = item.role === "user" ? normalizeConversationFiles(item.files) : [];
     const rowClass = normalizeHistoryRowClass(item.row_class);
     if (item.role === "notice" && (images.length || (!rowClass && !parseSessionNotice(item.text)))) continue;
     ids.add(item.id);
     const compaction = normalizeHistoryCompaction(item.compaction, rowClass);
     const mailbox = item.role === "notice" ? normalizeMailboxEvent(item.mailbox) : undefined;
-    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal" | "notice", text: item.text, ...(rowClass ? { row_class: rowClass } : {}), ...(compaction ? { compaction } : {}), ...(images.length ? { images } : {}),
+    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal" | "notice", text: item.text, ...(rowClass ? { row_class: rowClass } : {}), ...(compaction ? { compaction } : {}), ...(images.length ? { images } : {}), ...(files.length ? { files } : {}),
       ...(typeof item.timestamp === "string" ? { timestamp: item.timestamp } : {}), ...(mailbox ? { mailbox } : {}) });
   }
   const snapshot: ConversationSnapshot = { messages };

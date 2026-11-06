@@ -3830,3 +3830,13 @@ test("session list refresh projects current work and its removal", async () => {
   work = null;
   assert.equal((await listSessions()).sessions[0]?.work, null);
 });
+
+test("history page reads retain file metadata and leave missing metadata absent", async () => {
+  const file = JSON.parse(await readFile(new URL("../../shared/test/fixtures/history-file-part-v1.json", import.meta.url), "utf8"));
+  const row = { id: "message", role: "user", text: "'/fixture/sessions/sample/attachments/stored.txt'" };
+  const plain = { ...row, id: "plain" };
+  setFetchMock(async () => jsonResponse({ ok: true, data: { messages: [
+    { ...row, files: [{ ...file, extra: true }, { kind: "future" }] }, plain,
+  ] } }));
+  assert.deepEqual(await listHistoryMessages("fixture", "history"), { ok: true, messages: [{ ...row, files: [file] }, plain] });
+});
