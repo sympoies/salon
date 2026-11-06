@@ -12,7 +12,7 @@ const raw = '<!-- agent-notice:v1 kind=mailbox source=fixture id=sample-1 -->\n\
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 
-async function mount(text: string, latestMessagePaging = true, role = "user", rowClass?: string) {
+async function mount(text: string, latestMessagePaging = true, role = "user", rowClass?: string, extension?: import("../src/extensions.tsx").UiExtension) {
   const window = new Window({ url: "http://localhost" });
   const previous = { window: globalThis.window, document: globalThis.document, IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT };
   Object.assign(globalThis, { window, document: window.document, IS_REACT_ACT_ENVIRONMENT: true });
@@ -27,7 +27,8 @@ async function mount(text: string, latestMessagePaging = true, role = "user", ro
     messages: [{ id: "notice", role, text, row_class: rowClass, timestamp: "2026-01-01T12:00:00" }],
     latestMessagePaging, loading: false, viewportRef: { current: null }, messagePage: 0, messagePageCursors: [],
   } as unknown as import("../src/HistoryConversation.tsx").HistoryConversation;
-  await act(async () => root.render(createElement(HistoryConversationView, { conversation, onJumpToLatest() {} })));
+  const { UiExtensionsProvider, createUiExtensionRegistry } = await ssr.loadModule<typeof import("../src/extensions.tsx")>("/src/extensions.tsx");
+  await act(async () => root.render(createElement(UiExtensionsProvider, { registry: createUiExtensionRegistry(extension ? [extension] : []) }, createElement(HistoryConversationView, { conversation, onJumpToLatest() {} }))));
   return { container: container as unknown as HTMLElement, window, ssr, root };
 }
 
@@ -170,3 +171,46 @@ test("classified compactions fold summaries and classified notices stay boxless"
   const wins = await mount("/compact", true, "user", "notice");
   assert.equal(Boolean(wins.container.querySelector(".runtime-command")), false);
 });
+
+
+test("conversation presentation applies to user and notice rows in live and history", async () => {
+  const extension: import("../src/extensions.tsx").UiExtension = { id: "fixture", conversationRow: (row) => row.kind === "user"
+    ? { label: "Source", text: row.text.replace(/^\[source\] /, "") }
+    : { summary: "Brief update" } };
+  for (const live of [true, false]) {
+    const user = await mount("[source] Original message", live, "user", undefined, extension);
+    assert.equal(user.container.querySelector(".history-message.is-user")?.textContent?.includes("Source"), true);
+    assert.match(user.container.querySelector(".history-bubble")?.textContent ?? "", /^Original message$/);
+    const copied: Record<string, string> = {};
+    const event = new user.window.Event("copy", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { setData: (type: string, value: string) => { copied[type] = value; } } });
+    user.container.querySelector(".history-bubble")!.dispatchEvent(event as unknown as Event);
+    assert.equal(copied["text/plain"], "[source] Original message");
+    const notice = await mount(raw, live, "user", "notice", extension);
+    const disclosure = notice.container.querySelector("details");
+    assert.ok(disclosure);
+    assert.equal(disclosure.open, false);
+    assert.match(disclosure.querySelector("summary")?.textContent ?? "", /Brief update/);
+    disclosure.open = true;
+    assert.match(disclosure.textContent ?? "", /Full body/);
+  }
+});
+
+test("empty and throwing presentation hooks preserve default rows", async () => {
+  for (const [text, role, rowClass] of [["Plain message", "user", undefined], [raw, "user", "notice"]] as const) {
+    const plain = await mount(text, true, role, rowClass);
+    for (const extension of [{ id: "empty", conversationRow: () => undefined }, { id: "throws", conversationRow: () => { throw Error("fixture"); } }]) {
+      const actual = await mount(text, true, role, rowClass, extension);
+      assert.equal(actual.container.querySelector("article")?.outerHTML, plain.container.querySelector("article")?.outerHTML);
+    }
+  }
+});
+
+for (const [name, result] of [["primitive", "bad"], ["wrong field type", { label: "Source", text: { bad: true } }]] as const) {
+  test(`malformed presentation ${name} falls back to default`, async () => {
+    const plain = await mount("Plain message");
+    const extension = { id: "malformed", conversationRow: () => result } as unknown as import("../src/extensions.tsx").UiExtension;
+    const actual = await mount("Plain message", true, "user", undefined, extension);
+    assert.equal(actual.container.querySelector("article")?.outerHTML, plain.container.querySelector("article")?.outerHTML);
+  });
+}
