@@ -1,15 +1,15 @@
 # Service console starts
 
-An explicitly admitted deterministic service can start a console-owned root
-session through the coordination relay without being a session itself. The
-daemon side is the "Service Console starts v1" section of
-[session-coordination-v1.md](https://github.com/sympoies/nils-cli/blob/main/crates/agent-session/docs/specs/session-coordination-v1.md).
-This page covers the edge side.
+An explicitly admitted deterministic service can start a console-owned root session
+through the coordination relay without being a session itself. This page covers the edge
+side.
+
+The daemon side is the "Service Console starts v1" section of
+[session-coordination-v1.md][daemon-spec].
 
 ## Admission
 
-`AGENT_CONSOLE_CONSOLE_START_SERVICES` is a JSON array. Omitting it refuses every
-service.
+`AGENT_CONSOLE_CONSOLE_START_SERVICES` is a JSON array. Omitting it refuses every service.
 
 ```json
 [
@@ -23,12 +23,13 @@ service.
 ]
 ```
 
-`relay_machine` must have an `AGENT_CONSOLE_COORDINATION_RELAYS` entry; the
-service daemon authenticates with that relay's token. `owners` must be configured
-principals other than `root`, and `machines` must be configured machines. A
-request is admitted only when its target machine is also in the owner's own
-machine allowlist. To rotate a generation without downtime, list both generations
-as separate entries, then remove the old one.
+`relay_machine` must have an `AGENT_CONSOLE_COORDINATION_RELAYS` entry; the service daemon
+authenticates with that relay's token. `owners` must be configured principals other than
+`root`, and `machines` must be configured machines. A request is admitted only when its
+target machine is also in the owner's own machine allowlist.
+
+To rotate a generation without downtime, list both generations as separate entries, then
+remove the old one.
 
 ## Create
 
@@ -45,10 +46,12 @@ as separate entries, then remove the old one.
 }
 ```
 
-The request may not carry `source_session_id` or `source_incarnation`. The
-`session` lineage must be a console root. `session` may not set `id`, `resume`,
-`role`, `work` or `origin`. The created session belongs to `owner` and has no
-launcher, dispatcher or coordinator tree.
+The request may not carry `source_session_id` or `source_incarnation`. The `session`
+lineage must be a console root. `session` may not set `id`, `resume`, `role`, `work` or
+`origin`.
+
+The created session belongs to `owner` and has no launcher, dispatcher or coordinator
+tree.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
@@ -61,19 +64,25 @@ launcher, dispatcher or coordinator tree.
 
 ## Idempotency
 
-The access database reserves relay machine, service ID and operation ID before
-any daemon call, and keeps the record. An identical request replays
-`{"ok": true, "data": {"session": {"id", "agent", "session_incarnation"}}}` with
-HTTP 201 and never reaches the target daemon, including after a generation
-rotation. An operation that failed is never recreated: submit a new operation
-id. An operation whose outcome is unknown can leave a running session with no
-owner, which neither a retry nor the scan reveals, so check the target machine
-before submitting a new id.
+The access database reserves relay machine, service ID and operation ID before any daemon
+call, and keeps the record.
+
+An identical request replays `{"ok": true, "data": {"session": {"id", "agent",
+"session_incarnation"}}}` with HTTP 201 and never reaches the target daemon, including
+after a generation rotation.
+
+An operation that failed is never recreated: submit a new operation id.
+
+An operation whose outcome is unknown can leave a running session with no owner, which
+neither a retry nor the scan reveals, so check the target machine before submitting a new
+id.
 
 ## Board scan
 
 `GET /api/coordination/board/v1?source_service_id=&source_service_generation=&owner=&machine=`
-passes the same admission and answers an `agent-session.board-view.v1`. It holds
-only sessions this service started, under any generation, that are owned by
-`owner` on `machine` and have a lineage with `parent: null`. Session-scoped
-parameters are refused on this query.
+passes the same admission and answers an `agent-session.board-view.v1`. It holds only
+sessions this service started, under any generation, that are owned by `owner` on
+`machine` and have a lineage with `parent: null`. Session-scoped parameters are refused on
+this query.
+
+[daemon-spec]: https://github.com/sympoies/nils-cli/blob/main/crates/agent-session/docs/specs/session-coordination-v1.md
