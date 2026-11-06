@@ -1,4 +1,4 @@
-/** Opaque daemon selectors; image bytes and paths never enter history snapshots. */
+/** Opaque daemon selectors with authenticated display/copy metadata; no image bytes. */
 export interface ConversationImage {
   readonly id: string;
   /** Sanitized original display basename, when the runtime has upload metadata. */
@@ -7,6 +7,8 @@ export interface ConversationImage {
   readonly origin?: ConversationImageOrigin;
   /** Opaque same-history upload identity shared by an attachment and its tool re-read. */
   readonly attachment_ref?: string;
+  /** Exact owned upload path from nils-cli 1.40.12; copy data, never read authority. */
+  readonly upload_path?: string;
 }
 export type ConversationImageOrigin = "user_attachment" | "tool_result";
 export const CONVERSATION_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -54,9 +56,10 @@ export function normalizeConversationImages(value: unknown): ConversationImage[]
     const id = image && typeof image === "object" ? (image as { id?: unknown }).id : undefined;
     if (!isConversationImageId(id)) return [];
     const original_name = sanitizeAttachmentName((image as { original_name?: unknown }).original_name);
-    const { origin, attachment_ref: ref } = image as { origin?: unknown; attachment_ref?: unknown };
+    const { origin, attachment_ref: ref, upload_path: path } = image as { origin?: unknown; attachment_ref?: unknown; upload_path?: unknown };
     return [{ id,
       ...(original_name ? { original_name } : {}),
+      ...(origin === "user_attachment" && typeof path === "string" && path ? { upload_path: path } : {}),
       ...(origin === "user_attachment" || origin === "tool_result" ? { origin } : {}),
       ...(typeof ref === "string" && /^[A-Za-z0-9._~-]{1,128}$/.test(ref) ? { attachment_ref: ref } : {}) }];
   });
