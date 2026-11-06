@@ -190,27 +190,67 @@ for (const kind of ["archive", "delete", "maintenance"] as const) test(`an uncer
     "unguarded direct DELETE may still act on a replacement and cannot recover automatically");
 });
 
-for (const kind of ["direct", "maintenance"] as const) {
-  for (const failure of [
-    { status: 500, code: "session-termination-failed" },
-    { status: 409, code: "session-has-live-children" },
-    { status: 409, code: "coordination-lock-timeout" },
-    { status: 409, code: "session-record-lock-timeout" },
-  ]) test(`#340 a terminal ${kind} delete ${failure.code} releases its owned fence across edges`, async t => {
-    const f = await fixture(t, (_req, res) => {
-      res.writeHead(failure.status);
-      res.end(JSON.stringify({ ok: false, error: { code: failure.code } })); return true;
-    });
-    const path = kind === "direct" ? "" : "/maintenance/actions";
-    const body = kind === "direct" ? undefined : {
-      operation: "delete", action: "retry_delete", expected_session_incarnation: incarnation,
-      expected_session_generation: 1, expected_preview_digest: `sha256:${"a".repeat(64)}`, confirmed: true,
-    };
-    assert.equal((await f.request(0, path, kind === "direct" ? "DELETE" : "POST", body)).status, failure.status);
-    assert.equal((await f.request(1, "/outbox/recovered", "PUT", admission)).status, 201,
-      "a completed refusal has no late deletion left to fence");
+for (const failure of [
+  { status: 500, code: "session-termination-failed" },
+  { status: 409, code: "session-has-live-children" },
+  { status: 409, code: "coordination-lock-timeout" },
+  { status: 409, code: "session-record-lock-timeout" },
+]) test(`#340 a terminal direct delete ${failure.code} releases its owned fence across edges`, async t => {
+  const f = await fixture(t, (_req, res) => {
+    res.writeHead(failure.status);
+    res.end(JSON.stringify({ ok: false, error: { code: failure.code } })); return true;
   });
-}
+  assert.equal((await f.request(0, "", "DELETE")).status, failure.status);
+  assert.equal((await f.request(1, "/outbox/recovered", "PUT", admission)).status, 201,
+    "a completed refusal has no late deletion left to fence");
+});
+
+// nils-cli v1.40.5 sanitizes the synchronous maintenance attempt's failure,
+// including termination errors, into this retained-metadata response.
+const maintenanceFailure = {
+  ok: false, error: { code: "session-maintenance-failed", details: {
+    id: "session-a", operation: "delete", kind: "runtime_identity_unavailable",
+    retryable: false, session_metadata_retained: true,
+  } },
+};
+const maintenanceDelete = {
+  operation: "delete", action: "retry_delete", expected_session_incarnation: incarnation,
+  expected_session_generation: 1, expected_preview_digest: `sha256:${"a".repeat(64)}`, confirmed: true,
+};
+
+test("#340 a completed sanitized maintenance-delete failure releases its fence across edges", async t => {
+  const f = await fixture(t, (_req, res) => {
+    res.writeHead(500); res.end(JSON.stringify(maintenanceFailure)); return true;
+  });
+  assert.equal((await f.request(0, "/maintenance/actions", "POST", maintenanceDelete)).status, 500);
+  assert.equal((await f.request(1, "/outbox/recovered", "PUT", admission)).status, 201);
+});
+
+for (const invalid of [
+  { name: "wrong session", details: { ...maintenanceFailure.error.details, id: "another-session" } },
+  { name: "wrong operation", details: { ...maintenanceFailure.error.details, operation: "resume" } },
+  { name: "no retained metadata", details: { ...maintenanceFailure.error.details, session_metadata_retained: false } },
+  { name: "missing details", details: undefined },
+  { name: "unavailable", details: maintenanceFailure.error.details, status: 503 },
+]) test(`#340 a sanitized maintenance refusal with ${invalid.name} retains its fence`, async t => {
+  const f = await fixture(t, (_req, res) => {
+    res.writeHead(invalid.status ?? 500);
+    res.end(JSON.stringify({ ...maintenanceFailure, error: { ...maintenanceFailure.error, details: invalid.details } })); return true;
+  });
+  assert.equal((await f.request(0, "/maintenance/actions", "POST", maintenanceDelete)).status, invalid.status ?? 500);
+  assert.equal((await f.request(1, "/outbox/uncertain", "PUT", admission)).status, 409);
+});
+
+test("#340 a maintenance error on direct DELETE does not prove direct-delete completion", async t => {
+  const f = await fixture(t, (_req, res) => {
+    res.writeHead(500); res.end(JSON.stringify(maintenanceFailure)); return true;
+  });
+  assert.equal((await f.request(0, "", "DELETE")).status, 500);
+  f.observation.incarnation = "incarnation-b";
+  assert.equal((await f.request(1, "/outbox/uncertain", "PUT", {
+    ...admission, expected_session_incarnation: "incarnation-b",
+  })).status, 409);
+});
 
 for (const response of [
   { status: 503, body: { ok: false, error: { code: "session-termination-failed" } } },

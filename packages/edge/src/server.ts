@@ -72,6 +72,7 @@ import {
   maintenanceContractVersion,
   normalizeSessionMaintenanceActionRequest,
   normalizeSessionMaintenanceActionResult,
+  normalizeSessionMaintenanceError,
   type MaintenanceContractVersion,
   type MaintenanceOperation,
   type SessionMaintenanceActionRequest,
@@ -409,7 +410,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // has ended, including termination or lock failure after stopping a runtime.
     // The session may need recovery, but no late record deletion remains.
     const completedRefusal = envelope?.ok === false && result.status >= 400 && result.status <= 500
-      && ["session-termination-failed", "session-has-live-children", "coordination-lock-timeout", "session-record-lock-timeout"].includes(String(code));
+      && (operation === "maintenance-delete"
+        // Maintenance sanitizes termination errors; require its retained-record
+        // contract for this session and operation before releasing the owner.
+        ? code === "session-maintenance-failed" && normalizeSessionMaintenanceError(envelope.error, { sessionId, operation: "delete" }) !== null
+        : ["session-termination-failed", "session-has-live-children", "coordination-lock-timeout", "session-record-lock-timeout"].includes(String(code)));
     // Unrecognized, malformed and transport failures retain the fence; a later
     // admission must not race an uncertain deletion of receipts.
     if (completedRefusal || result.status === 401 || result.status === 403
