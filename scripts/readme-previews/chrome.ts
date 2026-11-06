@@ -20,6 +20,8 @@ export interface Page {
 export interface LaunchOptions {
   /** How long to wait for Chrome to expose its DevTools port. */
   readonly portWaitMs?: number;
+  /** Maximum time for a DevTools command or page load. */
+  readonly protocolWaitMs?: number;
 }
 
 export function chromeBinary(): string {
@@ -46,7 +48,7 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
   // Chrome's profile directory must have a short path: it holds a unix socket.
   const profile = mkdtempSync("/tmp/salon-preview-");
   const child: ChildProcess = spawn(chromeBinary(), [
-    "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--mute-audio",
+    "--headless", "--password-store=basic", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--mute-audio",
     "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check",
     "--force-color-profile=srgb", "--lang=en-US", "about:blank",
   ], { stdio: "ignore", env: { ...process.env, TMPDIR: "/tmp" } });
@@ -93,9 +95,11 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
     };
     const send = <T>(method: string, params: object = {}) => new Promise<T>((resolve, reject) => {
       if (closedReason) return reject(new Error(closedReason));
-      const id = nextId++; pending.set(id, { resolve, reject });
+      const id = nextId++;
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error(`DevTools ${method} timed out`)); }, options.protocolWaitMs ?? 10_000);
+      pending.set(id, { resolve: value => { clearTimeout(timer); resolve(value); }, reject: error => { clearTimeout(timer); reject(error); } });
       try { connection.send(JSON.stringify({ id, method, params })); }
-      catch (error) { pending.delete(id); reject(error as Error); }
+      catch (error) { pending.get(id)?.reject(error as Error); pending.delete(id); }
     });
     await send("Page.enable");
     await send("Runtime.enable");
@@ -106,9 +110,15 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
       },
       async navigate(url) {
         if (closedReason) throw new Error(closedReason);
-        const done = new Promise<void>((resolve, reject) => loaded.push({ resolve, reject }));
+        let waiter: { resolve(): void; reject(error: Error): void };
+        const done = new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => { loaded.splice(loaded.indexOf(waiter), 1); reject(new Error("DevTools page load timed out")); }, options.protocolWaitMs ?? 10_000);
+          waiter = { resolve: () => { clearTimeout(timer); resolve(); }, reject: error => { clearTimeout(timer); reject(error); } };
+          loaded.push(waiter);
+        });
         done.catch(() => {}); // a rejection is reported through the send below or by the caller's await
-        await send("Page.navigate", { url }); await done;
+        try { await send("Page.navigate", { url }); await done; }
+        catch (error) { const index = loaded.indexOf(waiter!); if (index >= 0) loaded.splice(index, 1); waiter!.reject(error as Error); throw error; }
       },
       async evaluate<T>(expression: string) {
         const result = await send<{ result: { value: T }; exceptionDetails?: { text: string; exception?: { description?: string } } }>(

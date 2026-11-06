@@ -26,7 +26,7 @@ before(() => {
   writeFileSync(fake, `#!/usr/bin/env node
 import { writeFileSync } from "node:fs";
 const profile = process.argv.find(argument => argument.startsWith("--user-data-dir="))?.slice("--user-data-dir=".length) ?? "";
-writeFileSync(process.env.FAKE_RECORD, JSON.stringify({ pid: process.pid, profile }));
+writeFileSync(process.env.FAKE_RECORD, JSON.stringify({ pid: process.pid, profile, args: process.argv.slice(2) }));
 if (process.env.FAKE_MODE === "exit") process.exit(3);
 if (process.env.FAKE_MODE === "devtools") writeFileSync(profile + "/DevToolsActivePort", process.env.FAKE_PORT + "\\n/devtools/browser/fake\\n");
 setTimeout(() => {}, 60_000);
@@ -50,6 +50,12 @@ test("a launch that cannot reach the DevTools port reaps Chrome and removes its 
   assert.match(error?.message ?? "", /DevTools port/);
   assert.equal(await until(() => !alive(pid)), true, "the Chrome child is gone");
   assert.equal(existsSync(profile), false, "the generated profile directory is removed");
+});
+
+test("the launcher uses a noninteractive password store", async () => {
+  await launchFailure("hang", 400);
+  const { args } = JSON.parse(readFileSync(join(directory, "hang.json"), "utf8")) as { args: string[] };
+  assert.ok(args.includes("--password-store=basic"));
 });
 
 test("a Chrome that exits before exposing DevTools fails at once and leaves no profile", async () => {
@@ -80,7 +86,7 @@ test("stopping a live browser kills and reaps it before removing the profile", a
 });
 
 /** The smallest DevTools stand-in: one page target and a WebSocket that answers every command with an undefined result. */
-async function startFakeDevTools(): Promise<{ port: number; sockets: Set<Duplex>; close(): Promise<void> }> {
+async function startFakeDevTools(ignore = ""): Promise<{ port: number; sockets: Set<Duplex>; close(): Promise<void> }> {
   const sockets = new Set<Duplex>();
   let port = 0;
   const server: Server = createServer((request, response) => {
@@ -98,7 +104,9 @@ async function startFakeDevTools(): Promise<{ port: number; sockets: Set<Duplex>
       if ((chunk[0]! & 0x0f) !== 1) return;
       const length = chunk[1]! & 0x7f, mask = chunk.subarray(2, 6);
       const text = Buffer.from(chunk.subarray(6, 6 + length).map((byte, index) => byte ^ mask[index % 4]!)).toString();
-      const reply = Buffer.from(JSON.stringify({ id: (JSON.parse(text) as { id: number }).id, result: { result: { type: "undefined" } } }));
+      const command = JSON.parse(text) as { id: number; method: string };
+      if (command.method === ignore) return;
+      const reply = Buffer.from(JSON.stringify({ id: command.id, result: { result: { type: "undefined" } } }));
       socket.write(Buffer.concat([Buffer.from([0x81, reply.length]), reply]));
     });
   });
@@ -131,3 +139,16 @@ test("a request made after the DevTools connection closed is rejected at once in
     await page.close(); await devtools.close();
   }
 });
+
+for (const method of ["Page.navigate", "Runtime.evaluate", "Page.loadEventFired"]) {
+  test(`a stalled ${method} fails within the protocol deadline`, async () => {
+    const devtools = await startFakeDevTools(method);
+    const record = join(directory, "stalled.json");
+    Object.assign(process.env, { CHROME_BIN: fake, FAKE_MODE: "devtools", FAKE_RECORD: record, FAKE_PORT: String(devtools.port) });
+    const page = await chrome.launchPage({ portWaitMs: 3000, protocolWaitMs: 150 });
+    try {
+      const operation = method === "Runtime.evaluate" ? page.evaluate("1") : page.navigate("http://example.test/");
+      await assert.rejects(operation, /timed out/);
+    } finally { await page.close(); await devtools.close(); }
+  });
+}
