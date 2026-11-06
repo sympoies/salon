@@ -1,4 +1,5 @@
 import { assertActiveElement, assertNoElement } from "./support/domAssert.ts";
+import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
 import { afterEach, test } from "node:test";
 import { Window } from "happy-dom";
@@ -497,4 +498,21 @@ test("Markdown refusal names stay with their descriptors when tool images leave 
   assert.equal(window.document.querySelector('.history-tool-output [role="status"]')?.textContent,
     "Not shared: outside the session folder · second plot.png");
   assert.doesNotMatch(window.document.body.innerHTML,/restricted/);
+});
+
+// Mirrors nils-cli f2e8f710's history-file-part-v1.json; no stored-path name inference.
+test("delivered file parts show original names while unnamed and absent metadata stay neutral", async () => {
+  const descriptor = JSON.parse(readFileSync(new URL("../../shared/test/fixtures/history-file-part-v1.json", import.meta.url), "utf8"));
+  const path = "/fixture/sessions/sample/attachments/123-stored.txt";
+  const unnamed = { kind: "file", id: "unnamed.file-0-0", bytes: 5 };
+  const { window } = await mountImages(undefined, false, [], [
+    { id: "message", role: "user", text: `'${path}'`, files: [{ ...descriptor, future_field: true }] },
+    { id: "unnamed", role: "user", text: `'${path}'`, files: [unnamed] },
+    { id: "mixed", role: "user", text: `'${path}'\n'/fixture/sessions/sample/attachments/other.txt'`, files: [unnamed, descriptor] },
+    { id: "absent", role: "user", text: `'${path}'` },
+    { id: "partial", role: "user", text: `'${path}'\n'/fixture/sessions/sample/attachments/other.txt'`, files: [descriptor] },
+  ], "sample");
+  const cards = [...window.document.querySelectorAll(".file-card")];
+  assert.deepEqual(cards.map(card => card.querySelector(".file-card-name")?.textContent), ["notes.txt", "Document", "Document", "notes.txt", "Document", "Document", "Document"]);
+  assert.doesNotMatch(window.document.body.textContent ?? "", /123-stored|future_field/);
 });

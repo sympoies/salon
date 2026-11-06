@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { createEdgeServer } from "../src/server.ts";
@@ -75,14 +76,18 @@ test("watch capacity exhaustion returns a service error before SSE headers", asy
 
 test("conversation events push projected pages and keep oversized pages on the poll/refetch fallback", async () => {
   const { jsonReader } = await import("./support.ts");
+  const file = JSON.parse(readFileSync(new URL("../../shared/test/fixtures/history-file-part-v1.json", import.meta.url), "utf8"));
+  const message = { id: "message", role: "user", text: "'/fixture/sessions/sample/attachments/stored.txt'" };
   for (const oversized of [false, true]) {
     let reads = 0;
     const upstream = jsonReader((url) => {
       assert.equal(url.pathname, "/history/sessions/history/messages");
       assert.equal(url.searchParams.get("direction"), "latest");
-      assert.equal(url.searchParams.get("limit"), "50"); reads++;
+      assert.equal(url.searchParams.get("limit"), "50");
+      assert.equal(url.searchParams.get("parts"), "v1"); reads++;
       return { status: 200, body: { ok: true, data: { source_path: "private", messages: [
         { id: "a1", role: "assistant", text: oversized ? "x".repeat(64 * 1024) : "new message", raw: "private" },
+        { ...message, parts: [file] },
       ], older_cursor: "older" } } };
     });
     const daemon = await listenOnLoopback(upstream);
@@ -98,7 +103,7 @@ test("conversation events push projected pages and keep oversized pages on the p
       assert.equal(event.type, "changed"); assert.equal(reads, 1);
       assert.equal(frame.includes("private"), false);
       if (oversized) assert.equal(event.conversation, undefined, "payload omitted; client retains existing latest-page fetch");
-      else assert.deepEqual(event.conversation, { messages: [{ id: "a1", role: "assistant", text: "new message" }], older_cursor: "older" });
+      else assert.deepEqual(event.conversation, { messages: [{ id: "a1", role: "assistant", text: "new message" }, { ...message, files: [file] }], older_cursor: "older" });
       await reader.cancel();
     } finally {
       controller.abort(); edge.closeAllConnections(); upstream.closeAllConnections();

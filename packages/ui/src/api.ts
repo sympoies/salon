@@ -1,5 +1,5 @@
 import { normalizeSavedDraft, normalizeSavedDraftInventory, type SavedDraft } from "@agent-console/shared";
-import { normalizeConversationImages, sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
+import { normalizeConversationImages, normalizeConversationFiles, sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
 import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { validOutboxText, SHARED_OUTBOX_MAX_ITEMS, SHARED_OUTBOX_MAX_HOLDS, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
@@ -796,6 +796,7 @@ function normalizeHistoryMessage(value: unknown): HistoryMessage | undefined {
   const rowClass = normalizeHistoryRowClass(raw.row_class);
   const text = typeof raw.text === "string" && (rowClass === "compaction" ? [...raw.text].length : raw.text.length) <= 64 * 1024 ? raw.text : undefined;
   const images = normalizeConversationImages(raw.images);
+  const files = role === "user" ? normalizeConversationFiles(raw.files) : [];
   const compaction = normalizeHistoryCompaction(raw.compaction, rowClass);
   if (!id || !role || text === undefined || (!text && !images.length && rowClass !== "compaction")) return undefined;
   if (role === "notice" && (images.length || (!rowClass && !parseSessionNotice(text)))) return undefined;
@@ -807,6 +808,7 @@ function normalizeHistoryMessage(value: unknown): HistoryMessage | undefined {
     ...(rowClass ? { row_class: rowClass } : {}),
     ...(compaction ? { compaction } : {}),
     ...(images.length ? { images } : {}),
+    ...(files.length ? { files } : {}),
     ...(boundedString(raw.timestamp, 64) ? { timestamp: raw.timestamp as string } : {}),
     ...(mailbox ? { mailbox } : {}),
   };

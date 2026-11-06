@@ -170,6 +170,7 @@ export interface HistorySession {
 }
 
 export interface HistoryMessage {
+  readonly files?: readonly import("@agent-console/shared/conversation-images").ConversationFile[];
   readonly row_class?: import("@agent-console/shared").HistoryRowClass;
   readonly compaction?: import("@agent-console/shared").HistoryCompaction;
   readonly images?: readonly import("@agent-console/shared/conversation-images").ConversationImage[];

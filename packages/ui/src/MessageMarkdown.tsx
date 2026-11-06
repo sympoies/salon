@@ -1,3 +1,4 @@
+import type { ConversationFile } from "@agent-console/shared/conversation-images";
 import { AttachmentFileCard } from "./AttachmentFileCard.tsx";
 import { Component, createElement, Fragment, memo, useEffect, useMemo, useState, type ElementType, type MouseEvent, type ReactNode } from "react";
 import Markdown, { type MarkdownToJSX } from "markdown-to-jsx/react";
@@ -101,8 +102,9 @@ export class MessageMarkdownBoundary extends Component<{ readonly text: string; 
 }
 
 /** One conversation or history message rendered as safe Markdown. */
-export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressImages = false, uploadSessionId, neutralUploads = false }: {
+export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressImages = false, uploadSessionId, neutralUploads = false, files }: {
   readonly text: string;
+  readonly files?: readonly ConversationFile[];
   readonly suppressImages?: boolean;
   readonly neutralUploads?: boolean;
   /** The session whose own quoted upload paths show as chips. */
@@ -120,12 +122,14 @@ export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressIma
     };
     return { ...MESSAGE_MARKDOWN_OPTIONS, overrides: { a: link, img: image } };
   }, [linked.files, suppressImages, neutralUploads]);
+  // Runtime file parts follow source order and carry no path reference. A partial
+  // descriptor set cannot safely name an individual card, so keep neutral labels.
   return (
     <div className="message-markdown">
       <MessageMarkdownBoundary key={text} text={text}>
         <Markdown options={options}>{cards.text}</Markdown>
       </MessageMarkdownBoundary>
-      {cards.files.length ? <div className="attachment-file-list">{cards.files.map((file, index) => <AttachmentFileCard key={index} file={file} />)}</div> : null}
+      {cards.files.length ? <div className="attachment-file-list">{cards.files.map((file, index) => <AttachmentFileCard key={index} file={file} attachment={files?.length === cards.files.length ? { ...files[index]!, path: file.path } : undefined} />)}</div> : null}
     </div>
   );
 });

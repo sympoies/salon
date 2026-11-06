@@ -1424,7 +1424,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       case "history-messages": {
         const historyId = routeParam(route, "id");
         await withMachine(res, routeParam(route, "machine"), async (machine) => {
-          const qs = new URLSearchParams();
+          const qs = new URLSearchParams({ parts: "v1" });
           for (const key of ["cursor", "limit", "direction"] as const) {
             const value = url.searchParams.get(key);
             if (value !== null) qs.set(key, value);
@@ -1558,7 +1558,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               }
               const machine = byName.get(subscription.machine)!;
               const result = await daemonFetch(machine,
-                `/history/sessions/${encodeURIComponent(subscription.id)}/messages?limit=50&direction=latest`,
+                `/history/sessions/${encodeURIComponent(subscription.id)}/messages?limit=50&direction=latest&parts=v1`,
                 { timeoutMs: HISTORY_DAEMON_TIMEOUT_MS, signal });
               const data = result.status === 200 && objectProp(result.body)?.ok !== false ? projectHistoryMessagesDaemonData(objectProp(result.body)?.data) : null;
               if (!data) throw new Error("conversation unavailable");

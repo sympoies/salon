@@ -223,3 +223,11 @@ test("history projection preserves frozen classified rows and ignores unknown cl
   assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [...rows, ...notices, unknown, unrelated, malformed] }),
     { messages: [...rows, ...notices, { id: "unknown", role: "user", text: "ordinary" }, { id: "ordinary", role: "user", text: "hello" }, { id: "invalid", role: "notice", text: "summary", row_class: "compaction" }] });
 });
+
+test("history projection retains frozen file descriptors without extra producer fields", () => {
+  const file = JSON.parse(readFileSync(new URL("../../shared/test/fixtures/history-file-part-v1.json", import.meta.url), "utf8"));
+  const row = { id: "message", role: "user", text: "'/fixture/sessions/sample/attachments/stored.txt'" };
+  assert.deepEqual(projectHistoryMessagesDaemonData({ messages: [{ ...row, parts: [
+    { kind: "text", id: "message", text: row.text }, { ...file, future_field: true }, { kind: "future", extra: true },
+  ] }] }), { messages: [{ ...row, files: [file] }] });
+});

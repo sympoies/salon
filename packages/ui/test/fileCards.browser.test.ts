@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -11,6 +11,7 @@ import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
 test("non-image file cards retain names, extensions and stacking at phone and desktop widths", async t => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
+  const descriptor = JSON.parse(readFileSync(new URL("../../shared/test/fixtures/history-file-part-v1.json", import.meta.url), "utf8"));
   const built = await build({
     root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, logLevel: "silent", resolve: { conditions: ["source"] },
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
@@ -21,7 +22,7 @@ test("non-image file cards retain names, extensions and stacking at phone and de
         if (id !== "\0file-cards-fixture") return;
         return `import React from 'react'; import {createRoot} from 'react-dom/client';
           import {OutgoingBubble} from '/src/OutgoingBubble.tsx';
-          import {MessageMarkdown} from '/src/MessageMarkdown.tsx';
+          import {HistoryConversationView} from '/src/HistoryConversation.tsx';
           import '/src/styles.css';
           const root='/fixture/sessions/sample/attachments/';
           const video={path:root+'stored-video.mp4',original_name:'Demo recording.mp4',bytes:2097152};
@@ -34,8 +35,9 @@ test("non-image file cards retain names, extensions and stacking at phone and de
           const elements=rows.map(([label,attachments,text])=>React.createElement('article',{key:label,className:'history-message is-user history-outgoing-reply'},
             React.createElement('time',null,'12:00'),React.createElement('div',{className:'history-outgoing-body'},
               React.createElement(OutgoingBubble,{uploadSessionId:'sample',text:attachments.map(quote).join('\\n')+(text?'\\n'+text:''),attachments}))));
-          elements.push(React.createElement('article',{key:'history',className:'history-message is-user'},React.createElement('time',null,'12:00'),
-            React.createElement('div',{className:'history-bubble'},React.createElement(MessageMarkdown,{text:quote({path:doc.path}),uploadSessionId:'sample',neutralUploads:true}))));
+          elements.push(React.createElement(HistoryConversationView,{key:'history',uploadSessionId:'sample',onJumpToLatest(){},conversation:{
+            session:{id:'history',machine:'fixture',provider:'codex'},latestMessagePaging:true,loading:false,viewportRef:{current:null},
+            messages:[{id:'message',role:'user',text:quote({path:doc.path}),files:[${JSON.stringify(descriptor)}],timestamp:'2026-11-01T12:00:00Z'}]}}));
           createRoot(document.querySelector('#root')).render(React.createElement(React.Fragment,null,React.createElement('h2',null,'Synthetic file cards'),React.createElement('section',{className:'history-messages'},elements)));
           const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right}};
           setTimeout(()=>{const cards=[...document.querySelectorAll('.file-card')];
@@ -82,7 +84,8 @@ test("non-image file cards retain names, extensions and stacking at phone and de
         assert.equal(result.overflow, false);
         assert.equal(result.literal, false);
         assert.equal(result.cards.length, 7);
-        assert.deepEqual(result.cards.map(card => card.details), ["Video · 2 MB", "Document · 1 KB", "Document · 10 KB", "Video · 2 MB", "Archive", "File", "Document"]);
+        assert.deepEqual(result.cards.map(card => card.details), ["Video · 2 MB", "Document · 1 KB", "Document · 10 KB", "Video · 2 MB", "Archive", "File", "Document · 5 B"]);
+        assert.equal(result.cards.at(-1).name, "notes.txt", "delivered history reads the frozen descriptor name");
         assert.equal(result.textFirst, true);
         for (const card of result.cards) {
           assert.ok(card.box.w <= 320 && card.box.right <= width);
