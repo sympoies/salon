@@ -1,0 +1,12 @@
+README.md
+docs/package-consumption.md
+DEVELOPMENT.md
+docs/container-development.md
+docs/coordination-resume.md
+docs/design/icon.md
+docs/outbox-lifecycle-recovery.md
+docs/package-boundary.md
+docs/service-console-starts.md
+docs/status-notice-testing.md
+packages/edge/README.md
+packages/ui/README.md
