@@ -35,7 +35,7 @@ test("non-image file cards retain names, extensions and stacking at phone and de
           const elements=rows.map(([label,attachments,text])=>React.createElement('article',{key:label,className:'history-message is-user history-outgoing-reply'},
             React.createElement('time',null,'12:00'),React.createElement('div',{className:'history-outgoing-body'},
               React.createElement(OutgoingBubble,{uploadSessionId:'sample',text:attachments.map(quote).join('\\n')+(text?'\\n'+text:''),attachments}))));
-          elements.push(React.createElement(HistoryConversationView,{key:'history',uploadSessionId:'sample',onJumpToLatest(){},conversation:{
+          elements.push(React.createElement(HistoryConversationView,{key:'history',onJumpToLatest(){},conversation:{
             session:{id:'history',machine:'fixture',provider:'codex'},latestMessagePaging:true,loading:false,viewportRef:{current:null},
             messages:[{id:'message',role:'user',text:quote({path:doc.path}),files:[${JSON.stringify(descriptor)}],timestamp:'2026-11-01T12:00:00Z'}]}}));
           createRoot(document.querySelector('#root')).render(React.createElement(React.Fragment,null,React.createElement('h2',null,'Synthetic file cards'),React.createElement('section',{className:'history-messages'},elements)));

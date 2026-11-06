@@ -527,3 +527,17 @@ test("file metadata from literal code or double-quoted paths never names another
   ], "sample");
   assert.deepEqual([...window.document.querySelectorAll(".file-card-name")].map(card => card.textContent), ["Document", "Document"]);
 });
+
+test("archived History rows show frozen file metadata without a live upload owner", async () => {
+  const file = JSON.parse(readFileSync(new URL("../../shared/test/fixtures/history-file-part-v1.json", import.meta.url), "utf8"));
+  const path = "/fixture/sessions/sample/attachments/123-stored.txt";
+  const { window } = await mountImages(undefined, false, [], [
+    { id: "message", role: "user", text: `'${path}'`, files: [file] },
+    { id: "unnamed", role: "user", text: `'${path}'`, files: [{ kind: "file", id: "unnamed.file-0-0", bytes: 5 }] },
+    { id: "partial", role: "user", text: `'${path}'\n'/fixture/sessions/sample/attachments/other.txt'`, files: [file] },
+  ]);
+  const cards = [...window.document.querySelectorAll(".file-card")];
+  assert.deepEqual(cards.map(card => card.querySelector(".file-card-name")?.textContent), ["notes.txt", "Document", "Document", "Document"]);
+  assert.equal(cards[0]?.querySelector(".file-card-details")?.textContent, "Document · 5 B");
+  assert.doesNotMatch(window.document.body.textContent ?? "", /123-stored|\/fixture/);
+});

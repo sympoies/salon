@@ -110,9 +110,11 @@ export const MessageMarkdown = memo(function MessageMarkdown({ text, suppressIma
   /** The session whose own quoted upload paths show as chips. */
   readonly uploadSessionId?: string;
 }) {
-  const linked = useMemo(() => uploadSessionId === undefined ? { text, files: [] } : linkUploadedFiles(text, uploadSessionId), [text, uploadSessionId]);
+  // Archived history has no live upload owner; file parts still prove managed uploads
+  // for display. They never authorize a read, and the full source sequence must match.
+  const linked = useMemo(() => uploadSessionId === undefined && !files?.length ? { text, files: [] } : linkUploadedFiles(text, uploadSessionId), [text, uploadSessionId, files?.length]);
   const cards = useMemo(() => separateFileUploads(linked), [linked]);
-  const sourceFiles = useMemo(() => uploadSessionId === undefined ? [] : historyFilePaths(text, uploadSessionId), [text, uploadSessionId]);
+  const sourceFiles = useMemo(() => uploadSessionId === undefined && !files?.length ? [] : historyFilePaths(text, uploadSessionId), [text, uploadSessionId, files?.length]);
   const filesMatch = files?.length === cards.files.length && sourceFiles.length === cards.files.length
     && sourceFiles.every((path, index) => path === cards.files[index]?.path);
   const options = useMemo<MarkdownToJSX.Options>(() => {
