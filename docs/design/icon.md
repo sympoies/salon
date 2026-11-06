@@ -1,27 +1,33 @@
 # Salon icon
 
 The Salon mark uses the maintainer-selected Continuous jade direction. A single
-uninterrupted ribbon forms the S silhouette; a teal-to-mint gradient flows
-through the center without separate stacked faces or overlap seams.
+uninterrupted ribbon forms the S silhouette; a teal-to-mint gradient flows through the
+center without separate stacked faces or overlap seams.
 
 ## Assets
 
-- [Dark SVG](../../assets/brand/salon-mark-dark.svg) — the selected gradient for dark surfaces.
-- [Light SVG](../../assets/brand/salon-mark-light.svg) — the same outline with deeper green stops for contrast on light surfaces.
-- [Previews](../../assets/brand/previews/) — transparent PNGs at 16 × 16, 32 × 32 and 256 × 256 for both themes.
-- [Before and after](../../assets/brand/previews/salon-mark-before-after.png) — both themes at 256px, with native-size and 4× small-size checks.
+- [Dark SVG](../../assets/brand/salon-mark-dark.svg): the selected gradient for dark surfaces.
+- [Light SVG](../../assets/brand/salon-mark-light.svg): the same outline with deeper green stops
+  for contrast on light surfaces.
+- [Previews](../../assets/brand/previews/): transparent PNGs at 16 × 16, 32 × 32 and 256 × 256 for
+  both themes.
+- [Before and after](../../assets/brand/previews/salon-mark-before-after.png): both themes at
+  256px, with native-size and 4× small-size checks.
 
-The two SVGs are the editable masters. Both use the same single path and round
-returns; their title and gradient IDs are unique across themes. There is no
-embedded raster art or provider logo. The workspace already serves these files
-as theme-specific SVG favicons. This repository has no Salon native-platform
-icon generator or additional Salon platform icon outputs.
+The two SVGs are the editable masters. Both use the same single path and round returns;
+their title and gradient IDs are unique across themes. There is no embedded raster art or
+provider logo.
+
+The workspace already serves these files as theme-specific SVG favicons. This repository
+has no Salon native-platform icon generator or additional Salon platform icon outputs.
 
 ## Rendering
 
-Recorded tools: `image-processing 1.36.34`, Python 3.12, Pillow 10.2.0 and
-DejaVu Sans 2.37. Run from the repository root. Validate before rendering;
-all generated preview PNGs retain transparent backgrounds.
+Recorded tools: `image-processing 1.36.34`, Python 3.12, Pillow 10.2.0 and DejaVu Sans
+2.37.
+
+Run from the repository root. Validate before rendering; all generated preview PNGs retain
+transparent backgrounds.
 
 ```bash
 brand_scratch="$(mktemp -d)"
@@ -37,9 +43,9 @@ for theme in dark light; do
 done
 ```
 
-The comparison composites the original previews from the recorded base commit
-and the newly rendered previews. Small-size enlargement uses nearest-neighbor
-sampling; the native-size images are pasted without resizing.
+The comparison composites the original previews from the recorded base commit and the
+newly rendered previews. Small-size enlargement uses nearest-neighbor sampling; the
+native-size images are pasted without resizing.
 
 ```bash
 python3 - <<'PY'
@@ -86,13 +92,13 @@ PY
 
 ## Inspection and validation
 
-Both SVGs passed `image-processing svg-validate`. The six previews were checked
-for exact dimensions and transparent corners, and inspected on dark and light
-surfaces at native size and 4× enlargement. The S silhouette and its two open
-returns remain legible at 16px and 32px. The new dark preview matches the
-selected candidate's pixels when composited on the selection background.
+Both SVGs passed `image-processing svg-validate`. The six previews were checked for exact
+dimensions and transparent corners, and inspected on dark and light surfaces at native
+size and 4× enlargement. The S silhouette and its two open returns remain legible at 16px
+and 32px. The new dark preview matches the selected candidate's pixels when composited on
+the selection background.
 
-Test-first waiver: static vector artwork has no executable product behavior.
-No behavioral tests were added. Substitute checks cover SVG validation,
-actual rendered dimensions, transparency, visual inspection and deterministic
-regeneration, together with the repository pre-PR gate.
+Test-first waiver: static vector artwork has no executable product behavior. No behavioral
+tests were added. Substitute checks cover SVG validation, actual rendered dimensions,
+transparency, visual inspection and deterministic regeneration, together with the
+repository pre-PR gate.

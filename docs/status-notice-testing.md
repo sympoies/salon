@@ -1,17 +1,20 @@
 # Status notice acceptance recipe
 
-Use an isolated test principal and resources for these checks. Do not stop a
-shared machine, change another principal's sessions, or send malformed requests
-outside the test principal's own authenticated edge session. The recipes below
-use existing Salon behavior and require no product code or special build.
+Use an isolated test principal and resources for these checks. Do not stop a shared
+machine, change another principal's sessions, or send malformed requests outside the test
+principal's own authenticated edge session. The recipes below use existing Salon behavior
+and require no product code or special build.
 
-For each notice, open the installed client as the test principal. On a phone,
-the notice appears at the right side of the status-count row. With the
-persistent count row enabled, the counts remain beneath the notice; with it
-disabled, the row appears only while the notice is visible. On desktop and
-native macOS, the notice appears at the right end of the title bar. It must not
-float over the conversation or add a row below the header. Dismiss with the
-close button to repeat sooner where noted.
+For each notice, open the installed client as the test principal.
+
+On a phone, the notice appears at the right side of the status-count row. With the
+persistent count row enabled, the counts remain beneath the notice; with it disabled, the
+row appears only while the notice is visible.
+
+On desktop and native macOS, the notice appears at the right end of the title bar. It must
+not float over the conversation or add a row below the header.
+
+Dismiss with the close button to repeat sooner where noted.
 
 ## Host offline
 
@@ -35,9 +38,9 @@ close button to repeat sooner where noted.
    it again.
 4. Remove the test machine entry when finished.
 
-The machine name must be one of the configured names: the client only treats
-known-machine failures as host-offline notices. The edge's failed-probe breaker
-produces the cooling-down reason without requiring a real host to be stopped.
+The machine name must be one of the configured names: the client only treats known-machine
+failures as host-offline notices. The edge's failed-probe breaker produces the
+cooling-down reason without requiring a real host to be stopped.
 
 ## Attention
 
@@ -53,8 +56,8 @@ produces the cooling-down reason without requiring a real host to be stopped.
    120-second repeat suppression. Close the notice to clear it. Repeat the
    request to show it again, then remove the disposable session if desired.
 
-Only use the test principal's own disposable session and test-only machine. The
-failed title update leaves the session title unchanged.
+Only use the test principal's own disposable session and test-only machine. The failed
+title update leaves the session title unchanged.
 
 ## Phone history unavailable
 
@@ -76,9 +79,12 @@ This fallback is phone-only; it does not appear on desktop or native macOS.
 ## Source behavior
 
 The edge machine probe reports a cooling-down error after a failed probe;
-`useStatusNotice` recognizes errors for configured machine names and applies
-the 8-second expiry, 120-second repeat window, and 5-second startup grace.
-The title controller reports an attention error when the daemon lacks title
-revision support. The phone fallback is selected when a session's machine is
-not in `historyMachineNames`. All three notices flow through the existing
-header placement.
+`useStatusNotice` recognizes errors for configured machine names and applies the 8-second
+expiry, 120-second repeat window, and 5-second startup grace.
+
+The title controller reports an attention error when the daemon lacks title revision
+support.
+
+The phone fallback is selected when a session's machine is not in `historyMachineNames`.
+
+All three notices flow through the existing header placement.

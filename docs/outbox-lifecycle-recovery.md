@@ -1,39 +1,44 @@
 # Outbox lifecycle recovery
 
-Archive and delete acquire a durable machine/session fence before upstream
-mutation. New fences record a unique ownership token, the expected incarnation
-when available, and the operation kind: archive, maintenance-delete or delete.
+Archive and delete acquire a durable machine/session fence before upstream mutation. New
+fences record a unique ownership token, the expected incarnation when available, and the
+operation kind: archive, maintenance-delete or delete.
 
-Admission and explicit Retry capture the fence before querying the daemon.
-They may release it only when the daemon successfully reports the same session
-running with a different incarnation and the exact stored token, incarnation
-and operation still match. A concurrent acquisition or repair invalidates
-that proof. The admission transaction checks the fence again, so an operation
-acquired after observation still blocks input.
+Admission and explicit Retry capture the fence before querying the daemon. They may
+release it only when the daemon successfully reports the same session running with a
+different incarnation and the exact stored token, incarnation and operation still match. A
+concurrent acquisition or repair invalidates that proof.
 
-A validated successful archive or a definite pre-action refusal releases only
-its acquiring token. Malformed acknowledgements and uncertain current-incarnation
-operations retain their fences. Missing sessions, unavailable observations,
-non-running sessions and elapsed time do not prove replacement.
+The admission transaction checks the fence again, so an operation acquired after
+observation still blocks input.
 
-Maintenance delete supplies its expected incarnation. Direct DELETE does not
-bind its upstream action to an incarnation; its fence records an observation
-when already available, otherwise a null incarnation, and cannot recover
-automatically from replacement while its outcome is uncertain.
+A validated successful archive or a definite pre-action refusal releases only its
+acquiring token.
+
+Malformed acknowledgements and uncertain current-incarnation operations retain their
+fences. Missing sessions, unavailable observations, non-running sessions and elapsed time
+do not prove replacement.
+
+Maintenance delete supplies its expected incarnation. Direct DELETE does not bind its
+upstream action to an incarnation; its fence records an observation when already
+available, otherwise a null incarnation, and cannot recover automatically from replacement
+while its outcome is uncertain.
 
 ## Existing stores
 
-Opening an existing store adds the provenance columns transactionally. Every
-legacy row receives a unique, persistent ownership token. Its incarnation
-and operation remain null. Nothing infers provenance from old reply targets,
-history, elapsed time or the currently running incarnation:
-a legacy fence could protect a later uncertain operation that admitted no
-replies. All edge writers must be upgraded together; do not run an old writer
-against the migrated store.
+Opening an existing store adds the provenance columns transactionally. Every legacy row
+receives a unique, persistent ownership token. Its incarnation and operation remain null.
 
-A legacy fence stays closed until an operator verifies its provenance. Automatic
-recovery of arbitrary legacy operations would need authoritative lifecycle
-evidence from the daemon. No bulk deletion or expiry is provided.
+Nothing infers provenance from old reply targets, history, elapsed time or the currently
+running incarnation: a legacy fence could protect a later uncertain operation that
+admitted no replies.
+
+All edge writers must be upgraded together; do not run an old writer against the migrated
+store.
+
+A legacy fence stays closed until an operator verifies its provenance. Automatic recovery
+of arbitrary legacy operations would need authoritative lifecycle evidence from the
+daemon. No bulk deletion or expiry is provided.
 
 ## Repair one verified completed archive
 
