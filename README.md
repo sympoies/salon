@@ -70,8 +70,9 @@ it; otherwise it uses the neutral image label. Delivered non-image cards also us
 the original name when the runtime supplies managed file parts. Without that
 metadata, they keep the neutral file-kind label.
 
-Refused external Markdown images show their source origin and an **Open link**
-action. Salon loads no external image; opening the link uses your browser.
+Refused external images show “External image, not loaded” and their source origin
+when provided. An **Open link** action appears when the full link is known from the
+message text. Salon loads no external image; opening the link uses your browser.
 
 Other files appear as cards with an original name or neutral kind, their size
 when known, and a copy icon. Long names stay on one line while keeping the

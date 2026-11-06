@@ -31,7 +31,7 @@ async function readBounded(response: Response, limit: number): Promise<Buffer> {
 export async function forwardHistoryImage(res: ServerResponse, machine: MachineConfig, history: string, image: string): Promise<void> {
   res.setHeader("cache-control","private, no-store");
   res.setHeader("x-content-type-options","nosniff");
-  const unavailable = (reason?: "outside-allowed-roots") => sendJson(res,422,{ok:false,error:{code:"history-image-unavailable",message:"Image unavailable",...(reason ? {reason} : {})}});
+  const unavailable = (reason?: "outside-allowed-roots" | "remote-url-not-fetched", sourceOrigin?: string) => sendJson(res,422,{ok:false,error:{code:"history-image-unavailable",message:"Image unavailable",...(reason ? {reason} : {}),...(sourceOrigin ? {source_origin:sourceOrigin} : {})}});
   const failed = () => sendJson(res,502,{ok:false,error:{code:"history-image-read-failed",message:"Image service unavailable"}});
   if (!isConversationImageId(image)) { unavailable(); return; }
   const controller = new AbortController();
@@ -42,11 +42,13 @@ export async function forwardHistoryImage(res: ServerResponse, machine: MachineC
       if (response.status !== 200) {
         if (response.status !== 404 && response.status !== 422) { await response.body?.cancel(); failed(); return; }
         const bytes = await readBounded(response,16 * 1024);
-        let code: unknown, reason: unknown;
-        try { ({code,reason} = (JSON.parse(bytes.toString("utf8")) as {error?:{code?:unknown;reason?:unknown}}).error ?? {}); } catch { /* old daemon or malformed upstream */ }
+        let code: unknown, reason: unknown, source_origin: unknown;
+        try { ({code,reason,source_origin} = (JSON.parse(bytes.toString("utf8")) as {error?:{code?:unknown;reason?:unknown;source_origin?:unknown}}).error ?? {}); } catch { /* old daemon or malformed upstream */ }
         if (response.status === 404 && code === "history-image-deleted") {
           sendJson(res,404,{ok:false,error:{code:"history-image-deleted",message:"Image deleted"}});
-        } else unavailable(response.status === 422 && code === "history-image-unavailable" && reason === "outside-allowed-roots" ? reason : undefined);
+        } else if (response.status === 422 && code === "history-image-unavailable" && (reason === "outside-allowed-roots" || reason === "remote-url-not-fetched")) {
+          unavailable(reason,reason === "remote-url-not-fetched" && typeof source_origin === "string" ? source_origin : undefined);
+        } else unavailable();
         return;
       }
       const mime = response.headers.get("content-type")?.split(";")[0]?.trim();

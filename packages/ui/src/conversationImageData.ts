@@ -2,7 +2,7 @@ import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, conversationIma
 import { appFetch } from "./runtime.ts";
 
 export type ConversationImageData = { readonly state: "ready"; readonly url: string; readonly blob: Blob; readonly filename: string }
-  | { readonly state: "unavailable"; readonly reason?: "outside-allowed-roots" }
+  | { readonly state: "unavailable"; readonly reason?: "outside-allowed-roots" | "remote-url-not-fetched"; readonly sourceOrigin?: string }
   | { readonly state: "loading" | "deleted" | "error" };
 
 interface ImageRequest {
@@ -49,9 +49,13 @@ async function readConversationImage(machine: string, history: string, image: st
       return {state:error?.error?.code === "history-image-deleted" ? "deleted" : "unavailable"};
     }
     if (response.status === 422) {
-      const error = await response.json().catch(() => null) as { error?: { code?: unknown; reason?: unknown } } | null;
-      return {state:"unavailable",...(error?.error?.code === "history-image-unavailable" && error.error.reason === "outside-allowed-roots"
-        ? {reason:"outside-allowed-roots" as const} : {})};
+      const error = await response.json().catch(() => null) as { error?: { code?: unknown; reason?: unknown; source_origin?: unknown } } | null;
+      if (error?.error?.code === "history-image-unavailable") {
+        if (error.error.reason === "outside-allowed-roots") return {state:"unavailable",reason:"outside-allowed-roots"};
+        if (error.error.reason === "remote-url-not-fetched") return {state:"unavailable",reason:"remote-url-not-fetched",
+          ...(typeof error.error.source_origin === "string" ? {sourceOrigin:error.error.source_origin} : {})};
+      }
+      return {state:"unavailable"};
     }
     if (response.status >= 500 || response.status === 408 || response.status === 429) return {state:"error"};
     const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
