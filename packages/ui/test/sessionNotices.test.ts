@@ -205,3 +205,12 @@ test("empty and throwing presentation hooks preserve default rows", async () => 
     }
   }
 });
+
+for (const [name, result] of [["primitive", "bad"], ["wrong field type", { label: "Source", text: { bad: true } }]] as const) {
+  test(`malformed presentation ${name} falls back to default`, async () => {
+    const plain = await mount("Plain message");
+    const extension = { id: "malformed", conversationRow: () => result } as unknown as import("../src/extensions.tsx").UiExtension;
+    const actual = await mount("Plain message", true, "user", undefined, extension);
+    assert.equal(actual.container.querySelector("article")?.outerHTML, plain.container.querySelector("article")?.outerHTML);
+  });
+}

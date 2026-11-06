@@ -371,8 +371,17 @@ export function HistoryConversationView({
   const present = (row: ConversationRow): ConversationRowPresentation | null | undefined => {
     try {
       for (const extension of extensions) {
-        const result = extension.conversationRow?.(row);
-        if (result) return result;
+        const result: unknown = extension.conversationRow?.(row);
+        if (result == null) continue;
+        if (typeof result !== "object") return undefined;
+        if (row.kind === "user" && "label" in result && "text" in result &&
+            typeof result.label === "string" && typeof result.text === "string") {
+          return { label: result.label, text: result.text };
+        }
+        if (row.kind === "notice" && "summary" in result && typeof result.summary === "string") {
+          return { summary: result.summary };
+        }
+        return undefined;
       }
     } catch { return undefined; }
     return undefined;
