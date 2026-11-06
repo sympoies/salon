@@ -34,10 +34,12 @@ function RetryImage({retry}: { readonly retry: () => void }) {
 function ExternalImage({url}: { readonly url: string }) {
   return <div className="conversation-external-image">
     <span role="status">External image, not loaded · {new URL(url).origin}</span>
-    <a href={url} target="_blank" rel="noopener noreferrer" onClick={event => {
-      event.preventDefault(); event.stopPropagation();
-      void openExternalTerminalUrl(url);
-    }}>Open link</a>
+    <a href={url} target="_blank" rel="noopener noreferrer"
+      onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
+      onClick={event => {
+        event.preventDefault(); event.stopPropagation();
+        void openExternalTerminalUrl(url);
+      }}>Open link</a>
   </div>;
 }
 function ImageContent({data,fail,onLoad,retry,sourceName,sourceUrl}: { readonly sourceUrl?: string; readonly data: ConversationImageData; readonly fail: () => void; readonly sourceName?: string;

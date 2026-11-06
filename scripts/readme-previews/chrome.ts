@@ -2,8 +2,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
-/** Headless Chrome driven over the DevTools protocol. Only what the preview capture needs. */
+/** Headless Chrome driven over the DevTools protocol for previews and UI fixtures. */
 export interface Page {
+  /** Dispatch a real primary-button press and release through DevTools. */
+  click(x: number, y: number): Promise<void>;
   navigate(url: string): Promise<void>;
   evaluate<T>(expression: string): Promise<T>;
   setViewport(width: number, height: number, scale: number, mobile?: boolean): Promise<void>;
@@ -98,6 +100,10 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
     await send("Page.enable");
     await send("Runtime.enable");
     return {
+      async click(x, y) {
+        await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+        await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+      },
       async navigate(url) {
         if (closedReason) throw new Error(closedReason);
         const done = new Promise<void>((resolve, reject) => loaded.push({ resolve, reject }));
