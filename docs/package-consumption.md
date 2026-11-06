@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.53 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.54 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,9 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.53`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.54`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.53
+### Changes retained in SDK 0.1.54
 
 Sessions carry a marker for a draft the runtime saved, and the composer can show and restore it
 (#282). A refused shared reply always names its refusal reason (#298). Settings shows the server
@@ -258,9 +258,16 @@ a resumed session can be archived or deleted again; uncertain direct deletes sta
 
 History card previews drop paste wrapper tags (#362).
 
+A refused remote image tile also uses the runtime's typed remote-url refusal reason, so the
+external-image state appears without a Markdown association; a valid lower-case http(s) origin is
+shown only when supplied, and invalid origins are dropped (#367).
+
+A user-attachment image stored as an image block offers Copy file path from the runtime-supplied
+upload path when present; earlier runtimes keep the quoted-text fallback (#271).
+
 ### Preserve published releases
 
-Existing `v0.1.0` through `v0.1.52` tags and assets stay immutable. The visibility transition does
+Existing `v0.1.0` through `v0.1.53` tags and assets stay immutable. The visibility transition does
 not republish those releases, change their source or digests, or reuse an existing tag.
 
 A future publication requires separately approved version metadata and an unused tag. This
