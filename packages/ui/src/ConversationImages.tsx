@@ -6,6 +6,7 @@ import { fetchConversationImage, type ConversationImageData } from "./conversati
 import { conversationImageCache, type ImageTarget } from "./conversationImageCache.ts";
 import { saveConversationImage } from "./saveConversationImage.ts";
 import { copyConversationImage } from "./copyConversationImage.ts";
+import { openExternalTerminalUrl, validateTerminalUrl } from "./terminalLinks.ts";
 import { isMacTauri } from "./runtime.ts";
 import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 import { IconButton } from "./IconButton.tsx";
@@ -30,8 +31,20 @@ function useImage(target: ImageTarget, visible: boolean) {
 function RetryImage({retry}: { readonly retry: () => void }) {
   return <button type="button" className="conversation-image-retry" onClick={event => { event.stopPropagation(); retry(); }}>Retry</button>;
 }
-function ImageContent({data,fail,onLoad,retry,sourceName}: { readonly data: ConversationImageData; readonly fail: () => void; readonly sourceName?: string;
+function ExternalImage({url}: { readonly url: string }) {
+  return <div className="conversation-external-image">
+    <span role="status">External image, not loaded · {new URL(url).origin}</span>
+    <a href={url} target="_blank" rel="noopener noreferrer"
+      onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
+      onClick={event => {
+        event.preventDefault(); event.stopPropagation();
+        void openExternalTerminalUrl(url);
+      }}>Open link</a>
+  </div>;
+}
+function ImageContent({data,fail,onLoad,retry,sourceName,sourceUrl}: { readonly sourceUrl?: string; readonly data: ConversationImageData; readonly fail: () => void; readonly sourceName?: string;
   readonly onLoad?: (image: HTMLImageElement) => void; readonly retry?: () => void }) {
+  if (data.state === "unavailable" && sourceUrl) return <ExternalImage url={sourceUrl} />;
   const unavailable = data.state === "unavailable" && data.reason === "outside-allowed-roots"
     ? `Not shared: outside the session folder${sourceName ? ` · ${sourceName}` : ""}` : "Image unavailable";
   return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} onLoad={event => onLoad?.(event.currentTarget)} />
@@ -75,7 +88,7 @@ function ImageMenu({menu,paths,onOpen,onClose,onError}: {
   </div>,document.body);
 }
 
-function Thumbnail({target,index,onOpen,onMenu,sourceName}: { readonly sourceName?: string; readonly target: ImageTarget; readonly index: number; readonly onOpen: () => void; readonly onMenu: (menu: MenuState) => void }) {
+function Thumbnail({target,index,onOpen,onMenu,sourceName,sourceUrl}: { readonly sourceUrl?: string; readonly sourceName?: string; readonly target: ImageTarget; readonly index: number; readonly onOpen: () => void; readonly onMenu: (menu: MenuState) => void }) {
   const ref = useRef<HTMLButtonElement>(null);
   // The shared descriptor is ID-only. Retain decoded dimensions when lazy
   // loading restarts so a known image keeps its place in the conversation.
@@ -96,6 +109,9 @@ function Thumbnail({target,index,onOpen,onMenu,sourceName}: { readonly sourceNam
     event.preventDefault();
     if (data.state === "ready") onMenu({index,x:event.clientX,y:event.clientY,image:data});
   };
+  if (data.state === "unavailable" && sourceUrl) return <div className="conversation-image-frame">
+    <div className="conversation-image-thumbnail is-external"><ExternalImage url={sourceUrl} /></div>
+  </div>;
   return <div className="conversation-image-frame"><button ref={ref} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }} onContextMenu={contextMenu}>
     <ImageContent data={data} fail={fail} sourceName={sourceName} onLoad={image => {
       if (image.naturalWidth && image.naturalHeight) setSize({width:image.naturalWidth,height:image.naturalHeight});
@@ -105,7 +121,8 @@ function Thumbnail({target,index,onOpen,onMenu,sourceName}: { readonly sourceNam
 const clampZoom = (scale: number) => Math.max(1,Math.min(6,scale));
 interface Point { x: number; y: number }
 
-function ImageViewer({machine,history,images,initial,onClose,sourceNames}: {
+function ImageViewer({machine,history,images,initial,onClose,sourceNames,sourceUrls}: {
+  readonly sourceUrls: readonly (string | undefined)[];
   readonly sourceNames: readonly (string | undefined)[];
   readonly machine: string; readonly history: string; readonly images: readonly ConversationImage[];
   readonly initial: number; readonly onClose: () => void;
@@ -217,7 +234,7 @@ function ImageViewer({machine,history,images,initial,onClose,sourceNames}: {
       onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget && !gesture.current?.moved && gesture.current?.outside) onClose(); }}
       onDoubleClick={event => { event.stopPropagation(); setScale(value => value === 1 ? 2 : 1); setPan({x:0,y:0}); }}>
       <div className="conversation-image-canvas" style={{transform:`translate(${scale === 1 ? 0 : pan.x}px, ${scale === 1 ? 0 : pan.y}px) scale(${scale})`}}>
-        <ImageContent data={data} fail={fail} retry={retry} sourceName={sourceNames[index]} />
+        <ImageContent data={data} fail={fail} retry={retry} sourceName={sourceNames[index]} sourceUrl={sourceUrls[index]} />
       </div>
     </div>
     {images.length > 1 ? <div className="conversation-image-navigation">
@@ -239,12 +256,14 @@ export function ConversationImages({machine,history,images,attachmentPaths = [],
   // cannot be paired from visible text alone, so do not guess their names.
   const targets = [...(markdownSource?.text ?? "").matchAll(/!\[[\s\S]*?\]\(([^)]*)\)/g)].map(match => {
     const target = match[1]!.trim();
-    return sanitizeAttachmentName(target.startsWith("<") && target.includes(">")
-      ? target.slice(1,target.indexOf(">")) : target.split(/\s/)[0]);
+    return target.startsWith("<") && target.includes(">")
+      ? target.slice(1,target.indexOf(">")) : target.split(/\s/)[0];
   });
   const sourceImages = markdownSource?.images ?? [];
-  const sourceNames = targets.length === sourceImages.length
+  const sourceTargets = targets.length === sourceImages.length
     ? images.map(image => targets[sourceImages.findIndex(source => source.id === image.id)]) : [];
+  const sourceNames = sourceTargets.map(sanitizeAttachmentName);
+  const sourceUrls = sourceTargets.map(target => target ? validateTerminalUrl(target) ?? undefined : undefined);
   const [open,setOpen] = useState<number | null>(null);
   const [menu,setMenu] = useState<MenuState | null>(null);
   const [notice,setNotice] = useState("");
@@ -255,9 +274,9 @@ export function ConversationImages({machine,history,images,attachmentPaths = [],
     return () => clearTimeout(timer);
   },[notice]);
   return <div className="conversation-images">
-    {images.map((image,index) => <Thumbnail key={image.id} target={{machine,history,image:image.id}} index={index} sourceName={sourceNames[index]} onOpen={() => setOpen(index)} onMenu={next => { setNotice(""); setMenu(next); }} />)}
+    {images.map((image,index) => <Thumbnail key={image.id} target={{machine,history,image:image.id}} index={index} sourceName={sourceNames[index]} sourceUrl={sourceUrls[index]} onOpen={() => setOpen(index)} onMenu={next => { setNotice(""); setMenu(next); }} />)}
     {menu ? <ImageMenu menu={menu} paths={attachmentPaths} onOpen={setOpen} onClose={closeMenu} onError={setNotice} /> : null}
     {notice ? <div className="conversation-image-menu-error" role="status">{notice}</div> : null}
-    {open !== null ? <ImageViewer key={`${machine}/${history}`} machine={machine} history={history} images={images} sourceNames={sourceNames} initial={open} onClose={() => setOpen(null)} /> : null}
+    {open !== null ? <ImageViewer key={`${machine}/${history}`} machine={machine} history={history} images={images} sourceNames={sourceNames} sourceUrls={sourceUrls} initial={open} onClose={() => setOpen(null)} /> : null}
   </div>;
 }
