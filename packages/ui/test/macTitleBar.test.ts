@@ -24,7 +24,7 @@ for (const [host, appName] of [["mac", undefined], ["mac", "Agent Console Test"]
     const boundary: Plugin = { name: "titlebar-entry-app-boundary", enforce: "pre",
       resolveId(source, importer) {
         if (!/\/(main|mountApp)\.tsx$/.test(importer ?? "")) return;
-        if (source === "./App") return "\0titlebar-app";
+        if (source === "./App.tsx") return "\0titlebar-app";
         if (source === "react-dom/client") return "\0titlebar-root";
       },
       load(id) {

@@ -68,7 +68,7 @@ for (const [mode, expected] of [["dark", icon.dark], ["paper", icon.light]] as c
       const boundary: Plugin = { name: "icon-entry-app-boundary", enforce: "pre",
         resolveId(source, importer) {
           if (!/\/mountApp\.tsx$/.test(importer ?? "")) return;
-          if (source === "./App") return "\0icon-app";
+          if (source === "./App.tsx") return "\0icon-app";
           if (source === "react-dom/client") return "\0icon-root";
         },
         load(id) {
