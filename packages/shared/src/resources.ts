@@ -36,7 +36,7 @@ export interface ConversationSnapshot {
 export function normalizeConversationSnapshot(value: unknown): ConversationSnapshot | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const row = value as Record<string, unknown>;
-  if (!Array.isArray(row.messages) || row.messages.length > 50) return undefined;
+  if (!Array.isArray(row.messages) || row.messages.length > 300) return undefined;
   const messages: ConversationSnapshot["messages"] = [];
   const ids = new Set<string>();
   for (const value of row.messages) {

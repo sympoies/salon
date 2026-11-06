@@ -242,6 +242,42 @@ export interface EdgeServerOptions {
   readonly extensions?: readonly EdgeExtension[];
 }
 
+// Read a small, bounded number of pages when tool-only records consume the page.
+async function readConversationWindow(machine: MachineConfig, id: string, query: URLSearchParams, signal?: AbortSignal): Promise<DaemonResult> {
+  const messages: unknown[] = [];
+  const seenCursors = new Set<string>();
+  let nextCursor: unknown;
+  let olderCursor: unknown;
+  const started = Date.now();
+  let bytes = 0;
+  const initialCursor = query.get("cursor");
+  if (initialCursor) seenCursors.add(initialCursor);
+  for (let page = 0; page < 3; page += 1) {
+    query.set("limit", "100");
+    query.set("parts", "v1");
+    const remaining = HISTORY_DAEMON_TIMEOUT_MS - (Date.now() - started);
+    if (remaining <= 0) break;
+    const result = await daemonFetch(machine, `/history/sessions/${encodeURIComponent(id)}/messages?${query}`, { timeoutMs: remaining, signal });
+    const envelope = objectProp(result.body);
+    const data = result.status === 200 && envelope?.ok !== false ? projectHistoryMessagesDaemonData(envelope?.data) : null;
+    if (!data) return result.status === 200 && envelope?.ok !== false
+      ? { status: 502, body: { ok: false, error: { message: "invalid history conversation response" } } }
+      : result;
+    const pageBytes = Buffer.byteLength(JSON.stringify(data.messages));
+    if (page > 0 && bytes + pageBytes > 1024 * 1024) break;
+    bytes += pageBytes;
+    if (page === 0) nextCursor = data.next_cursor;
+    const held = new Set(messages.map(message => objectProp(message)?.id));
+    messages.unshift(...(data.messages as unknown[]).filter(message => !held.has(objectProp(message)?.id)));
+    olderCursor = data.older_cursor;
+    if (messages.length >= 50 || typeof olderCursor !== "string" || seenCursors.has(olderCursor)) break;
+    seenCursors.add(olderCursor);
+    query.set("direction", "older");
+    query.set("cursor", olderCursor);
+  }
+  return { status: 200, body: { ok: true, data: { messages, ...(nextCursor ? { next_cursor: nextCursor } : {}), ...(olderCursor ? { older_cursor: olderCursor } : {}) } } };
+}
+
 export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions = {}): Server {
   const attachmentUploadTimeoutMs = options.attachmentUploadTimeoutMs ?? ATTACHMENT_UPLOAD_TIMEOUT_MS;
   const ordinaryRequestTimeoutMs = options.ordinaryRequestTimeoutMs ?? ORDINARY_REQUEST_TIMEOUT_MS;
@@ -1441,14 +1477,15 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             if (value !== null) qs.set(key, value);
           }
           const suffix = qs.size > 0 ? `?${qs.toString()}` : "";
-          forwardHistoryMessagesDaemon(
-            res,
-            await daemonFetch(
-              machine,
+          if (qs.get("direction") === "latest" || qs.get("direction") === "older") {
+            const result = await readConversationWindow(machine, historyId, qs);
+            if (result.status === 200 && objectProp(result.body)?.ok === true) sendJson(res, 200, result.body);
+            else forwardHistoryMessagesDaemon(res, result);
+          } else {
+            forwardHistoryMessagesDaemon(res, await daemonFetch(machine,
               `/history/sessions/${encodeURIComponent(historyId)}/messages${suffix}`,
-              { timeoutMs: HISTORY_DAEMON_TIMEOUT_MS, debug: daemonDebug(requestId) },
-            ),
-          );
+              { timeoutMs: HISTORY_DAEMON_TIMEOUT_MS, debug: daemonDebug(requestId) }));
+          }
         });
         return;
       }
@@ -1568,10 +1605,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 throw new Error("history unavailable");
               }
               const machine = byName.get(subscription.machine)!;
-              const result = await daemonFetch(machine,
-                `/history/sessions/${encodeURIComponent(subscription.id)}/messages?limit=50&direction=latest&parts=v1`,
-                { timeoutMs: HISTORY_DAEMON_TIMEOUT_MS, signal });
-              const data = result.status === 200 && objectProp(result.body)?.ok !== false ? projectHistoryMessagesDaemonData(objectProp(result.body)?.data) : null;
+              const result = await readConversationWindow(machine, subscription.id, new URLSearchParams({ direction: "latest" }), signal);
+              const data = result.status === 200 && objectProp(result.body)?.ok !== false ? objectProp(objectProp(result.body)?.data) : null;
               if (!data) throw new Error("conversation unavailable");
               return data;
             };

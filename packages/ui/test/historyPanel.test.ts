@@ -22,7 +22,7 @@ test("HistoryPanel exposes metadata-only discovery, transcript browsing, and res
   assert.match(source, /controller\.signal/);
   assert.match(conversation, /controller\.signal/);
   assert.match(source, /HISTORY_PAGE_SIZE = 50/);
-  assert.match(conversation, /HISTORY_MESSAGE_WINDOW = 100/);
+  assert.match(conversation, /HISTORY_MESSAGE_WINDOW = 300/);
   assert.match(conversation, /direction: "latest"/);
   assert.match(conversation, /direction: "older"/);
   assert.match(source, /first_user_prompt_preview/);

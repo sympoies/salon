@@ -98,8 +98,8 @@ test("HistoryPanel identifies sessions and opens the latest context before loadi
     listHistoryMessages: async (_machine, _id, options) => {
       calls.push(options ?? {});
       if (options?.direction === "older") {
-        const page = options.cursor === "older-1" ? 1 : options.cursor === "older-2" ? 2 : 3;
-        const start = 151 - page * 50;
+        const page = Number(options.cursor?.split("-")[1]);
+        const start = 351 - page * 50;
         return {
           ok: true,
           messages: Array.from({ length: 50 }, (_, index) => ({
@@ -107,7 +107,7 @@ test("HistoryPanel identifies sessions and opens the latest context before loadi
             role: "assistant",
             text: `older ${start + index}`,
           })),
-          ...(page < 3 ? { olderCursor: `older-${page + 1}` } : {}),
+          ...(page < 7 ? { olderCursor: `older-${page + 1}` } : {}),
         };
       }
       return {
@@ -205,7 +205,7 @@ test("HistoryPanel identifies sessions and opens the latest context before loadi
   );
   assert.equal((mounted.container.querySelector(".history-messages") as HTMLElement).scrollTop, 800);
 
-  for (const cursor of ["older-1", "older-2", "older-3"]) {
+  for (const cursor of ["older-1", "older-2", "older-3", "older-4", "older-5", "older-6", "older-7"]) {
     const anchor = mounted.container.querySelector<HTMLElement>("[data-history-message-id]");
     assert.ok(anchor);
     const anchorId = anchor.dataset.historyMessageId;
@@ -218,9 +218,9 @@ test("HistoryPanel identifies sessions and opens the latest context before loadi
     const retainedAnchor = mounted.container.querySelector<HTMLElement>(`[data-history-message-id="${anchorId}"]`);
     assert.ok(retainedAnchor);
     assert.equal(retainedAnchor.getBoundingClientRect().top, anchorTop);
-    assert.ok(mounted.container.querySelectorAll(".history-message").length <= 100);
+    assert.ok(mounted.container.querySelectorAll(".history-message").length <= 300);
   }
-  assert.equal(mounted.container.querySelectorAll(".history-message").length, 100);
+  assert.equal(mounted.container.querySelectorAll(".history-message").length, 300);
   const retainedMessageText = [...mounted.container.querySelectorAll(".history-message")]
     .map((message) => message.textContent)
     .join(" ");

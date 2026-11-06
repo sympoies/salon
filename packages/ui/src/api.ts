@@ -820,7 +820,7 @@ export async function listHistoryMessages(
   options: { readonly cursor?: string; readonly direction?: "latest" | "older" } = {},
   signal?: AbortSignal,
 ): Promise<HistoryMessagesResponse> {
-  const params = new URLSearchParams({ limit: "50" });
+  const params = new URLSearchParams({ limit: "100" });
   if (options.cursor) params.set("cursor", options.cursor);
   if (options.direction) params.set("direction", options.direction);
   const response = await req(

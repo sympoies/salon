@@ -83,12 +83,12 @@ test("conversation events push projected pages and keep oversized pages on the p
     const upstream = jsonReader((url) => {
       assert.equal(url.pathname, "/history/sessions/history/messages");
       assert.equal(url.searchParams.get("direction"), "latest");
-      assert.equal(url.searchParams.get("limit"), "50");
+      assert.equal(url.searchParams.get("limit"), "100");
       assert.equal(url.searchParams.get("parts"), "v1"); reads++;
       return { status: 200, body: { ok: true, data: { source_path: "private", messages: [
         { id: "a1", role: "assistant", text: oversized ? "x".repeat(64 * 1024) : "new message", raw: "private" },
         { ...message, parts: [file] },
-      ], older_cursor: "older" } } };
+      ] } } };
     });
     const daemon = await listenOnLoopback(upstream);
     const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "host", url: daemon.base, token: "fixture" }] }));
@@ -103,7 +103,7 @@ test("conversation events push projected pages and keep oversized pages on the p
       assert.equal(event.type, "changed"); assert.equal(reads, 1);
       assert.equal(frame.includes("private"), false);
       if (oversized) assert.equal(event.conversation, undefined, "payload omitted; client retains existing latest-page fetch");
-      else assert.deepEqual(event.conversation, { messages: [{ id: "a1", role: "assistant", text: "new message" }, { ...message, files: [file] }], older_cursor: "older" });
+      else assert.deepEqual(event.conversation, { messages: [{ id: "a1", role: "assistant", text: "new message" }, { ...message, files: [file] }] });
       await reader.cancel();
     } finally {
       controller.abort(); edge.closeAllConnections(); upstream.closeAllConnections();
@@ -234,3 +234,35 @@ for (const invalidation of ["logout", "expiry"] as const) {
     });
   }
 }
+
+test("conversation snapshots fill sparse visible pages from older history", async () => {
+  const { jsonReader } = await import("./support.ts");
+  const calls: string[] = [];
+  const upstream = jsonReader((url) => {
+    calls.push(url.search);
+    const older = url.searchParams.get("direction") === "older";
+    return { status: 200, body: { ok: true, data: {
+      messages: [{ id: older ? "old" : "new", role: "assistant", text: older ? "older text" : "latest text" },
+        ...Array.from({ length: 99 }, (_, i) => ({ id: `${older ? "old" : "new"}-tool-${i}`, role: "assistant", text: "", parts: [{ type: "tool_call" }] }))],
+      ...(older ? {} : { older_cursor: "previous" }),
+    } } };
+  });
+  const daemon = await listenOnLoopback(upstream);
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "host", url: daemon.base, token: "fixture" }] }));
+  const { base } = await listenOnLoopback(edge);
+  const controller = new AbortController();
+  try {
+    const query = new URLSearchParams({ conversations: JSON.stringify([{ machine: "host", id: "history" }]), conversation_snapshots: "1" });
+    const response = await fetch(`${base}/api/resources/events?${query}`, { signal: controller.signal });
+    const reader = response.body!.getReader(); let frame = "";
+    while (!frame.includes("data: ")) frame += new TextDecoder().decode((await reader.read()).value);
+    const event = JSON.parse(frame.split("\n").find(line => line.startsWith("data: "))!.slice(6));
+    assert.deepEqual(event.conversation.messages.map((message: { id: string }) => message.id), ["old", "new"]);
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every(call => new URLSearchParams(call).get("limit") === "100"));
+    await reader.cancel();
+  } finally {
+    controller.abort(); edge.closeAllConnections(); upstream.closeAllConnections();
+    await Promise.all([edge, upstream].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+  }
+});

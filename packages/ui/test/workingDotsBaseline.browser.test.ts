@@ -54,3 +54,18 @@ for (const width of [390, 1500]) for (const reducedMotion of [true, false]) {
     }
   });
 }
+
+for (const width of [390, 760, 761, 1280]) {
+  test(`Working stays at the bottom of a short conversation (${width}px)`, t => {
+    if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
+    const wrappers = [...WRAPPERS, "history-viewer conversation-viewer"];
+    const markup = wrappers.map(className => `<section class="${className}" style="position:static;display:flex;flex-direction:column;width:100%;height:300px">${WORKING}</section>`).join("");
+    const result = measureUiMarkup<{ gaps: number[] }>(markup, width, `
+      const gaps=[...document.querySelectorAll('.history-working')].map(line =>
+        line.parentElement.getBoundingClientRect().bottom-line.getBoundingClientRect().bottom);
+      const result={gaps};
+    `, true);
+    assert.equal(result.gaps.length, wrappers.length);
+    for (const gap of result.gaps) assert.ok(gap <= 17, `Working should sit at the bottom padding, gap was ${gap}`);
+  });
+}

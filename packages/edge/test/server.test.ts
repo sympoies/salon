@@ -301,7 +301,7 @@ test("history message paging forwards only the bounded daemon query contract", a
   const daemon = createHttpServer((req, res) => {
     seenUrl = req.url;
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ ok: true, data: { messages: [{ ...message, parts: [file] }], older_cursor: "21" } }));
+    res.end(JSON.stringify({ ok: true, data: { messages: [{ ...message, parts: [file] }] } }));
   });
   const { port: daemonPort } = await listenOnLoopback(daemon);
   const edge = createEdgeServer({
@@ -315,8 +315,8 @@ test("history message paging forwards only the bounded daemon query contract", a
       { headers: { authorization: "Bearer client-secret" } },
     );
     assert.equal(response.status, 200);
-    assert.equal(seenUrl, "/history/sessions/h1/messages?parts=v1&cursor=42&limit=50&direction=older");
-    assert.deepEqual(await response.json(), { ok: true, data: { messages: [{ ...message, files: [file] }], older_cursor: "21" } });
+    assert.equal(seenUrl, "/history/sessions/h1/messages?parts=v1&cursor=42&limit=100&direction=older");
+    assert.deepEqual(await response.json(), { ok: true, data: { messages: [{ ...message, files: [file] }] } });
   } finally {
     edge.close();
     daemon.close();
@@ -1655,4 +1655,35 @@ test("rejected upgrades do not crash the shared process", async () => {
   }
   const res = await fetch(`${base}/healthz`);
   assert.equal(res.status, 200);
+});
+
+test("latest and older history reads fill sparse pages without losing the continuation", async () => {
+  for (const direction of ["latest", "older"]) {
+    const calls: string[] = [];
+    const daemon = createHttpServer((req, res) => {
+      const query = new URL(req.url!, "http://fixture").searchParams;
+      calls.push(query.toString());
+      const page = calls.length;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true, data: {
+        messages: [{ id: `row-${page}`, role: "assistant", text: `row ${page}` },
+          ...Array.from({ length: 99 }, (_, i) => ({ id: `tool-${page}-${i}`, role: "assistant", text: "", parts: [{ type: "tool_call" }] }))],
+        older_cursor: `cursor-${page}`,
+      } }));
+    });
+    const { port: daemonPort } = await listenOnLoopback(daemon);
+    const edge = createEdgeServer({ ...config, machines: [{ name: "maple", url: `http://127.0.0.1:${daemonPort}`, token: "fixture" }] });
+    const { base: edgeBase } = await listenOnLoopback(edge);
+    try {
+      const response = await fetch(`${edgeBase}/api/history/sessions/maple/h1/messages?direction=${direction}&cursor=start&limit=100`, { headers: { authorization: "Bearer client-secret" } });
+      const body = await response.json() as { data: { messages: Array<{ id: string }>; older_cursor: string } };
+      assert.deepEqual(body.data.messages.map(message => message.id), ["row-3", "row-2", "row-1"]);
+      assert.equal(body.data.older_cursor, "cursor-3");
+      assert.equal(calls.length, 3);
+      assert.ok(calls.every(call => new URLSearchParams(call).get("limit") === "100"));
+    } finally {
+      edge.closeAllConnections(); daemon.closeAllConnections();
+      await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+    }
+  }
 });
