@@ -24,6 +24,16 @@ export function conversationImageFilename(disposition: string | null): string | 
   name = name.trim();
   return name.length <= 255 && name !== "." && name !== ".." ? name || undefined : undefined;
 }
+/** Display-only origin from nils-cli 7a61dfa3; never a full URL or link target. */
+export function conversationImageSourceOrigin(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = /^https?:\/\/([a-z0-9.-]{1,253}|\[[a-f0-9:.]+\])$/.exec(value);
+  if (!match || match[0] !== value) return undefined;
+  if (match[1]!.startsWith("[")) {
+    try { new URL(value); } catch { return undefined; }
+  }
+  return value;
+}
 /** Matches agent-session's display-name sanitizer; never use a stored path as a name. */
 export function sanitizeAttachmentName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;

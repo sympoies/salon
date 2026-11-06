@@ -1,4 +1,4 @@
-import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, conversationImageFilename, isConversationImageId } from "@agent-console/shared/conversation-images";
+import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, conversationImageFilename, conversationImageSourceOrigin, isConversationImageId } from "@agent-console/shared/conversation-images";
 import { appFetch } from "./runtime.ts";
 
 export type ConversationImageData = { readonly state: "ready"; readonly url: string; readonly blob: Blob; readonly filename: string }
@@ -52,8 +52,10 @@ async function readConversationImage(machine: string, history: string, image: st
       const error = await response.json().catch(() => null) as { error?: { code?: unknown; reason?: unknown; source_origin?: unknown } } | null;
       if (error?.error?.code === "history-image-unavailable") {
         if (error.error.reason === "outside-allowed-roots") return {state:"unavailable",reason:"outside-allowed-roots"};
-        if (error.error.reason === "remote-url-not-fetched") return {state:"unavailable",reason:"remote-url-not-fetched",
-          ...(typeof error.error.source_origin === "string" ? {sourceOrigin:error.error.source_origin} : {})};
+        if (error.error.reason === "remote-url-not-fetched") {
+          const sourceOrigin = conversationImageSourceOrigin(error.error.source_origin);
+          return {state:"unavailable",reason:"remote-url-not-fetched",...(sourceOrigin ? {sourceOrigin} : {})};
+        }
       }
       return {state:"unavailable"};
     }

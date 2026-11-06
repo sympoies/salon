@@ -630,3 +630,25 @@ test("viewer navigation shows typed remote refusals without Markdown links",asyn
   assert.equal(viewer.querySelector('[role="status"]')?.textContent,"External image, not loaded");
   assertNoElement(viewer,"a, img, .conversation-image-retry");
 });
+
+for (const associated of [false,true]) test(`invalid remote origins do not become source labels (${associated})`,async () => {
+  const origins = ["javascript:alert(1)","https://user:synthetic-password@example.com",
+    "https://images.example.invalid/private/chart.png","https://images.example.invalid?query=synthetic",
+    "https://images.example.invalid#fragment","https://images.example.invalid:443",
+    "HTTPS://images.example.invalid","https://Images.example.invalid"];
+  const url = "https://images.example.invalid/chart.png";
+  const {window,requests} = await mountImages(path => new Response(JSON.stringify({error:{
+    code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:origins[Number(path.split(".")[2])],
+  }}),{status:422}),false,[],origins.map((_,index) => ({id:`remote-${index}`,role:"assistant",
+    text:associated ? `![](${url})` : "Remote chart",images:[{id:imageId(index),origin:"tool_result"}]})));
+  const tiles = [...window.document.querySelectorAll(".conversation-image-thumbnail")];
+  assert.equal(tiles.length,origins.length);
+  assert.deepEqual(tiles.map(tile => tile.querySelector('[role="status"]')?.textContent),origins.map(() => "External image, not loaded"));
+  for (const tile of tiles) {
+    if (associated) assert.equal(tile.querySelector("a")?.href,url);
+    else assertNoElement(tile,"a");
+    assertNoElement(tile,"img, .conversation-image-retry");
+  }
+  assert.equal(requests.length,origins.length);
+  assert.ok(requests.every(path => path.startsWith("/api/history/sessions/fixture/history/images/")));
+});

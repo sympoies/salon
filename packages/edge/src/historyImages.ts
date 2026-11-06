@@ -1,5 +1,5 @@
 import type { ServerResponse } from "node:http";
-import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, conversationImageFilename, isConversationImageId } from "@agent-console/shared/conversation-images";
+import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, conversationImageFilename, conversationImageSourceOrigin, isConversationImageId } from "@agent-console/shared/conversation-images";
 import type { MachineConfig } from "./config.ts";
 import { authedFetch, sendJson } from "./http.ts";
 
@@ -47,7 +47,7 @@ export async function forwardHistoryImage(res: ServerResponse, machine: MachineC
         if (response.status === 404 && code === "history-image-deleted") {
           sendJson(res,404,{ok:false,error:{code:"history-image-deleted",message:"Image deleted"}});
         } else if (response.status === 422 && code === "history-image-unavailable" && (reason === "outside-allowed-roots" || reason === "remote-url-not-fetched")) {
-          unavailable(reason,reason === "remote-url-not-fetched" && typeof source_origin === "string" ? source_origin : undefined);
+          unavailable(reason,reason === "remote-url-not-fetched" ? conversationImageSourceOrigin(source_origin) : undefined);
         } else unavailable();
         return;
       }
