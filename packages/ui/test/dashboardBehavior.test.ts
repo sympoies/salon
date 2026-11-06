@@ -2785,6 +2785,49 @@ test("mobile enters a newly created session even when it fits the slot projectio
   await assertCreateFocusesOverflowSession({ autoLayout: false, layoutMode: 4, existingCount: 0, mobile: true });
 });
 
+for (const hasIdentity of [true, false]) {
+  test(`unknown create ${hasIdentity ? "focuses the claimed session" : "does not focus an unconfirmed session"} after a later poll`, async () => {
+    const mounted = installDom();
+    cleanupStack.push(mounted.cleanup);
+    Object.defineProperty(mounted.window, "innerWidth", { configurable: true, value: 390 });
+    const ssr = createUiSsrHarness([
+      dashboardApiMockPlugin(), asyncPollMockPlugin(), terminalPaneMockPlugin(),
+      stagedPromptCreateDialogMockPlugin(),
+    ]);
+    cleanupStack.push(ssr.close);
+    const session = makeSession({ id: "claimed", machine: "summit", status: "running" });
+    let appears = false;
+    globalThis.__agentConsoleDashboardBehaviorApiMock = {
+      createSession: async () => ({ ok: false, error: "creation incomplete", errorCode: "create-outcome-unknown",
+        outcomeUnknown: true, ...(hasIdentity ? { id: session.id } : {}) }),
+      listSessions: async () => ({ ok: true, sessions: appears ? [session] : [], machines: [{ name: "summit", ok: true }] }),
+    };
+    const { Dashboard } = await ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
+    await act(async () => {
+      mounted.root.render(createElement(Dashboard, {
+        active: true, machines: ["summit"], enabledMachines: ["summit"], machineColors: {},
+        onDebug: () => {}, onUsage: () => {}, onSettings: () => {},
+      }));
+      await flushPromises();
+      await globalThis.__agentConsoleDashboardPollTask?.();
+      await flushPromises();
+    });
+    await act(async () => {
+      findTextButton(mounted.container, "New").click();
+      await flushPromises();
+      findTextButton(mounted.container, "Create").click();
+      await flushPromises();
+    });
+    appears = true;
+    await act(async () => {
+      await globalThis.__agentConsoleDashboardPollTask?.();
+      await flushPromises();
+    });
+    assert.equal(mounted.container.querySelector<HTMLElement>(".terminal-slot.is-focused")?.dataset.slotKey ?? null,
+      hasIdentity ? "summit/claimed" : null);
+  });
+}
+
 test("newly created session focuses after reconciliation recovers", async () => {
   await assertCreateFocusesOverflowSession({
     autoLayout: false,
