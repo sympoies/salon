@@ -40,9 +40,10 @@ const uiSsrOptimizeDepsConfig = {
 } as const satisfies NonNullable<InlineConfig["optimizeDeps"]>;
 
 export function createUiSsrHarness(options: readonly Plugin[] | UiSsrHarnessOptions = []): UiSsrHarness {
-  const plugins = Array.isArray(options) ? options : (options.plugins ?? []);
-  const ssr = Array.isArray(options) ? undefined : options.ssr;
-  const createServer = Array.isArray(options) ? createViteServer : (options.createServer ?? createViteServer);
+  const config: UiSsrHarnessOptions = Array.isArray(options) ? { plugins: options } : options as UiSsrHarnessOptions;
+  const plugins = config.plugins ?? [];
+  const ssr = config.ssr;
+  const createServer = config.createServer ?? createViteServer;
   const cacheRoot = fileURLToPath(new URL("../../node_modules/.vite", import.meta.url));
   let cacheDir: string | null = null;
   let server: UiSsrServer | null = null;
@@ -98,12 +99,12 @@ export function createUiSsrHarness(options: readonly Plugin[] | UiSsrHarnessOpti
       const load = (async () => {
         const activeServer = server ?? await (serverPromise ?? initializeServer());
         const loaded = await activeServer.ssrLoadModule(path) as T;
-        const contributions = Array.isArray(options) ? undefined : options.extensions;
+        const contributions = config.extensions;
         if (!contributions || !/\/(SessionSlot|MobileSessionList)\.tsx$/.test(path)) return loaded;
         if (!composedModules.has(path)) {
           const { UiExtensionsProvider, createUiExtensionRegistry } = await activeServer.ssrLoadModule("/src/extensions.tsx") as typeof import("../../src/extensions.tsx");
           const registry = createUiExtensionRegistry(contributions);
-          const composed = { ...loaded };
+          const composed: Record<string, unknown> = { ...loaded };
           for (const name of ["SessionSlot", "MobileSessionList"]) {
             if (!loaded[name]) continue;
             const Consumer = loaded[name] as ComponentType<Record<string, unknown>>;

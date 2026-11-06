@@ -11,17 +11,24 @@
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "customConditions": [
+      "source"
+    ],
+    "lib": [
+      "ES2023"
+    ]
   },
   "include": [
     "scripts/*.ts",
     "docker/*.ts",
     "apps/workspace/src/*.ts",
     "scripts/test/*.ts",
-    "packages/edge/scripts/title-summarizer-openai-compatible.ts"
+    "packages/edge/scripts/title-summarizer-openai-compatible.ts",
+    "packages/ui/src/vite-env.d.ts"
   ],
   "exclude": [
-    "scripts/fixtures",
-    "scripts/test/shared-outbox-two-clients.test.ts"
+    "scripts/fixtures"
   ]
 }

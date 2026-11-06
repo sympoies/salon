@@ -1,5 +1,7 @@
 import { strict as assert } from "node:assert";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
+import type { HistoryMessage } from "../../packages/ui/src/types.ts";
+import type { SharedOutboxClient } from "../../packages/ui/src/sharedOutboxClient.ts";
 import { createRequire } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,9 +17,9 @@ import { listenOnLoopback, loginCookie, makeEdgeConfig } from "../../packages/ed
 import { makeSession } from "../../packages/ui/test/support/fixtures.ts";
 import { createUiSsrHarness } from "../../packages/ui/test/support/ssr.ts";
 
-async function stop(server) {
+async function stop(server: Server) {
   server.closeAllConnections();
-  await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
 }
 
 // Real edge HTTP, durable server outbox, UI API, independent client journals
@@ -26,10 +28,10 @@ test("two clients reconcile delivered replies across history windows, reconnect 
   const directory = mkdtempSync(join(tmpdir(), "salon-two-clients-"));
   const session = makeSession({ machine: "fixture", id: "session-a", agent: "codex", session_incarnation: "inc-a",
     provider_resume: { provider: "codex", session_id: "provider-a" } });
-  const history = [];
-  let releaseDelivery, enteredDelivery;
-  const deliveryReady = new Promise(resolve => { enteredDelivery = resolve; });
-  const deliveryAllowed = new Promise(resolve => { releaseDelivery = resolve; });
+  const history: HistoryMessage[] = [];
+  let releaseDelivery!: () => void, enteredDelivery!: () => void;
+  const deliveryReady = new Promise<void>(resolve => { enteredDelivery = resolve; });
+  const deliveryAllowed = new Promise<void>(resolve => { releaseDelivery = resolve; });
   const daemon = createServer(async (request, response) => {
     response.setHeader("content-type", "application/json");
     if (request.url === "/sessions") return void response.end(JSON.stringify({ ok: true, data: { sessions: [session] } }));
@@ -55,7 +57,7 @@ test("two clients reconcile delivered replies across history windows, reconnect 
   const window = new Window({ url: base });
   const globals = { window, navigator: window.navigator, document: window.document, HTMLElement: window.HTMLElement,
     indexedDB: factoryB, IS_REACT_ACT_ENVIRONMENT: true,
-    fetch: (input, init) => {
+    fetch: (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
       const headers = new Headers(init?.headers); headers.set("cookie", cookie); headers.set("origin", base);
       return nativeFetch(new URL(String(input), base), { ...init, headers });
     } };
@@ -63,25 +65,25 @@ test("two clients reconcile delivered replies across history windows, reconnect 
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   const container = window.document.createElement("div"); window.document.body.append(container);
   let root = createRoot(container), ssr = createUiSsrHarness();
-  let clientA;
-  let clientB;
+  let clientA!: SharedOutboxClient;
+  let clientB!: SharedOutboxClient;
   const settle = async () => act(async () => { for (let n = 0; n < 30; n++) await new Promise(resolve => setImmediate(resolve)); });
   const load = async () => {
-    const storage = await ssr.loadModule("/src/storage.ts");
+    const storage = await ssr.loadModule<typeof import("../../packages/ui/src/storage.ts")>("/src/storage.ts");
     storage.setPrincipalStorageNamespace("legacy");
-    const module = await ssr.loadModule("/src/sharedOutboxClient.ts");
+    const module = await ssr.loadModule<typeof import("../../packages/ui/src/sharedOutboxClient.ts")>("/src/sharedOutboxClient.ts");
     clientB = module.sharedOutboxClient(); await clientB.ready;
     return module;
   };
-  const render = async (messages) => {
-    const { SharedOutgoingReplies } = await ssr.loadModule("/src/SharedOutgoingReplies.tsx");
+  const render = async (messages: HistoryMessage[]) => {
+    const { SharedOutgoingReplies } = await ssr.loadModule<typeof import("../../packages/ui/src/SharedOutgoingReplies.tsx")>("/src/SharedOutgoingReplies.tsx");
     await act(async () => root.render(createElement(SharedOutgoingReplies, { session, messages }))); await settle();
     return [...container.querySelectorAll(".history-outgoing-text")].map(node => node.textContent);
   };
   try {
     const module = await load(), target = module.sharedOutboxTarget(session);
     clientA = new module.SharedOutboxClient(module.sharedOutboxNamespace(), factoryA); await clientA.ready;
-    const send = async (text) => {
+    const send = async (text: string) => {
       await act(async () => { await clientA.enqueue(session, text); await clientA.sync(target); });
       for (let n = 0; n < 300; n++) {
         await act(async () => { await clientA.sync(target); });
@@ -141,23 +143,24 @@ test("#339 mounted archive/resume refusal keeps Discard and Retry through reload
   const factory = new IDBFactory(), window = new Window({ url: "http://localhost" }), nativeFetch = globalThis.fetch;
   const globals = { window, navigator: window.navigator, document: window.document, HTMLElement: window.HTMLElement,
     indexedDB: factory, IS_REACT_ACT_ENVIRONMENT: true,
-    fetch: (input, init) => {
+    fetch: (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
       const url = new URL(String(input), "http://localhost");
       return url.hostname === "localhost" ? edge.request(`${url.pathname}${url.search}`, init) : nativeFetch(input, init);
     } };
   const saved = new Map(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   const container = window.document.createElement("div"); window.document.body.append(container);
-  let root = createRoot(container), ssr = createUiSsrHarness(), client, module;
+  let root = createRoot(container), ssr = createUiSsrHarness();
+  let client!: SharedOutboxClient, module!: typeof import("../../packages/ui/src/sharedOutboxClient.ts");
   const settle = async () => act(async () => { for (let i = 0; i < 30; i++) await new Promise(resolve => setImmediate(resolve)); });
   const load = async () => {
-    const storage = await ssr.loadModule("/src/storage.ts"); storage.setPrincipalStorageNamespace("legacy");
-    module = await ssr.loadModule("/src/sharedOutboxClient.ts"); client = module.sharedOutboxClient(); await client.ready;
+    const storage = await ssr.loadModule<typeof import("../../packages/ui/src/storage.ts")>("/src/storage.ts"); storage.setPrincipalStorageNamespace("legacy");
+    module = await ssr.loadModule<typeof import("../../packages/ui/src/sharedOutboxClient.ts")>("/src/sharedOutboxClient.ts"); client = module.sharedOutboxClient(); await client.ready;
   };
   const actions = () => [...container.querySelectorAll("button")].map(button => button.textContent);
   const refresh = async (shown = session) => {
     await act(async () => { await client.sync(module.sharedOutboxTarget(shown)); });
-    const { SharedOutgoingReplies } = await ssr.loadModule("/src/SharedOutgoingReplies.tsx");
+    const { SharedOutgoingReplies } = await ssr.loadModule<typeof import("../../packages/ui/src/SharedOutgoingReplies.tsx")>("/src/SharedOutgoingReplies.tsx");
     await act(async () => root.render(createElement(SharedOutgoingReplies, { session: shown }))); await settle();
   };
   try {
@@ -183,7 +186,7 @@ test("#339 mounted archive/resume refusal keeps Discard and Retry through reload
     await refresh(replacement);
     assert.ok(actions().includes("Discard") && actions().includes("Retry"), "reload restores both actions");
     assert.doesNotMatch(container.textContent ?? "", /The reply changed on the server|Earlier refused reply/);
-    const click = async label => {
+    const click = async (label: string) => {
       const button = [...container.querySelectorAll("button")].find(button => button.textContent === label);
       assert.ok(button); await act(async () => button.click()); await settle();
     };

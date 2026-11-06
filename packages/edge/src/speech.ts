@@ -114,7 +114,7 @@ export async function transcribeSpeech(
         "content-type": contentType,
         ...(engine ? { "x-speech-engine": engine } : {}),
       },
-      body: audio,
+      body: new Uint8Array(audio),
       redirect: "manual",
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
     });

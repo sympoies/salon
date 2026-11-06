@@ -2,7 +2,7 @@ import { AppIconContext, DEFAULT_APP_ICON, type AppIcon } from "./appIcon.ts";
 import { AppNameContext } from "./appName.ts";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import App from "./App.tsx";
 import { createUiExtensionRegistry, UiExtensionsProvider, type UiExtension } from "./extensions.tsx";
 import { installAndroidSafeAreaInsets } from "./runtime.ts";
 import { installMacTitleBar, MacTitleBar } from "./MacTitleBar.tsx";
