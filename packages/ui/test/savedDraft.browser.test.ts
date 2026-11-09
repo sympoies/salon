@@ -189,7 +189,7 @@ test("saved drafts show, read and restore with confirmation without sending", as
     };
     for (const width of [360, 390, 1280]) {
       const frame = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div><script>${code}</script>`;
-      const html = `<!doctype html><style>body{margin:0}#result{display:none}</style><pre id="result"></pre><iframe style="border:0;width:${width}px;height:800px" srcdoc="${frame.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></iframe>`;
+      const html = `<!doctype html><style>body{margin:0;overflow:hidden}#result{display:none}iframe{display:block}</style><pre id="result"></pre><iframe style="border:0;width:${width}px;height:800px" srcdoc="${frame.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></iframe>`;
       const capture = process.env.SAVED_DRAFT_CAPTURE;
       await send("Emulation.setDeviceMetricsOverride", {width, height:800, deviceScaleFactor:1, mobile:false});
       const { frameTree } = await send("Page.getFrameTree");

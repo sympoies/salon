@@ -370,7 +370,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
 
   return (
     <footer id={composerId} className="conversation-composer" hidden={hidden} onDragOver={onDragOver} onDrop={onDrop}>
-      {session.stale_draft && !savedUnsupported && savedEmpty !== session.stale_draft.draft_id ? <div className="conversation-stuck"><button type="button" className="btn ghost" onClick={() => void openSavedDrafts()}>Saved drafts</button></div> : null}
+      {session.stale_draft && !savedUnsupported && savedEmpty !== session.stale_draft.draft_id ? <div className="conversation-saved-drafts-row"><button type="button" className="btn ghost" onClick={() => void openSavedDrafts()}>Saved drafts</button></div> : null}
       {savedOpen ? <section className="conversation-saved-drafts" aria-label="Saved drafts">
         <h3>Saved drafts</h3>
         {savedDrafts?.map(item => <button type="button" className="btn ghost" key={item.draft_id} onClick={() => void readSavedDraft(item)}>{new Date(item.saved_at).toLocaleString()} · {item.bytes} bytes</button>)}
