@@ -88,7 +88,9 @@ const TERMINAL_DRAFT_ERRORS: Readonly<Record<string, string>> = {
   [AUTH_QUARANTINED_CODE]: AUTH_QUARANTINE_REPLY_TEXT,
 };
 /** The reason a refused reply was not sent, shared by the per-browser and shared outboxes. */
-export const refusalReason = (code: string): string =>
+export const refusalReason = (code: string, observation?: string): string =>
+  code === "composer-unobservable" && observation === "region-not-single-row"
+    ? "The terminal input holds a multi-row draft, so this reply was not sent. Send or clear it in the terminal, then Retry." :
   Object.hasOwn(TERMINAL_DRAFT_ERRORS, code) ? TERMINAL_DRAFT_ERRORS[code]!
     : `Not sent (code: ${code}). Retry when the session is idle.`;
 const provable = (item: QueuedReply) => item.state === "unknown" || item.state === "dispatching" || item.state === "delivered"
@@ -551,7 +553,7 @@ export class ConversationOutbox {
       const refused = receipt?.outcome === "refused" || refusalCode === "request-id-conflict" || refusalCode === "keyed-prompt-unsupported";
       const busy = receipt?.outcome === "refused" && receipt.code === "busy";
       const terminalDraft = receipt?.outcome === "refused" && receipt.code && Object.hasOwn(TERMINAL_DRAFT_ERRORS, receipt.code)
-        ? TERMINAL_DRAFT_ERRORS[receipt.code] : undefined;
+        ? refusalReason(receipt.code, receipt.observation) : undefined;
       if (refused && !busy) queue.consumedIdle = undefined;
       // An uncertain idle attempt does not use up the idle period: the next
       // idle-guarded attempt may go, and the daemon refuses it as busy if a

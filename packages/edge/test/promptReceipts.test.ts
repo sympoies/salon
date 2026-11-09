@@ -95,3 +95,19 @@ test("edge rejects a command_dispatched acknowledgement without the matching com
     const response=await submit(keyed);assert.equal(response.status,502);
   }
 });
+
+for (const route of ["keyed", "unkeyed"] as const) test(`composer observation is projected from ${route} refusals`, async () => {
+  for (const value of ["region-not-single-row", undefined, "pane text", "a".repeat(41)]) {
+    const observation = value === "region-not-single-row" ? { observation: value } : {};
+    status = 409;
+    payload = { ok: false, error: { code: "composer-unobservable", details: { observation: value, receipt: { ...receipt("refused", "composer-unobservable"), observation: value } } } };
+    if (route === "keyed") {
+    const keyedBody = await (await submit(keyed)).json() as { error: { details: { receipt: unknown } } };
+    assert.deepEqual(keyedBody.error.details.receipt, { ...receipt("refused", "composer-unobservable"), ...observation });
+    } else {
+    const unkeyedBody = await (await submit({ text: "reply", expected_session_incarnation: "inc-1" })).json() as { error: { code: string; details?: unknown } };
+    assert.equal(unkeyedBody.error.code, "composer-unobservable");
+    assert.deepEqual(unkeyedBody.error.details, Object.keys(observation).length ? observation : undefined);
+    }
+  }
+});

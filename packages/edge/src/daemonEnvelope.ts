@@ -1,3 +1,4 @@
+import { normalizePromptObservation } from "@agent-console/shared/prompt-receipt";
 import { normalizeConversationImages, normalizeConversationFiles } from "@agent-console/shared/conversation-images";
 import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
 import type { ServerResponse } from "node:http";
@@ -611,11 +612,14 @@ export function forwardFencedStructuredPromptDaemon(
   const body = r.body as {
     ok?: unknown;
     data?: { submitted?: unknown; queued?: unknown; session_incarnation?: unknown };
+    error?: { code?: unknown; details?: { observation?: unknown } };
   } | undefined;
   if (!ok2xx || body?.ok === false) {
+    const code = body?.error?.code;
+    const observation = code === "composer-unobservable" ? normalizePromptObservation(body?.error?.details?.observation) : undefined;
     sendJson(res, ok2xx ? 502 : r.status, {
       ok: false,
-      error: { message: "provider prompt submission failed" },
+      error: { message: "provider prompt submission failed", ...(code === "composer-unobservable" ? { code } : {}), ...(observation ? { details: { observation } } : {}) },
     });
     return;
   }
