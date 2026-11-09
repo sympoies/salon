@@ -1,3 +1,4 @@
+import { accountConflict, projectAccount, translateAccount } from "./createAccount.ts";
 import { normalizeAccountNickname } from "@agent-console/shared/api";
 import {normalizeSessionRole} from "@agent-console/shared/lineage";
 import { createHash, randomUUID } from "node:crypto";
@@ -386,7 +387,7 @@ const SERVICE_CREATE_KEYS = ["source_service_id", "source_service_generation", "
 const SERVICE_BOARD_KEYS = ["source_service_id", "source_service_generation", "owner"];
 // The daemon sets `lineage`; everything else a service may set in `session`.
 const SERVICE_SESSION_KEYS = ["agent", "cwd", "workspace", "launch_env", "title_mode", "title", "prompt", "agent_args",
-  "agent_profile", "codex_account", "claude_account", "lineage"];
+  "agent_profile", "codex_account", "claude_account", "account", "lineage"];
 const SERVICE_SELECTOR = /^[A-Za-z0-9._-]{1,128}$/;
 const MACHINE_NAME = /^[\x21-\x7e]{1,128}$/;
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -454,7 +455,7 @@ async function serviceCreate(config: EdgeConfig, store: AccessStore, relayMachin
 const RESUME_OR_IDENTITY_KEYS = ["id", "provider_resume_id", "resume_id"];
 
 const RESUME_SCHEMA = "cli.agent-session.resume-preflight.v1";
-const RESUME_CHECK_KEYS = ["agent", "resume", "cwd", "claude_account", "agent_profile", "agent_args"];
+const RESUME_CHECK_KEYS = ["agent", "resume", "cwd", "claude_account", "codex_account", "account", "agent_profile", "agent_args"];
 const RESUME_ERRORS: Readonly<Record<string, string>> = {
   "resume-history-missing": "the exact provider conversation is unavailable in the selected account history",
   "resume-account-mismatch": "the requested account does not match the original conversation account",
@@ -487,7 +488,7 @@ async function resumePreflight(machine: MachineConfig, session: Record<string, u
   if (result.status === 200 && body?.schema_version === RESUME_SCHEMA && body.ok === true
     && data && data.agent === session.agent && data.provider_session_id === session.resume && data.machine === machine.name
     && normalizeAccountNickname(data.account) !== null && typeof data.account === "string"
-    && (session.claude_account === undefined || session.claude_account === data.account)
+    && (session.account === undefined && session.claude_account === undefined && session.codex_account === undefined || (session.account ?? session.claude_account ?? session.codex_account) === data.account)
     && (data.history_scope === undefined || data.history_scope === "account" || data.history_scope === "shared")) {
     return { status: result.status, body: { schema_version: RESUME_SCHEMA, ok: true,
       data: { agent: data.agent, provider_session_id: data.provider_session_id, machine: data.machine, account: data.account,
@@ -576,16 +577,21 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
       const session = object(request.session);
       if (!session || Object.keys(session).some(key => !RESUME_CHECK_KEYS.includes(key))
         || typeof session.agent !== "string" || !session.agent || typeof session.resume !== "string" || !session.resume
-        || ["cwd", "claude_account", "agent_profile"].some(key => session[key] !== undefined && typeof session[key] !== "string")
+        || ["cwd", "claude_account", "codex_account", "account", "agent_profile"].some(key => session[key] !== undefined && typeof session[key] !== "string")
         || (session.agent_args !== undefined && (!Array.isArray(session.agent_args) || !session.agent_args.every(v => typeof v === "string")))
         || (request.machine !== undefined && (typeof request.machine !== "string" || !request.machine))) return fail(400, "invalid-request", "invalid resume check request");
+      if (accountConflict(session)) return fail(400, "account-conflict", "conflicting account fields");
+      const forwarded = { ...session };
+      delete forwarded.account; delete forwarded.claude_account; delete forwarded.codex_account;
+      if (!projectAccount(session, forwarded)) return fail(400, "invalid-request", "invalid account");
       // Check the exact existing caller grant without snapshot-driven incarnation
       // advancement, start marks, or any ownership claim during a read-only check.
       const principal = principalFor(config, store, caller);
       const machine = config.machines.find(m => m.name === (request.machine ?? relay.machine));
       if (!machine || !principal.machines.includes(machine.name)) return fail(403, "machine-forbidden", "machine is not permitted");
       assertResumeOwnership(store, principal, machine, session);
-      const result = await resumePreflight(machine, session);
+      await translateAccount(machine, forwarded);
+      const result = await resumePreflight(machine, forwarded);
       sendJson(res, result.status, result.body);
       return;
     }

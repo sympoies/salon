@@ -386,7 +386,7 @@ test("CreateDialog submits the selected Codex account nickname", async () => {
     await act(async () => {
       createButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
     });
-    assert.deepEqual(submitted, { machine: "maple", body: { agent: "codex", codex_account: "sym" } });
+    assert.deepEqual(submitted, { machine: "maple", body: { agent: "codex", account: "sym" } });
   } finally {
     await act(async () => root.unmount());
     Object.assign(globalThis, previous);
@@ -664,7 +664,7 @@ test("CreateDialog offers a Claude account picker with the default preselected",
       assert.ok(option);
       await click(option);
       await click(create()!);
-      assert.deepEqual(submitted(), { machine: "maple", body: { agent: "claude", claude_account: "alpha" } });
+      assert.deepEqual(submitted(), { machine: "maple", body: { agent: "claude", account: "alpha" } });
     },
   );
 });

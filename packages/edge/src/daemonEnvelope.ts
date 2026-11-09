@@ -1094,7 +1094,8 @@ function agentOf(value: unknown): string | undefined {
 
 function requestAccountOf(value: unknown, provider: AccountProvider): string | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const account = (value as Record<string, unknown>)[`${provider}_account`];
+  const body = value as Record<string, unknown>;
+  const account = body[`${provider}_account`] ?? (body.agent === provider ? body.account : undefined);
   return typeof account === "string" ? account : undefined;
 }
 

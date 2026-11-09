@@ -230,6 +230,5 @@ export interface CreateBody {
   readonly prompt?: string;
   readonly provider_resume_id?: string;
   readonly agent_args?: readonly string[];
-  readonly codex_account?: string;
-  readonly claude_account?: string;
+  readonly account?: string;
 }

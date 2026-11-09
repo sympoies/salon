@@ -23,7 +23,7 @@ test("createSessionBody builds a fresh create payload", () => {
       title: "Work on edge",
       cwd: "/home/runner/Project/summit/agent-console",
       prompt: "Initial prompt\nwith detail",
-      codex_account: "account-secondary",
+      account: "account-secondary",
     },
   );
 });
@@ -188,8 +188,8 @@ test("createSessionBody carries the chosen account for its provider, except wher
     providerResumeId: "",
     account: "alpha",
   };
-  assert.deepEqual(createSessionBody({ ...base, agent: "claude" }), { agent: "claude", claude_account: "alpha" });
-  assert.deepEqual(createSessionBody({ ...base, agent: "codex" }), { agent: "codex", codex_account: "alpha" });
+  assert.deepEqual(createSessionBody({ ...base, agent: "claude" }), { agent: "claude", account: "alpha" });
+  assert.deepEqual(createSessionBody({ ...base, agent: "codex" }), { agent: "codex", account: "alpha" });
   // A Claude launch profile owns its configuration root; a Codex profile does not.
   assert.deepEqual(
     createSessionBody({ ...base, agent: "claude", agentProfile: "custom-claude" }),
@@ -197,7 +197,7 @@ test("createSessionBody carries the chosen account for its provider, except wher
   );
   assert.deepEqual(
     createSessionBody({ ...base, agent: "codex", agentProfile: "custom-codex" }),
-    { agent: "codex", agent_profile: "custom-codex", codex_account: "alpha" },
+    { agent: "codex", agent_profile: "custom-codex", account: "alpha" },
   );
   assert.deepEqual(createSessionBody({ ...base, agent: "claude", account: "" }), { agent: "claude" });
 });

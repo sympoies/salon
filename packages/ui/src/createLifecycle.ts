@@ -145,7 +145,7 @@ export function acknowledgeUnknownCreateRecovery<T extends UnknownCreateRecovery
 
 /** Browser deadline for a create request, longer than the edge's daemon budget for slow create paths. */
 export function createRequestTimeoutMs(
-  createBody: { readonly agent?: string; readonly codex_account?: string; readonly claude_account?: string; readonly prompt?: string },
+  createBody: { readonly agent?: string; readonly account?: string; readonly prompt?: string },
 ): number | undefined {
   const edgeBudget = createSessionTimeoutMs(createBody);
   return edgeBudget === undefined ? undefined : edgeBudget + CREATE_REQUEST_TIMEOUT_MARGIN_MS;

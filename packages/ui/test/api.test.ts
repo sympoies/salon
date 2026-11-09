@@ -3764,7 +3764,7 @@ test("createSession keeps a new Claude session's account binding like a Codex on
     },
   }));
 
-  const created = await createSession("maple", { agent: "claude", claude_account: "alpha" });
+  const created = await createSession("maple", { agent: "claude", account: "alpha" });
   assert.equal(created.ok, true);
   assert.deepEqual(created.session?.claude_account, CLAUDE_BOUND);
   assert.equal("codex_account" in (created.session ?? {}), false);
