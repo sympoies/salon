@@ -2453,6 +2453,17 @@ export async function fetchSavedDrafts(machine: string, id: string): Promise<rea
   return normalizeSavedDraftInventory(envelope.data, id) ?? null;
 }
 
+export async function discardSavedDraft(machine: string, id: string, draftId: string): Promise<{ remaining: number; stale_draft: SavedDraft | null } | null> {
+  const response = await req(`/api/sessions/${encodeURIComponent(machine)}/${encodeURIComponent(id)}/drafts/${encodeURIComponent(draftId)}/discard`, { method: "POST" });
+  const body = response.body as { ok?: boolean; data?: { machine?: unknown; discarded?: unknown; remaining?: unknown; stale_draft?: unknown }; error?: { code?: unknown } } | undefined;
+  if (response.status === 404 && body?.error?.code !== "draft-not-found" && body?.error?.code !== "session-not-found") return null;
+  if (response.status !== 200 || body?.ok !== true || body.data?.machine !== machine || body.data.discarded !== draftId
+    || !Number.isSafeInteger(body.data.remaining) || Number(body.data.remaining) < 0) throw new Error("Could not discard saved draft");
+  const stale = body.data.stale_draft === null ? null : normalizeSavedDraft(body.data.stale_draft, id);
+  if (stale === undefined || (Number(body.data.remaining) === 0) !== (stale === null)) throw new Error("Invalid discard response");
+  return { remaining: Number(body.data.remaining), stale_draft: stale };
+}
+
 export async function fetchSavedDraftText(machine: string, id: string, draftId: string): Promise<string | null> {
   const response = await appFetch(`/api/sessions/${encodeURIComponent(machine)}/${encodeURIComponent(id)}/drafts/${encodeURIComponent(draftId)}`);
   if (response.status === 404) return null;

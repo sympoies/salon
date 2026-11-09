@@ -10,6 +10,7 @@ import {
   fetchRepoRemoteUrl,
   fetchSessionBuffer,
   fetchSavedDraftText,
+  discardSavedDraft,
   glance,
   killSession,
   resultOf,
@@ -3859,4 +3860,19 @@ test("history image page reads retain the frozen upload path after repeated read
   for (let read = 0; read < 2; read++) {
     assert.deepEqual(await listHistoryMessages("fixture", "history"), {ok:true, messages:[row]});
   }
+});
+
+
+test("discard saved draft sends a bodyless POST and distinguishes unsupported runtimes", async () => {
+  setFetchMock(async (input, init) => {
+    assert.equal(String(input), "/api/sessions/fixture/session-1/drafts/draft-1/discard");
+    assert.equal(init?.method, "POST");
+    assert.equal(init?.body, undefined);
+    return jsonResponse({ ok: true, data: { machine: "fixture", discarded: "draft-1", remaining: 0, stale_draft: null } });
+  });
+  assert.deepEqual(await discardSavedDraft("fixture", "session-1", "draft-1"), { remaining: 0, stale_draft: null });
+  setFetchMock(async () => jsonResponse({ ok: false, error: { message: "not found" } }, { status: 404 }));
+  assert.equal(await discardSavedDraft("fixture", "session-1", "draft-1"), null);
+  setFetchMock(async () => jsonResponse({ ok: false, error: { code: "draft-not-found", message: "missing" } }, { status: 404 }));
+  await assert.rejects(discardSavedDraft("fixture", "session-1", "draft-1"));
 });

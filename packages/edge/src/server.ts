@@ -1884,6 +1884,40 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         }
         return;
 
+      case "discard-saved-draft": {
+        if (!csrfExempt(req)) return forbidCrossOrigin(res);
+        const sessionId = routeParam(route, "id");
+        const draftId = routeParam(route, "draft");
+        if (!/^[a-zA-Z0-9_-]{1,256}$/.test(draftId)) {
+          sendJson(res, 400, { ok: false, error: { code: "invalid-draft-id", message: "Invalid draft identifier." } });
+          return;
+        }
+        await withMachine(res, routeParam(route, "machine"), async machine => {
+          const result = await daemonFetch(machine, `/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(draftId)}/discard`, { method: "POST", debug: daemonDebug(requestId) });
+          const body = result.body as { ok?: boolean; data?: { machine?: unknown; discarded?: unknown; remaining?: unknown; stale_draft?: unknown } } | undefined;
+          if (result.status === 200 && body?.ok === true && body.data?.machine === machine.name && body.data.discarded === draftId
+            && Number.isSafeInteger(body.data.remaining) && Number(body.data.remaining) >= 0) {
+            const stale = body.data.stale_draft === null ? null : normalizeSavedDraft(body.data.stale_draft, sessionId);
+            if (stale !== undefined && (Number(body.data.remaining) === 0) === (stale === null)) {
+              const old = savedDraftBoards.get(machine.name);
+              if (old) {
+                const records = new Map(old.records);
+                for (const key of records.keys()) {
+                  if ((JSON.parse(key) as string[])[0] === sessionId) {
+                    if (stale) records.set(key, stale); else records.delete(key);
+                  }
+                }
+                savedDraftBoards.set(machine.name, { nextRefresh: 0, inFlight: false, records });
+              }
+              forwardDaemon(res, result);
+              return;
+            }
+          } else if (result.status !== 200) { forwardDaemon(res, result); return; }
+          sendJson(res, 502, { ok: false, error: { message: "Invalid discard response." } });
+        });
+        return;
+      }
+
       case "saved-drafts":
       case "saved-draft": {
         const sessionId = routeParam(route, "id");
