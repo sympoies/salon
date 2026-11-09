@@ -11,7 +11,7 @@ function validName(host: string): boolean {
 
 export function parseRemoteImageUrl(raw: string): RemoteImageUrl {
   if (raw.includes("\\") || /[\u0000-\u0020\u007f]/.test(raw) || !/^https?:\/\//i.test(raw)) throw new Error("Invalid remote image URL");
-  const authority = raw.slice(raw.indexOf("//") + 2).split(/[/?#]/, 1)[0];
+  const authority = raw.slice(raw.indexOf("//") + 2).split(/[/?#]/, 1)[0] ?? "";
   if (authority.includes("@")) throw new Error("Userinfo is not allowed");
   const url = new URL(raw);
   if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname || url.username || url.password) throw new Error("Invalid remote image URL");
@@ -61,13 +61,14 @@ export function classifyAddress(ip: string): AddressClass {
   if (version === 4) return ipv4Class(ip.split(".").reduce((n, octet) => (n * 256 + Number(octet)) >>> 0, 0));
   if (version !== 6) throw new Error("Invalid IP address");
   const words = ipv6Words(ip);
+  const first = words[0]!;
   const firstFiveZero = words.slice(0, 5).every((word) => word === 0);
   if (firstFiveZero && words[5] === 0 && words[6] === 0 && words[7] === 0) return "unspecified";
   if (firstFiveZero && words[5] === 0 && words[6] === 0 && words[7] === 1) return "loopback";
-  if (firstFiveZero && (words[5] === 0 || words[5] === 0xffff)) return ipv4Class((words[6] * 65536 + words[7]) >>> 0);
-  if ((words[0] & 0xffc0) === 0xfe80) return "link-local";
-  if ((words[0] & 0xfe00) === 0xfc00) return "unique-local";
-  if ((words[0] & 0xff00) === 0xff00) return "multicast";
+  if (firstFiveZero && (words[5] === 0 || words[5] === 0xffff)) return ipv4Class((words[6]! * 65536 + words[7]!) >>> 0);
+  if ((first & 0xffc0) === 0xfe80) return "link-local";
+  if ((first & 0xfe00) === 0xfc00) return "unique-local";
+  if ((first & 0xff00) === 0xff00) return "multicast";
   if (words[0] === 0x2001 && words[1] === 0xdb8) return "documentation";
   if (words[0] === 0x2001 && words[1] === 2 && words[2] === 0) return "benchmark";
   return "public";
@@ -84,5 +85,5 @@ export function decideTarget(url: RemoteImageUrl, resolvedAddresses: readonly st
     try { kind = classifyAddress(address); } catch { return deny("Invalid resolved address"); }
     if (kind !== "public" && !(listed && (kind === "private" || kind === "cgnat" || kind === "unique-local"))) return deny(`Blocked address: ${kind}`);
   }
-  return { allowed: true, address: resolvedAddresses[0], reason: "allowed" };
+  return { allowed: true, address: resolvedAddresses[0]!, reason: "allowed" };
 }
