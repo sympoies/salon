@@ -13,7 +13,7 @@ test("classifies IPv4, IPv6 and embedded IPv4 ranges", () => {
     ["fc00::1", "unique-local"], ["ff02::1", "multicast"], ["2001:db8::1", "documentation"],
     ["2001:2::1", "benchmark"], ["2606:4700:4700::1111", "public"],
     ["::ffff:10.0.0.1", "private"], ["::ffff:0.1.2.3", "unspecified"],
-    ["64:ff9b::7f00:1", "loopback"], ["64:ff9b:1::a00:1", "private"],
+    ["64:ff9b::7f00:1", "loopback"], ["64:ff9b:1::a00:1", "reserved"],
     ["2002:7f00:1::1", "loopback"], ["2001::1", "reserved"],
     ["fec0::1", "reserved"], ["100::1", "reserved"], ["::127.0.0.1", "loopback"],
     ["::ffff:192.0.2.1", "documentation"], ["::ffff:8.8.8.8", "public"],
@@ -54,4 +54,21 @@ test("allow-list rejects malformed entries and wildcard or CIDR matching", () =>
   for (const entry of ["*.example.com", "10.0.0.0/8", "https://example.com", "user@example.com", "example.com:0", "example.com:65536", "example.com/path", ""]) {
     assert.throws(() => parseAllowList([entry]), entry);
   }
+});
+
+test("local-use NAT64 prefixes are refused regardless of embedded layout", () => {
+  for (const ip of ["64:ff9b:1:1234:7f:0:100:0", "64:ff9b:1:808:8:800::"]) {
+    assert.equal(classifyAddress(ip), "reserved");
+    assert.equal(decideTarget(parseRemoteImageUrl("https://images.example"), [ip], []).allowed, false);
+  }
+});
+
+test("IPv6 documentation prefix and boundaries are classified and refused", () => {
+  for (const ip of ["3fff::1", "3fff:fff:ffff::1"]) {
+    assert.equal(classifyAddress(ip), "documentation");
+    for (const allow of [[], parseAllowList(["images.example"])]) {
+      assert.equal(decideTarget(parseRemoteImageUrl("https://images.example"), [ip], allow).allowed, false);
+    }
+  }
+  assert.equal(classifyAddress("3fff:1000::1"), "public");
 });
