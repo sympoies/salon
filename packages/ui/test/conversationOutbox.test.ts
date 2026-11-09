@@ -2047,3 +2047,11 @@ test("queued outgoing text remains literal while attachment paths become chips",
     assert.equal(row.querySelector('.attachment-chip')?.textContent, '[Image]');
   } finally { await h.close(); }
 });
+
+test("per-browser multi-row composer refusal names recovery", async () => {
+  const h=await mount(); try {
+    h.submit(async ()=>({ok:false,receipt:{request_id:(h.requests[0] as PromptBody).request_id,session_id:"outbox",session_incarnation:"inc-1",outcome:"refused",code:"composer-unobservable",observation:"region-not-single-row"}}));
+    await h.render("idle",1,claude); await h.write("kept reply"); await h.reply();
+    assert.ok(h.container.textContent?.includes("The terminal input holds a multi-row draft, so this reply was not sent. Send or clear it in the terminal, then Retry."));
+  } finally { await h.close(); }
+});

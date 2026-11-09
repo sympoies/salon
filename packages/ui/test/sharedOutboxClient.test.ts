@@ -1102,3 +1102,19 @@ test("#333 the current view refreshes cached previous-incarnation rows and hides
     assertNoElement(h.container, ".history-outgoing-reply", "the cancellation stays hidden across reload");
   } finally { await h.close(); }
 });
+
+test("shared multi-row composer refusal names recovery", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const requestId = crypto.randomUUID();
+    await h.ownServer({ revision: 2, compose_holds: [], items: [{
+      id: "multi-row", text: "kept reply", state: "refused", revision: 2,
+      session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: requestId,
+      edit_hold: null, error_code: "composer-unobservable",
+      receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1",
+        outcome: "refused", code: "composer-unobservable", observation: "region-not-single-row" },
+    }] });
+    await h.client.sync(h.target); await h.showReplies();
+    assert.equal(h.container.querySelector('[role="alert"]')?.textContent, "The terminal input holds a multi-row draft, so this reply was not sent. Send or clear it in the terminal, then Retry.");
+  } finally { await h.close(); }
+});

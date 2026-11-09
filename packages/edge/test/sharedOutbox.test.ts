@@ -83,7 +83,7 @@ async function fixture(t: import("node:test").TestContext, multiUser = false) {
   const directory = mkdtempSync(join(tmpdir(), "console-shared-delivery-"));
   const statePath = join(directory, "state.sqlite");
   const state = { incarnation, sessionPresent: true, sessionsAvailable: true, provider: "codex", phase: "working", revision: 1, mode: "busy", posts: [] as Record<string, unknown>[],
-    lookups: [] as string[], receipts: new Map<string, unknown>(), submitted: 0, lookup: "normal", lookupWait: undefined as Promise<void> | undefined };
+    lookups: [] as string[], receipts: new Map<string, unknown>(), submitted: 0, lookup: "normal", observation: undefined as string | undefined, lookupWait: undefined as Promise<void> | undefined };
   const daemon = createServer(async (req, res) => {
     res.setHeader("content-type", "application/json");
     if (req.url === "/sessions" && !state.sessionsAvailable) {
@@ -102,7 +102,8 @@ async function fixture(t: import("node:test").TestContext, multiUser = false) {
       const body = JSON.parse(text) as Record<string, unknown>; state.posts.push(body);
       const receipt = { request_id: body.request_id, session_id: "session-a", session_incarnation: body.expected_session_incarnation,
         outcome: state.mode === "busy" ? "refused" : state.mode.startsWith("command") ? "command_dispatched" : "submitted",
-        code: state.mode === "busy" ? "busy" : null };
+        code: state.mode === "busy" ? (state.observation ? "composer-unobservable" : "busy") : null,
+        ...(state.observation ? { observation: state.observation } : {}) };
       if (state.mode === "busy") {
         state.receipts.set(String(body.request_id), receipt);
         res.writeHead(409); return void res.end(JSON.stringify({ ok: false, error: { code: "busy", details: { receipt } } }));
@@ -660,4 +661,16 @@ for (const next of ["delete", "archive"] as const) test(`#340 a completed delete
     if (next === "delete") assert.equal(f.deleteCalls(), 2);
     else assert.equal(f.fence(), undefined);
   } finally { await f.close(); }
+});
+
+
+test("shared refused receipt retains a safe observation across restart", async t => {
+  const f = await fixture(t);
+  f.state.observation = "region-not-single-row";
+  await f.request("/intent-a", "PUT", admission);
+  f.advance();
+  await f.until(async () => (await f.list()).items[0]?.state === "refused");
+  assert.equal((await f.list()).items[0]?.receipt?.observation, "region-not-single-row");
+  await f.restart(() => {});
+  assert.equal((await f.list()).items[0]?.receipt?.observation, "region-not-single-row");
 });

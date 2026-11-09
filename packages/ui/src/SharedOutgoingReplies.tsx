@@ -56,7 +56,7 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
             {item.state === "refused" ? <>
               <p role="alert" className="history-outgoing-note">{item.error_code === "busy"
                 ? 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'
-                : refusalReason(item.error_code ?? "unknown")}</p>
+                : refusalReason(item.error_code ?? "unknown", item.receipt?.observation)}</p>
               <div className="history-outgoing-actions">
                 <button type="button" className="btn ghost" onClick={() => void client.actOnRefused(session, row.target, item, "discard_refused")}>Discard</button>
                 {row.target.incarnation === session.session_incarnation

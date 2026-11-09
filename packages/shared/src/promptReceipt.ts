@@ -9,6 +9,7 @@ export interface PromptReceipt {
   readonly session_incarnation: string;
   readonly outcome: "submitted" | "command_dispatched" | "refused" | "unknown";
   readonly code: string | null;
+  readonly observation?: string;
 }
 export interface PromptReceiptIdentity {
   readonly request_id: string;
@@ -21,6 +22,9 @@ export function isPromptRequestId(value: unknown): value is string {
 export function isPromptIncarnation(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= 128 && !/[\u0000-\u001f\u007f]/.test(value);
 }
+export function normalizePromptObservation(value: unknown): string | undefined {
+  return typeof value === "string" && /^[a-z-]{1,40}$/.test(value) ? value : undefined;
+}
 export function normalizePromptReceipt(value: unknown, expected: PromptReceiptIdentity): PromptReceipt | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
@@ -31,6 +35,7 @@ export function normalizePromptReceipt(value: unknown, expected: PromptReceiptId
     : raw.outcome === "unknown" ? raw.code !== "structured-prompt-outcome-unknown"
     : raw.outcome === "refused" ? typeof raw.code !== "string" || !/^[a-z][a-z0-9-]{0,127}$/.test(raw.code)
     : true) return null;
-  return { request_id: raw.request_id, session_id: expected.session_id, session_incarnation: raw.session_incarnation,
+  const observation = raw.outcome === "refused" ? normalizePromptObservation(raw.observation) : undefined;
+  return { ...(observation ? { observation } : {}), request_id: raw.request_id, session_id: expected.session_id, session_incarnation: raw.session_incarnation,
     outcome: raw.outcome as PromptReceipt["outcome"], code: raw.code as string | null };
 }
