@@ -4,7 +4,7 @@ import { classifyAddress, decideTarget, parseAllowList, parseRemoteImageUrl } fr
 
 test("classifies IPv4, IPv6 and embedded IPv4 ranges", () => {
   const cases: [string, string][] = [
-    ["0.0.0.0", "unspecified"], ["127.0.0.1", "loopback"], ["169.254.1.1", "link-local"],
+    ["0.0.0.0", "unspecified"], ["0.1.2.3", "unspecified"], ["240.0.0.1", "reserved"], ["127.0.0.1", "loopback"], ["169.254.1.1", "link-local"],
     ["10.0.0.1", "private"], ["172.16.0.1", "private"], ["192.168.0.1", "private"],
     ["100.64.0.1", "cgnat"], ["224.0.0.1", "multicast"], ["255.255.255.255", "broadcast"],
     ["192.0.2.1", "documentation"], ["198.51.100.1", "documentation"], ["203.0.113.1", "documentation"],
@@ -12,7 +12,10 @@ test("classifies IPv4, IPv6 and embedded IPv4 ranges", () => {
     ["::", "unspecified"], ["::1", "loopback"], ["fe80::1", "link-local"],
     ["fc00::1", "unique-local"], ["ff02::1", "multicast"], ["2001:db8::1", "documentation"],
     ["2001:2::1", "benchmark"], ["2606:4700:4700::1111", "public"],
-    ["::ffff:10.0.0.1", "private"], ["::127.0.0.1", "loopback"],
+    ["::ffff:10.0.0.1", "private"], ["::ffff:0.1.2.3", "unspecified"],
+    ["64:ff9b::7f00:1", "loopback"], ["64:ff9b:1::a00:1", "private"],
+    ["2002:7f00:1::1", "loopback"], ["2001::1", "reserved"],
+    ["fec0::1", "reserved"], ["100::1", "reserved"], ["::127.0.0.1", "loopback"],
     ["::ffff:192.0.2.1", "documentation"], ["::ffff:8.8.8.8", "public"],
   ];
   for (const [ip, expected] of cases) assert.equal(classifyAddress(ip), expected, ip);

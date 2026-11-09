@@ -1,6 +1,6 @@
 import { isIP } from "node:net";
 
-export type AddressClass = "public" | "loopback" | "unspecified" | "link-local" | "private" | "cgnat" | "unique-local" | "multicast" | "broadcast" | "documentation" | "benchmark";
+export type AddressClass = "public" | "loopback" | "unspecified" | "link-local" | "private" | "cgnat" | "unique-local" | "multicast" | "broadcast" | "documentation" | "benchmark" | "reserved";
 export type RemoteImageUrl = { scheme: "http" | "https"; host: string; port: number; isIpLiteral: boolean };
 export type AllowListEntry = { host: string; port: number | null };
 export type TargetDecision = { allowed: boolean; address: string | null; reason: string };
@@ -36,12 +36,13 @@ export function parseAllowList(config: readonly string[]): AllowListEntry[] {
 
 function ipv4Class(n: number): AddressClass {
   const inRange = (base: number, bits: number) => (n >>> (32 - bits)) === (base >>> (32 - bits));
-  if (n === 0) return "unspecified";
+  if (inRange(0, 8)) return "unspecified";
   if (inRange(0x7f000000, 8)) return "loopback";
   if (inRange(0xa9fe0000, 16)) return "link-local";
   if (inRange(0x0a000000, 8) || inRange(0xac100000, 12) || inRange(0xc0a80000, 16)) return "private";
   if (inRange(0x64400000, 10)) return "cgnat";
   if (n === 0xffffffff) return "broadcast";
+  if (inRange(0xf0000000, 4)) return "reserved";
   if (inRange(0xe0000000, 4)) return "multicast";
   if (inRange(0xc0000200, 24) || inRange(0xc6336400, 24) || inRange(0xcb007100, 24)) return "documentation";
   if (inRange(0xc6120000, 15)) return "benchmark";
@@ -66,6 +67,9 @@ export function classifyAddress(ip: string): AddressClass {
   if (firstFiveZero && words[5] === 0 && words[6] === 0 && words[7] === 0) return "unspecified";
   if (firstFiveZero && words[5] === 0 && words[6] === 0 && words[7] === 1) return "loopback";
   if (firstFiveZero && (words[5] === 0 || words[5] === 0xffff)) return ipv4Class((words[6]! * 65536 + words[7]!) >>> 0);
+  if (words[0] === 0x64 && words[1] === 0xff9b && ((words[2] === 0 && words[3] === 0 && words[4] === 0 && words[5] === 0) || words[2] === 1)) return ipv4Class((words[6]! * 65536 + words[7]!) >>> 0);
+  if (first === 0x2002) return ipv4Class((words[1]! * 65536 + words[2]!) >>> 0);
+  if ((first === 0x2001 && words[1] === 0) || (first & 0xffc0) === 0xfec0 || (first === 0x100 && words[1] === 0 && words[2] === 0 && words[3] === 0)) return "reserved";
   if ((first & 0xffc0) === 0xfe80) return "link-local";
   if ((first & 0xfe00) === 0xfc00) return "unique-local";
   if ((first & 0xff00) === 0xff00) return "multicast";
