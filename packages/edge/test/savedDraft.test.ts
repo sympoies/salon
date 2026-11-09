@@ -145,8 +145,8 @@ test("discard forwards owner POST, enforces authentication and maps draft errors
   const daemon = createServer((req, res) => {
     calls.push(`${req.method} ${req.url} ${req.headers.authorization}`);
     res.setHeader("content-type", "application/json");
-    if (code) { res.writeHead(code === "invalid-draft-id" ? 400 : code === "draft-store-unavailable" ? 503 : 404); res.end(JSON.stringify({ ok: false, error: { code, message: code } })); }
-    else res.end(JSON.stringify({ ok: true, data: { machine: "fixture", discarded: "draft-1", remaining: 0, stale_draft: null } }));
+    if (code) { res.writeHead(code === "invalid-draft-id" ? 400 : code === "draft-store-unavailable" ? 503 : 404); res.end(JSON.stringify({ ok: false, error: { code, message: "private canary", details: "private canary" } })); }
+    else res.end(JSON.stringify({ ok: true, data: { machine: "fixture", discarded: "draft-1", remaining: 0, stale_draft: null, extra: "private canary" } }));
   });
   const daemonBase = (await listenOnLoopback(daemon)).base;
   const edge = createEdgeServer(makeEdgeConfig({ openAccess: false, clientToken: "client-fixture", machines: [{ name: "fixture", url: daemonBase, token: "daemon-fixture" }] }));
@@ -168,7 +168,9 @@ test("discard forwards owner POST, enforces authentication and maps draft errors
       code = errorCode;
       const failure = await fetch(route, { method: "POST", headers });
       assert.equal(failure.status, status);
-      assert.equal((await failure.json() as any).error.code, errorCode);
+      const envelope = await failure.json() as any;
+      assert.equal(envelope.error.code, errorCode);
+      assert.ok(!JSON.stringify(envelope).includes("private canary"));
     }
     const invalid = await fetch(`${base}/api/sessions/fixture/session-1/drafts/bad%20id/discard`, { method: "POST", headers });
     assert.equal(invalid.status, 400);

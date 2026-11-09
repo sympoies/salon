@@ -1909,10 +1909,21 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 }
                 savedDraftBoards.set(machine.name, { nextRefresh: 0, inFlight: false, records });
               }
-              forwardDaemon(res, result);
+              sendJson(res, 200, { ok: true, data: { machine: machine.name, discarded: draftId, remaining: Number(body.data.remaining), stale_draft: stale } });
               return;
             }
-          } else if (result.status !== 200) { forwardDaemon(res, result); return; }
+          } else if (result.status !== 200) {
+            const error = (result.body as { error?: { code?: unknown } } | undefined)?.error;
+            const messages: Readonly<Record<string, string>> = {
+              "draft-not-found": "Saved draft not found.",
+              "invalid-draft-id": "Invalid draft identifier.",
+              "session-not-found": "Session not found.",
+              "draft-store-unavailable": "Saved drafts are unavailable.",
+            };
+            const code = typeof error?.code === "string" && Object.hasOwn(messages, error.code) ? error.code : undefined;
+            sendJson(res, result.status, { ok: false, error: { ...(code ? { code } : {}), message: code ? messages[code] : "Could not discard saved draft." } });
+            return;
+          }
           sendJson(res, 502, { ok: false, error: { message: "Invalid discard response." } });
         });
         return;
