@@ -15,7 +15,7 @@ const session = { agent: "claude", resume: providerId, cwd: "/work/project", cla
 const terminal = { session_created: false, safe_to_retry: false };
 const refusal = { schema_version: schema, ok: false, error: { code: "resume-source-live", message: "a managed source conversation still has a live or busy writer", details: terminal } };
 
-async function fixture(providerOwner: string | null = "owner") {
+async function fixture(providerOwner: string | null = "owner", permissions: string[] = []) {
   const dir = mkdtempSync(join(tmpdir(), "resume-relay-"));
   const db = join(dir, "access.sqlite");
   const calls: { machine: string; path: string; body: any }[] = [];
@@ -50,7 +50,7 @@ async function fixture(providerOwner: string | null = "owner") {
   if (providerOwner) access.claimProvider(providerOwner, "target", "claude", providerId);
   access.close();
   const edge = createEdgeServer(makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: db,
-    principals: [{ id: "owner", token: "browser-owner", machines: ["source", "target"], permissions: [] }],
+    principals: [{ id: "owner", token: "browser-owner", machines: ["source", "target"], permissions }],
     machines: daemons.map(({ server: _server, ...machine }) => machine),
     coordinationRelays: [{ machine: "source", token: "source-relay", ingress_token: "source-ingress" }],
   }));
@@ -175,11 +175,27 @@ test("resume checks and creates preserve provider ownership before target I/O", 
     try {
       for (const route of ["resume-preflight/v1", "sessions/v1"]) {
         const result = await f.post(route, { ...caller, machine: "target", session });
-        assert.equal(result.status, 404);
+        assert.equal(result.status, 422);
+        assert.deepEqual(result.body, {
+          ...(route === "resume-preflight/v1" ? { schema_version: schema } : {}),
+          ok: false,
+          error: { code: "resume-source-unknown", message: "source account, ownership or stopped-runtime evidence is incomplete", details: terminal },
+        });
       }
       assert.deepEqual(f.calls, []);
     } finally { await f.cleanup(); }
   }
+});
+
+test("an importing principal can resume an unowned provider conversation", async () => {
+  const f = await fixture(null, ["provider_import"]);
+  try {
+    for (const route of ["resume-preflight/v1", "sessions/v1"]) {
+      const result = await f.post(route, { ...caller, machine: "target", session });
+      assert.equal(result.status, route === "resume-preflight/v1" ? 200 : 201);
+    }
+    assert.deepEqual(f.calls.map(call => call.path), ["/resume-preflight/v1", "/sessions/resume/v1"]);
+  } finally { await f.cleanup(); }
 });
 
 test("owned resume preserves explicit consent independently of the resolved account pin", async () => {
