@@ -669,3 +669,26 @@ test("image-block history copies selector-bound paths for duplicate display name
       [["write_macos_clipboard_text", {text:images[index].upload_path}]]);
   }
 });
+
+test("remote Markdown image loads through the edge and opens in the viewer", async () => {
+  const source = "https://images.example.invalid/chart.png";
+  const {window,requests} = await mountImages(path => path.endsWith("/remote-image")
+    ? new Response(new Uint8Array([137,80,78,71,13,10,26,10]),{headers:{"content-type":"image/png"}})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:"https://images.example.invalid"}}),{status:422}),
+  false,[],[{id:"remote",role:"assistant",text:`![](${source})`,images:[{id:imageId(0)}]}]);
+  assert.ok(requests.some(path => path.endsWith("/remote-image")));
+  assert.ok(window.document.querySelector('.conversation-image-thumbnail img'));
+  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
+  assert.ok(window.document.querySelector('.conversation-image-canvas img'));
+});
+
+test("remote image refusal keeps the link and explains the failure", async () => {
+  const source = "https://images.example.invalid/chart.png";
+  const {window} = await mountImages(path => path.endsWith("/remote-image")
+    ? new Response(JSON.stringify({error:{reason:"not-an-image"}}),{status:422})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:"https://images.example.invalid"}}),{status:422}),
+  false,[],[{id:"remote",role:"assistant",text:`![](${source})`,images:[{id:imageId(0)}]}]);
+  const placeholder = window.document.querySelector('.conversation-image-thumbnail');
+  assert.match(placeholder?.textContent ?? "",/not an image/i);
+  assert.equal(placeholder?.querySelector('a')?.href,source);
+});
