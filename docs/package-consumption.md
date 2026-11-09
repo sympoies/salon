@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.59 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.60 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,9 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.59`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.60`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.59
+### Changes retained in SDK 0.1.60
 
 Sessions carry a marker for a draft the runtime saved, and the composer can show, restore and discard it
 (#282, #383). The UI API also exports `discardSavedDraft` for this action.
@@ -288,9 +288,15 @@ Session create, resume and resume preflight accept the generic `account` field o
 provider-specific field, and reject conflicting or wrong-provider fields. The edge forwards `account`
 when the target advertises `session_account_field`; otherwise it uses the provider-specific field (#388).
 
+Composer-unobservable refusals retain the runtime’s fixed-word `observation`. For a multi-row
+draft (`region-not-single-row`), both outboxes instruct the user to send or clear the draft (#391).
+
+The Saved drafts button, panel and error occupy their own spaced row, and the header saved-draft
+marker truncates with an ellipsis (#393).
+
 ### Preserve published releases
 
-Existing `v0.1.0` through `v0.1.58` tags and assets stay immutable. The visibility transition does
+Existing `v0.1.0` through `v0.1.59` tags and assets stay immutable. The visibility transition does
 not republish those releases, change their source or digests, or reuse an existing tag.
 
 A future publication requires separately approved version metadata and an unused tag. This
