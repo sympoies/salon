@@ -90,7 +90,7 @@ test("createRequestTimeoutMs outlasts the edge budget for slow create paths", ()
     PROMPT_CREATE_TIMEOUT_MS + CREATE_REQUEST_TIMEOUT_MARGIN_MS,
   );
   for (const provider of ["codex", "claude"] as const) {
-    const body = { agent: provider, [`${provider}_account`]: "work" };
+    const body = { agent: provider, account: "work" };
     assert.equal(
       createRequestTimeoutMs(body),
       ACCOUNT_CREATE_TIMEOUT_MS[provider] + CREATE_REQUEST_TIMEOUT_MARGIN_MS,

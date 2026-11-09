@@ -49,7 +49,7 @@ export function createSessionBody(input: CreateSessionBodyInput): CreateBody | n
   }
   const provider = sessionAccountProvider(input.agent);
   if (provider && input.account && !(input.agentProfile && launchProfileOwnsAccount(provider))) {
-    Object.assign(body, { [`${provider}_account`]: input.account });
+    Object.assign(body, { account: input.account });
   }
   return body;
 }

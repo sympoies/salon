@@ -1,3 +1,4 @@
+import { accountConflict, projectAccount, translateAccount } from "./createAccount.ts";
 import { sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
 import { normalizeSavedDraft } from "@agent-console/shared";
 import { forwardHistoryImage } from "./historyImages.ts";
@@ -655,6 +656,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // open-access mode. Relay traffic bypasses browser debug projections.
     if (isCoordinationRoute(path)) {
       await handleCoordinationRelay(config, accessStore, req, res, url, board, async (principal, machine, body, startMark, lineage, reserve) => {
+        if (accountConflict(body)) { sendJson(res, 400, { ok: false, error: { code: "account-conflict", message: "conflicting account fields" } }); return true; }
         const projectedBody = projectCreateSessionBody(body);
         if (!projectedBody) return false;
         if (body.resume !== undefined) {
@@ -2775,6 +2777,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         if (!csrfExempt(req)) return forbidCrossOrigin(res);
         await withMachine(res, routeParam(route, "machine"), async (machine) => {
           const body = await readJsonBody(req).catch(() => undefined);
+          if (body && typeof body === "object" && !Array.isArray(body) && accountConflict(body as Record<string, unknown>)) {
+            sendJson(res, 400, { ok: false, error: { code: "account-conflict", message: "conflicting account fields" } }); return;
+          }
           const projectedBody = projectCreateSessionBody(body);
           if (!projectedBody) {
             sendJson(res, 422, { ok: false, error: { message: "invalid create-session body" } });
@@ -2965,6 +2970,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   ): Promise<void> {
     const debug = requestId ? daemonDebug(requestId) : undefined;
     const requestBody = projectedBody;
+    await translateAccount(machine, requestBody);
     if (config.multiUser) requestBody.id = sessionId;
     const requestedAgentProfile = requestBody.agent_profile;
     if (typeof requestedAgentProfile === "string") {
@@ -3522,15 +3528,7 @@ function projectCreateSessionBody(value: unknown): Record<string, unknown> | nul
     if (!titleState) return null;
     body.title_state = titleState;
   }
-  // `<provider>_account` binds the new session to that broker account; it is
-  // valid only for a session of that provider.
-  for (const provider of ACCOUNT_PROVIDERS) {
-    const field = `${provider}_account` as const;
-    if (raw[field] === undefined) continue;
-    const account = normalizeAccountNickname(raw[field]);
-    if (raw.agent !== provider || account === null) return null;
-    body[field] = account;
-  }
+  if (!projectAccount(raw, body)) return null;
   return body;
 }
 

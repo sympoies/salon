@@ -15,16 +15,16 @@ const session = { agent: "claude", resume: providerId, cwd: "/work/project", cla
 const terminal = { session_created: false, safe_to_retry: false };
 const refusal = { schema_version: schema, ok: false, error: { code: "resume-source-live", message: "a managed source conversation still has a live or busy writer", details: terminal } };
 
-async function fixture(providerOwner: string | null = "owner", permissions: string[] = []) {
+async function fixture(providerOwner: string | null = "owner", permissions: string[] = [], accountField = false) {
   const dir = mkdtempSync(join(tmpdir(), "resume-relay-"));
   const db = join(dir, "access.sqlite");
   const calls: { machine: string; path: string; body: any }[] = [];
-  const state = { status: 200, body: { schema_version: schema, ok: true, data: { agent: "claude", provider_session_id: providerId, machine: "target", account: "work", history_scope: "shared" } } as any, raw: false };
+  const state = { status: 200, body: { schema_version: schema, ok: true, data: { agent: "claude", provider_session_id: providerId, machine: "target", account: "work", history_scope: "shared" } } as any, raw: false, omitAccount: false };
   const daemons = await Promise.all(["source", "target", "forbidden"].map(async machine => {
     const server = createServer(async (req, res) => {
       assert.equal(req.headers.authorization, `Bearer ${machine}-operator`);
       if (req.method === "GET") {
-        res.end(JSON.stringify({ ok: true, data: { sessions: machine === "source" ? [{ id: "caller", session_incarnation: "caller-inc", status: "running" }] : [] } }));
+        res.end(JSON.stringify({ ok: true, data: { capabilities: accountField && machine === "target" ? { session_account_field: true } : {}, sessions: machine === "source" ? [{ id: "caller", session_incarnation: "caller-inc", status: "running" }] : [] } }));
         return;
       }
       const chunks: Buffer[] = [];
@@ -39,7 +39,9 @@ async function fixture(providerOwner: string | null = "owner", permissions: stri
       const created = { id: body.id, agent: body.agent, session_incarnation: "created-inc", status: "running",
         provider_resume: { provider: "claude", session_id: providerId },
         claude_account: { schema_version: "agent-session.claude-account.v1", supported: true, state: "bound", selected_account: "work", revision: 1, applied_runtime_id: "created-inc" },
+        codex_account: { schema_version: "agent-session.codex-account.v1", supported: true, state: "bound", selected_account: "work", revision: 1, applied_runtime_id: "created-inc" },
       };
+      if (state.omitAccount) { delete (created as any).claude_account; delete (created as any).codex_account; }
       res.writeHead(201);
       res.end(JSON.stringify({ ok: true, data: { session: created } }));
     });
@@ -59,7 +61,11 @@ async function fixture(providerOwner: string | null = "owner", permissions: stri
     const result = await fetch(`${base}/api/coordination/${path}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: result.status, body: await result.json() as any };
   };
-  return { calls, state, db, post, cleanup: async () => {
+  const ownerPost = async (body: unknown) => {
+    const result = await fetch(`${base}/api/sessions/target`, { method: "POST", headers: { authorization: "Bearer browser-owner", "content-type": "application/json" }, body: JSON.stringify(body) });
+    return { status: result.status, body: await result.json() as any };
+  };
+  return { calls, state, db, post, ownerPost, cleanup: async () => {
     await Promise.all([edge, ...daemons.map(d => d.server)].map(server => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); })));
     rmSync(dir, { recursive: true, force: true });
   } };
@@ -227,5 +233,83 @@ test("resume consent rejects invalid types and consent without resume before tar
       assert.equal(result.body.error.code, "invalid-request");
     }
     assert.deepEqual(f.calls, []);
+  } finally { await f.cleanup(); }
+});
+
+
+test("resume preflight translates account for the target capability and rejects conflicts", async () => {
+  for (const enabled of [false, true]) {
+    const f = await fixture("owner", [], enabled);
+    try {
+      const { claude_account: _old, ...base } = session;
+      for (const input of [{ account: "work" }, { claude_account: "work" }]) {
+        const result = await f.post("resume-preflight/v1", { ...caller, machine: "target", session: { ...base, ...input } });
+        assert.equal(result.status, 200);
+        assert.deepEqual(result.body, f.state.body);
+        assert.deepEqual(f.calls.at(-1)?.body, { ...base, ...(enabled ? { account: "work" } : { claude_account: "work" }) });
+      }
+      const count = f.calls.length;
+      const result = await f.post("resume-preflight/v1", { ...caller, machine: "target", session: { ...base, account: "other", claude_account: "work" } });
+      assert.equal(result.status, 400);
+      assert.equal(typeof result.body.error.code, "string");
+      assert.deepEqual(result.body.error.details, terminal);
+      assert.equal(f.calls.length, count);
+    } finally { await f.cleanup(); }
+  }
+});
+
+
+test("relay and owner create translate account for each target and reject conflicts", async () => {
+  for (const enabled of [false, true]) {
+    const f = await fixture("owner", [], enabled);
+    try {
+      for (const input of [{ account: "work" }, { claude_account: "work" }]) {
+        for (const owner of [false, true]) {
+          const body = { agent: "claude", ...input };
+          const result = owner ? await f.ownerPost(body) : await f.post("sessions/v1", { ...caller, machine: "target", session: body });
+          assert.equal(result.status, 201, JSON.stringify(result.body));
+          const forwarded = f.calls.at(-1)?.body;
+          assert.equal(forwarded[enabled ? "account" : "claude_account"], "work");
+          assert.equal(forwarded[enabled ? "claude_account" : "account"], undefined);
+        }
+      }
+      for (const owner of [false, true]) {
+        const count = f.calls.length;
+        const body = { agent: "claude", account: "other", claude_account: "work" };
+        const result = owner ? await f.ownerPost(body) : await f.post("sessions/v1", { ...caller, machine: "target", session: body });
+        assert.ok(result.status >= 400 && result.status < 500);
+        assert.equal(typeof result.body.error.code, "string");
+        assert.equal(f.calls.length, count);
+      }
+    } finally { await f.cleanup(); }
+  }
+});
+
+
+test("Codex account is forwarded in preflight and create according to target capability", async () => {
+  for (const enabled of [false, true]) {
+    const f = await fixture(null, ["provider_import"], enabled);
+    try {
+      f.state.body.data.agent = "codex";
+      const selection = { agent: "codex", resume: providerId, account: "work" };
+      const check = await f.post("resume-preflight/v1", { ...caller, machine: "target", session: selection });
+      assert.equal(check.status, 200, JSON.stringify(check.body));
+      assert.deepEqual(f.calls.at(-1)?.body, { agent: "codex", resume: providerId, ...(enabled ? { account: "work" } : { codex_account: "work" }) });
+      const created = await f.ownerPost({ agent: "codex", account: "work" });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      assert.equal(f.calls.at(-1)?.body[enabled ? "account" : "codex_account"], "work");
+      assert.equal(f.calls.at(-1)?.body[enabled ? "codex_account" : "account"], undefined);
+    } finally { await f.cleanup(); }
+  }
+});
+
+
+test("capable daemon must still confirm the selected account on create", async () => {
+  const f = await fixture("owner", [], true);
+  try {
+    f.state.omitAccount = true;
+    const result = await f.ownerPost({ agent: "claude", account: "work" });
+    assert.equal(result.status, 502);
+    assert.equal(result.body.error.code, "claude-account-unsupported-daemon");
   } finally { await f.cleanup(); }
 });

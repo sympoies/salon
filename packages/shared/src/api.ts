@@ -191,6 +191,7 @@ export interface AgentSessionCapabilities {
   readonly history_star?: boolean;
   readonly session_retitle_v2?: boolean;
   readonly session_retitle_v3?: boolean;
+  readonly session_account_field?: boolean;
   /** The daemon binds Codex sessions to broker accounts (serve API `codex_account`). */
   readonly codex_account_switch?: boolean;
   /** The daemon binds Claude sessions to broker accounts (serve API `claude_account`). */
@@ -249,6 +250,7 @@ export function normalizeAgentSessionCapabilities(value: unknown): AgentSessionC
     ...(raw.history_star === true ? { history_star: true } : {}),
     ...(raw.session_retitle_v2 === true ? { session_retitle_v2: true } : {}),
     ...(raw.session_retitle_v3 === true ? { session_retitle_v3: true } : {}),
+    ...(raw.session_account_field === true ? { session_account_field: true } : {}),
     ...(typeof raw.codex_account_switch === "boolean" ? { codex_account_switch: raw.codex_account_switch } : {}),
     ...(typeof raw.claude_account_switch === "boolean" ? { claude_account_switch: raw.claude_account_switch } : {}),
   };
@@ -1074,7 +1076,7 @@ export function createSessionTimeoutMs(body: {
 }): number | undefined {
   // The daemon binds its default Codex account to a Codex create that names
   // none, so every Codex create carries the Codex binding budget.
-  const account = ACCOUNT_PROVIDERS.find((provider) => body[`${provider}_account`] !== undefined)
+  const account = ACCOUNT_PROVIDERS.find((provider) => body[`${provider}_account`] !== undefined || (body.account !== undefined && body.agent === provider))
     ?? (body.agent === "codex" ? "codex" : undefined);
   const prompt = typeof body.prompt === "string" && body.prompt.trim() ? PROMPT_CREATE_TIMEOUT_MS : 0;
   // The daemon binds the account before it starts the pane and pastes the prompt.
