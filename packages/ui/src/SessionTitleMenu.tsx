@@ -118,6 +118,7 @@ export function SessionTitleMenu({ session, options, machineColors, accounts, ac
   const menuFocus = useMenuFocus({ open, menuRef, triggerRef, onClose: closeMenu });
   useSessionMenuCompact(menuRef, open);
   const accountView = sessionAccountView(session, accounts);
+  const savedDraftLabel = session.stale_draft ? `Saved draft · ${new Date(session.stale_draft.saved_at).toLocaleString()}` : null;
   return (
     <details
       className="slot-title-menu"
@@ -140,7 +141,7 @@ export function SessionTitleMenu({ session, options, machineColors, accounts, ac
       >
         <span className="slot-title-text">
           <span className={mobile ? "mobile-session-card-title" : "slot-title-label"}>{sessionLabel(session)}</span>
-          {session.stale_draft ? <span className="saved-draft-marker">Saved draft · {new Date(session.stale_draft.saved_at).toLocaleString()}</span> : null}
+          {savedDraftLabel ? <span className="saved-draft-marker" title={savedDraftLabel}>{savedDraftLabel}</span> : null}
         </span>
       </summary>
       <div ref={menuRef} className="slot-title-dropdown" role="menu" onKeyDown={menuFocus.onKeyDown}>
