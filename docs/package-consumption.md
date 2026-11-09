@@ -187,8 +187,9 @@ checked-in SDK version is `0.1.57`; its release is a GitHub prerelease with `lat
 
 ### Changes retained in SDK 0.1.57
 
-Sessions carry a marker for a draft the runtime saved, and the composer can show and restore it
-(#282). A refused shared reply always names its refusal reason (#298). Settings shows the server
+Sessions carry a marker for a draft the runtime saved, and the composer can show, restore and discard it
+(#282, #383). The UI API also exports `discardSavedDraft` for this action.
+A refused shared reply always names its refusal reason (#298). Settings shows the server
 version and build when the consumer supplies them (#297), and session cards show the session's
 current work issue references (#293), which open through the external-link path (#306).
 

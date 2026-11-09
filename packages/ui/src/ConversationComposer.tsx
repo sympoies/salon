@@ -4,7 +4,7 @@ import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ClipboardEvent, DragEvent } from "react";
 import { conversationOutbox, queuedReplyDeliverablePhase, queuedReplyTargetAllowed, useConversationOutbox } from "./conversationOutbox.ts";
-import { uploadAttachment, fetchSavedDrafts, fetchSavedDraftText } from "./api.ts";
+import { uploadAttachment, fetchSavedDrafts, fetchSavedDraftText, discardSavedDraft } from "./api.ts";
 import type { SavedDraft } from "@agent-console/shared";
 import { ConversationAttachIcon, ConversationMicIcon, ConversationSendIcon } from "./icons.tsx";
 import { shellQuotePathForTerminal } from "./shellQuote.ts";
@@ -108,6 +108,10 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const [savedDrafts, setSavedDrafts] = useState<readonly SavedDraft[] | null>(null);
   const [savedOpen, setSavedOpen] = useState(false);
   const [savedUnsupported, setSavedUnsupported] = useState(false);
+  const [savedSelected, setSavedSelected] = useState<SavedDraft | null>(null);
+  const [savedEmpty, setSavedEmpty] = useState<string | null>(null);
+  const [discardUnsupported, setDiscardUnsupported] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [savedText, setSavedText] = useState<string | null>(null);
   const [savedError, setSavedError] = useState("");
   const savedTarget = `${key}:${session.session_incarnation ?? ""}`;
@@ -117,7 +121,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   // Reset before the mounted controls can be clicked: a passive effect can
   // otherwise clear an immediately resolved list request after it opens.
   useLayoutEffect(() => {
-    setSavedDrafts(null); setSavedOpen(false); setSavedUnsupported(false); setSavedText(null); setSavedError("");
+    setSavedDrafts(null); setSavedOpen(false); setSavedUnsupported(false); setSavedText(null); setSavedSelected(null); setSavedEmpty(null); setDiscardUnsupported(false); setDiscarding(false); setSavedError("");
     return () => { savedRequest.current++; };
   }, [savedTarget]);
   useLayoutEffect(() => {
@@ -135,13 +139,27 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   };
   const readSavedDraft = async (item: SavedDraft) => {
     const request = ++savedRequest.current;
-    setSavedText(null); setSavedError("");
+    setSavedText(null); setSavedSelected(null); setSavedError("");
     try {
       const text = await fetchSavedDraftText(session.machine, session.id, item.draft_id);
       if (savedTargetRef.current !== savedTarget || savedRequest.current !== request) return;
       if (text === null) { setSavedUnsupported(true); setSavedOpen(false); return; }
-      setSavedText(text); setSavedError("");
+      setSavedSelected(item); setSavedText(text); setSavedError("");
     } catch { if (savedTargetRef.current === savedTarget && savedRequest.current === request) setSavedError("Could not load saved draft."); }
+  };
+  const discardOpenDraft = async () => {
+    if (!savedSelected || discarding) return;
+    const request = ++savedRequest.current;
+    setDiscarding(true); setSavedError("");
+    try {
+      const result = await discardSavedDraft(session.machine, session.id, savedSelected.draft_id);
+      if (savedTargetRef.current !== savedTarget || savedRequest.current !== request) return;
+      if (!result) { setDiscardUnsupported(true); setSavedError("Discard is unsupported by this runtime."); return; }
+      setSavedDrafts(items => items?.filter(item => item.draft_id !== savedSelected.draft_id) ?? null);
+      setSavedText(null); setSavedSelected(null);
+      if (result.remaining === 0 || result.stale_draft === null) { setSavedEmpty(session.stale_draft?.draft_id ?? null); setSavedOpen(false); }
+    } catch { if (savedTargetRef.current === savedTarget && savedRequest.current === request) setSavedError("Could not discard saved draft."); }
+    finally { if (savedTargetRef.current === savedTarget) setDiscarding(false); }
   };
   const restoreSavedDraft = () => {
     if (savedText === null || sending) return;
@@ -352,11 +370,11 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
 
   return (
     <footer id={composerId} className="conversation-composer" hidden={hidden} onDragOver={onDragOver} onDrop={onDrop}>
-      {session.stale_draft && !savedUnsupported ? <button type="button" className="btn ghost" onClick={() => void openSavedDrafts()}>Saved drafts</button> : null}
+      {session.stale_draft && !savedUnsupported && savedEmpty !== session.stale_draft.draft_id ? <button type="button" className="btn ghost" onClick={() => void openSavedDrafts()}>Saved drafts</button> : null}
       {savedOpen ? <section aria-label="Saved drafts">
         <h3>Saved drafts</h3>
         {savedDrafts?.map(item => <button type="button" className="btn ghost" key={item.draft_id} onClick={() => void readSavedDraft(item)}>{new Date(item.saved_at).toLocaleString()} · {item.bytes} bytes</button>)}
-        {savedText !== null ? <><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{savedText}</pre><button type="button" className="btn" onClick={restoreSavedDraft}>Restore</button></> : null}
+        {savedText !== null ? <><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{savedText}</pre><button type="button" className="btn" onClick={restoreSavedDraft}>Restore</button><button type="button" className="btn ghost" disabled={discarding || discardUnsupported} onClick={() => void discardOpenDraft()}>Discard</button></> : null}
         <button type="button" className="btn ghost" onClick={() => { savedRequest.current++; setSavedOpen(false); setSavedText(null); }}>Close</button>
       </section> : null}
       {savedError ? <p role="alert">{savedError}</p> : null}

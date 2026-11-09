@@ -138,3 +138,76 @@ test("a slow board never delays session lists and refreshes are shared and cache
     assert.equal(removed, true, "a successful snapshot removes absent markers");
   } finally { for (const response of pending) response.end(); closeServers(edge, daemon); }
 });
+
+test("discard forwards owner POST, enforces authentication and maps draft errors", async () => {
+  const calls: string[] = [];
+  let code = "";
+  const daemon = createServer((req, res) => {
+    calls.push(`${req.method} ${req.url} ${req.headers.authorization}`);
+    res.setHeader("content-type", "application/json");
+    if (code) { res.writeHead(code === "invalid-draft-id" ? 400 : code === "draft-store-unavailable" ? 503 : 404); res.end(JSON.stringify({ ok: false, error: { code, message: "private canary", details: "private canary" } })); }
+    else res.end(JSON.stringify({ ok: true, data: { machine: "fixture", discarded: "draft-1", remaining: 0, stale_draft: null, extra: "private canary" } }));
+  });
+  const daemonBase = (await listenOnLoopback(daemon)).base;
+  const edge = createEdgeServer(makeEdgeConfig({ openAccess: false, clientToken: "client-fixture", machines: [{ name: "fixture", url: daemonBase, token: "daemon-fixture" }] }));
+  const base = (await listenOnLoopback(edge)).base;
+  try {
+    const route = `${base}/api/sessions/fixture/session-1/drafts/draft-1/discard`;
+    assert.equal((await fetch(route, { method: "POST" })).status, 401);
+    assert.equal(calls.length, 0);
+    const headers = { authorization: "Bearer client-fixture" };
+    const result = await fetch(route, { method: "POST", headers });
+    assert.equal(result.status, 200);
+    assert.deepEqual((await result.json() as any).data, { machine: "fixture", discarded: "draft-1", remaining: 0, stale_draft: null });
+    assert.deepEqual(calls, ["POST /sessions/session-1/drafts/draft-1/discard Bearer daemon-fixture"]);
+    code = "draft-not-found";
+    const missing = await fetch(route, { method: "POST", headers });
+    assert.equal(missing.status, 404);
+    assert.equal((await missing.json() as any).error.code, code);
+    for (const [errorCode, status] of [["invalid-draft-id", 400], ["session-not-found", 404], ["draft-store-unavailable", 503]] as const) {
+      code = errorCode;
+      const failure = await fetch(route, { method: "POST", headers });
+      assert.equal(failure.status, status);
+      const envelope = await failure.json() as any;
+      assert.equal(envelope.error.code, errorCode);
+      assert.ok(!JSON.stringify(envelope).includes("private canary"));
+    }
+    const invalid = await fetch(`${base}/api/sessions/fixture/session-1/drafts/bad%20id/discard`, { method: "POST", headers });
+    assert.equal(invalid.status, 400);
+  } finally { closeServers(edge, daemon); }
+});
+
+test("discard rejects cross-origin writes before contacting the daemon", async () => {
+  let calls = 0;
+  const daemon = createServer((_req, res) => { calls++; res.end(); });
+  const daemonBase = (await listenOnLoopback(daemon)).base;
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: daemonBase, token: "daemon-fixture" }] }));
+  const base = (await listenOnLoopback(edge)).base;
+  try {
+    const response = await fetch(`${base}/api/sessions/fixture/session-1/drafts/draft-1/discard`, { method: "POST", headers: { origin: "https://foreign.example" } });
+    assert.equal(response.status, 403);
+    assert.equal(calls, 0);
+  } finally { closeServers(edge, daemon); }
+});
+
+
+test("discard immediately updates cached session draft projection", async () => {
+  let present = true;
+  const daemon = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/sessions") res.end(JSON.stringify({ ok: true, data: { sessions: [{ id: "session-1", agent: "codex", status: "running", created_at: "2026-01-01T00:00:00Z" }] } }));
+    else if (req.url === "/board/v1") res.end(JSON.stringify({ ok: true, data: { machine: "fixture", board: { schema_version: "agent-session.board.v1", record_schema: "agent-session.board-record.v1", skipped_count: 0, machine: "fixture", records: present ? [{ machine: "fixture", session_id: "session-1", created_at: "2026-01-01T00:00:00Z", stale_draft: draft }] : [] } } }));
+    else if (req.url === "/sessions/session-1/drafts/draft-1/discard") { present = false; res.end(JSON.stringify({ ok: true, data: { machine: "fixture", discarded: "draft-1", remaining: 0, stale_draft: null } })); }
+    else { res.writeHead(404); res.end(); }
+  });
+  const daemonBase = (await listenOnLoopback(daemon)).base;
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: daemonBase, token: "daemon-fixture" }] }));
+  const base = (await listenOnLoopback(edge)).base;
+  const list = async () => (await (await fetch(`${base}/api/sessions`)).json() as any).data.sessions[0];
+  try {
+    for (let attempt = 0; attempt < 50 && !(await list()).stale_draft; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.deepEqual((await list()).stale_draft, draft);
+    assert.equal((await fetch(`${base}/api/sessions/fixture/session-1/drafts/draft-1/discard`, { method: "POST", headers: { origin: base } })).status, 200);
+    assert.equal((await list()).stale_draft, undefined);
+  } finally { closeServers(edge, daemon); }
+});

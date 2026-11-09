@@ -80,6 +80,31 @@ test("saved drafts show, read and restore with confirmation without sending", as
       button("Close").click();await settle("draft-1","Closed selection");
       button("Saved drafts").click();await wait("reopen closed draft list",()=>document.querySelector('[aria-label="Saved drafts"] button'));
       result.closedPreviewHidden=!document.querySelector("pre")&&!button("Restore");button("Close").click();
+      await wait("close draft panel",()=>!document.querySelector('[aria-label="Saved drafts"]'));
+      result.restoreCalls=[...window.calls];
+      window.deferReads=false;button("Saved drafts").click();
+      await wait("reopen list for discard",()=>document.querySelector('[aria-label="Saved drafts"] button'));
+      document.querySelector('[aria-label="Saved drafts"] button').click();
+      await wait("open draft for discard",()=>button("Discard"));
+      window.discardMode="failure";button("Discard").click();
+      await wait("show discard error",()=>document.querySelector('[role="alert"]')?.textContent.includes("Could not discard"));
+      window.discardMode="unsupported";button("Discard").click();
+      await wait("show unsupported discard",()=>document.querySelector('[role="alert"]')?.textContent.includes("unsupported by this runtime"));
+      result.discardUnsupported=!!button("Restore")&&!!button("Close")&&button("Discard").disabled;
+      root.render(React.createElement(ConversationComposer,{session:{...session,session_incarnation:"inc-2"},machineReachable:true,onBusyChange(){},onVoiceOpenChange(){}}));
+      await wait("remount saved drafts",()=>button("Saved drafts")&&!document.querySelector('[aria-label="Saved drafts"]'));
+      button("Saved drafts").click();await wait("open list for successful discard",()=>document.querySelector('[aria-label="Saved drafts"] button'));
+      document.querySelector('[aria-label="Saved drafts"] button').click();await wait("open draft for successful discard",()=>button("Discard"));
+      window.discardMode="success";button("Discard").click();
+      await wait("hide last discarded draft",()=>!button("Saved drafts"));
+      result.discarded=!document.querySelector("pre")&&!document.querySelector('[aria-label="Saved drafts"]');
+      const newDraft={...event,draft_id:"draft-new"};
+      root.render(React.createElement(ConversationComposer,{session:{...session,session_incarnation:"inc-2",stale_draft:newDraft},machineReachable:true,onBusyChange(){},onVoiceOpenChange(){}}));
+      await wait("show newly saved draft",()=>button("Saved drafts"));
+      result.newDraftVisible=true;
+      root.render(null);await wait("unmount before unsupported inventory",()=>!button("Saved drafts"));
+      root.render(React.createElement(ConversationComposer,{session:{...session,session_incarnation:"inc-3"},machineReachable:true,onBusyChange(){},onVoiceOpenChange(){}}));
+      await wait("remount for unsupported inventory",()=>button("Saved drafts"));
       window.unsupported=true;button("Saved drafts").click();await wait("hide unsupported saved drafts",()=>!button("Saved drafts"));
       result.unsupported=!document.querySelector('[role="alert"]');result.calls=[...window.calls];
       const older={...session,stale_draft:undefined};
@@ -97,6 +122,7 @@ test("saved drafts show, read and restore with confirmation without sending", as
     resolveId(id, importer) { if (importer?.includes("/src/ConversationComposer.tsx") && id === "./api.ts") return "\0saved-api"; },
     load(id) { if (id === "\0saved-api") return `export * from "/src/api.ts?saved-original";
       export const fetchSavedDrafts=async()=>{window.calls.push("list");return window.unsupported?null:[{draft_id:"draft-1",saved_at:"2026-11-01T12:00:00Z",bytes:12},{draft_id:"draft-2",saved_at:"2026-11-01T13:00:00Z",bytes:13}]};
+      export const discardSavedDraft=async()=>{if(window.discardMode==="unsupported")return null;if(window.discardMode==="failure")throw Error("failed");return {remaining:0,stale_draft:null}};
       export const fetchSavedDraftText=async(_machine,_id,draft)=>{window.calls.push("read");return window.deferReads?new Promise(resolve=>{window.settled[draft]=false;window.pending[draft]=text=>{resolve(text);queueMicrotask(()=>{window.settled[draft]=true;});}}):window.text};`; },
   }, { name: "saved-fixture", resolveId(id) { if (id.endsWith("saved-fixture")) return "\0saved-fixture"; }, load(id) { if (id === "\0saved-fixture") return fixture; } }],
     build: { write: false, minify: false, lib: { entry: "saved-fixture", name: "Fixture", formats: ["iife"] } } });
@@ -176,6 +202,16 @@ test("saved drafts show, read and restore with confirmation without sending", as
             setTimeout(check,10);
           };check();
         })`);
+        await evaluate(`new Promise((resolve,reject)=>{
+          const doc=document.querySelector("iframe").contentDocument;
+          const deadline=performance.now()+10000;
+          const wait=(condition,action)=>{if(condition())return action();if(performance.now()>deadline)return reject(Error("capture timed out"));setTimeout(()=>wait(condition,action),10)};
+          [...doc.querySelectorAll("button")].find(b=>b.textContent==="Saved drafts").click();
+          wait(()=>doc.querySelector('[aria-label="Saved drafts"] button'),()=>{
+            doc.querySelector('[aria-label="Saved drafts"] button').click();
+            wait(()=>[...doc.querySelectorAll("button")].some(b=>b.textContent==="Discard"),resolve);
+          });
+        })`);
         const screenshot = await send("Page.captureScreenshot", {format:"png"});
         writeFileSync(`${capture}-${width}.png`, Buffer.from(screenshot.data, "base64"));
         continue;
@@ -204,9 +240,12 @@ test("saved drafts show, read and restore with confirmation without sending", as
       assert.equal(result.latestPreview, "Selected B");
       assert.equal(result.latestRestored, "Selected B");
       assert.equal(result.closedPreviewHidden, true);
+      assert.deepEqual(result.restoreCalls, ["list", "read", "list", "read", "confirm", "read", "confirm", "list", "read", "read", "read", "confirm", "list", "read", "list"]);
+      assert.equal(result.discardUnsupported, true);
+      assert.equal(result.discarded, true);
+      assert.equal(result.newDraftVisible, true);
       assert.equal(result.unsupported, true);
       assert.equal(result.absent, true);
-      assert.deepEqual(result.calls, ["list", "read", "list", "read", "confirm", "read", "confirm", "list", "read", "read", "read", "confirm", "list", "read", "list", "list"]);
     }
   } finally {
     socket?.close();
