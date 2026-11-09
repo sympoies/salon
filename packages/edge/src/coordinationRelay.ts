@@ -500,7 +500,7 @@ export function assertResumeOwnership(store: AccessStore, principal: PrincipalCo
   if (typeof session.agent !== "string" || typeof session.resume !== "string") return fail(400, "invalid-request", "invalid resume request");
   if (!store.ownsProvider(principal.id, machine.name, session.agent, session.resume)
     && (store.hasProviderOwner(machine.name, session.agent, session.resume) || !principal.permissions.includes("provider_import"))) {
-    return fail(404, "provider-session-not-found", "provider session not found");
+    return fail(422, "resume-source-unknown", "source account, ownership or stopped-runtime evidence is incomplete");
   }
 }
 
@@ -700,6 +700,10 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
   } catch (error) {
     const failure = error instanceof RelayError ? error : new RelayError(500, "relay-error", "remote messaging service error");
     const preflight = url.pathname === "/api/coordination/resume-preflight/v1";
+    if (failure.code === "resume-source-unknown") {
+      sendJson(res, failure.status, { ...(preflight ? { schema_version: RESUME_SCHEMA } : {}), ok: false, error: resumeFailure(failure.code) });
+      return;
+    }
     sendJson(res, failure.status, { ...(preflight ? { schema_version: RESUME_SCHEMA } : {}), ok: false, error: { code: failure.code, message: failure.message,
       ...(preflight ? { details: { session_created: false, safe_to_retry: false } } : failure.details ? { details: failure.details } : {}) } });
   }
