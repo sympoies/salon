@@ -370,14 +370,14 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
 
   return (
     <footer id={composerId} className="conversation-composer" hidden={hidden} onDragOver={onDragOver} onDrop={onDrop}>
-      {session.stale_draft && !savedUnsupported && savedEmpty !== session.stale_draft.draft_id ? <button type="button" className="btn ghost" onClick={() => void openSavedDrafts()}>Saved drafts</button> : null}
-      {savedOpen ? <section aria-label="Saved drafts">
+      {session.stale_draft && !savedUnsupported && savedEmpty !== session.stale_draft.draft_id ? <div className="conversation-saved-drafts-row"><button type="button" className="btn ghost" onClick={() => void openSavedDrafts()}>Saved drafts</button></div> : null}
+      {savedOpen ? <section className="conversation-saved-drafts" aria-label="Saved drafts">
         <h3>Saved drafts</h3>
         {savedDrafts?.map(item => <button type="button" className="btn ghost" key={item.draft_id} onClick={() => void readSavedDraft(item)}>{new Date(item.saved_at).toLocaleString()} · {item.bytes} bytes</button>)}
         {savedText !== null ? <><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{savedText}</pre><button type="button" className="btn" onClick={restoreSavedDraft}>Restore</button><button type="button" className="btn ghost" disabled={discarding || discardUnsupported} onClick={() => void discardOpenDraft()}>Discard</button></> : null}
         <button type="button" className="btn ghost" onClick={() => { savedRequest.current++; setSavedOpen(false); setSavedText(null); }}>Close</button>
       </section> : null}
-      {savedError ? <p role="alert">{savedError}</p> : null}
+      {savedError ? <p className="conversation-saved-drafts" role="alert">{savedError}</p> : null}
       {recoverable && recovery ? <div className="conversation-stuck" role="status">
         <span className="conversation-stuck-text">This session stopped.</span>
         <button type="button" className="btn ghost" aria-busy={recovery.pending} disabled={recovery.pending}

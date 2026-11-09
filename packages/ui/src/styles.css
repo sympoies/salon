@@ -1009,6 +1009,18 @@
   gap: 6px;
 }
 
+.conversation-saved-drafts {
+  margin: 0 0 8px;
+}
+
+.conversation-saved-drafts-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-bottom: 8px;
+}
+
 .conversation-composer textarea {
   flex: 1;
   min-width: 0;
@@ -3646,6 +3658,12 @@ textarea {
 }
 .slot-title-text {
   flex: 1;
+}
+.saved-draft-marker {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .slot-menu-main {
   flex: 1;

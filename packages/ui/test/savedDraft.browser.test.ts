@@ -21,7 +21,7 @@ test("saved drafts show, read and restore with confirmation without sending", as
     window.fetch=async()=>{throw new Error("unexpected network");};
     const root=createRoot(document.querySelector("#root"));
     root.render(React.createElement(React.Fragment,null,
-      React.createElement(SessionTitleMenu,{session,options:[],machineColors:{},accounts:[],accountPendingKey:null,currentKey:null,open:false,onOpenChange(){},beginTitleEdit(){},onAccount:async()=>{},onSelect(){},onNewSession(){}}),
+      React.createElement("div",{className:"slot-head"},React.createElement(SessionTitleMenu,{session,options:[],machineColors:{},accounts:[],accountPendingKey:null,currentKey:null,open:false,onOpenChange(){},beginTitleEdit(){},onAccount:async()=>{},onSelect(){},onNewSession(){}}),React.createElement("button",{style:{width:"120px",flex:"none"}},"Next")),
       React.createElement(ConversationComposer,{session,machineReachable:true,onBusyChange(){},onVoiceOpenChange(){}})));
     let step="mount saved-draft controls";
     const wait=async(name,f)=>{
@@ -43,14 +43,14 @@ test("saved drafts show, read and restore with confirmation without sending", as
     (async()=>{try{
       // Click at the first observable commit, before passive mount effects.
       // Timer polling makes that ordering depend on scheduler load (#325).
-      let initialCalls;
+      let initialCalls, layout;
       const mountedObserver=new MutationObserver(()=>{
         const saved=button("Saved drafts");
-        if(saved){mountedObserver.disconnect();initialCalls=[...window.calls];saved.click();}
+        if(saved){mountedObserver.disconnect();initialCalls=[...window.calls];const row=document.querySelector('.conversation-composer-row').getBoundingClientRect();const rect=saved.getBoundingClientRect();const marker=document.querySelector('.saved-draft-marker');const mr=marker.getBoundingClientRect();const slot=marker.closest('.slot-title-menu').getBoundingClientRect();layout={gap:row.top-rect.bottom,markerRight:mr.right,slotRight:slot.right,markerTitle:marker.title,markerText:marker.textContent,clipped:marker.scrollWidth>marker.clientWidth,ellipsis:getComputedStyle(marker).textOverflow};saved.click();}
       });
       mountedObserver.observe(document.querySelector("#root"),{childList:true,subtree:true});
       await wait("mount saved-draft controls",()=>initialCalls&&document.querySelector(".saved-draft-marker"));
-      const result={marker:document.querySelector(".saved-draft-marker").textContent, initialCalls};
+      const result={marker:document.querySelector(".saved-draft-marker").textContent, initialCalls, layout};
       await wait("open initial draft list",()=>document.querySelector('[aria-label="Saved drafts"] button'));
       result.listCalls=[...window.calls]; document.querySelector('[aria-label="Saved drafts"] button').click();
       await wait("read initial draft preview",()=>document.querySelector("pre")); result.preview=document.querySelector("pre").textContent;
@@ -88,6 +88,8 @@ test("saved drafts show, read and restore with confirmation without sending", as
       await wait("open draft for discard",()=>button("Discard"));
       window.discardMode="failure";button("Discard").click();
       await wait("show discard error",()=>document.querySelector('[role="alert"]')?.textContent.includes("Could not discard"));
+      result.errorGap=document.querySelector('.conversation-composer-row').getBoundingClientRect().top-document.querySelector('[role="alert"]').getBoundingClientRect().bottom;
+      result.panelGap=document.querySelector('[role="alert"]').getBoundingClientRect().top-document.querySelector('[aria-label="Saved drafts"]').getBoundingClientRect().bottom;
       window.discardMode="unsupported";button("Discard").click();
       await wait("show unsupported discard",()=>document.querySelector('[role="alert"]')?.textContent.includes("unsupported by this runtime"));
       result.discardUnsupported=!!button("Restore")&&!!button("Close")&&button("Discard").disabled;
@@ -185,11 +187,11 @@ test("saved drafts show, read and restore with confirmation without sending", as
       assert.equal(result.exceptionDetails, undefined, result.exceptionDetails?.exception?.description ?? "browser script completes");
       return result.result.value;
     };
-    for (const width of [384, 1280]) {
+    for (const width of [360, 390, 1280]) {
       const frame = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div><script>${code}</script>`;
-      const html = `<!doctype html><style>body{margin:0}#result{display:none}</style><pre id="result"></pre><iframe style="border:0;width:${width}px;height:800px" srcdoc="${frame.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></iframe>`;
+      const html = `<!doctype html><style>body{margin:0;overflow:hidden}#result{display:none}iframe{display:block}</style><pre id="result"></pre><iframe style="border:0;width:${width}px;height:800px" srcdoc="${frame.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></iframe>`;
       const capture = process.env.SAVED_DRAFT_CAPTURE;
-      await send("Emulation.setDeviceMetricsOverride", {width:Math.max(width, 800), height:900, deviceScaleFactor:1, mobile:false});
+      await send("Emulation.setDeviceMetricsOverride", {width, height:800, deviceScaleFactor:1, mobile:false});
       const { frameTree } = await send("Page.getFrameTree");
       await send("Page.setDocumentContent", {frameId:frameTree.frame.id, html});
       if (capture) {
@@ -202,6 +204,8 @@ test("saved drafts show, read and restore with confirmation without sending", as
             setTimeout(check,10);
           };check();
         })`);
+        const closed = await send("Page.captureScreenshot", {format:"png"});
+        writeFileSync(`${capture}-closed-${width}.png`, Buffer.from(closed.data, "base64"));
         await evaluate(`new Promise((resolve,reject)=>{
           const doc=document.querySelector("iframe").contentDocument;
           const deadline=performance.now()+10000;
@@ -213,7 +217,7 @@ test("saved drafts show, read and restore with confirmation without sending", as
           });
         })`);
         const screenshot = await send("Page.captureScreenshot", {format:"png"});
-        writeFileSync(`${capture}-${width}.png`, Buffer.from(screenshot.data, "base64"));
+        writeFileSync(`${capture}-open-${width}.png`, Buffer.from(screenshot.data, "base64"));
         continue;
       }
       // Keep the browser on its real clock: virtual timers can outrun React's
@@ -230,6 +234,15 @@ test("saved drafts show, read and restore with confirmation without sending", as
       assert.ok(result, "the browser finished the interaction fixture");
       assert.equal(result.error, undefined, `${width}px: ${result.error ?? "interaction completes"}`);
       assert.match(result.marker, /Saved draft/);
+      assert.ok(result.layout.gap >= 6, `${width}px: saved drafts gap ${result.layout.gap}px`);
+      assert.ok(result.layout.markerRight <= result.layout.slotRight, `${width}px: marker overflows its slot`);
+      assert.equal(result.layout.markerTitle, result.layout.markerText);
+      if (width === 360) {
+        assert.equal(result.layout.clipped, true, "the phone marker is constrained");
+        assert.equal(result.layout.ellipsis, "ellipsis");
+      }
+      assert.ok(result.errorGap >= 6, `${width}px: error gap ${result.errorGap}px`);
+      assert.ok(result.panelGap >= 6, `${width}px: panel gap ${result.panelGap}px`);
       assert.deepEqual(result.initialCalls, []);
       assert.deepEqual(result.listCalls, ["list"]);
       assert.equal(result.preview, "Unicode 雪  ");
