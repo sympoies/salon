@@ -1,3 +1,7 @@
+import { createRemoteImageService, defaults as remoteImageDefaults } from "./remoteImage/service.ts";
+import { fetchRemoteImage } from "./remoteImage/fetch.ts";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { accountConflict, projectAccount, translateAccount } from "./createAccount.ts";
 import { sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
 import { normalizeSavedDraft } from "@agent-console/shared";
@@ -231,7 +235,10 @@ function fencedStructuredPromptBody(value: unknown): FencedStructuredPromptBody 
   };
 }
 
+
+
 export interface EdgeServerOptions {
+  readonly remoteImageFetch?: typeof fetchRemoteImage;
   readonly outboxPollIntervalMs?: number;
   readonly attachmentUploadTimeoutMs?: number;
   readonly ordinaryRequestTimeoutMs?: number;
@@ -288,6 +295,7 @@ async function readConversationWindow(machine: MachineConfig, id: string, query:
 }
 
 export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions = {}): Server {
+  const remoteImage = createRemoteImageService(config.remoteImage ?? { ...remoteImageDefaults, stateDir: join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "salon") }, options.remoteImageFetch);
   const attachmentUploadTimeoutMs = options.attachmentUploadTimeoutMs ?? ATTACHMENT_UPLOAD_TIMEOUT_MS;
   const ordinaryRequestTimeoutMs = options.ordinaryRequestTimeoutMs ?? ORDINARY_REQUEST_TIMEOUT_MS;
   const failedCreateLookupMs = options.failedCreateLookupMs ?? FAILED_CREATE_LOOKUP_MS;
@@ -879,7 +887,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // Managed testers have no ordinary-principal base powers. This allowlist
     // fails closed for new routes, including GET endpoints for shells/settings.
     if (_principal.managedCredential && (method !== "GET" || ![
-      "machines", "sessions", "board", "history-sessions", "history-messages", "history-image",
+      "machines", "sessions", "board", "history-sessions", "history-messages", "history-image", "remote-image",
       "resource-events", "activity-events", "glance", "buffer", "saved-drafts", "saved-draft",
     ].includes(route.id))) {
       sendJson(res, 403, { ok: false, error: { message: "forbidden" } });
@@ -893,7 +901,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     }
 
     let rootSessionIncarnation: string | undefined;
-    const isHistoryItem = ["history-messages", "history-star", "history-resume", "history-image"].includes(route.id);
+    const isHistoryItem = ["history-messages", "history-star", "history-resume", "history-image", "remote-image"].includes(route.id);
     if (config.multiUser && route.params.machine && route.params.id && !isHistoryItem) {
       const machine = routeParam(route, "machine");
       const sessionId = routeParam(route, "id");
@@ -909,7 +917,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     if (config.multiUser && isHistoryItem) {
       const machine = routeParam(route, "machine");
       const historyId = routeParam(route, "id");
-      if (["history-messages", "history-image"].includes(route.id) ? !canReadHistory(_principal, machine, historyId)
+      if (["history-messages", "history-image", "remote-image"].includes(route.id) ? !canReadHistory(_principal, machine, historyId)
         : historyActor(_principal, machine, historyId) === undefined) {
         sendJson(res, 404, { ok: false, error: { message: "history session not found" } });
         return;
@@ -1468,6 +1476,21 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 }
               : undefined,
           );
+        });
+        return;
+      }
+
+      case "remote-image": {
+        const tokenAuthed = tokenPrincipal(req) !== undefined;
+        if (!sameOriginOrNativeApp(req, res, tokenAuthed)) return;
+        if (!tokenAuthed && req.headers["sec-fetch-site"] && req.headers["sec-fetch-site"] !== "same-origin" && req.headers["sec-fetch-site"] !== "none") return forbidCrossOrigin(res);
+        await withMachine(res, routeParam(route, "machine"), async (machine) => {
+          await forwardHistoryImage(res, machine, routeParam(route, "id"), routeParam(route, "image"), async imageUrl => {
+            const result = await remoteImage(_principal.id, imageUrl);
+            if (!result.ok) { sendJson(res, result.reason === "busy" ? 429 : 422, { ok: false, error: { code: "remote-image-unavailable", reason: result.reason } }); return; }
+            res.writeHead(200, { "content-type": result.contentType, "cache-control": "private, no-store" });
+            res.end(result.bytes);
+          });
         });
         return;
       }

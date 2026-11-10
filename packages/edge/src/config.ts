@@ -1,3 +1,7 @@
+import { defaults as remoteImageDefaults, type RemoteImageConfig } from "./remoteImage/service.ts";
+import { parseAllowList } from "./remoteImage/address.ts";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { isAbsolute, resolve } from "node:path";
 import {
   AGENT_CONSOLE_PERMISSIONS,
@@ -98,6 +102,7 @@ export function principalCanUseTerminal(principal: PrincipalConfig): boolean {
 }
 
 export interface EdgeConfig {
+  readonly remoteImage?: RemoteImageConfig;
   readonly host: string;
   readonly port: number;
   readonly serverVersion?: string;
@@ -578,7 +583,26 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
   }
   const defaultUiDir = resolve(import.meta.dirname, "../../ui/dist");
   const coordinationRelays = parseCoordinationRelays(env.AGENT_CONSOLE_COORDINATION_RELAYS, machines, principals);
+  const positive = (key: string, fallback: number): number => {
+    const raw = env[key];
+    if (raw === undefined) return fallback;
+    if (!/^[0-9]+$/.test(raw) || !Number.isSafeInteger(Number(raw)) || Number(raw) < 1) throw new Error(`${key} must be a positive integer`);
+    return Number(raw);
+  };
+  let allowList;
+  try { allowList = parseAllowList(env.AGENT_CONSOLE_REMOTE_IMAGE_ALLOW_LIST ? env.AGENT_CONSOLE_REMOTE_IMAGE_ALLOW_LIST.split(",") : []); }
+  catch { throw new Error("AGENT_CONSOLE_REMOTE_IMAGE_ALLOW_LIST is invalid"); }
+  const remoteImage: RemoteImageConfig = {
+    stateDir: join(env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "salon"), allowList,
+    maxBytes: positive("AGENT_CONSOLE_REMOTE_IMAGE_MAX_BYTES", remoteImageDefaults.maxBytes),
+    timeoutMs: positive("AGENT_CONSOLE_REMOTE_IMAGE_TIMEOUT_MS", remoteImageDefaults.timeoutMs),
+    cacheBytes: positive("AGENT_CONSOLE_REMOTE_IMAGE_CACHE_BYTES", remoteImageDefaults.cacheBytes),
+    cacheTtlMs: positive("AGENT_CONSOLE_REMOTE_IMAGE_CACHE_TTL_MS", remoteImageDefaults.cacheTtlMs),
+    globalConcurrency: positive("AGENT_CONSOLE_REMOTE_IMAGE_GLOBAL_CONCURRENCY", remoteImageDefaults.globalConcurrency),
+    principalConcurrency: positive("AGENT_CONSOLE_REMOTE_IMAGE_PRINCIPAL_CONCURRENCY", remoteImageDefaults.principalConcurrency),
+  };
   return {
+    remoteImage,
     host: env.AGENT_CONSOLE_EDGE_HOST ?? "127.0.0.1",
     port: Number(env.AGENT_CONSOLE_EDGE_PORT ?? "8790"),
     serverVersion: env.AGENT_CONSOLE_SERVER_VERSION?.trim() || undefined,
