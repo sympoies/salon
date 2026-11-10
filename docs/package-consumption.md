@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.60 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.61 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,9 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.60`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.61`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.60
+### Changes retained in SDK 0.1.61
 
 Sessions carry a marker for a draft the runtime saved, and the composer can show, restore and discard it
 (#282, #383). The UI API also exports `discardSavedDraft` for this action.
@@ -294,9 +294,14 @@ draft (`region-not-single-row`), both outboxes instruct the user to send or clea
 The Saved drafts button, panel and error occupy their own spaced row, and the header saved-draft
 marker truncates with an ellipsis (#393).
 
+The edge forwards optional `notice_kind`, `notice_source` and `notice_id` on session creation
+and service starts, and passes through `session.launch_notice` (#406).
+
+Refused outbox replies keep the history side inset on phones (#396).
+
 ### Preserve published releases
 
-Existing `v0.1.0` through `v0.1.59` tags and assets stay immutable. The visibility transition does
+Existing `v0.1.0` through `v0.1.60` tags and assets stay immutable. The visibility transition does
 not republish those releases, change their source or digests, or reuse an existing tag.
 
 A future publication requires separately approved version metadata and an unused tag. This
