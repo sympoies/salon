@@ -11,7 +11,7 @@ import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
 const daemon = createServer((_req, res) => {
   res.setHeader("content-type", "application/json");
-  res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "row", role: "assistant", text: ["image.png", "a", "b", "hold", "another", "refuse"].map(name => `https://example.invalid/${name}`).join(" ") }] } }));
+  res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "row", role: "assistant", text: ["image.png", "a", "b", "hold", "another", "refuse"].map(name => `![image](https://example.invalid/${name})`).join(" ") }] } }));
 });
 let upstream: string;
 before(async () => { upstream = (await listenOnLoopback(daemon)).base; });

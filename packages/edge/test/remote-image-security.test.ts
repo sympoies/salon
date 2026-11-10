@@ -11,7 +11,7 @@ import { listenOnLoopback, loginCookie, makeEdgeConfig } from "./support.ts";
 
 test("remote fetch is bound to history text and rejects cross-site ambient requests", async () => {
   const dir = mkdtempSync(join(tmpdir(), "remote-security-"));
-  const daemon = createServer((_req, res) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, data: { messages: _req.url?.includes("/empty/") ? [] : [{ id: "row", role: "assistant", text: "![image](https://example.invalid/allowed)" }] } })); });
+  const daemon = createServer((_req, res) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, data: { messages: _req.url?.includes("/empty/") ? [] : [{ id: "row", role: "assistant", text: "![image](https://example.invalid/allowed) ![proxy](https://public.invalid/render?next=(https://private.invalid/secret)) ![other](https://example.invalid/it's.png) https://public.invalid/path/https://private.invalid/path https://public.invalid/#(https://private.invalid/fragment) prefixhttps://private.invalid/longer [link](https://example.invalid/link) <https://example.invalid/angle> https://example.invalid/bare" }] } })); });
   const upstream = await listenOnLoopback(daemon); let calls = 0;
   const edge = createEdgeServer(makeEdgeConfig({ openAccess: false, clientToken: "client-secret", machines: [{ name: "fixture", url: upstream.base, token: "fixture" }], remoteImage: { ...defaults, stateDir: dir } }), {
     remoteImageFetch: async () => { calls++; return { ok: true, contentType: "image/png", bytes: Buffer.from("image") }; },
@@ -24,10 +24,18 @@ test("remote fetch is bound to history text and rejects cross-site ambient reque
     assert.equal(calls, 0);
     assert.equal((await request("https://example.invalid/unrelated", {}, "empty")).status, 404);
     assert.equal((await request("https://example.invalid/allow")).status, 404);
+    assert.equal((await request("https://private.invalid/secret")).status, 404);
+    for (const suffix of ["path", "fragment", "longer"]) assert.equal((await request(`https://private.invalid/${suffix}`)).status, 404);
+    assert.equal((await request("https://example.invalid/it")).status, 404);
     assert.equal(calls, 0);
 
     assert.equal((await request("https://example.invalid/allowed", { "sec-fetch-site": "same-origin" })).status, 200);
     assert.equal(calls, 1);
+    assert.equal((await request("https://public.invalid/render?next=(https://private.invalid/secret)")).status, 200);
+    assert.equal((await request("https://example.invalid/it's.png")).status, 200);
+    assert.equal(calls, 3);
+    for (const suffix of ["link", "angle", "bare"]) assert.equal((await request(`https://example.invalid/${suffix}`)).status, 200);
+    assert.equal(calls, 6);
     assert.equal((await request("https://example.invalid/allowed", { authorization: "Bearer client-secret", "sec-fetch-site": "cross-site" })).status, 200);
   } finally { edge.closeAllConnections(); daemon.closeAllConnections(); await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve())))); rmSync(dir, { recursive: true, force: true }); }
 });
