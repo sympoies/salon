@@ -42,7 +42,7 @@ function daemon(token: string) {
       return;
     }
     await state.hold;
-    const session = { id: body.id, agent: body.agent, cwd: body.cwd, title: body.title ?? null, status: "running", session_incarnation: `inc-${String(body.id)}` };
+    const session = { id: body.id, agent: body.agent, cwd: body.cwd, title: body.title ?? null, status: "running", ...(body.notice_kind ? { launch_notice: "written" } : {}), session_incarnation: `inc-${String(body.id)}` };
     sessions.push(session);
     res.writeHead(201);
     res.end(JSON.stringify({ ok: true, data: { session } }));
@@ -119,6 +119,25 @@ const rootLineage = (machine: string, id: string) => ({
   schema_version: "agent-session.session-lineage.v1", parent: null, effective_parent: null,
   root: { machine, session_id: id, session_created_at: "2030-01-09T00:00:00Z" }, depth: 0,
   starter: { kind: "console", via: "console" }, ended_ancestors: [],
+});
+
+test("service create forwards optional launch notices and rejects invalid fields", async () => {
+  const notice = { notice_kind: "dispatch.bootstrap", notice_source: "producer", notice_id: "notice-1" };
+  const f = await fixture();
+  try {
+    const result = await create(f.base, { ...SERVICE, session: { ...SESSION, ...notice } });
+    assert.equal(result.status, 201);
+    assert.deepEqual(Object.fromEntries(Object.keys(notice).map(key => [key, f.cedar.creates[0][key]])), notice);
+    assert.equal(result.body.data.session.launch_notice, "written");
+    const absent = await create(f.base, { ...SERVICE, session: SESSION }, "019a3560-0000-7000-8000-000000000002");
+    assert.equal(absent.status, 201);
+    for (const key of Object.keys(notice)) assert.equal(Object.hasOwn(f.cedar.creates[1], key), false);
+    for (const key of Object.keys(notice)) for (const value of [42, "x".repeat(4097)]) {
+      const result = await create(f.base, { ...SERVICE, session: { ...SESSION, [key]: value } }, "019a3560-0000-7000-8000-000000000003");
+      assert.equal(result.status, 400);
+    }
+    assert.equal(f.cedar.creates.length, 2);
+  } finally { await f.cleanup(); }
 });
 
 test("an admitted service starts a root session owned by the named owner on the named machine", async () => {

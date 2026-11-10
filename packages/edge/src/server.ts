@@ -3536,6 +3536,12 @@ function projectCreateSessionBody(value: unknown): Record<string, unknown> | nul
     if (typeof item !== "string") return null;
     body[field] = item;
   }
+  for (const field of ["notice_kind", "notice_source", "notice_id"] as const) {
+    const item = raw[field];
+    if (item === undefined) continue;
+    if (typeof item !== "string" || item.length > 4096) return null;
+    body[field] = item;
+  }
   if (raw.agent_args !== undefined) {
     if (!Array.isArray(raw.agent_args) || !raw.agent_args.every((item) => typeof item === "string")) return null;
     // A launch profile owns its whole launch command, so the browser may not append

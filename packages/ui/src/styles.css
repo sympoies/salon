@@ -319,6 +319,10 @@
   white-space: nowrap;
 }
 
+.history-viewer > .history-outgoing {
+  padding: 0 16px;
+}
+
 .history-messages {
   display: flex;
   flex-direction: column;
@@ -876,6 +880,11 @@
   font-size: var(--text-md);
 }
 
+.conversation-dock .history-viewer > .history-outgoing,
+.slot-conversation-pane .history-viewer > .history-outgoing {
+  padding: 0 12px;
+}
+
 .conversation-dock .history-messages,
 .slot-conversation-pane .history-messages {
   padding: 12px;
@@ -980,6 +989,10 @@
   border-radius: 0;
   box-shadow: none;
   background: var(--conversation-pane);
+}
+
+.phone-conversation-pane .history-viewer > .history-outgoing {
+  padding: 0 calc(12px + var(--ac-safe-area-right)) 0 calc(12px + var(--ac-safe-area-left));
 }
 
 .phone-conversation-pane .history-messages {
