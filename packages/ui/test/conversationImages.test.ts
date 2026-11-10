@@ -608,7 +608,7 @@ for (const associated of [false,true]) for (const sourceOrigin of [undefined,"ht
     if (associated) assert.equal(tile.querySelector("a")?.href,url);
     else assertNoElement(tile,"a");
     assertNoElement(tile,"img, .conversation-image-retry");
-    assert.deepEqual(requests,[`/api/history/sessions/fixture/history/images/${imageId(0)}`]);
+    assert.deepEqual(requests,[`/api/history/sessions/fixture/history/images/${imageId(0)}`,`/api/history/sessions/fixture/history/remote-image/${imageId(0)}`]);
   });
 }
 
@@ -649,8 +649,8 @@ for (const associated of [false,true]) test(`invalid remote origins do not becom
     else assertNoElement(tile,"a");
     assertNoElement(tile,"img, .conversation-image-retry");
   }
-  assert.equal(requests.length,origins.length);
-  assert.ok(requests.every(path => path.startsWith("/api/history/sessions/fixture/history/images/")));
+  assert.equal(requests.length,origins.length * 2);
+  assert.ok(requests.every(path => /^\/api\/history\/sessions\/fixture\/history\/(images|remote-image)\//.test(path)));
 });
 
 test("image-block history copies selector-bound paths for duplicate display names after reload", async () => {
@@ -668,4 +668,56 @@ test("image-block history copies selector-bound paths for duplicate display name
     assert.deepEqual(menu.invoked.filter(([command]) => command === "write_macos_clipboard_text"),
       [["write_macos_clipboard_text", {text:images[index].upload_path}]]);
   }
+});
+
+for (const uploadSessionId of [undefined,"sample"]) test(`visible remote images load through the edge and open in the viewer (${uploadSessionId ?? "shared"})`,async () => {
+  const {window,requests} = await mountImages(path => path.includes('/remote-image/')
+    ? new Response(new Uint8Array([137,80,78,71]),{headers:{"content-type":"image/png"}})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:"https://images.example.invalid"}}),{status:422}),false,[{id:imageId(0)}],undefined,uploadSessionId);
+  const thumbnail = window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]');
+  assert.ok(thumbnail?.querySelector('img'));
+  assert.deepEqual(requests,[`/api/history/sessions/fixture/history/images/${imageId(0)}`,`/api/history/sessions/fixture/history/remote-image/${imageId(0)}`]);
+  await act(async () => thumbnail.click());
+  assert.ok(window.document.querySelector('[aria-label="Conversation images"] img'));
+});
+
+for (const [reason,phrase] of [
+  ["invalid-url","Invalid image URL"], ["blocked-address","Address blocked"],
+  ["too-many-redirects","Too many redirects"], ["upstream-status","Image server refused the request"],
+  ["too-large","Image is too large"], ["timeout","Request timed out"],
+  ["not-image","Response is not an image"], ["network","Network error"],
+  ["busy","Image service is busy"], ["future-reason","Image could not be loaded"],
+] as const) for (const uploadSessionId of [undefined,"sample"]) test(`remote image refusal explains ${reason} (${uploadSessionId ?? "shared"})`,async () => {
+  const url = "https://images.example.invalid/chart.png";
+  const {window} = await mountImages(path => path.includes('/remote-image/')
+    ? new Response(JSON.stringify({error:{code:"remote-image-unavailable",reason}}),{status:reason === "busy" ? 429 : 422})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:"https://images.example.invalid"}}),{status:422}),false,[],
+    [{id:"remote",role:"assistant",text:`![](${url})`,images:[{id:imageId(0)}]}],uploadSessionId);
+  const tile = window.document.querySelector('.conversation-image-thumbnail')!;
+  assert.match(tile.textContent ?? "",new RegExp(phrase));
+  assert.equal(tile.querySelector('a')?.href,url);
+});
+
+test("older edges keep the external image placeholder",async () => {
+  const url = "https://images.example.invalid/chart.png";
+  const {window} = await mountImages(path => path.includes('/remote-image/')
+    ? new Response(JSON.stringify({error:{code:"route-not-found"}}),{status:404})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:"https://images.example.invalid"}}),{status:422}),false,[],
+    [{id:"remote",role:"assistant",text:`![](${url})`,images:[{id:imageId(0)}]}]);
+  const tile = window.document.querySelector('.conversation-image-thumbnail')!;
+  assert.equal(tile.querySelector('[role="status"]')?.textContent,"External image, not loaded · https://images.example.invalid");
+  assert.equal(tile.querySelector('a')?.href,url);
+});
+
+test("a transient remote image failure retries and displays the image",async () => {
+  let attempts = 0;
+  const {window} = await mountImages(path => {
+    if (!path.includes('/remote-image/')) return new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched"}}),{status:422});
+    attempts++;
+    return attempts === 1 ? new Response('',{status:503})
+      : new Response(new Uint8Array([137,80,78,71]),{headers:{"content-type":"image/png"}});
+  },false,[{id:imageId(0)}]);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve,1200)); });
+  assert.equal(attempts,2);
+  assert.ok(window.document.querySelector('.conversation-image-thumbnail img'));
 });

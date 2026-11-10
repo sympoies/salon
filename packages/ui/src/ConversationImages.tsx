@@ -31,9 +31,14 @@ function useImage(target: ImageTarget, visible: boolean) {
 function RetryImage({retry}: { readonly retry: () => void }) {
   return <button type="button" className="conversation-image-retry" onClick={event => { event.stopPropagation(); retry(); }}>Retry</button>;
 }
-function ExternalImage({url,origin}: { readonly url?: string; readonly origin?: string }) {
+const remoteReasons: Record<string,string> = {
+  "invalid-url":"Invalid image URL", "blocked-address":"Address blocked", "too-many-redirects":"Too many redirects",
+  "upstream-status":"Image server refused the request", "too-large":"Image is too large", "timeout":"Request timed out",
+  "not-image":"Response is not an image", "network":"Network error", "busy":"Image service is busy",
+};
+function ExternalImage({url,origin,reason}: { readonly url?: string; readonly origin?: string; readonly reason?: string }) {
   return <div className="conversation-external-image">
-    <span role="status">External image, not loaded{origin ? ` · ${origin}` : ""}</span>
+    <span role="status">External image, not loaded{origin ? ` · ${origin}` : ""}{reason ? ` · ${Object.hasOwn(remoteReasons,reason) ? remoteReasons[reason] : "Image could not be loaded"}` : ""}</span>
     {url ? <a href={url} target="_blank" rel="noopener noreferrer"
       onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
       onClick={event => {
@@ -45,7 +50,7 @@ function ExternalImage({url,origin}: { readonly url?: string; readonly origin?: 
 function ImageContent({data,fail,onLoad,retry,sourceName,sourceUrl}: { readonly sourceUrl?: string; readonly data: ConversationImageData; readonly fail: () => void; readonly sourceName?: string;
   readonly onLoad?: (image: HTMLImageElement) => void; readonly retry?: () => void }) {
   if (data.state === "unavailable" && (data.reason === "remote-url-not-fetched" || sourceUrl))
-    return <ExternalImage url={sourceUrl} origin={data.reason === "remote-url-not-fetched" ? data.sourceOrigin : sourceUrl ? new URL(sourceUrl).origin : undefined} />;
+    return <ExternalImage url={sourceUrl} reason={data.remoteReason} origin={data.reason === "remote-url-not-fetched" ? data.sourceOrigin : sourceUrl ? new URL(sourceUrl).origin : undefined} />;
   const unavailable = data.state === "unavailable" && data.reason === "outside-allowed-roots"
     ? `Not shared: outside the session folder${sourceName ? ` · ${sourceName}` : ""}` : "Image unavailable";
   return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} onLoad={event => onLoad?.(event.currentTarget)} />

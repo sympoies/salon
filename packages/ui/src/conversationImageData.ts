@@ -2,7 +2,7 @@ import { CONVERSATION_IMAGE_MAX_BYTES, CONVERSATION_IMAGE_TYPES, conversationIma
 import { appFetch } from "./runtime.ts";
 
 export type ConversationImageData = { readonly state: "ready"; readonly url: string; readonly blob: Blob; readonly filename: string }
-  | { readonly state: "unavailable"; readonly reason?: "outside-allowed-roots" | "remote-url-not-fetched"; readonly sourceOrigin?: string }
+  | { readonly state: "unavailable"; readonly reason?: "outside-allowed-roots" | "remote-url-not-fetched"; readonly sourceOrigin?: string; readonly remoteReason?: string }
   | { readonly state: "loading" | "deleted" | "error" };
 
 interface ImageRequest {
@@ -42,7 +42,7 @@ export function fetchConversationImage(machine: string, history: string, image: 
 async function readConversationImage(machine: string, history: string, image: string, signal: AbortSignal): Promise<ConversationImageData> {
   if (!isConversationImageId(image)) return {state:"unavailable"};
   try {
-    const response = await appFetch(`/api/history/sessions/${encodeURIComponent(machine)}/${encodeURIComponent(history)}/images/${encodeURIComponent(image)}`,
+    let response = await appFetch(`/api/history/sessions/${encodeURIComponent(machine)}/${encodeURIComponent(history)}/images/${encodeURIComponent(image)}`,
       {signal:AbortSignal.any([signal,AbortSignal.timeout(15_000)]),cache:"no-store"});
     if (response.status === 404) {
       const error = await response.json().catch(() => null) as { error?: { code?: string } } | null;
@@ -54,10 +54,22 @@ async function readConversationImage(machine: string, history: string, image: st
         if (error.error.reason === "outside-allowed-roots") return {state:"unavailable",reason:"outside-allowed-roots"};
         if (error.error.reason === "remote-url-not-fetched") {
           const sourceOrigin = conversationImageSourceOrigin(error.error.source_origin);
-          return {state:"unavailable",reason:"remote-url-not-fetched",...(sourceOrigin ? {sourceOrigin} : {})};
+          const fallback: ConversationImageData = {state:"unavailable",reason:"remote-url-not-fetched",...(sourceOrigin ? {sourceOrigin} : {})};
+          response = await appFetch(`/api/history/sessions/${encodeURIComponent(machine)}/${encodeURIComponent(history)}/remote-image/${encodeURIComponent(image)}`,
+            {signal:AbortSignal.any([signal,AbortSignal.timeout(15_000)]),cache:"no-store"});
+          if (!response.ok) {
+            const refusal = await response.json().catch(() => null) as {error?: {code?: unknown; reason?: unknown}} | null;
+            if (response.status === 404 && refusal?.error?.code === "history-image-deleted") return {state:"deleted"};
+            if (response.status === 422 && refusal?.error?.code === "history-image-unavailable" && refusal.error.reason === "outside-allowed-roots")
+              return {state:"unavailable",reason:"outside-allowed-roots"};
+            if ((response.status === 422 || response.status === 429) && refusal?.error?.code === "remote-image-unavailable")
+              return {...fallback,remoteReason:typeof refusal.error.reason === "string" ? refusal.error.reason : "unknown"};
+            if (response.status >= 500 || response.status === 408 || response.status === 429) return {state:"error"};
+            return fallback;
+          }
         }
       }
-      return {state:"unavailable"};
+      if (response.status === 422) return {state:"unavailable"};
     }
     if (response.status >= 500 || response.status === 408 || response.status === 429) return {state:"error"};
     const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
