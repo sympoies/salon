@@ -80,7 +80,7 @@ test("pins one resolution and sends only fixed request headers", async () => {
 
 test("enforces body size, deadline and image signatures", async () => {
   await fixture((req, res) => {
-    if (req.url === "/slow") { setTimeout(() => res.end(png), 200); return; }
+    if (req.url === "/slow") { res.write(png); setTimeout(() => res.end(), 200); return; }
     if (req.url === "/large") { res.end(Buffer.alloc(100)); return; }
     if (req.url === "/svg") { res.end("<svg></svg>"); return; }
     if (req.url === "/text") { res.end("hello"); return; }
