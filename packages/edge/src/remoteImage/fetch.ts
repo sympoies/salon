@@ -36,7 +36,7 @@ export async function fetchRemoteImage(rawUrl: string, options: Options = {}): P
       const response = await Promise.race([new Promise<http.IncomingMessage>((resolveResponse, reject) => {
         const request = connector({
           protocol: url.protocol, hostname: target.host, port: target.port,
-          path: `${url.pathname}${url.search}`, method: "GET", signal: controller.signal,
+          path: `${url.pathname}${url.search}`, method: "GET", signal: controller.signal, agent: false,
           headers: { "User-Agent": "Salon-Remote-Image/1.0", Accept: "image/*" },
           servername: target.host,
           lookup: (_host, _options, callback) => {

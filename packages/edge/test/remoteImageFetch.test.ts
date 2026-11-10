@@ -95,3 +95,13 @@ test("enforces body size, deadline and image signatures", async () => {
     assert.deepEqual(await fetchRemoteImage("file:///image", options), { ok: false, reason: "invalid-url" });
   });
 });
+
+test("each fetch connects to its newly approved address", async () => {
+  await fixture((_req, res) => res.end(png), async (url, options, seen) => {
+    let count = 0;
+    const resolver = async () => [++count === 1 ? "8.8.8.8" : "9.9.9.9"];
+    assert.equal((await fetchRemoteImage(url, { ...options, resolver })).ok, true);
+    assert.equal((await fetchRemoteImage(url, { ...options, resolver })).ok, true);
+    assert.deepEqual(seen, ["8.8.8.8", "9.9.9.9"]);
+  });
+});
