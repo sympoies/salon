@@ -1200,6 +1200,7 @@ function safeDaemonError(codeValue: unknown, fallback: string, reasonValue?: unk
 function projectCreatedSession(session: Record<string, unknown>): Record<string, unknown> | null {
   if (typeof session.id !== "string" || typeof session.agent !== "string") return null;
   const projected: Record<string, unknown> = { id: session.id, agent: session.agent };
+  if (session.launch_notice === "written" || session.launch_notice === "not-requested" || session.launch_notice === "unavailable") projected.launch_notice = session.launch_notice;
   if (Object.hasOwn(session, "workspace")) projected.workspace = normalizeSessionWorkspace(session.workspace);
   const origin = normalizeSessionOrigin(session.origin);
   if (origin) projected.origin = origin;
