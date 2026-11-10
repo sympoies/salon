@@ -4,6 +4,7 @@
 // difference.
 import { isTauri as isTauriRuntime } from "@tauri-apps/api/core";
 import { getPrincipalStorageNamespace, unscopedLocalStorageGetItem, unscopedLocalStorageSetItem } from "./storage.ts";
+import { conversationImageCache } from "./conversationImageCache.ts";
 
 const SERVER_KEY = "ac:server-url";
 const TOKEN_KEY = "ac:token";
@@ -127,6 +128,7 @@ export function loadServerUrl(): string {
   return unscopedLocalStorageGetItem(SERVER_KEY) ?? "";
 }
 export function saveServerUrl(raw: string): void {
+  if (loadServerUrl() !== normalizeServerUrl(raw)) conversationImageCache.clear();
   unscopedLocalStorageSetItem(SERVER_KEY, normalizeServerUrl(raw));
   connectionConfigGeneration += 1;
 }
@@ -134,6 +136,7 @@ export function loadToken(): string {
   return unscopedLocalStorageGetItem(TOKEN_KEY) ?? "";
 }
 export function saveToken(v: string): void {
+  if (loadToken() !== v.trim()) conversationImageCache.clear();
   unscopedLocalStorageSetItem(TOKEN_KEY, v.trim());
   connectionConfigGeneration += 1;
 }

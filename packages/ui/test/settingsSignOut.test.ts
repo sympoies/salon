@@ -61,6 +61,7 @@ for (const scenario of ["success", "http-failure", "unreachable", "stalled", "br
     const logoutRequests: { method: string | undefined; authorized: boolean; credentials: RequestCredentials | undefined }[] = [];
     let authRequests = 0;
     let browserSignedOut = false;
+    let imageRequests = 0;
     let finishStalledLogout: ((response: Response) => void) | undefined;
     const http: typeof fetch = async (input, init) => {
       const path = new URL(String(input), "http://localhost").pathname;
@@ -82,6 +83,10 @@ for (const scenario of ["success", "http-failure", "unreachable", "stalled", "br
         return Response.json({ authenticated, openAccess: false, principal: null });
       }
       if (path === "/api/machines") return Response.json({ machines: [] });
+      if (path.includes("/images/")) {
+        imageRequests++;
+        return new Response(new Uint8Array([imageRequests]), { headers: { "content-type": "image/png" } });
+      }
       throw new Error(`unexpected fixture request: ${path}`);
     };
     globalThis.__signOutHttp = http;
@@ -99,6 +104,13 @@ for (const scenario of ["success", "http-failure", "unreachable", "stalled", "br
       const { default: App } = await ssr.loadModule<typeof import("../src/App.tsx")>("/src/App.tsx");
       await act(async () => root.render(createElement(App)));
       await waitFor(() => container.querySelector('[aria-label="Open Settings"]') !== null);
+      const { conversationImageCache } = await ssr.loadModule<typeof import("../src/conversationImageCache.ts")>("/src/conversationImageCache.ts");
+      const target = { machine: "fixture", history: "history", image: `${"a".repeat(16)}.0.0.${"b".repeat(32)}` };
+      const first = conversationImageCache.watch(target, () => {});
+      first.setVisible(true);
+      await waitFor(() => conversationImageCache.peek(target).state === "ready");
+      const original = conversationImageCache.peek(target);
+      first.unsubscribe();
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Open Settings"]')!.click());
       const signOut = Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Sign out");
       assert.ok(signOut);
@@ -109,6 +121,13 @@ for (const scenario of ["success", "http-failure", "unreachable", "stalled", "br
       }
       await waitFor(() => container.querySelector('.login [data-testid="console-sign-in"]') !== null
         || (!native && container.querySelector('input[type="password"]') !== null));
+      assert.equal(conversationImageCache.peek(target).state, "loading", "sign-out removes the previous principal's image");
+      const second = conversationImageCache.watch(target, () => {});
+      second.setVisible(true);
+      await waitFor(() => conversationImageCache.peek(target).state === "ready");
+      assert.notDeepEqual(conversationImageCache.peek(target), original);
+      assert.equal(imageRequests, 2, "the next principal performs a fresh read");
+      second.unsubscribe();
       assert.equal(logoutRequests.length, 1, "Sign out still requests server logout");
       assert.equal(logoutRequests[0].method, "POST");
       if (native) {
