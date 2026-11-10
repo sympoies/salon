@@ -18,6 +18,7 @@ let edge: NetServer;
 let base = "";
 let edgePort = 0;
 let daemonRequests = 0;
+let lastCreateBody: Record<string, unknown> = {};
 let daemonUpgrades = 0;
 let lastShellOwner = "";
 let lastUpgradePath = "";
@@ -136,11 +137,13 @@ before(async () => {
           res.end(JSON.stringify({ ok: false, error: { message: "provider session not found" } }));
           return;
         }
+        lastCreateBody = body;
         const providerId = body.provider_resume_id ?? body.resume_id;
         const session = {
           id: body.id,
           agent: body.agent,
           status: "running",
+          ...(body.notice_kind ? { launch_notice: "written" } : {}),
           session_incarnation: `inc-${body.id}`,
           ...(typeof providerId === "string"
             ? { provider_resume: { provider: body.agent, session_id: providerCreateMode === "wrong-thread" ? "other-thread" : providerId } }
@@ -795,6 +798,25 @@ test("history and activity streams expose only owned identities", async () => {
   // The exact snapshot join must omit it rather than authorizing by ID alone.
   const ownerActivity = await readActivity("owner-token");
   assert.deepEqual(ownerActivity.sessions.map((entry: any) => entry.id), ["owner-session", "owner-worker"]);
+});
+
+test("owned create forwards optional launch notices and rejects invalid fields", async () => {
+  const send = (body: object) => fetch(`${base}/api/sessions/hub`, {
+    method: "POST", headers: { authorization: "Bearer viewer-token", "content-type": "application/json" },
+    body: JSON.stringify({ agent: "codex", ...body }),
+  });
+  const notice = { notice_kind: "dispatch.bootstrap", notice_source: "producer", notice_id: "notice-1" };
+  const result = await send(notice);
+  assert.equal(result.status, 200);
+  assert.deepEqual(Object.fromEntries(Object.keys(notice).map(key => [key, lastCreateBody[key]])), notice);
+  assert.equal((await result.json() as any).data.session.launch_notice, "written");
+  assert.equal((await send({})).status, 200);
+  for (const key of Object.keys(notice)) assert.equal(Object.hasOwn(lastCreateBody, key), false);
+  for (const key of Object.keys(notice)) for (const value of [42, "x".repeat(4097)]) {
+    const before = daemonRequests;
+    assert.equal((await send({ [key]: value })).status, 422);
+    assert.equal(daemonRequests, before);
+  }
 });
 
 test("session creation assigns an edge id and binds only the creator", async () => {

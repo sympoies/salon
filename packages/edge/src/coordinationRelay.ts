@@ -387,7 +387,7 @@ const SERVICE_CREATE_KEYS = ["source_service_id", "source_service_generation", "
 const SERVICE_BOARD_KEYS = ["source_service_id", "source_service_generation", "owner"];
 // The daemon sets `lineage`; everything else a service may set in `session`.
 const SERVICE_SESSION_KEYS = ["agent", "cwd", "workspace", "launch_env", "title_mode", "title", "prompt", "agent_args",
-  "agent_profile", "codex_account", "claude_account", "account", "lineage"];
+  "agent_profile", "codex_account", "claude_account", "account", "lineage", "notice_kind", "notice_source", "notice_id"];
 const SERVICE_SELECTOR = /^[A-Za-z0-9._-]{1,128}$/;
 const MACHINE_NAME = /^[\x21-\x7e]{1,128}$/;
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
