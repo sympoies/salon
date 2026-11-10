@@ -37,7 +37,7 @@ test("remote image cache, refusals and concurrency", async () => {
   const pending = new Promise<void>(r => { release = r; });
   const entered = new Promise<void>(r => { started = r; });
   const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: "http://localhost", token: "fixture" }],
-    remoteImage: { ...defaults, stateDir: dir, cacheBytes: 100, cacheTtlMs: 30, principalConcurrency: 1 } }), {
+    remoteImage: { ...defaults, stateDir: dir, cacheBytes: 170, cacheTtlMs: 30, principalConcurrency: 1 } }), {
     remoteImageFetch: async url => { calls++; if (url.endsWith("hold")) { started(); await pending; } if (url.endsWith("refuse")) return { ok: false, reason: "blocked-address" }; return { ok: true, contentType: "image/png", bytes: Buffer.from(url.slice(-1)) }; },
   });
   const { base } = await listenOnLoopback(edge);
@@ -66,4 +66,61 @@ test("invalid remote image configuration fails at startup", async () => {
   for (const env of [{ AGENT_CONSOLE_REMOTE_IMAGE_ALLOW_LIST: "*.invalid" }, { AGENT_CONSOLE_REMOTE_IMAGE_CACHE_BYTES: "0" }, { AGENT_CONSOLE_REMOTE_IMAGE_TIMEOUT_MS: "abc" }]) {
     assert.throws(() => loadConfig({ AGENT_CONSOLE_NO_AUTH: "1", ...env }), /AGENT_CONSOLE_REMOTE_IMAGE_/);
   }
+});
+
+test("remote image requires history read access", async () => {
+  const { AccessStore } = await import("../src/accessStore.ts");
+  const dir = mkdtempSync(join(tmpdir(), "remote-image-access-"));
+  const db = join(dir, "access.sqlite");
+  const store = new AccessStore(db);
+  store.claimHistory("a", "fixture", "owned", "codex", "provider"); store.close();
+  let calls = 0;
+  const edge = createEdgeServer(makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: db,
+    principals: ["a", "b"].map(id => ({ id, token: `token-${id}`, machines: ["fixture"], permissions: [] })),
+    machines: [{ name: "fixture", url: "http://localhost", token: "fixture" }], remoteImage: { ...defaults, stateDir: dir } }), {
+    remoteImageFetch: async () => { calls++; return { ok: false, reason: "not-image" }; },
+  });
+  const { base } = await listenOnLoopback(edge);
+  const url = `${base}/api/history/sessions/fixture/owned/remote-image?url=https%3A%2F%2Fexample.invalid%2Fa`;
+  try {
+    assert.equal((await fetch(url, { headers: { authorization: "Bearer token-b" } })).status, 404);
+    assert.equal(calls, 0);
+    const response = await fetch(url, { headers: { authorization: "Bearer token-a" } });
+    assert.equal(response.status, 422);
+    assert.equal((await response.json() as {error: {reason: string}}).error.reason, "not-image");
+    assert.equal(calls, 1);
+  } finally { edge.closeAllConnections(); await new Promise<void>(resolve => edge.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("global concurrency is enforced independently of the principal limit", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "remote-image-global-"));
+  const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: "http://localhost", token: "fixture" }],
+    remoteImage: { ...defaults, stateDir: dir, globalConcurrency: 1, principalConcurrency: 2 } }), {
+    remoteImageFetch: async () => { entered.resolve(); await release.promise; return { ok: false, reason: "network" }; },
+  });
+  const { base } = await listenOnLoopback(edge);
+  const url = `${base}/api/history/sessions/fixture/history/remote-image?url=https%3A%2F%2Fexample.invalid%2Fa`;
+  try {
+    const first = fetch(url); await entered.promise;
+    const busy = await fetch(url); assert.equal(busy.status, 429);
+    assert.equal((await busy.json() as {error: {reason: string}}).error.reason, "busy");
+    release.resolve(); await first;
+  } finally { release.resolve(); edge.closeAllConnections(); await new Promise<void>(resolve => edge.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a corrupt cached entry is refetched", async () => {
+  const { readdirSync, writeFileSync } = await import("node:fs");
+  const dir = mkdtempSync(join(tmpdir(), "remote-image-corrupt-")); let calls = 0;
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: "http://localhost", token: "fixture" }],
+    remoteImage: { ...defaults, stateDir: dir } }), {
+    remoteImageFetch: async () => { calls++; return { ok: true, contentType: "image/png", bytes: Buffer.from("image") }; },
+  });
+  const { base } = await listenOnLoopback(edge);
+  const url = `${base}/api/history/sessions/fixture/history/remote-image?url=https%3A%2F%2Fexample.invalid%2Fa`;
+  try {
+    await fetch(url); const cacheDir = join(dir, "remote-images");
+    writeFileSync(join(cacheDir, readdirSync(cacheDir)[0]!), "corrupt");
+    assert.equal(await (await fetch(url)).text(), "image"); assert.equal(calls, 2);
+  } finally { edge.closeAllConnections(); await new Promise<void>(resolve => edge.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); }
 });

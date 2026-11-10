@@ -26,10 +26,10 @@ export function createRemoteImageService(config: RemoteImageConfig, fetcher: Fet
     try {
       const stat = statSync(file);
       if (Date.now() - stat.mtimeMs < config.cacheTtlMs) {
-        const entry = JSON.parse(readFileSync(file, "utf8")) as { contentType: string; bytes: string; created: number };
+        const entry = JSON.parse(readFileSync(file, "utf8")) as { contentType: string; bytes: string; created: number; digest: string };
         if (["image/png", "image/jpeg", "image/gif", "image/webp"].includes(entry.contentType) && typeof entry.bytes === "string" && Number.isFinite(entry.created) && Date.now() - entry.created < config.cacheTtlMs) {
           const bytes = Buffer.from(entry.bytes, "base64");
-          if (bytes.length && bytes.length <= config.maxBytes && bytes.toString("base64") === entry.bytes) {
+          if (bytes.length && bytes.length <= config.maxBytes && bytes.toString("base64") === entry.bytes && createHash("sha256").update(bytes).digest("hex") === entry.digest) {
             const now = new Date(); utimesSync(file, now, now);
             return { ok: true as const, contentType: entry.contentType, bytes };
           }
@@ -43,7 +43,7 @@ export function createRemoteImageService(config: RemoteImageConfig, fetcher: Fet
       if (result.ok) {
         try {
           mkdirSync(dir, { recursive: true, mode: 0o700 });
-          const entry = JSON.stringify({ contentType: result.contentType, bytes: result.bytes.toString("base64"), created: Date.now() });
+          const entry = JSON.stringify({ contentType: result.contentType, bytes: result.bytes.toString("base64"), digest: createHash("sha256").update(result.bytes).digest("hex"), created: Date.now() });
           if (Buffer.byteLength(entry) <= config.cacheBytes) {
             writeFileSync(file, entry, { mode: 0o600 });
             const entries = readdirSync(dir).filter(name => /^[a-f0-9]{64}$/.test(name)).map(name => ({ path: join(dir, name), stat: statSync(join(dir, name)) })).sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs);

@@ -1,6 +1,7 @@
 import { createRemoteImageService, defaults as remoteImageDefaults } from "./remoteImage/service.ts";
 import { fetchRemoteImage } from "./remoteImage/fetch.ts";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { accountConflict, projectAccount, translateAccount } from "./createAccount.ts";
 import { sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
 import { normalizeSavedDraft } from "@agent-console/shared";
@@ -292,7 +293,7 @@ async function readConversationWindow(machine: MachineConfig, id: string, query:
 }
 
 export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions = {}): Server {
-  const remoteImage = createRemoteImageService(config.remoteImage ?? { ...remoteImageDefaults, stateDir: tmpdir() }, options.remoteImageFetch);
+  const remoteImage = createRemoteImageService(config.remoteImage ?? { ...remoteImageDefaults, stateDir: join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "salon") }, options.remoteImageFetch);
   const attachmentUploadTimeoutMs = options.attachmentUploadTimeoutMs ?? ATTACHMENT_UPLOAD_TIMEOUT_MS;
   const ordinaryRequestTimeoutMs = options.ordinaryRequestTimeoutMs ?? ORDINARY_REQUEST_TIMEOUT_MS;
   const failedCreateLookupMs = options.failedCreateLookupMs ?? FAILED_CREATE_LOOKUP_MS;
