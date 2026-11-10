@@ -246,10 +246,9 @@ function historyImageDestinations(text: string): string[] {
   while ((match = opener.exec(text))) {
     if (match[0].startsWith("<")) {
       const end = text.indexOf(">", opener.lastIndex);
-      if (end !== -1 && !/\s/.test(text.slice(match.index, end))) {
-        destinations.push(text.slice(match.index + 1, end));
-        opener.lastIndex = end + 1;
-      }
+      if (end === -1 || /\s/.test(text.slice(match.index, end))) break;
+      destinations.push(text.slice(match.index + 1, end));
+      opener.lastIndex = end + 1;
       continue;
     }
     if (/^https?:/.test(match[0])) {
@@ -273,19 +272,11 @@ function historyImageDestinations(text: string): string[] {
       else if (char === ")") { if (depth === 0) break; depth--; }
       else if (/\s/.test(char)) break;
     }
-    if (angle && text[index] !== ">") {
-      while (index < text.length && !/\s/.test(text[index]!)) index++;
-      opener.lastIndex = index;
-      continue;
-    }
+    if (angle && text[index] !== ">") break;
     const destination = text.slice(start, index);
     if (angle) index++;
     const closing = /^\s*(?:(?:"[^"]*"|'[^']*')\s*)?\)/.exec(text.slice(index));
-    if (!closing || depth !== 0) {
-      const nextLine = text.indexOf("\n", index);
-      opener.lastIndex = nextLine === -1 ? text.length : nextLine + 1;
-      continue;
-    }
+    if (!closing || depth !== 0) break;
     if (destination) destinations.push(destination);
     opener.lastIndex = index + closing[0].length;
   }
