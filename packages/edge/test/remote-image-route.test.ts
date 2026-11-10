@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
-import { test } from "node:test";
+import { test, before, after } from "node:test";
+import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,10 +8,19 @@ import { defaults } from "../src/remoteImage/service.ts";
 import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
+
+const daemon = createServer((_req, res) => {
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "row", role: "assistant", text: ["image.png", "a", "b", "hold", "another", "refuse"].map(name => `https://example.invalid/${name}`).join(" ") }] } }));
+});
+let upstream: string;
+before(async () => { upstream = (await listenOnLoopback(daemon)).base; });
+after(async () => { daemon.closeAllConnections(); await new Promise<void>(resolve => daemon.close(() => resolve())); });
+
 test("remote image route refuses cross-origin and serves fetched bytes", async () => {
   let calls = 0;
   const dir = mkdtempSync(join(tmpdir(), "remote-image-test-"));
-  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: "http://localhost", token: "fixture" }], remoteImage: { ...defaults, stateDir: dir } }), {
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: upstream, token: "fixture" }], remoteImage: { ...defaults, stateDir: dir } }), {
     remoteImageFetch: async () => { calls++; return { ok: true, contentType: "image/png", bytes: Buffer.from("image") }; },
   });
   const { base } = await listenOnLoopback(edge);
@@ -36,7 +46,7 @@ test("remote image cache, refusals and concurrency", async () => {
   let started!: () => void;
   const pending = new Promise<void>(r => { release = r; });
   const entered = new Promise<void>(r => { started = r; });
-  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: "http://localhost", token: "fixture" }],
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: upstream, token: "fixture" }],
     remoteImage: { ...defaults, stateDir: dir, cacheBytes: 170, cacheTtlMs: 30, principalConcurrency: 1 } }), {
     remoteImageFetch: async url => { calls++; if (url.endsWith("hold")) { started(); await pending; } if (url.endsWith("refuse")) return { ok: false, reason: "blocked-address" }; return { ok: true, contentType: "image/png", bytes: Buffer.from(url.slice(-1)) }; },
   });
@@ -77,7 +87,7 @@ test("remote image requires history read access", async () => {
   let calls = 0;
   const edge = createEdgeServer(makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: db,
     principals: ["a", "b"].map(id => ({ id, token: `token-${id}`, machines: ["fixture"], permissions: [] })),
-    machines: [{ name: "fixture", url: "http://localhost", token: "fixture" }], remoteImage: { ...defaults, stateDir: dir } }), {
+    machines: [{ name: "fixture", url: upstream, token: "fixture" }], remoteImage: { ...defaults, stateDir: dir } }), {
     remoteImageFetch: async () => { calls++; return { ok: false, reason: "not-image" }; },
   });
   const { base } = await listenOnLoopback(edge);
@@ -95,7 +105,7 @@ test("remote image requires history read access", async () => {
 test("global concurrency is enforced independently of the principal limit", async () => {
   const dir = mkdtempSync(join(tmpdir(), "remote-image-global-"));
   const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
-  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: "http://localhost", token: "fixture" }],
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: upstream, token: "fixture" }],
     remoteImage: { ...defaults, stateDir: dir, globalConcurrency: 1, principalConcurrency: 2 } }), {
     remoteImageFetch: async () => { entered.resolve(); await release.promise; return { ok: false, reason: "network" }; },
   });
@@ -112,7 +122,7 @@ test("global concurrency is enforced independently of the principal limit", asyn
 test("a corrupt cached entry is refetched", async () => {
   const { readdirSync, writeFileSync } = await import("node:fs");
   const dir = mkdtempSync(join(tmpdir(), "remote-image-corrupt-")); let calls = 0;
-  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: "http://localhost", token: "fixture" }],
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: upstream, token: "fixture" }],
     remoteImage: { ...defaults, stateDir: dir } }), {
     remoteImageFetch: async () => { calls++; return { ok: true, contentType: "image/png", bytes: Buffer.from("image") }; },
   });

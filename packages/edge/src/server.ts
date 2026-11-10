@@ -1479,9 +1479,32 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       }
 
       case "remote-image": {
-        if (!sameOriginOrNativeApp(req, res, tokenPrincipal(req) !== undefined)) return;
-        await withMachine(res, routeParam(route, "machine"), async () => {
-          const result = await remoteImage(_principal.id, url.searchParams.get("url") ?? "");
+        const tokenAuthed = tokenPrincipal(req) !== undefined;
+        if (!sameOriginOrNativeApp(req, res, tokenAuthed)) return;
+        if (!tokenAuthed && req.headers["sec-fetch-site"] && req.headers["sec-fetch-site"] !== "same-origin" && req.headers["sec-fetch-site"] !== "none") return forbidCrossOrigin(res);
+        await withMachine(res, routeParam(route, "machine"), async (machine) => {
+          const imageUrl = url.searchParams.get("url") ?? "";
+          const query = new URLSearchParams({ parts: "v1" });
+          for (const key of ["cursor", "direction"] as const) {
+            const value = url.searchParams.get(key);
+            if (value !== null) query.set(key, value);
+          }
+          const history = await readConversationWindow(machine, routeParam(route, "id"), query);
+          const data = objectProp(objectProp(history.body)?.data);
+          const messages = data?.messages;
+          const containsUrl = Array.isArray(messages) && messages.some(message => {
+            const text = objectProp(message)?.text;
+            if (typeof text !== "string" || !imageUrl) return false;
+            let index = text.indexOf(imageUrl);
+            while (index !== -1) {
+              const before = text[index - 1]; const after = text[index + imageUrl.length];
+              if ((!before || /[\s(<\["']/.test(before)) && (!after || /[\s)>\]"']/.test(after))) return true;
+              index = text.indexOf(imageUrl, index + 1);
+            }
+            return false;
+          });
+          if (history.status !== 200 || !containsUrl) { sendJson(res, 404, { ok: false, error: { message: "image not found" } }); return; }
+          const result = await remoteImage(_principal.id, imageUrl);
           if (!result.ok) { sendJson(res, result.reason === "busy" ? 429 : 422, { ok: false, error: { code: "remote-image-unavailable", reason: result.reason } }); return; }
           res.writeHead(200, { "content-type": result.contentType, "cache-control": "private, no-store" });
           res.end(result.bytes);

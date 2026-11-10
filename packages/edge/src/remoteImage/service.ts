@@ -45,7 +45,8 @@ export function createRemoteImageService(config: RemoteImageConfig, fetcher: Fet
           mkdirSync(dir, { recursive: true, mode: 0o700 });
           const entry = JSON.stringify({ contentType: result.contentType, bytes: result.bytes.toString("base64"), digest: createHash("sha256").update(result.bytes).digest("hex"), created: Date.now() });
           if (Buffer.byteLength(entry) <= config.cacheBytes) {
-            writeFileSync(file, entry, { mode: 0o600 });
+            try { writeFileSync(file, entry, { mode: 0o600 }); }
+            catch (error) { try { unlinkSync(file); } catch { /* Cache may already be absent. */ } throw error; }
             const entries = readdirSync(dir).filter(name => /^[a-f0-9]{64}$/.test(name)).map(name => ({ path: join(dir, name), stat: statSync(join(dir, name)) })).sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs);
             let size = entries.reduce((sum, item) => sum + item.stat.size, 0);
             for (const item of entries) { if (size <= config.cacheBytes) break; unlinkSync(item.path); size -= item.stat.size; }

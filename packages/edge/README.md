@@ -10,7 +10,9 @@ response.
 
 The authenticated `GET /api/history/sessions/:machine/:id/remote-image?url=...` route
 serves a remote image to a principal allowed to read that history. The URL is the
-original URL from the conversation. Cross-origin requests are refused. Successful
+original URL from the conversation. The route checks history text before each cache
+lookup or fetch. For older history, supply the `cursor` and `direction` used to read
+the page containing the row. Cross-origin requests are refused. Successful
 responses have a private cache header; failures return a typed reason.
 
 The edge keeps a rebuildable disk cache under the Salon state directory
