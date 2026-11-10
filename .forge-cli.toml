@@ -1,0 +1,10 @@
+# Sessions allowed to take over a review handoff from a retired coordinator
+# (`forge-cli pr review-handoff recover --reason coordinator-retired`).
+# Each entry is the sha256 of a full agent-session UUID; forge-cli accepts no role form.
+# Refresh these digests when the delivery steward cover changes.
+[review_handoff]
+stale_after = "15m"
+supervisors = [
+  "sha256:211d54c7c84f6baf952381c24f915ad3f4cb3ed7c5fddea82fc5c10a2529c685", # delivery steward
+  "sha256:dbc46968e0214b782d75501a70a115114f1045f5ce984652b0fdae7214842440", # delivery steward cover
+]
