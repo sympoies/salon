@@ -235,53 +235,7 @@ function fencedStructuredPromptBody(value: unknown): FencedStructuredPromptBody 
   };
 }
 
-// Extract whole URL tokens so a nested URL cannot become an independent fetch target.
-function historyImageDestinations(text: string): string[] {
-  // Reference definitions and HTML are not parsed here; never scan their
-  // metadata as independent bare URLs.
-  if (/(?:^|\n) {0,3}\[[^\]\n]+\]:/.test(text) || /<[A-Za-z][\w-]*(?:\s|\/?>)/.test(text)) return [];
-  const destinations: string[] = [];
-  const opener = /!?\[[^\]\n]*\]\(|<https?:\/\/|https?:\/\//g;
-  let match: RegExpExecArray | null;
-  while ((match = opener.exec(text))) {
-    if (match[0].startsWith("<")) {
-      const end = text.indexOf(">", opener.lastIndex);
-      if (end === -1 || /\s/.test(text.slice(match.index, end))) break;
-      destinations.push(text.slice(match.index + 1, end));
-      opener.lastIndex = end + 1;
-      continue;
-    }
-    if (/^https?:/.test(match[0])) {
-      let end = opener.lastIndex;
-      while (end < text.length && !/\s/.test(text[end]!)) end++;
-      if (match.index === 0 || /\s/.test(text[match.index - 1]!)) destinations.push(text.slice(match.index, end));
-      opener.lastIndex = end;
-      continue;
-    }
-    let index = opener.lastIndex;
-    while (text[index] === " " || text[index] === "\t") index++;
-    const angle = text[index] === "<";
-    if (angle) index++;
-    const start = index;
-    let depth = 0;
-    for (; index < text.length; index++) {
-      const char = text[index]!;
-      if (char === "\\" || char === "\n" || char === "\r") break;
-      if (angle) { if (char === ">") break; }
-      else if (char === "(") depth++;
-      else if (char === ")") { if (depth === 0) break; depth--; }
-      else if (/\s/.test(char)) break;
-    }
-    if (angle && text[index] !== ">") break;
-    const destination = text.slice(start, index);
-    if (angle) index++;
-    const closing = /^\s*(?:(?:"[^"]*"|'[^']*')\s*)?\)/.exec(text.slice(index));
-    if (!closing || depth !== 0) break;
-    if (destination) destinations.push(destination);
-    opener.lastIndex = index + closing[0].length;
-  }
-  return destinations;
-}
+
 
 export interface EdgeServerOptions {
   readonly remoteImageFetch?: typeof fetchRemoteImage;
@@ -1531,24 +1485,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         if (!sameOriginOrNativeApp(req, res, tokenAuthed)) return;
         if (!tokenAuthed && req.headers["sec-fetch-site"] && req.headers["sec-fetch-site"] !== "same-origin" && req.headers["sec-fetch-site"] !== "none") return forbidCrossOrigin(res);
         await withMachine(res, routeParam(route, "machine"), async (machine) => {
-          const imageUrl = url.searchParams.get("url") ?? "";
-          const query = new URLSearchParams({ parts: "v1" });
-          for (const key of ["cursor", "direction"] as const) {
-            const value = url.searchParams.get(key);
-            if (value !== null) query.set(key, value);
-          }
-          const history = await readConversationWindow(machine, routeParam(route, "id"), query);
-          const data = objectProp(objectProp(history.body)?.data);
-          const messages = data?.messages;
-          const containsUrl = Array.isArray(messages) && messages.some(message => {
-            const text = objectProp(message)?.text;
-            return typeof text === "string" && historyImageDestinations(text).includes(imageUrl);
+          await forwardHistoryImage(res, machine, routeParam(route, "id"), routeParam(route, "image"), async imageUrl => {
+            const result = await remoteImage(_principal.id, imageUrl);
+            if (!result.ok) { sendJson(res, result.reason === "busy" ? 429 : 422, { ok: false, error: { code: "remote-image-unavailable", reason: result.reason } }); return; }
+            res.writeHead(200, { "content-type": result.contentType, "cache-control": "private, no-store" });
+            res.end(result.bytes);
           });
-          if (history.status !== 200 || !containsUrl) { sendJson(res, 404, { ok: false, error: { message: "image not found" } }); return; }
-          const result = await remoteImage(_principal.id, imageUrl);
-          if (!result.ok) { sendJson(res, result.reason === "busy" ? 429 : 422, { ok: false, error: { code: "remote-image-unavailable", reason: result.reason } }); return; }
-          res.writeHead(200, { "content-type": result.contentType, "cache-control": "private, no-store" });
-          res.end(result.bytes);
         });
         return;
       }

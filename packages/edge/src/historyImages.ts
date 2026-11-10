@@ -28,7 +28,7 @@ async function readBounded(response: Response, limit: number): Promise<Buffer> {
 }
 
 /** Reuses edge auth/ownership and daemon credentials; never accepts a file path. */
-export async function forwardHistoryImage(res: ServerResponse, machine: MachineConfig, history: string, image: string): Promise<void> {
+export async function forwardHistoryImage(res: ServerResponse, machine: MachineConfig, history: string, image: string, remote?: (url: string) => Promise<void>): Promise<void> {
   res.setHeader("cache-control","private, no-store");
   res.setHeader("x-content-type-options","nosniff");
   const unavailable = (reason?: "outside-allowed-roots" | "remote-url-not-fetched", sourceOrigin?: string) => sendJson(res,422,{ok:false,error:{code:"history-image-unavailable",message:"Image unavailable",...(reason ? {reason} : {}),...(sourceOrigin ? {source_origin:sourceOrigin} : {})}});
@@ -42,15 +42,17 @@ export async function forwardHistoryImage(res: ServerResponse, machine: MachineC
       if (response.status !== 200) {
         if (response.status !== 404 && response.status !== 422) { await response.body?.cancel(); failed(); return; }
         const bytes = await readBounded(response,16 * 1024);
-        let code: unknown, reason: unknown, source_origin: unknown;
-        try { ({code,reason,source_origin} = (JSON.parse(bytes.toString("utf8")) as {error?:{code?:unknown;reason?:unknown;source_origin?:unknown}}).error ?? {}); } catch { /* old daemon or malformed upstream */ }
+        let code: unknown, reason: unknown, source_origin: unknown, source_url: unknown;
+        try { ({code,reason,source_origin,source_url} = (JSON.parse(bytes.toString("utf8")) as {error?:{code?:unknown;reason?:unknown;source_origin?:unknown;source_url?:unknown}}).error ?? {}); } catch { /* old daemon or malformed upstream */ }
         if (response.status === 404 && code === "history-image-deleted") {
           sendJson(res,404,{ok:false,error:{code:"history-image-deleted",message:"Image deleted"}});
         } else if (response.status === 422 && code === "history-image-unavailable" && (reason === "outside-allowed-roots" || reason === "remote-url-not-fetched")) {
-          unavailable(reason,reason === "remote-url-not-fetched" ? conversationImageSourceOrigin(source_origin) : undefined);
+          if (remote && reason === "remote-url-not-fetched" && typeof source_url === "string") await remote(source_url);
+          else unavailable(reason,reason === "remote-url-not-fetched" ? conversationImageSourceOrigin(source_origin) : undefined);
         } else unavailable();
         return;
       }
+      if (remote) { await response.body?.cancel(); unavailable(); return; }
       const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
       if (!CONVERSATION_IMAGE_TYPES.some(type => type === mime)) { await response.body?.cancel(); unavailable(); return; }
       const bytes = await readBounded(response,CONVERSATION_IMAGE_MAX_BYTES);

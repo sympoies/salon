@@ -9,9 +9,14 @@ import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
 
-const daemon = createServer((_req, res) => {
-  res.setHeader("content-type", "application/json");
-  res.end(JSON.stringify({ ok: true, data: { messages: [{ id: "row", role: "assistant", text: ["image.png", "a", "b", "hold", "another", "refuse"].map(name => `![image](https://example.invalid/${name})`).join(" ") }] } }));
+const names = ["image.png", "a", "b", "hold", "another", "refuse"];
+const imageId = (name: string) => `${"a".repeat(16)}.${names.indexOf(name)}.0.${"b".repeat(32)}`;
+let daemonCalls = 0;
+const daemon = createServer((req, res) => {
+  daemonCalls++;
+  const index = Number(req.url?.split("/").at(-1)?.split(".")[1]);
+  res.writeHead(422, {"content-type":"application/json"});
+  res.end(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",source_url:`https://example.invalid/${names[index]}`}}));
 });
 let upstream: string;
 before(async () => { upstream = (await listenOnLoopback(daemon)).base; });
@@ -24,7 +29,7 @@ test("remote image route refuses cross-origin and serves fetched bytes", async (
     remoteImageFetch: async () => { calls++; return { ok: true, contentType: "image/png", bytes: Buffer.from("image") }; },
   });
   const { base } = await listenOnLoopback(edge);
-  const path = `${base}/api/history/sessions/fixture/history/remote-image?url=${encodeURIComponent("https://example.invalid/image.png")}`;
+  const path = `${base}/api/history/sessions/fixture/history/remote-image/${imageId("image.png")}`;
   try {
     assert.equal((await fetch(path, { headers: { origin: "https://other.invalid" } })).status, 403);
     const response = await fetch(path);
@@ -51,7 +56,7 @@ test("remote image cache, refusals and concurrency", async () => {
     remoteImageFetch: async url => { calls++; if (url.endsWith("hold")) { started(); await pending; } if (url.endsWith("refuse")) return { ok: false, reason: "blocked-address" }; return { ok: true, contentType: "image/png", bytes: Buffer.from(url.slice(-1)) }; },
   });
   const { base } = await listenOnLoopback(edge);
-  const request = (name: string) => fetch(`${base}/api/history/sessions/fixture/history/remote-image?url=${encodeURIComponent(`https://example.invalid/${name}`)}`);
+  const request = (name: string) => fetch(`${base}/api/history/sessions/fixture/history/remote-image/${imageId(name)}`);
   try {
     assert.equal(await (await request("a")).text(), "a");
     assert.equal(await (await request("a")).text(), "a");
@@ -91,9 +96,11 @@ test("remote image requires history read access", async () => {
     remoteImageFetch: async () => { calls++; return { ok: false, reason: "not-image" }; },
   });
   const { base } = await listenOnLoopback(edge);
-  const url = `${base}/api/history/sessions/fixture/owned/remote-image?url=https%3A%2F%2Fexample.invalid%2Fa`;
+  const url = `${base}/api/history/sessions/fixture/owned/remote-image/${imageId("a")}`;
   try {
+    const before = daemonCalls;
     assert.equal((await fetch(url, { headers: { authorization: "Bearer token-b" } })).status, 404);
+    assert.equal(daemonCalls, before);
     assert.equal(calls, 0);
     const response = await fetch(url, { headers: { authorization: "Bearer token-a" } });
     assert.equal(response.status, 422);
@@ -110,7 +117,7 @@ test("global concurrency is enforced independently of the principal limit", asyn
     remoteImageFetch: async () => { entered.resolve(); await release.promise; return { ok: false, reason: "network" }; },
   });
   const { base } = await listenOnLoopback(edge);
-  const url = `${base}/api/history/sessions/fixture/history/remote-image?url=https%3A%2F%2Fexample.invalid%2Fa`;
+  const url = `${base}/api/history/sessions/fixture/history/remote-image/${imageId("a")}`;
   try {
     const first = fetch(url); await entered.promise;
     const busy = await fetch(url); assert.equal(busy.status, 429);
@@ -127,7 +134,7 @@ test("a corrupt cached entry is refetched", async () => {
     remoteImageFetch: async () => { calls++; return { ok: true, contentType: "image/png", bytes: Buffer.from("image") }; },
   });
   const { base } = await listenOnLoopback(edge);
-  const url = `${base}/api/history/sessions/fixture/history/remote-image?url=https%3A%2F%2Fexample.invalid%2Fa`;
+  const url = `${base}/api/history/sessions/fixture/history/remote-image/${imageId("a")}`;
   try {
     await fetch(url); const cacheDir = join(dir, "remote-images");
     writeFileSync(join(cacheDir, readdirSync(cacheDir)[0]!), "corrupt");
