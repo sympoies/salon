@@ -237,6 +237,9 @@ function fencedStructuredPromptBody(value: unknown): FencedStructuredPromptBody 
 
 // Extract whole URL tokens so a nested URL cannot become an independent fetch target.
 function historyImageDestinations(text: string): string[] {
+  // Reference definitions and HTML are not parsed here; never scan their
+  // metadata as independent bare URLs.
+  if (/(?:^|\n) {0,3}\[[^\]\n]+\]:/.test(text) || /<[A-Za-z][\w-]*(?:\s|\/?>)/.test(text)) return [];
   const destinations: string[] = [];
   const opener = /!?\[[^\]\n]*\]\(|<https?:\/\/|https?:\/\//g;
   let match: RegExpExecArray | null;
@@ -279,8 +282,8 @@ function historyImageDestinations(text: string): string[] {
     if (angle) index++;
     const closing = /^\s*(?:(?:"[^"]*"|'[^']*')\s*)?\)/.exec(text.slice(index));
     if (!closing || depth !== 0) {
-      while (index < text.length && !/\s/.test(text[index]!)) index++;
-      opener.lastIndex = index;
+      const nextLine = text.indexOf("\n", index);
+      opener.lastIndex = nextLine === -1 ? text.length : nextLine + 1;
       continue;
     }
     if (destination) destinations.push(destination);
