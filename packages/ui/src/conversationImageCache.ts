@@ -31,6 +31,26 @@ export class ConversationImageCache {
     return this.entries.get(keyOf(target))?.data ?? {state:"loading"};
   }
 
+  clear() {
+    const entries = [...this.entries.values()];
+    for (const entry of entries) {
+      clearTimeout(entry.timer);
+      entry.controller?.abort();
+      entry.controller = undefined;
+      entry.timer = undefined;
+      entry.attempts = 0;
+      this.evict(entry);
+      if (entry.data.state !== "loading") this.publish(entry,{state:"loading"});
+      if (!entry.observers.size) this.entries.delete(entry.key);
+    }
+  }
+
+  reloadVisible() {
+    for (const entry of this.entries.values()) {
+      if (this.isVisible(entry) && entry.data.state === "loading") this.load(entry);
+    }
+  }
+
   watch(target: ImageTarget, notify: Observer["notify"]) {
     const key = keyOf(target);
     let entry = this.entries.get(key);
@@ -65,7 +85,7 @@ export class ConversationImageCache {
         if (current.observers.size) return;
         clearTimeout(current.timer); current.timer = undefined;
         current.controller?.abort();
-        if (current.data.state !== "ready") this.entries.delete(key);
+        if (current.data.state !== "ready" && this.entries.get(key) === current) this.entries.delete(key);
       },
     };
   }
@@ -90,17 +110,17 @@ export class ConversationImageCache {
     this.lru.delete(entry); this.bytes -= image.blob.size;
     URL.revokeObjectURL(image.url);
     this.publish(entry,{state});
-    if (!entry.observers.size) this.entries.delete(entry.key);
+    if (!entry.observers.size && this.entries.get(entry.key) === entry) this.entries.delete(entry.key);
   }
 
   private load(entry: Entry) {
-    if (entry.controller || !entry.observers.size) return;
+    if (entry.controller || !entry.observers.size || this.entries.get(entry.key) !== entry) return;
     const controller = new AbortController();
     entry.controller = controller;
     this.publish(entry,{state:"loading"});
     void fetchConversationImage(entry.target.machine,entry.target.history,entry.target.image,controller.signal,
       () => this.isVisible(entry)).then(data => {
-      entry.controller = undefined;
+      if (entry.controller === controller) entry.controller = undefined;
       if (controller.signal.aborted) {
         if (data.state === "ready") URL.revokeObjectURL(data.url);
         return;

@@ -17,6 +17,42 @@ function read(image: ImageTarget, signal = new AbortController().signal, visible
   return fetchConversationImage(image.machine,image.history,image.image,signal,visible);
 }
 
+test("clearing the cache revokes images and isolates old observers from new reads", async t => {
+  const revoked: string[] = [], revoke = URL.revokeObjectURL;
+  t.mock.method(URL,"revokeObjectURL",(url: string) => { revoked.push(url); revoke(url); });
+  let requests = 0;
+  setup(t,async () => { requests++; return response(); });
+  const cache = new ConversationImageCache();
+  let snapshot = cache.peek(target(0));
+  const old = cache.watch(target(0),data => { snapshot = data; });
+  old.setVisible(true); await flush();
+  const image = cache.peek(target(0)); assert.ok(image.state === "ready");
+  cache.clear();
+  assert.deepEqual(revoked,[image.url]);
+  assert.equal(snapshot.state,"loading");
+  const next = cache.watch(target(0),() => {});
+  old.unsubscribe();
+  next.setVisible(true); await flush();
+  assert.equal(requests,2);
+  assert.equal(cache.peek(target(0)).state,"ready");
+  next.unsubscribe(); cache.clear();
+});
+
+test("a mounted observer can reload after a connection change", async t => {
+  let requests = 0;
+  setup(t,async () => { requests++; return response(); });
+  const cache = new ConversationImageCache();
+  let snapshot = cache.peek(target(0));
+  const handle = cache.watch(target(0),data => { snapshot = data; });
+  handle.setVisible(true); await flush();
+  assert.equal(snapshot.state,"ready");
+  cache.clear();
+  cache.reloadVisible(); await flush();
+  assert.equal(snapshot.state,"ready","the mounted view loads from the new connection");
+  assert.equal(requests,2);
+  handle.unsubscribe(); cache.clear();
+});
+
 for (const [name,fetchImage,state] of [
   ["not found",async () => new Response("",{status:404}),"unavailable"],
   ["deleted",async () => new Response(JSON.stringify({error:{code:"history-image-deleted"}}),{status:404}),"deleted"],

@@ -28,7 +28,8 @@ import {
 } from "./terminalRenderMode.ts";
 import { setTerminalPerformancePreferences } from "./terminalPerformance.ts";
 import { Modal } from "./Modal.tsx";
-import { setPrincipalStorageNamespace } from "./storage.ts";
+import { getPrincipalStorageNamespace, setPrincipalStorageNamespace } from "./storage.ts";
+import { conversationImageCache } from "./conversationImageCache.ts";
 import { flushDebugEvents, hydrateDebugEventsFromStorage, recordDebugEvent } from "./debugLog.ts";
 import { ANDROID_STARTUP_RECOVERY_DEADLINE_MS, runStartupAuthCheck } from "./startupDeadline.ts";
 import type { AgentConsolePrincipal } from "@agent-console/shared/api";
@@ -51,6 +52,7 @@ function overlayLabel(view: View): string {
 }
 
 function activatePrincipalStorage(principalId: string | null): void {
+  if (getPrincipalStorageNamespace() !== principalId) conversationImageCache.clear();
   flushDebugEvents();
   setPrincipalStorageNamespace(principalId);
   hydrateDebugEventsFromStorage();
@@ -253,6 +255,7 @@ export default function App() {
     setAuthed(status.authenticated);
     setOpenAccess(status.openAccess);
     if (status.authenticated) {
+      conversationImageCache.reloadVisible();
       setHostMigrationNotice(hostVisibilityMigrationPending());
       setMachineColors(loadMachineColors(undefined, machineColorDefaults));
       setDefaultAutoResume(loadDefaultAutoResume());
@@ -293,6 +296,7 @@ export default function App() {
   };
 
   const onSignedOut = () => {
+    conversationImageCache.clear();
     activatePrincipalStorage(null);
     setPrincipal(null);
     setAuthed(false);
