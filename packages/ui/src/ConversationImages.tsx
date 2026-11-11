@@ -36,6 +36,7 @@ const remoteReasons: Record<string,string> = {
   "upstream-status":"Image server refused the request", "too-large":"Image is too large", "timeout":"Request timed out",
   "not-image":"Response is not an image", "network":"Network error", "busy":"Image service is busy",
 };
+const remoteReasonText = (reason: string) => Object.hasOwn(remoteReasons,reason) ? remoteReasons[reason] : "Image could not be loaded";
 function ExternalImage({url,origin,reason}: { readonly url?: string; readonly origin?: string; readonly reason?: string }) {
   return <div className="conversation-external-image">
     <span role="status">External image, not loaded{origin ? ` · ${origin}` : ""}{reason ? ` · ${Object.hasOwn(remoteReasons,reason) ? remoteReasons[reason] : "Image could not be loaded"}` : ""}</span>
@@ -54,7 +55,7 @@ function ImageContent({data,fail,onLoad,retry,sourceName,sourceUrl}: { readonly 
   const unavailable = data.state === "unavailable" && data.reason === "outside-allowed-roots"
     ? `Not shared: outside the session folder${sourceName ? ` · ${sourceName}` : ""}` : "Image unavailable";
   return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} onLoad={event => onLoad?.(event.currentTarget)} />
-    : <span role="status">{data.state === "deleted" ? "Image deleted" : data.state === "unavailable" ? unavailable : data.state === "error" ? "Couldn't load" : "Loading image…"}
+    : <span role="status">{data.state === "deleted" ? "Image deleted" : data.state === "unavailable" ? unavailable : data.state === "error" ? `Couldn't load${data.remoteReason ? ` · ${remoteReasonText(data.remoteReason)}` : ""}` : "Loading image…"}
       {data.state === "error" && retry ? <RetryImage retry={retry} /> : null}</span>;
 }
 type ReadyImage = Extract<ConversationImageData,{state:"ready"}>;
@@ -96,16 +97,18 @@ function ImageMenu({menu,paths,uploadPath,onOpen,onClose,onError}: {
 }
 
 function Thumbnail({target,index,onOpen,onMenu,sourceName,sourceUrl}: { readonly sourceUrl?: string; readonly sourceName?: string; readonly target: ImageTarget; readonly index: number; readonly onOpen: () => void; readonly onMenu: (menu: MenuState) => void }) {
-  const ref = useRef<HTMLButtonElement>(null);
   // The shared descriptor is ID-only. Retain decoded dimensions when lazy
   // loading restarts so a known image keeps its place in the conversation.
   const [size,setSize] = useState<{width:number;height:number} | null>(null);
   const [visible,setVisible] = useState(typeof IntersectionObserver === "undefined");
-  useEffect(() => {
-    if (typeof IntersectionObserver === "undefined" || !ref.current) return;
-    const observer = new IntersectionObserver(entries => setVisible(entries.some(entry => entry.isIntersecting)),{rootMargin:"128px"});
-    observer.observe(ref.current);
-    return () => observer.disconnect();
+  // A callback ref observes whichever frame element is rendered, so a frame
+  // that swapped branches (external tile back to loading) is observed again.
+  const observer = useRef<IntersectionObserver | null>(null);
+  const frame = useCallback((element: HTMLButtonElement | null) => {
+    observer.current?.disconnect(); observer.current = null;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    observer.current = new IntersectionObserver(entries => setVisible(entries.some(entry => entry.isIntersecting)),{rootMargin:"128px"});
+    observer.current.observe(element);
   },[]);
   const {data,fail,retry} = useImage(target,visible);
   const sizing = size ? {"--image-width":`${size.width}px`,"--image-ratio":size.width / size.height} as CSSProperties : undefined;
@@ -119,7 +122,7 @@ function Thumbnail({target,index,onOpen,onMenu,sourceName,sourceUrl}: { readonly
   if (data.state === "unavailable" && (data.reason === "remote-url-not-fetched" || sourceUrl)) return <div className="conversation-image-frame">
     <div className="conversation-image-thumbnail is-external"><ImageContent data={data} fail={fail} sourceUrl={sourceUrl} /></div>
   </div>;
-  return <div className="conversation-image-frame"><button ref={ref} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }} onContextMenu={contextMenu}>
+  return <div className="conversation-image-frame"><button ref={frame} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }} onContextMenu={contextMenu}>
     <ImageContent data={data} fail={fail} sourceName={sourceName} onLoad={image => {
       if (image.naturalWidth && image.naturalHeight) setSize({width:image.naturalWidth,height:image.naturalHeight});
     }} />

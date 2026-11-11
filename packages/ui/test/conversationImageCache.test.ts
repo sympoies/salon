@@ -197,3 +197,35 @@ test("queue wait can exceed fifteen seconds; each timeout starts only when sent"
   t.mock.timers.tick(1); await flush(); assert.equal((await requests[6]!).state,"error");
   for (const result of await Promise.all(requests)) if (result.state === "ready") URL.revokeObjectURL(result.url);
 });
+
+const remoteRefusal = (reason: string) => async (input: RequestInfo | URL) => String(input).includes("/remote-image/")
+  ? new Response(JSON.stringify({error:{code:"remote-image-unavailable",reason}}),{status:reason === "busy" ? 429 : 422})
+  : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched"}}),{status:422});
+
+for (const reason of ["upstream-status","timeout","network","busy"]) test(`a transient remote refusal (${reason}) keeps its reason and retries with backoff`,async t => {
+  let attempts = 0, succeed = false;
+  const refuse = remoteRefusal(reason);
+  setup(t,async input => { if (String(input).includes("/remote-image/")) attempts++; return succeed && String(input).includes("/remote-image/") ? response() : refuse(input); });
+  t.mock.timers.enable({apis:["setTimeout"]});
+  const cache = new ConversationImageCache();
+  const handle = cache.watch(target(0),() => {}); t.after(() => handle.unsubscribe());
+  handle.setVisible(true); await flush();
+  assert.deepEqual(cache.peek(target(0)),{state:"error",remoteReason:reason});
+  t.mock.timers.tick(1000); await flush(); assert.equal(attempts,2);
+  t.mock.timers.tick(3000); await flush(); assert.equal(attempts,3);
+  t.mock.timers.tick(60000); await flush(); assert.equal(attempts,3,"backoff is bounded");
+  succeed = true; handle.retry(); await flush();
+  assert.equal(cache.peek(target(0)).state,"ready");
+});
+
+for (const reason of ["not-image","blocked-address","invalid-url","too-large"]) test(`a permanent remote refusal (${reason}) is final`,async t => {
+  let attempts = 0;
+  const refuse = remoteRefusal(reason);
+  setup(t,async input => { attempts++; return refuse(input); });
+  t.mock.timers.enable({apis:["setTimeout"]});
+  const cache = new ConversationImageCache();
+  const handle = cache.watch(target(0),() => {}); t.after(() => handle.unsubscribe());
+  handle.setVisible(true); await flush();
+  assert.deepEqual(cache.peek(target(0)),{state:"unavailable",reason:"remote-url-not-fetched",remoteReason:reason});
+  t.mock.timers.tick(60000); await flush(); assert.equal(attempts,2,"one image read and one remote read");
+});
