@@ -85,12 +85,16 @@ function normalizeWindow(raw: unknown): UsageWindow | null {
     return null; // a window with no stable key can't be rendered/keyed
   }
   const label = asString(w.label) ?? key;
+  const model = w.kind === "weekly_scoped" ? asString(w.model) : null;
   return {
     key,
     label,
-    used_percent: asPercent(w.used_percent),
+    used_percent: asPercent(w.used_percent ?? (model ? w.percent : undefined)),
     window_minutes: asFiniteNumber(w.window_minutes) ?? asFiniteNumber(w.windowMinutes) ?? inferWindowMinutes(key, label),
     resets_at: resetEpochSeconds(w),
+    ...(model
+      ? { scope: { model, allowance_percent_of_weekly: asPercent(w.allowance_percent_of_weekly) } }
+      : {}),
   };
 }
 
@@ -257,6 +261,9 @@ export function normalizeProviders(body: unknown): ProviderUsage[] {
       // readers keep the exact entry shape.
       ...(provider === "claude" && p.limit_resets !== undefined
         ? { limit_resets: normalizeClaudeLimitResets(p.limit_resets) }
+        : {}),
+      ...(provider === "claude" && p.limit_resets !== undefined && p.limit_resets_stale === true
+        ? { limit_resets_stale: true as const, limit_resets_fetched_at: epochSecondsOrNull(p.limit_resets_fetched_at) }
         : {}),
       ...(hosts ? { hosts } : {}),
       ...(key ? { switch_key: key } : {}),

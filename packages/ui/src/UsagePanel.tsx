@@ -1,10 +1,11 @@
 import { useUiExtensions } from "./extensions.tsx";
-import { useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import {
   resetClaudeLimit,
   resetCodexRateLimit,
   usage,
   type ClaudeGrantedResets,
+  type ClaudeResetGrant,
   type ClaudeLimitResetMutationResult,
   type ClaudeLimitResetProgram,
   type ClaudeLimitResets,
@@ -14,7 +15,7 @@ import {
   type UsageResult,
   type UsageWindow,
 } from "./api.ts";
-import { formatResetCountdown } from "./format.ts";
+import { formatResetCountdown, relativeEpochSeconds } from "./format.ts";
 import { AgentBadge } from "./AgentBadge.tsx";
 import { AsyncButton } from "./AsyncButton.tsx";
 import {
@@ -67,19 +68,24 @@ function WindowRow({ window: w, now }: { readonly window: UsageWindow; readonly 
   const remaining = remainingUsagePercent(w.used_percent);
   const remainingText = remaining === null ? "—" : `${remaining}%`;
   const accessibleValue = remaining === null ? "remaining unknown" : `${remaining}% left`;
+  // A model-scoped weekly window is named for its model and says how much of the
+  // weekly allowance it covers.
+  const label = w.scope ? `${w.scope.model} weekly` : w.label;
+  const share = w.scope?.allowance_percent_of_weekly ?? null;
   return (
     <div className="usage-window">
       <div className="usage-window-head">
-        <span className="usage-window-label">{w.label}</span>
+        <span className="usage-window-label">{label}</span>
         <span className="usage-window-pct">{remainingText}</span>
       </div>
-      <div className="usage-meter" role="img" aria-label={`${w.label} ${accessibleValue}`}>
+      <div className="usage-meter" role="img" aria-label={`${label} ${accessibleValue}`}>
         <span
           className={`usage-meter-fill ${usageMeterLevel(remaining)}`}
           style={{ width: `${remaining ?? 0}%` }}
         />
       </div>
       <div className="usage-window-foot">
+        {share !== null ? <span className="usage-window-share">{share}% of weekly allowance</span> : null}
         <span>resets in {formatResetCountdown(w.resets_at, now)}</span>
       </div>
     </div>
@@ -232,17 +238,26 @@ function grantedCount(status: ClaudeGrantedResets, now: number): number {
   return liveGrants(status, now).reduce((total, grant) => total + grant.resets_left, 0);
 }
 
-// Soonest-first expiry countdowns of the live grants that still hold a reset.
-function grantExpiries(status: ClaudeGrantedResets, now: number): string[] {
+// Soonest-first live grants that still hold a reset (no expiry sorts last).
+function heldGrants(status: ClaudeGrantedResets, now: number) {
   return liveGrants(status, now)
-    .filter((grant) => grant.resets_left > 0 && grant.expires_at !== null)
-    .map((grant) => grant.expires_at as number)
-    .sort((a, b) => a - b)
-    .map((expiresAt) => formatResetCountdown(expiresAt, now));
+    .filter((grant) => grant.resets_left > 0)
+    .sort((a, b) => (a.expires_at ?? Infinity) - (b.expires_at ?? Infinity));
+}
+
+function nextGrantExpiry(status: ClaudeGrantedResets, now: number): string | undefined {
+  const expiresAt = heldGrants(status, now).find((grant) => grant.expires_at !== null)?.expires_at;
+  return expiresAt === null || expiresAt === undefined ? undefined : formatResetCountdown(expiresAt, now);
+}
+
+// The provider's own grant type is unreliable (a model-specific grant can report
+// `full`), so the kind comes from what the grant clears.
+function grantKind(grant: ClaudeResetGrant): string {
+  return grant.clears.includes("seven_day") ? "Full reset" : "Model-specific";
 }
 
 function sessionResetStatus(status: ClaudeSessionReset | null, now: number): string {
-  if (!status) return "Unknown";
+  if (!status) return "Not offered";
   if (status.available) return "1 available this week";
   const reason = claudeResetReason(status.ineligible_reason);
   const next = status.next_available_at !== null && status.next_available_at * 1000 > now
@@ -252,11 +267,9 @@ function sessionResetStatus(status: ClaudeSessionReset | null, now: number): str
 }
 
 function grantedResetStatus(status: ClaudeGrantedResets | null, now: number): string {
-  if (!status) return "Unknown";
+  if (!status) return "Not offered";
   const count = grantedCount(status, now);
-  const expiries = grantExpiries(status, now);
-  const expiry = expiries.length > 0 ? ` · expire in ${expiries.join(", ")}` : "";
-  if (status.available) return `${count} available${expiry}`;
+  if (status.available) return `${count} available`;
   const cooldown = status.cooldown_until !== null && status.cooldown_until * 1000 > now
     ? ` · cooling down for ${formatResetCountdown(status.cooldown_until, now)}`
     : "";
@@ -327,7 +340,7 @@ function ClaudeResetAction({
       return "This clears the 5-hour session limit now. It cannot be undone, and usage still counts toward the weekly limit.";
     }
     const granted = status?.cedar_ember ?? null;
-    const nextExpiry = granted ? grantExpiries(granted, now)[0] : undefined;
+    const nextExpiry = granted ? nextGrantExpiry(granted, now) : undefined;
     return `This uses one of ${granted ? grantedCount(granted, now) : 0} granted resets${nextExpiry ? ` (next expires in ${nextExpiry})` : ""}. It cannot be undone.`;
   };
   const titleId = `usage-claude-reset-title-${program}-${account}`;
@@ -389,17 +402,38 @@ function ClaudeResetAction({
   );
 }
 
-// Claude's weekly session reset and granted resets for one account. Unknown
-// status (an older reader, or a missing/malformed upstream block) says so and
-// never hides the usage windows above it.
+function GrantRow({ grant, now }: { readonly grant: ClaudeResetGrant; readonly now: number }) {
+  const left = grant.resets_total === null
+    ? `${grant.resets_left} left`
+    : `${grant.resets_left} of ${grant.resets_total} left`;
+  return (
+    <li className="usage-claude-grant">
+      <span className="usage-claude-grant-kind">{grantKind(grant)}</span>
+      {grant.label ? <span className="usage-claude-grant-label">{grant.label}</span> : null}
+      <span className="usage-claude-grant-left">{left}</span>
+      {grant.expires_at !== null ? (
+        <span className="usage-claude-grant-expiry">expires in {formatResetCountdown(grant.expires_at, now)}</span>
+      ) : null}
+    </li>
+  );
+}
+
+// Claude's weekly session reset and granted resets for one account. A program
+// the provider does not return is "not offered"; only a missing or malformed
+// block (an older reader, or a retained snapshot) is unknown. Neither hides the
+// usage windows above it.
 function ClaudeLimitResetSection({
   status,
+  stale,
+  fetchedAt,
   account,
   alias,
   now,
   onReset,
 }: {
   readonly status: ClaudeLimitResets | null | undefined;
+  readonly stale: boolean;
+  readonly fetchedAt: number | null;
   readonly account: string | null;
   readonly alias: string;
   readonly now: number;
@@ -411,7 +445,7 @@ function ClaudeLimitResetSection({
       if (event.key === "Enter" || event.key === " ") event.stopPropagation();
     },
   };
-  const known = status && (status.juniper_tide || status.cedar_ember) ? status : null;
+  const known = status ?? null;
   const canRedeem = account !== null && onReset !== undefined;
   const rows: ReadonlyArray<{
     readonly program: ClaudeLimitResetProgram;
@@ -439,17 +473,31 @@ function ClaudeLimitResetSection({
   ) : null;
   return (
     <div className="usage-reset usage-claude-resets" {...stop}>
-      {known ? <span className="usage-claude-resets-title">Limit resets</span> : (
+      {known ? (
+        <span className="usage-claude-resets-head">
+          <span className="usage-claude-resets-title">Limit resets</span>
+          {stale ? (
+            <span className="usage-claude-resets-asof">
+              {fetchedAt === null ? "as of an earlier read" : `as of ${relativeEpochSeconds(fetchedAt, now)}`}
+            </span>
+          ) : null}
+        </span>
+      ) : (
         <span className="usage-reset-count">Limit resets · Reset status unknown</span>
       )}
       <ul className={known ? "usage-claude-reset-list" : "usage-claude-reset-list is-unknown"}>
         {rows.map((row) => (
-          <li className="usage-claude-reset-row" key={row.program}>
-            <span className="usage-claude-reset-text" hidden={!known}>
-              <span className="usage-claude-reset-label">{row.label}</span><span className="usage-claude-reset-status">{row.text}</span>
-            </span>
-            {action(row)}
-          </li>
+          <Fragment key={row.program}>
+            <li className="usage-claude-reset-row">
+              <span className="usage-claude-reset-text" hidden={!known}>
+                <span className="usage-claude-reset-label">{row.label}</span><span className="usage-claude-reset-status">{row.text}</span>
+              </span>
+              {action(row)}
+            </li>
+            {row.program === "cedar_ember" && known?.cedar_ember
+              ? heldGrants(known.cedar_ember, now).map((grant, index) => <GrantRow key={index} grant={grant} now={now} />)
+              : null}
+          </Fragment>
         ))}
       </ul>
     </div>
@@ -569,6 +617,8 @@ export function ProviderCard({
       {p.provider === "claude" ? (
         <ClaudeLimitResetSection
           status={p.limit_resets}
+          stale={p.limit_resets_stale === true}
+          fetchedAt={p.limit_resets_fetched_at ?? null}
           account={p.switch_key ?? null}
           alias={alias ?? p.label}
           now={now}

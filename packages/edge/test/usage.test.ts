@@ -285,3 +285,47 @@ test("normalizeProviders keeps a bounded, deduped host list and keys entries by 
   // An entry that claims hosts but names no valid one is dropped, never sent unscoped.
   assert.deepEqual(out.map((p) => p.hosts), [["cedar", "mesa"], ["maple"], ["m5"], undefined]);
 });
+
+test("normalizeProviders passes an optional scoped weekly window through and omits it otherwise", () => {
+  const [entry] = normalizeProviders({
+    providers: [
+      {
+        provider: "claude",
+        windows: [
+          { key: "weekly", label: "Weekly", used_percent: 20, resets_at: 1783390857 },
+          {
+            key: "weekly_scoped",
+            kind: "weekly_scoped",
+            model: "Synthetic Model",
+            label: "Weekly",
+            percent: 30,
+            allowance_percent_of_weekly: 40,
+            resets_at: 1783390857,
+          },
+        ],
+      },
+    ],
+  });
+  const [weekly, scoped] = entry!.windows;
+  assert.equal(Object.hasOwn(weekly!, "scope"), false);
+  assert.equal(scoped!.used_percent, 30);
+  assert.deepEqual(scoped!.scope, { model: "Synthetic Model", allowance_percent_of_weekly: 40 });
+  const [bare] = normalizeProviders({
+    providers: [{ provider: "claude", windows: [{ key: "weekly_scoped", kind: "weekly_scoped", used_percent: 10 }] }],
+  });
+  assert.equal(Object.hasOwn(bare!.windows[0]!, "scope"), false, "a scoped window without a model name carries no scope");
+});
+
+test("normalizeProviders passes the reset-data stale marker through and omits it otherwise", () => {
+  const read = (extra: Record<string, unknown>) =>
+    normalizeProviders({ providers: [{ provider: "claude", windows: [], limit_resets: {}, ...extra }] })[0]!;
+  const stale = read({ limit_resets_stale: true, limit_resets_fetched_at: "2026-10-01T00:00:00Z" });
+  assert.equal(stale.limit_resets_stale, true);
+  assert.equal(stale.limit_resets_fetched_at, 1790812800);
+  const staleNoTime = read({ limit_resets_stale: true });
+  assert.equal(staleNoTime.limit_resets_stale, true);
+  assert.equal(staleNoTime.limit_resets_fetched_at, null);
+  const fresh = read({});
+  assert.equal(Object.hasOwn(fresh, "limit_resets_stale"), false);
+  assert.equal(Object.hasOwn(fresh, "limit_resets_fetched_at"), false);
+});
