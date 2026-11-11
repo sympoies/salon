@@ -1000,3 +1000,17 @@ test("Command semicolon closes Usage while Command L does not", async () => {
   await act(async () => { mounted.window.dispatchEvent(new mounted.window.KeyboardEvent("keydown", { key: ";", metaKey: true })); });
   assert.equal(exits, 1);
 });
+
+test("ProviderCard renders a scoped weekly meter without share text when the allowance is null", async () => {
+  const ProviderCard = await loadProviderCard();
+  const scoped = win({
+    key: "weekly_scoped:Synthetic Model",
+    label: "Weekly",
+    used_percent: 30,
+    window_minutes: 10080,
+    scope: { model: "Synthetic Model", allowance_percent_of_weekly: null },
+  });
+  const html = renderComponent(ProviderCard, { provider: claude({ windows: [win(), scoped] }), now: NOW });
+  assert.match(html, /aria-label="Synthetic Model weekly 70% left"/);
+  assert.doesNotMatch(html, /allowance/);
+});

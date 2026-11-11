@@ -298,7 +298,7 @@ test("normalizeProviders passes an optional scoped weekly window through and omi
             kind: "weekly_scoped",
             model: "Synthetic Model",
             label: "Weekly",
-            percent: 30,
+            used_percent: 30,
             allowance_percent_of_weekly: 40,
             resets_at: 1783390857,
           },

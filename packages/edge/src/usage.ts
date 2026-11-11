@@ -89,7 +89,7 @@ function normalizeWindow(raw: unknown): UsageWindow | null {
   return {
     key,
     label,
-    used_percent: asPercent(w.used_percent ?? (model ? w.percent : undefined)),
+    used_percent: asPercent(w.used_percent),
     window_minutes: asFiniteNumber(w.window_minutes) ?? asFiniteNumber(w.windowMinutes) ?? inferWindowMinutes(key, label),
     resets_at: resetEpochSeconds(w),
     ...(model
