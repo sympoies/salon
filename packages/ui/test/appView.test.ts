@@ -32,7 +32,10 @@ test("App exposes permitted hosts and migrates the retired hidden-host preferenc
   assert.match(appSource, /resolveEnabledMachines\(machines\)/);
   assert.match(appSource, /hostMigrationNotice/);
   assert.match(appSource, /acknowledgeHostVisibilityMigration\(\)/);
-  assert.match(appSource, /const \{ machineColorDefaults \} = useUiExtensions\(\);/);
+  assert.match(appSource, /const \{ machineColorDefaults, machineOrderDefaults \} = useUiExtensions\(\);/);
+  // Settings and the Session filter share one order: saved, else extension default, else server.
+  assert.match(appSource, /orderMachines\(serverMachines, machineOrder, machineOrderDefaults\)/);
+  assert.match(appSource, /onMachineOrderChange=\{updateMachineOrder\}/);
   assert.match(appSource, /const \[machineColors, setMachineColors\] = useState<MachineColorMap>\(\(\) => loadMachineColors\(undefined, machineColorDefaults\)\);/);
   // The gear is available on web and native now, not gated behind isTauri().
   assert.match(appSource, /onSettings=\{\(\) => setView\(\{ kind: "settings" \}\)\}/);

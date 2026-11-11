@@ -75,6 +75,21 @@ test("machine colour defaults come from extensions; core keeps none and rejects 
   assert.throws(() => createUiExtensionRegistry([{ id: "bad", machineColorDefaults: { "host-a": "red" } }]), /invalid machine colour default "host-a"/);
 });
 
+test("machine order defaults come from extensions; core keeps none and rejects bad entries", async () => {
+  const { createUiExtensionRegistry } = await extensions();
+  assert.deepEqual(createUiExtensionRegistry([]).machineOrderDefaults, [], "core registers no host order");
+  const registry = createUiExtensionRegistry([
+    { id: "hosts", machineOrderDefaults: ["host-b", "host-a"] },
+    { id: "more", machineOrderDefaults: ["host-c"] },
+  ]);
+  assert.deepEqual(registry.machineOrderDefaults, ["host-b", "host-a", "host-c"]);
+  assert.ok(Object.isFrozen(registry.machineOrderDefaults));
+  assert.throws(() => createUiExtensionRegistry([{ id: "one", machineOrderDefaults: ["host-a", "host-a"] }]), /duplicate machine order default "host-a"/);
+  assert.throws(() => createUiExtensionRegistry([{ id: "one", machineOrderDefaults: ["host-a"] }, { id: "two", machineOrderDefaults: ["host-a"] }]), /duplicate machine order default "host-a"/);
+  assert.throws(() => createUiExtensionRegistry([{ id: "bad", machineOrderDefaults: [""] }]), /invalid machine order default ""/);
+  assert.throws(() => createUiExtensionRegistry([{ id: "bad", machineOrderDefaults: [7 as unknown as string] }]), /invalid machine order default "7"/);
+});
+
 test("copy formats come from extensions; core keeps none and rejects bad entries (#918)", async () => {
   const { createUiExtensionRegistry } = await extensions();
   assert.deepEqual(createUiExtensionRegistry([]).copyFormats, [], "core registers no copy formats");

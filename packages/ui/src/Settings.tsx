@@ -1,5 +1,6 @@
 import { usePhoneLayout } from "./usePhoneLayout.ts";
 import { ExtensionSettingsPanels } from "./extensions.tsx";
+import { MachineOrderList } from "./MachineOrderList.tsx";
 import { HostPreferencesSettings } from "./HostPreferencesSettings.tsx";
 import { SpeechEngineSettings } from "./SpeechEngineSettings.tsx";
 import { MailboxRowSettings } from "./MailboxRowSettings.tsx";
@@ -61,6 +62,9 @@ export interface SettingsProps {
   readonly onSessionListDisplayChange?: (display: SessionListDisplay) => void;
   readonly onMachineColorChange: (name: string, color: string) => void;
   readonly onMachineColorReset: (name: string) => void;
+  readonly machineOrderSaved: boolean;
+  readonly onMachineOrderChange: (order: readonly string[]) => void;
+  readonly onMachineOrderRestore: () => void;
   readonly onDefaultAutoResumeChange: (enabled: boolean) => void;
   readonly onAttentionAlertsChange: (enabled: boolean) => void;
   readonly onTerminalRenderModeChange: (mode: TerminalRenderMode) => void;
@@ -105,6 +109,9 @@ export function Settings({
   onSessionListDisplayChange,
   onMachineColorChange,
   onMachineColorReset,
+  machineOrderSaved,
+  onMachineOrderChange,
+  onMachineOrderRestore,
   onDefaultAutoResumeChange,
   onAttentionAlertsChange,
   onTerminalRenderModeChange,
@@ -397,13 +404,11 @@ export function Settings({
         {machines.length > 0 ? (
           <section className="settings-section">
             <h2 className="settings-section-title">Machines</h2>
-            <p className="settings-hint">Choose visible hosts in Session filters. Machine colors stay on this device.</p>
-            <ul className="settings-machines">
-              {machines.map(m => <li key={m} className="settings-row">
-                <span className="settings-row-label">{m}</span>
-                <span className="settings-row-actions">{machineColorControl(m)}</span>
-              </li>)}
-            </ul>
+            <p className="settings-hint">Choose visible hosts in Session filters. Machine colors and order stay on this device.</p>
+            <MachineOrderList machines={machines} onReorder={onMachineOrderChange} renderActions={machineColorControl} />
+            <div className="settings-actions">
+              <button type="button" className="btn ghost" disabled={!machineOrderSaved} onClick={onMachineOrderRestore}>Restore defaults</button>
+            </div>
           </section>
         ) : null}
 

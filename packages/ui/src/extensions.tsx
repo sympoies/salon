@@ -120,6 +120,8 @@ export interface UiExtension {
   readonly workspaceLabels?: Readonly<Record<string, string>>;
   /** Default badge colors for named hosts; core gives every host one color (#918). */
   readonly machineColorDefaults?: Readonly<Record<string, string>>;
+  /** Default host order for the Machines list and Session filter, until the device saves its own; core keeps server order. */
+  readonly machineOrderDefaults?: readonly string[];
   /** Extra session card copy formats; core offers only its own action (#918). */
   readonly copyFormats?: readonly CopyFormat[];
 }
@@ -141,6 +143,8 @@ export interface UiExtensionRegistry {
   readonly workspaceLabels: ReadonlyMap<string, string>;
   /** Host to default badge color, lowercase `#rrggbb`. */
   readonly machineColorDefaults: Readonly<Record<string, string>>;
+  /** Default host order across extensions, in registration order. */
+  readonly machineOrderDefaults: readonly string[];
   /** Copy formats in registration order. */
   readonly copyFormats: readonly CopyFormat[];
 }
@@ -153,6 +157,7 @@ export function createUiExtensionRegistry(extensions: readonly UiExtension[]): U
   const sessionBadges: (SessionBadgeSlot & { readonly key: string })[] = [];
   const workspaceLabels = new Map<string, string>();
   const machineColorDefaults = createMachineColorMap();
+  const machineOrderDefaults: string[] = [];
   const copyIds = new Set(CORE_COPY_IDS);
   const copyFormats: CopyFormat[] = [];
   const settingsPanels: (SettingsPanelSlot & { key: string })[] = [];
@@ -211,6 +216,11 @@ export function createUiExtensionRegistry(extensions: readonly UiExtension[]): U
       if (Object.hasOwn(machineColorDefaults, machine)) throw new Error(`duplicate machine colour default "${machine}"`);
       machineColorDefaults[machine] = normalized;
     }
+    for (const machine of extension.machineOrderDefaults ?? []) {
+      if (typeof machine !== "string" || !machine.trim() || machine !== machine.trim()) throw new Error(`invalid machine order default "${machine}"`);
+      if (machineOrderDefaults.includes(machine)) throw new Error(`duplicate machine order default "${machine}"`);
+      machineOrderDefaults.push(machine);
+    }
     for (const format of extension.copyFormats ?? []) {
       if (!EXTENSION_ID.test(format.id)) throw new Error(`invalid copy format id "${format.id}"`);
       if (copyIds.has(format.id)) throw new Error(`duplicate copy format "${format.id}"`);
@@ -220,7 +230,7 @@ export function createUiExtensionRegistry(extensions: readonly UiExtension[]): U
     }
   }
   return Object.freeze({ diagnosticProbes: Object.freeze(diagnosticProbes), usageProviders, sessionActions: Object.freeze(sessionActions), sessionRole, onSessionList, sessionOrdering, settingsPanels: Object.freeze(settingsPanels), appProviders: Object.freeze(appProviders), extensions: Object.freeze([...extensions]), sessionBadges: Object.freeze(sessionBadges),
-    workspaceLabels: workspaceLabels as ReadonlyMap<string, string>, machineColorDefaults: Object.freeze(machineColorDefaults),
+    workspaceLabels: workspaceLabels as ReadonlyMap<string, string>, machineColorDefaults: Object.freeze(machineColorDefaults), machineOrderDefaults: Object.freeze(machineOrderDefaults),
     copyFormats: Object.freeze(copyFormats) });
 }
 
