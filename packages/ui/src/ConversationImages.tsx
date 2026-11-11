@@ -39,7 +39,7 @@ const remoteReasons: Record<string,string> = {
 const remoteReasonText = (reason: string) => Object.hasOwn(remoteReasons,reason) ? remoteReasons[reason] : "Image could not be loaded";
 function ExternalImage({url,origin,reason}: { readonly url?: string; readonly origin?: string; readonly reason?: string }) {
   return <div className="conversation-external-image">
-    <span role="status">External image, not loaded{origin ? ` · ${origin}` : ""}{reason ? ` · ${Object.hasOwn(remoteReasons,reason) ? remoteReasons[reason] : "Image could not be loaded"}` : ""}</span>
+    <span role="status">External image, not loaded{origin ? ` · ${origin}` : ""}{reason ? ` · ${remoteReasonText(reason)}` : ""}</span>
     {url ? <a href={url} target="_blank" rel="noopener noreferrer"
       onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
       onClick={event => {
