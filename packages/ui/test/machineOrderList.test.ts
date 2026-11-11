@@ -76,6 +76,20 @@ for (const pointerType of ["mouse", "pen", "touch"]) {
   });
 }
 
+test("a move and the release in the same task save the order shown at the release position", async () => {
+  const m = await mount(["cedar", "mesa", "summit"]);
+  await m.render(); layout(m);
+  const grip = handle(m, "cedar");
+  await pointer(m, "pointerdown", grip, centre(0), "mouse");
+  const event = (type: string, y: number) => new m.window.PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "mouse", isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1, clientX: 20, clientY: y });
+  await act(async () => {
+    grip.dispatchEvent(event("pointermove", centre(2)));
+    grip.dispatchEvent(event("pointerup", centre(2)));
+  });
+  assert.deepEqual(m.reorders, [["mesa", "summit", "cedar"]]);
+  assert.deepEqual(names(m), ["mesa", "summit", "cedar"]);
+});
+
 test("a cancelled drag, or a press without movement, saves nothing", async () => {
   const m = await mount(["cedar", "mesa", "summit"]);
   await m.render(); layout(m);

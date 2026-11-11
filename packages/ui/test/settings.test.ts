@@ -543,3 +543,14 @@ test("Settings lists machines in the given order and offers Restore defaults onl
   assert.match(saved, /<button type="button" class="btn ghost">Restore defaults<\/button>/);
   assert.match(render(false), /<button type="button" class="btn ghost" disabled="">Restore defaults<\/button>/);
 });
+
+test("Settings calls the restore handler when Restore defaults is clicked", async () => {
+  const { Settings } = await ssr.loadModule<{ Settings: ComponentType<SettingsProps> }>("/src/Settings.tsx");
+  const mounted = installDom(); cleanupStack.push(mounted.cleanup);
+  let restores = 0;
+  await act(async () => mounted.root.render(createElement(Settings, { ...versionSettingsProps(), machines: ["mesa", "cedar"], machineOrderSaved: true, onMachineOrderRestore() { restores += 1; } })));
+  const restore = [...mounted.container.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Restore defaults");
+  assert.ok(restore, "Restore defaults is offered with a saved order");
+  await act(async () => restore.click());
+  assert.equal(restores, 1);
+});

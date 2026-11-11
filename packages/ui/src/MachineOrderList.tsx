@@ -8,6 +8,7 @@ interface Drag {
   readonly pointerId: number;
   readonly startY: number;
   moved: boolean;
+  order: readonly string[] | null;
 }
 
 /**
@@ -39,14 +40,14 @@ export function MachineOrderList({ machines, onReorder, renderActions }: {
   const finish = (commit: boolean) => {
     const current = drag.current;
     drag.current = null;
-    const order = preview?.order;
+    const order = current?.order;
     setPreview(null);
     if (commit && current?.moved && order && order.some((name, index) => name !== machines[index])) onReorder(order);
   };
   const onPointerDown = (event: PointerEvent<HTMLElement>, machine: string) => {
     if (!event.isPrimary || event.button !== 0) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    drag.current = { machine, pointerId: event.pointerId, startY: event.clientY, moved: false };
+    drag.current = { machine, pointerId: event.pointerId, startY: event.clientY, moved: false, order: null };
   };
   const onPointerMove = (event: PointerEvent<HTMLElement>) => {
     const current = drag.current;
@@ -54,6 +55,7 @@ export function MachineOrderList({ machines, onReorder, renderActions }: {
     if (!current.moved && Math.abs(event.clientY - current.startY) < DRAG_THRESHOLD_PX) return;
     current.moved = true;
     const order = moveMachine(machines, current.machine, targetIndex(event.clientY));
+    current.order = order;
     setPreview(previous => previous && previous.order.every((name, index) => name === order[index]) ? previous : { machine: current.machine, order });
   };
   const move = (machine: string, offset: -1 | 1) => {
