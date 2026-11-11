@@ -791,7 +791,10 @@ export interface ProviderUsage {
   readonly reset_credits: { readonly available_count: number } | null;
   // Claude limit-reset status for a Claude account entry, as read on the host
   // that owns the account's sign-in. Absent or null means unknown (an older
-  // reader, or a missing/malformed upstream block); never a credential or id.
+  // reader, or a missing/malformed upstream block) and reads "Reset status
+  // unknown"; never a credential or id. Inside the block, a program that is
+  // `null` reads "Not offered", including a present but unparseable program,
+  // which normalizes to `null`.
   readonly limit_resets?: ClaudeLimitResets | null;
   // Set when the host marks the reset data older than the usage windows;
   // `limit_resets_checked_at` is when it was read (epoch seconds), null if the
