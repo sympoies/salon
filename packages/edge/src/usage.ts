@@ -263,7 +263,7 @@ export function normalizeProviders(body: unknown): ProviderUsage[] {
         ? { limit_resets: normalizeClaudeLimitResets(p.limit_resets) }
         : {}),
       ...(provider === "claude" && p.limit_resets !== undefined && p.limit_resets_stale === true
-        ? { limit_resets_stale: true as const, limit_resets_fetched_at: epochSecondsOrNull(p.limit_resets_fetched_at) }
+        ? { limit_resets_stale: true as const, limit_resets_checked_at: asFiniteNumber(p.limit_resets_checked_at) }
         : {}),
       ...(hosts ? { hosts } : {}),
       ...(key ? { switch_key: key } : {}),

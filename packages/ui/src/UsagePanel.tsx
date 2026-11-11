@@ -425,7 +425,7 @@ function GrantRow({ grant, now }: { readonly grant: ClaudeResetGrant; readonly n
 function ClaudeLimitResetSection({
   status,
   stale,
-  fetchedAt,
+  checkedAt,
   account,
   alias,
   now,
@@ -433,7 +433,7 @@ function ClaudeLimitResetSection({
 }: {
   readonly status: ClaudeLimitResets | null | undefined;
   readonly stale: boolean;
-  readonly fetchedAt: number | null;
+  readonly checkedAt: number | null;
   readonly account: string | null;
   readonly alias: string;
   readonly now: number;
@@ -478,7 +478,7 @@ function ClaudeLimitResetSection({
           <span className="usage-claude-resets-title">Limit resets</span>
           {stale ? (
             <span className="usage-claude-resets-asof">
-              {fetchedAt === null ? "as of an earlier read" : `as of ${relativeEpochSeconds(fetchedAt, now)}`}
+              {checkedAt === null ? "as of an earlier read" : `as of ${relativeEpochSeconds(checkedAt, now)}`}
             </span>
           ) : null}
         </span>
@@ -618,7 +618,7 @@ export function ProviderCard({
         <ClaudeLimitResetSection
           status={p.limit_resets}
           stale={p.limit_resets_stale === true}
-          fetchedAt={p.limit_resets_fetched_at ?? null}
+          checkedAt={p.limit_resets_checked_at ?? null}
           account={p.switch_key ?? null}
           alias={alias ?? p.label}
           now={now}

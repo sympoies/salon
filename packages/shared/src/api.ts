@@ -794,10 +794,10 @@ export interface ProviderUsage {
   // reader, or a missing/malformed upstream block); never a credential or id.
   readonly limit_resets?: ClaudeLimitResets | null;
   // Set when the host marks the reset data older than the usage windows;
-  // `limit_resets_fetched_at` is when it was read (epoch seconds), null if the
+  // `limit_resets_checked_at` is when it was read (epoch seconds), null if the
   // host did not say. Absent when the host reports neither.
   readonly limit_resets_stale?: true;
-  readonly limit_resets_fetched_at?: number | null;
+  readonly limit_resets_checked_at?: number | null;
   // Machine names signed in to this entry's account, as reported by the usage
   // reader for per-host Claude entries and scoped by the edge to the principal's
   // machines; absent for entries that are not per host.

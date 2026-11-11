@@ -37,7 +37,7 @@ interface Provider {
   switch_key?: string;
   limit_resets?: unknown;
   limit_resets_stale?: boolean;
-  limit_resets_fetched_at?: number | null;
+  limit_resets_checked_at?: number | null;
 }
 interface ProviderCardProps {
   readonly provider: Provider;
@@ -776,7 +776,7 @@ test("Claude ProviderCard shows an as-of age only when the host marks reset data
   const fresh = renderComponent(ProviderCard, { provider: claude({ limit_resets: TWO_GRANTS }), now: NOW, onClaudeReset: async () => ({}) });
   assert.doesNotMatch(fresh, /as of/);
   const stale = renderComponent(ProviderCard, {
-    provider: claude({ limit_resets: TWO_GRANTS, limit_resets_stale: true, limit_resets_fetched_at: NOW / 1000 - 300 }),
+    provider: claude({ limit_resets: TWO_GRANTS, limit_resets_stale: true, limit_resets_checked_at: NOW / 1000 - 300 }),
     now: NOW,
     onClaudeReset: async () => ({}),
   });

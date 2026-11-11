@@ -319,13 +319,13 @@ test("normalizeProviders passes an optional scoped weekly window through and omi
 test("normalizeProviders passes the reset-data stale marker through and omits it otherwise", () => {
   const read = (extra: Record<string, unknown>) =>
     normalizeProviders({ providers: [{ provider: "claude", windows: [], limit_resets: {}, ...extra }] })[0]!;
-  const stale = read({ limit_resets_stale: true, limit_resets_fetched_at: "2026-10-01T00:00:00Z" });
+  const stale = read({ limit_resets_stale: true, limit_resets_checked_at: 1790812800 });
   assert.equal(stale.limit_resets_stale, true);
-  assert.equal(stale.limit_resets_fetched_at, 1790812800);
+  assert.equal(stale.limit_resets_checked_at, 1790812800);
   const staleNoTime = read({ limit_resets_stale: true });
   assert.equal(staleNoTime.limit_resets_stale, true);
-  assert.equal(staleNoTime.limit_resets_fetched_at, null);
+  assert.equal(staleNoTime.limit_resets_checked_at, null);
   const fresh = read({});
   assert.equal(Object.hasOwn(fresh, "limit_resets_stale"), false);
-  assert.equal(Object.hasOwn(fresh, "limit_resets_fetched_at"), false);
+  assert.equal(Object.hasOwn(fresh, "limit_resets_checked_at"), false);
 });
