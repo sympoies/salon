@@ -3,7 +3,8 @@ import { appFetch } from "./runtime.ts";
 
 export type ConversationImageData = { readonly state: "ready"; readonly url: string; readonly blob: Blob; readonly filename: string }
   | { readonly state: "unavailable"; readonly reason?: "outside-allowed-roots" | "remote-url-not-fetched"; readonly sourceOrigin?: string; readonly remoteReason?: string }
-  | { readonly state: "loading" | "deleted" | "error" };
+  | { readonly state: "error"; readonly remoteReason?: string }
+  | { readonly state: "loading" | "deleted" };
 
 interface ImageRequest {
   readonly signal: AbortSignal;
@@ -12,6 +13,8 @@ interface ImageRequest {
   readonly resolve: (data: ConversationImageData) => void;
   readonly abort: () => void;
 }
+/** Refusals that may clear on their own; the others are final for the image. */
+const transientRemoteReasons = new Set(["upstream-status","timeout","network","busy"]);
 const queue: ImageRequest[] = [];
 let active = 0;
 function drain() {
@@ -62,8 +65,10 @@ async function readConversationImage(machine: string, history: string, image: st
             if (response.status === 404 && refusal?.error?.code === "history-image-deleted") return {state:"deleted"};
             if (response.status === 422 && refusal?.error?.code === "history-image-unavailable" && refusal.error.reason === "outside-allowed-roots")
               return {state:"unavailable",reason:"outside-allowed-roots"};
-            if ((response.status === 422 || response.status === 429) && refusal?.error?.code === "remote-image-unavailable")
-              return {...fallback,remoteReason:typeof refusal.error.reason === "string" ? refusal.error.reason : "unknown"};
+            if ((response.status === 422 || response.status === 429) && refusal?.error?.code === "remote-image-unavailable") {
+              const remoteReason = typeof refusal.error.reason === "string" ? refusal.error.reason : "unknown";
+              return transientRemoteReasons.has(remoteReason) ? {state:"error",remoteReason} : {...fallback,remoteReason};
+            }
             if (response.status >= 500 || response.status === 408 || response.status === 429) return {state:"error"};
             return fallback;
           }

@@ -3,13 +3,14 @@ import { test, type TestContext } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { assertNoElement } from "./support/domAssert.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 
 const imageId = (index: number) => `${"a".repeat(16)}.0.${index}.${"b".repeat(32)}`;
 const response = () => new Response(new Uint8Array([137,80,78,71]), {headers:{"content-type":"image/png"}});
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
-async function mount(t: TestContext, count: number, fetchImage: (path: string) => Promise<Response>, observe = false) {
+async function mount(t: TestContext, count: number, fetchImage: (path: string) => Promise<Response>, observe = false, beforeRender?: (cache: typeof import("../src/conversationImageCache.ts").conversationImageCache) => Promise<void>) {
   const window = new Window({url:"http://localhost"});
   const previous = {window:globalThis.window,document:globalThis.document,HTMLElement:globalThis.HTMLElement,
     IntersectionObserver:globalThis.IntersectionObserver,fetch:globalThis.fetch,IS_REACT_ACT_ENVIRONMENT:globalThis.IS_REACT_ACT_ENVIRONMENT};
@@ -23,9 +24,11 @@ async function mount(t: TestContext, count: number, fetchImage: (path: string) =
   const root = createRoot(window.document.body.appendChild(window.document.createElement("div")));
   t.after(async () => { await act(async () => root.unmount()); await ssr.close(); Object.assign(globalThis,previous); window.close(); });
   const {ConversationImages} = await ssr.loadModule<typeof import("../src/ConversationImages.tsx")>("/src/ConversationImages.tsx");
+  const {conversationImageCache: cache} = await ssr.loadModule<typeof import("../src/conversationImageCache.ts")>("/src/conversationImageCache.ts");
+  await beforeRender?.(cache);
   await act(async () => { root.render(createElement(ConversationImages,{machine:"fixture",history:"history",images:Array.from({length:count},(_,i) => ({id:imageId(i)}))})); });
   const visibility = async (visible: boolean, index = 0) => { await act(async () => { observers[index]!(visible); await flush(); }); };
-  return {window,visibility};
+  return {window,visibility,observers,cache};
 }
 
 test("loaded image survives leaving and reentering the viewport and the viewer reuses it",async t => {
@@ -73,4 +76,25 @@ test("twelve images never send more than three concurrent requests",async t => {
   assert.equal(started,12);
   assert.equal(maximum,3);
   assert.equal(window.document.querySelectorAll(".conversation-image-thumbnail img").length,12);
+});
+
+test("a frame that first renders as an external tile is observed after a cache clear returns it to loading",async t => {
+  let permanent = true;
+  const refuse = (path: string) => path.includes("/remote-image/")
+    ? new Response(JSON.stringify({error:{code:"remote-image-unavailable",reason:"not-image"}}),{status:422})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched"}}),{status:422});
+  const {window,visibility,observers,cache} = await mount(t,1,async path => permanent ? refuse(path) : response(),true,async cache => {
+    const handle = cache.watch({machine:"fixture",history:"history",image:imageId(0)},() => {});
+    t.after(() => handle.unsubscribe());
+    handle.setVisible(true); await flush();
+    assert.equal(cache.peek({machine:"fixture",history:"history",image:imageId(0)}).state,"unavailable");
+  });
+  assert.ok(window.document.querySelector(".is-external"),"the first render is the external tile");
+  assert.equal(observers.length,0);
+  permanent = false;
+  await act(async () => { cache.clear(); await flush(); });
+  assertNoElement(window.document,".is-external");
+  assert.equal(observers.length,1,"the returning thumbnail is observed");
+  await visibility(true);
+  assert.ok(window.document.querySelector(".conversation-image-thumbnail img"));
 });

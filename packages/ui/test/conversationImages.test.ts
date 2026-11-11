@@ -695,7 +695,12 @@ for (const [reason,phrase] of [
     [{id:"remote",role:"assistant",text:`![](${url})`,images:[{id:imageId(0)}]}],uploadSessionId);
   const tile = window.document.querySelector('.conversation-image-thumbnail')!;
   assert.match(tile.textContent ?? "",new RegExp(phrase));
-  assert.equal(tile.querySelector('a')?.href,url);
+  if (["upstream-status","timeout","network","busy"].includes(reason)) {
+    // Transient: retryable error with the reason, not a final external tile.
+    assert.match(tile.textContent ?? "",/Couldn't load/);
+    assertNoElement(window.document,'.is-external');
+    assert.ok([...window.document.querySelectorAll('button')].some(button => button.textContent === "Retry"));
+  } else assert.equal(tile.querySelector('a')?.href,url);
 });
 
 test("older edges keep the external image placeholder",async () => {
