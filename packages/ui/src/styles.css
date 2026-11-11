@@ -6396,6 +6396,32 @@ textarea {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.usage-claude-resets-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-sm);
+}
+.usage-claude-resets-asof {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.usage-claude-grant {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-sm);
+  padding-left: var(--space-md);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.usage-claude-grant-kind {
+  color: inherit;
+  font-weight: var(--weight-bold);
+}
+.usage-window-share {
+  margin-right: auto;
+}
 .usage-claude-reset-list {
   display: grid;
   gap: var(--space-xs);

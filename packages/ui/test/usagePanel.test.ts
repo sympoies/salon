@@ -12,6 +12,7 @@ interface UsagePanelProps {
 
 // Minimal structural stand-in for the api ProviderUsage/UsageWindow shapes.
 interface Win {
+  scope?: { model: string; allowance_percent_of_weekly: number | null };
   key: string;
   label: string;
   used_percent: number | null;
@@ -35,6 +36,8 @@ interface Provider {
   profile?: string;
   switch_key?: string;
   limit_resets?: unknown;
+  limit_resets_stale?: boolean;
+  limit_resets_checked_at?: number | null;
 }
 interface ProviderCardProps {
   readonly provider: Provider;
@@ -708,14 +711,14 @@ test("Claude ProviderCard offers the weekly session reset when it is available",
 test("Claude ProviderCard counts granted resets with their expiry", async () => {
   const ProviderCard = await loadProviderCard();
   const html = renderComponent(ProviderCard, { provider: claude({ limit_resets: TWO_GRANTS }), now: NOW, onClaudeReset: async () => ({}) });
-  assert.match(html, /2 available · expire in 11d, 29d/);
+  assert.match(html, /Granted resets<\/span><span class="usage-claude-reset-status">2 available</);
   assert.match(html, /aria-label="Use a granted reset for 20X"/);
   assert.doesNotMatch(html, /Use the session reset for 20X/);
 });
 
 test("Claude ProviderCard reports unknown reset status without hiding usage", async () => {
   const ProviderCard = await loadProviderCard();
-  for (const limitResets of [null, undefined, { juniper_tide: null, cedar_ember: null }]) {
+  for (const limitResets of [null, undefined]) {
     const html = renderComponent(ProviderCard, { provider: claude({ limit_resets: limitResets }), now: NOW, onClaudeReset: async () => ({}) });
     assert.match(html, /Reset status unknown/);
     assert.match(html, /usage-window/);
@@ -727,7 +730,75 @@ test("Claude ProviderCard reports unknown reset status without hiding usage", as
     onClaudeReset: async () => ({}),
   });
   assert.match(partial, /1 available this week/);
-  assert.match(partial, /Granted resets<\/span><span class="usage-claude-reset-status">Unknown/);
+  assert.match(partial, /Granted resets<\/span><span class="usage-claude-reset-status">Not offered/);
+  assert.doesNotMatch(partial, /Unknown/);
+});
+
+test("Claude ProviderCard says not offered, not unknown, when the provider returns no programs", async () => {
+  const ProviderCard = await loadProviderCard();
+  const html = renderComponent(ProviderCard, {
+    provider: claude({ limit_resets: { juniper_tide: null, cedar_ember: null } }),
+    now: NOW,
+    onClaudeReset: async () => ({}),
+  });
+  assert.equal(html.match(/usage-claude-reset-status">Not offered</g)?.length, 2);
+  assert.doesNotMatch(html, /Reset status unknown/);
+  assert.doesNotMatch(html, /usage-claude-reset-trigger/);
+});
+
+test("Claude ProviderCard lists one row per granted reset and derives its kind from what it clears", async () => {
+  const ProviderCard = await loadProviderCard();
+  // The provider's own type field is unreliable, so a model-specific grant that
+  // reports `full` must still read as model-specific.
+  const grants = [
+    { label: "Model weekly", resets_left: 1, resets_total: 2, starts_at: null, expires_at: NOW / 1000 + 11 * DAY, clears: ["seven_day_model"], usable_now: true, type: "full" },
+    { label: "Launch week", resets_left: 1, resets_total: 1, starts_at: null, expires_at: NOW / 1000 + 29 * DAY, clears: ["five_hour", "seven_day"], usable_now: true },
+  ];
+  const html = renderComponent(ProviderCard, {
+    provider: claude({ limit_resets: { ...TWO_GRANTS, cedar_ember: { ...TWO_GRANTS.cedar_ember, grants } } }),
+    now: NOW,
+    onClaudeReset: async () => ({}),
+  });
+  const rows = html.match(/<li class="usage-claude-grant">.*?<\/li>/g) ?? [];
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /usage-claude-grant-kind">Model-specific</);
+  assert.match(rows[0], /usage-claude-grant-label">Model weekly</);
+  assert.match(rows[0], /1 of 2 left/);
+  assert.match(rows[0], /expires in 11d/);
+  assert.match(rows[1], /usage-claude-grant-kind">Full reset</);
+  assert.match(rows[1], /usage-claude-grant-label">Launch week</);
+  assert.match(rows[1], /1 of 1 left/);
+  assert.match(rows[1], /expires in 29d/);
+});
+
+test("Claude ProviderCard shows an as-of age only when the host marks reset data stale", async () => {
+  const ProviderCard = await loadProviderCard();
+  const fresh = renderComponent(ProviderCard, { provider: claude({ limit_resets: TWO_GRANTS }), now: NOW, onClaudeReset: async () => ({}) });
+  assert.doesNotMatch(fresh, /as of/);
+  const stale = renderComponent(ProviderCard, {
+    provider: claude({ limit_resets: TWO_GRANTS, limit_resets_stale: true, limit_resets_checked_at: NOW / 1000 - 300 }),
+    now: NOW,
+    onClaudeReset: async () => ({}),
+  });
+  assert.match(stale, /Limit resets<\/span><span class="usage-claude-resets-asof">as of 5m ago</);
+  assert.match(stale, /2 available/, "stale data is still shown");
+});
+
+test("ProviderCard shows a scoped weekly meter with its model and weekly share only when reported", async () => {
+  const ProviderCard = await loadProviderCard();
+  const scoped = win({
+    key: "weekly_scoped",
+    label: "Weekly",
+    used_percent: 30,
+    window_minutes: 10080,
+    scope: { model: "Synthetic Model", allowance_percent_of_weekly: 40 },
+  });
+  const html = renderComponent(ProviderCard, { provider: claude({ windows: [win(), scoped] }), now: NOW });
+  assert.match(html, /Synthetic Model weekly/);
+  assert.match(html, /aria-label="Synthetic Model weekly 70% left"/);
+  assert.match(html, /40% of weekly allowance/);
+  const absent = renderComponent(ProviderCard, { provider: claude({ windows: [win()] }), now: NOW });
+  assert.doesNotMatch(absent, /allowance/);
 });
 
 test("Claude reset actions need the reset permission and a token-authority profile", async () => {
@@ -828,7 +899,7 @@ test("UsagePanel refreshes authoritative usage after a terminal Claude reset out
 
 for (const [name, refreshed, visible] of [
   ["reports the program spent", NONE_AVAILABLE, /Not available · not at the 5-hour limit/],
-  ["leaves reset status unknown", { juniper_tide: null, cedar_ember: null }, /Reset status unknown/],
+  ["reports the programs not offered", { juniper_tide: null, cedar_ember: null }, /Not offered/],
   ["drops reset status", null, /Reset status unknown/],
 ] as const) {
   test(`Claude reset outcome stays visible after the refresh ${name}`, async () => {
@@ -868,7 +939,9 @@ test("Claude granted resets ignore expired grants in the count and expiry", asyn
     now: NOW,
     onClaudeReset: async () => ({}),
   });
-  assert.match(html, /1 available · expire in 29d/);
+  assert.match(html, /status">1 available</);
+  assert.equal(html.match(/usage-claude-grant">/g)?.length, 1);
+  assert.match(html, /expires in 29d/);
   assert.doesNotMatch(html, /expire in now/);
 });
 
@@ -926,4 +999,18 @@ test("Command semicolon closes Usage while Command L does not", async () => {
   assert.equal(exits, 0);
   await act(async () => { mounted.window.dispatchEvent(new mounted.window.KeyboardEvent("keydown", { key: ";", metaKey: true })); });
   assert.equal(exits, 1);
+});
+
+test("ProviderCard renders a scoped weekly meter without share text when the allowance is null", async () => {
+  const ProviderCard = await loadProviderCard();
+  const scoped = win({
+    key: "weekly_scoped:Synthetic Model",
+    label: "Weekly",
+    used_percent: 30,
+    window_minutes: 10080,
+    scope: { model: "Synthetic Model", allowance_percent_of_weekly: null },
+  });
+  const html = renderComponent(ProviderCard, { provider: claude({ windows: [win(), scoped] }), now: NOW });
+  assert.match(html, /aria-label="Synthetic Model weekly 70% left"/);
+  assert.doesNotMatch(html, /allowance/);
 });

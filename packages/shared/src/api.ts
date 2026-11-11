@@ -751,6 +751,13 @@ export interface UsageWindow {
   readonly used_percent: number | null;
   readonly window_minutes: number | null;
   readonly resets_at: number | null;
+  // Present only on a model-scoped weekly window: the model's display name and
+  // its share of the weekly allowance. Readers that send none keep the window
+  // exactly as before.
+  readonly scope?: {
+    readonly model: string;
+    readonly allowance_percent_of_weekly: number | null;
+  };
 }
 
 export type ProviderUsageReason =
@@ -786,6 +793,11 @@ export interface ProviderUsage {
   // that owns the account's sign-in. Absent or null means unknown (an older
   // reader, or a missing/malformed upstream block); never a credential or id.
   readonly limit_resets?: ClaudeLimitResets | null;
+  // Set when the host marks the reset data older than the usage windows;
+  // `limit_resets_checked_at` is when it was read (epoch seconds), null if the
+  // host did not say. Absent when the host reports neither.
+  readonly limit_resets_stale?: true;
+  readonly limit_resets_checked_at?: number | null;
   // Machine names signed in to this entry's account, as reported by the usage
   // reader for per-host Claude entries and scoped by the edge to the principal's
   // machines; absent for entries that are not per host.
@@ -833,7 +845,9 @@ export interface ClaudeResetGrant {
   readonly resets_total: number | null;
   readonly starts_at: number | null;
   readonly expires_at: number | null;
-  // Limit names a redemption clears, e.g. `five_hour` or `seven_day`.
+  // Limit names a redemption clears, e.g. `five_hour` or `seven_day`. This, not
+  // the provider's own type field, tells a full reset (clears `seven_day`) from a
+  // model-specific one.
   readonly clears: readonly string[];
   readonly usable_now: boolean;
 }
@@ -846,7 +860,8 @@ export interface ClaudeGrantedResets {
   readonly weekly_resets_at: number | null;
 }
 
-// Each program is null when its status is unknown.
+// A null program is one the provider does not offer to this account; the whole
+// block being absent or null is what means unknown.
 export interface ClaudeLimitResets {
   readonly juniper_tide: ClaudeSessionReset | null;
   readonly cedar_ember: ClaudeGrantedResets | null;

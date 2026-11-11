@@ -142,6 +142,7 @@ export type {
   ClaudeLimitResetOutcome,
   ClaudeLimitResetProgram,
   ClaudeLimitResets,
+  ClaudeResetGrant,
   ClaudeSessionReset,
   ProviderUsage,
   ProviderUsageReason,
