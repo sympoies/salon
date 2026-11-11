@@ -32,7 +32,15 @@ test("App exposes permitted hosts and migrates the retired hidden-host preferenc
   assert.match(appSource, /resolveEnabledMachines\(machines\)/);
   assert.match(appSource, /hostMigrationNotice/);
   assert.match(appSource, /acknowledgeHostVisibilityMigration\(\)/);
-  assert.match(appSource, /const \{ machineColorDefaults \} = useUiExtensions\(\);/);
+  assert.match(appSource, /const \{ machineColorDefaults, machineOrderDefaults \} = useUiExtensions\(\);/);
+  // Settings and the Session filter share one order: saved, else extension default, else server.
+  assert.match(appSource, /orderMachines\(serverMachines, machineOrder, machineOrderDefaults\)/);
+  assert.match(appSource, /onMachineOrderChange=\{updateMachineOrder\}/);
+  // The order is saved on every change, reloaded after sign-in, and Restore defaults clears it.
+  assert.match(appSource, /const updateMachineOrder = useCallback\(\(order: readonly string\[\]\) => \{\s*saveMachineOrder\(order\);\s*setMachineOrder\(order\);/);
+  assert.match(appSource, /const restoreMachineOrder = useCallback\(\(\) => updateMachineOrder\(\[\]\), \[updateMachineOrder\]\);/);
+  assert.match(appSource, /onMachineOrderRestore=\{restoreMachineOrder\}/);
+  assert.match(appSource, /setMachineColors\(loadMachineColors\(undefined, machineColorDefaults\)\);\s*setMachineOrder\(loadMachineOrder\(\)\);/);
   assert.match(appSource, /const \[machineColors, setMachineColors\] = useState<MachineColorMap>\(\(\) => loadMachineColors\(undefined, machineColorDefaults\)\);/);
   // The gear is available on web and native now, not gated behind isTauri().
   assert.match(appSource, /onSettings=\{\(\) => setView\(\{ kind: "settings" \}\)\}/);

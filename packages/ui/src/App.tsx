@@ -15,6 +15,7 @@ import { DebugPanel } from "./DebugPanel.tsx";
 import { UsagePanel } from "./UsagePanel.tsx";
 import { appBootElapsedMs, isAndroidTauri, isMacTauri, isTauri, needsDeviceConfig } from "./runtime.ts";
 import { hostVisibilityMigrationPending, acknowledgeHostVisibilityMigration, resolveEnabledMachines } from "./enabledMachines.ts";
+import { loadMachineOrder, orderMachines, saveMachineOrder } from "./machineOrder.ts";
 import { loadMachineColors, resetMachineColor, saveMachineColors, setMachineColor, type MachineColorMap } from "./machineColors.ts";
 import { loadDefaultAutoResume, saveDefaultAutoResume } from "./autoResumeDefault.ts";
 import { ExtensionAppProviders } from "./extensions.tsx";
@@ -68,7 +69,7 @@ export default function App() {
   const [startupTimeoutElapsedMs, setStartupTimeoutElapsedMs] = useState<number | null>(null);
   const [startupRecoveryElapsedMs, setStartupRecoveryElapsedMs] = useState<number | null>(null);
   const [principal, setPrincipal] = useState<AgentConsolePrincipal | null>(null);
-  const [machines, setMachines] = useState<string[]>([]);
+  const [serverMachines, setServerMachines] = useState<string[]>([]);
   const [view, setView] = useState<View>({ kind: "dashboard" });
   const closeOverlay = useCallback(() => setView({ kind: "dashboard" }), []);
   const openShell = useCallback(() => setView({ kind: "shell" }), []);
@@ -128,7 +129,13 @@ export default function App() {
 
   const [hostMigrationNotice, setHostMigrationNotice] = useState(false);
   // Host color defaults come from the distribution's extensions (#918).
-  const { machineColorDefaults } = useUiExtensions();
+  const { machineColorDefaults, machineOrderDefaults } = useUiExtensions();
+  const [machineOrder, setMachineOrder] = useState<readonly string[]>(() => loadMachineOrder());
+  // Settings and the Session filter share one host order: saved, else the distribution's, else the server's.
+  const machines = useMemo(
+    () => orderMachines(serverMachines, machineOrder, machineOrderDefaults),
+    [serverMachines, machineOrder, machineOrderDefaults],
+  );
   const [machineColors, setMachineColors] = useState<MachineColorMap>(() => loadMachineColors(undefined, machineColorDefaults));
   const [defaultAutoResume, setDefaultAutoResume] = useState(() => loadDefaultAutoResume());
   const [attentionAlerts, setAttentionAlerts] = useState(() => loadAttentionAlerts());
@@ -163,6 +170,11 @@ export default function App() {
       return next;
     });
   }, [machineColorDefaults]);
+  const updateMachineOrder = useCallback((order: readonly string[]) => {
+    saveMachineOrder(order);
+    setMachineOrder(order);
+  }, []);
+  const restoreMachineOrder = useCallback(() => updateMachineOrder([]), [updateMachineOrder]);
   const updateDefaultAutoResume = useCallback((enabled: boolean) => {
     if (saveDefaultAutoResume(enabled)) {
       setDefaultAutoResume(enabled);
@@ -206,7 +218,7 @@ export default function App() {
   }, [terminalRenderMode, terminalSelectedPaneRealtime]);
 
   const loadMachines = useCallback(async () => {
-    setMachines(await listMachineNames().catch(() => []));
+    setServerMachines(await listMachineNames().catch(() => []));
   }, []);
 
   const recheck = useCallback(async (): Promise<ConnectFailure | undefined> => {
@@ -258,6 +270,7 @@ export default function App() {
       conversationImageCache.reloadVisible();
       setHostMigrationNotice(hostVisibilityMigrationPending());
       setMachineColors(loadMachineColors(undefined, machineColorDefaults));
+      setMachineOrder(loadMachineOrder());
       setDefaultAutoResume(loadDefaultAutoResume());
       setAttentionAlerts(loadAttentionAlerts());
       setSessionListDisplay(loadSessionListDisplay());
@@ -330,6 +343,9 @@ export default function App() {
         terminalSelectedPaneRealtime={terminalSelectedPaneRealtime}
         onMachineColorChange={updateMachineColor}
         onMachineColorReset={resetMachineColorOverride}
+        machineOrderSaved={machineOrder.length > 0}
+        onMachineOrderChange={updateMachineOrder}
+        onMachineOrderRestore={restoreMachineOrder}
         onDefaultAutoResumeChange={updateDefaultAutoResume}
         onAttentionAlertsChange={updateAttentionAlerts}
         onTerminalRenderModeChange={updateTerminalRenderMode}
@@ -435,6 +451,9 @@ export default function App() {
           terminalSelectedPaneRealtime={terminalSelectedPaneRealtime}
           onMachineColorChange={updateMachineColor}
           onMachineColorReset={resetMachineColorOverride}
+          machineOrderSaved={machineOrder.length > 0}
+          onMachineOrderChange={updateMachineOrder}
+          onMachineOrderRestore={restoreMachineOrder}
           onDefaultAutoResumeChange={updateDefaultAutoResume}
           onAttentionAlertsChange={updateAttentionAlerts}
           onTerminalRenderModeChange={updateTerminalRenderMode}

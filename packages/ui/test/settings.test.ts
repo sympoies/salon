@@ -3,6 +3,7 @@ import { after, afterEach, test } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { SettingsProps } from "../src/Settings.tsx";
 import { assertNoElement } from "./support/domAssert.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
@@ -18,7 +19,7 @@ function versionSettingsProps(): SettingsProps {
     onSaved() {}, onCancel() {}, machines: [], machineColors: {},
     defaultAutoResume: false, attentionAlerts: false,
     terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true,
-    onMachineColorChange() {}, onMachineColorReset() {}, onDefaultAutoResumeChange() {},
+    onMachineColorChange() {}, onMachineColorReset() {}, machineOrderSaved: false, onMachineOrderChange() {}, onMachineOrderRestore() {}, onDefaultAutoResumeChange() {},
     onAttentionAlertsChange() {},
     onTerminalRenderModeChange() {}, onTerminalSelectedPaneRealtimeChange() {},
     openAccess: true, onSignedOut() {},
@@ -332,7 +333,7 @@ test("Settings directs host visibility to shared Session filters", () => {
   assert.match(settingsSource, /\{machines\.length > 0 \? \(/);
   assert.match(settingsSource, /Choose visible hosts in Session filters/);
   assert.doesNotMatch(settingsSource, /optInMachines|onToggleMachine/);
-  assert.match(settingsSource, /className="settings-machines"/);
+  assert.match(settingsSource, /<MachineOrderList machines=\{machines\}/);
 });
 
 test("Settings manage page exposes machine color overrides", () => {
@@ -389,6 +390,9 @@ test("Settings renders terminal profiles and wires selected-pane priority behavi
     onToggleMachine: () => undefined,
     onMachineColorChange: () => undefined,
     onMachineColorReset: () => undefined,
+    machineOrderSaved: false,
+    onMachineOrderChange: () => undefined,
+    onMachineOrderRestore: () => undefined,
     onDefaultAutoResumeChange: () => undefined,
     onAttentionAlertsChange: (enabled) => alertChanges.push(enabled),
     onTerminalRenderModeChange: (mode) => modeChanges.push(mode),
@@ -461,7 +465,7 @@ test("Settings styles define sectioned layout and the machine switch", () => {
 });
 
 test("Settings machine color controls align in a shared column", () => {
-  assert.match(css, /\.settings-machines \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto auto;/);
+  assert.match(css, /\.settings-machines \{[\s\S]*?grid-template-columns: auto minmax\(0, 1fr\) auto auto;/);
   assert.match(css, /\.settings-row \{[\s\S]*?grid-template-columns: subgrid;/);
   assert.match(css, /\.settings-row-actions \{[\s\S]*?display: contents;/);
   assert.match(css, /\.settings-machine-color \{[\s\S]*?justify-self: start;/);
@@ -529,4 +533,24 @@ test("Settings offers System / Dark / Paper (default System) and applies the cho
   assert.equal(mounted.window.document.documentElement.getAttribute("data-theme-mode"), "paper");
   assert.equal(select.value, "paper");
   assert.equal([...stored.values()].includes("paper"), true, "the choice is persisted on the device");
+});
+
+test("Settings lists machines in the given order and offers Restore defaults only with a saved order", async () => {
+  const { Settings } = await ssr.loadModule<{ Settings: ComponentType<SettingsProps> }>("/src/Settings.tsx");
+  const render = (machineOrderSaved: boolean) => renderToStaticMarkup(createElement(Settings, { ...versionSettingsProps(), machines: ["mesa", "cedar"], machineOrderSaved }));
+  const saved = render(true);
+  assert.ok(saved.indexOf('data-machine="mesa"') < saved.indexOf('data-machine="cedar"'), "rows follow the given order");
+  assert.match(saved, /<button type="button" class="btn ghost">Restore defaults<\/button>/);
+  assert.match(render(false), /<button type="button" class="btn ghost" disabled="">Restore defaults<\/button>/);
+});
+
+test("Settings calls the restore handler when Restore defaults is clicked", async () => {
+  const { Settings } = await ssr.loadModule<{ Settings: ComponentType<SettingsProps> }>("/src/Settings.tsx");
+  const mounted = installDom(); cleanupStack.push(mounted.cleanup);
+  let restores = 0;
+  await act(async () => mounted.root.render(createElement(Settings, { ...versionSettingsProps(), machines: ["mesa", "cedar"], machineOrderSaved: true, onMachineOrderRestore() { restores += 1; } })));
+  const restore = [...mounted.container.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Restore defaults");
+  assert.ok(restore, "Restore defaults is offered with a saved order");
+  await act(async () => restore.click());
+  assert.equal(restores, 1);
 });

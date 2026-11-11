@@ -2051,7 +2051,7 @@ textarea {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   column-gap: var(--space-md);
   row-gap: var(--space-xs);
 }
@@ -2064,6 +2064,41 @@ textarea {
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);
   background: var(--surface-toolbar);
+}
+/* The dragged row sits on an opaque token: a transparent row would show the
+   translucent panel's backdrop through the drag preview. */
+.settings-machines [data-dragging] {
+  background: var(--surface-overlay);
+  border-color: var(--border-strong, var(--border-subtle));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.machine-order-handle,
+.machine-order-move {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg-2);
+  font: inherit;
+  cursor: pointer;
+}
+.machine-order-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.machine-order-move[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+.machine-order-moves {
+  display: inline-flex;
+  gap: var(--space-2xs);
+}
+.settings-machines [data-dragging] .machine-order-handle {
+  cursor: grabbing;
 }
 .settings-row-label {
   font-family: "BlexMono Nerd Font Mono", ui-monospace, monospace;
