@@ -229,3 +229,16 @@ for (const reason of ["not-image","blocked-address","invalid-url","too-large"]) 
   assert.deepEqual(cache.peek(target(0)),{state:"unavailable",reason:"remote-url-not-fetched",remoteReason:reason});
   t.mock.timers.tick(60000); await flush(); assert.equal(attempts,2,"one image read and one remote read");
 });
+
+for (const [label,reason] of [["an unlisted string","future-reason"],["a non-string value",42],["no value",undefined]] as const) test(`a remote refusal with ${label} as its reason is final and not retried`,async t => {
+  let attempts = 0;
+  setup(t,async input => { attempts++; return String(input).includes("/remote-image/")
+    ? new Response(JSON.stringify({error:{code:"remote-image-unavailable",...(reason === undefined ? {} : {reason})}}),{status:429})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched"}}),{status:422}); });
+  t.mock.timers.enable({apis:["setTimeout"]});
+  const cache = new ConversationImageCache();
+  const handle = cache.watch(target(0),() => {}); t.after(() => handle.unsubscribe());
+  handle.setVisible(true); await flush();
+  assert.deepEqual(cache.peek(target(0)),{state:"unavailable",reason:"remote-url-not-fetched",remoteReason:typeof reason === "string" ? reason : "unknown"});
+  t.mock.timers.tick(60000); await flush(); assert.equal(attempts,2,"one image read and one remote read");
+});
