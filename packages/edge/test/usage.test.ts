@@ -329,3 +329,44 @@ test("normalizeProviders passes the reset-data stale marker through and omits it
   assert.equal(Object.hasOwn(fresh, "limit_resets_stale"), false);
   assert.equal(Object.hasOwn(fresh, "limit_resets_checked_at"), false);
 });
+
+test("normalizeProviders emits the reset-data stale marker only for a Claude entry with a limit_resets block and a literal true", () => {
+  const read = (provider: string, extra: Record<string, unknown>) =>
+    normalizeProviders({ providers: [{ provider, windows: [], ...extra }] })[0]!;
+  const noMarker = (entry: ReturnType<typeof read>) => {
+    assert.equal(Object.hasOwn(entry, "limit_resets_stale"), false);
+    assert.equal(Object.hasOwn(entry, "limit_resets_checked_at"), false);
+  };
+  noMarker(read("claude", { limit_resets: {}, limit_resets_stale: "true", limit_resets_checked_at: 1790812800 }));
+  noMarker(read("codex", { limit_resets: {}, limit_resets_stale: true, limit_resets_checked_at: 1790812800 }));
+  noMarker(read("claude", { limit_resets_stale: true, limit_resets_checked_at: 1790812800 }));
+});
+
+test("normalizeProviders emits scope only for a weekly_scoped window that names a model", () => {
+  const [entry] = normalizeProviders({
+    providers: [
+      {
+        provider: "claude",
+        windows: [{ key: "weekly", kind: "weekly", model: "Synthetic Model", allowance_percent_of_weekly: 40, used_percent: 10 }],
+      },
+    ],
+  });
+  assert.equal(Object.hasOwn(entry!.windows[0]!, "scope"), false, "a model name on another kind carries no scope");
+});
+
+test("normalizeProviders keeps one window per model when scoped windows carry no key", () => {
+  const [entry] = normalizeProviders({
+    providers: [
+      {
+        provider: "claude",
+        windows: [
+          { kind: "weekly_scoped", label: "weekly_scoped:Synthetic Alpha", model: "Synthetic Alpha", used_percent: 10, allowance_percent_of_weekly: 30 },
+          { kind: "weekly_scoped", label: "weekly_scoped:Synthetic Beta", model: "Synthetic Beta", used_percent: 20, allowance_percent_of_weekly: 50 },
+        ],
+      },
+    ],
+  });
+  assert.equal(entry!.windows.length, 2);
+  assert.deepEqual(entry!.windows.map((w) => w.scope?.model), ["Synthetic Alpha", "Synthetic Beta"]);
+  assert.notEqual(entry!.windows[0]!.key, entry!.windows[1]!.key);
+});

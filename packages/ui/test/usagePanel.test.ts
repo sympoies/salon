@@ -771,6 +771,59 @@ test("Claude ProviderCard lists one row per granted reset and derives its kind f
   assert.match(rows[1], /expires in 29d/);
 });
 
+test("Claude ProviderCard calls a grant a full reset only when it clears the weekly window", async () => {
+  const ProviderCard = await loadProviderCard();
+  const grant = (label: string, clears: string[], days: number) =>
+    ({ label, resets_left: 1, resets_total: 1, starts_at: null, expires_at: NOW / 1000 + days * DAY, clears, usable_now: true });
+  const html = renderComponent(ProviderCard, {
+    provider: claude({
+      limit_resets: {
+        ...TWO_GRANTS,
+        cedar_ember: { ...TWO_GRANTS.cedar_ember, grants: [grant("Session only", ["five_hour"], 1), grant("Weekly only", ["seven_day"], 2)] },
+      },
+    }),
+    now: NOW,
+    onClaudeReset: async () => ({}),
+  });
+  const rows = html.match(/<li class="usage-claude-grant">.*?<\/li>/g) ?? [];
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /usage-claude-grant-kind">Model-specific</);
+  assert.match(rows[1], /usage-claude-grant-kind">Full reset</);
+});
+
+test("Claude ProviderCard hides spent grants and lists the rest soonest expiry first", async () => {
+  const ProviderCard = await loadProviderCard();
+  const grant = (label: string, resetsLeft: number, expiresAt: number | null) =>
+    ({ label, resets_left: resetsLeft, resets_total: 2, starts_at: null, expires_at: expiresAt, clears: ["seven_day"], usable_now: true });
+  const grants = [
+    grant("Never expires", 1, null),
+    grant("Later", 1, NOW / 1000 + 20 * DAY),
+    grant("Spent", 0, NOW / 1000 + 2 * DAY),
+    grant("Sooner", 1, NOW / 1000 + 5 * DAY),
+  ];
+  const html = renderComponent(ProviderCard, {
+    provider: claude({ limit_resets: { ...TWO_GRANTS, cedar_ember: { ...TWO_GRANTS.cedar_ember, grants } } }),
+    now: NOW,
+    onClaudeReset: async () => ({}),
+  });
+  const rows = html.match(/<li class="usage-claude-grant">.*?<\/li>/g) ?? [];
+  assert.deepEqual(
+    rows.map((row) => row.match(/usage-claude-grant-label">([^<]*)</)?.[1]),
+    ["Sooner", "Later", "Never expires"],
+  );
+  assert.doesNotMatch(html, /Spent/);
+});
+
+test("Claude ProviderCard says the reset data is from an earlier read when no check time is known", async () => {
+  const ProviderCard = await loadProviderCard();
+  const html = renderComponent(ProviderCard, {
+    provider: claude({ limit_resets: TWO_GRANTS, limit_resets_stale: true }),
+    now: NOW,
+    onClaudeReset: async () => ({}),
+  });
+  assert.match(html, /usage-claude-resets-asof">as of an earlier read</);
+});
+
 test("Claude ProviderCard shows an as-of age only when the host marks reset data stale", async () => {
   const ProviderCard = await loadProviderCard();
   const fresh = renderComponent(ProviderCard, { provider: claude({ limit_resets: TWO_GRANTS }), now: NOW, onClaudeReset: async () => ({}) });
