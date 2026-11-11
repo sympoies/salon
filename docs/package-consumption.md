@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.62 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.63 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,9 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.62`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.63`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.62
+### Changes retained in SDK 0.1.63
 
 Sessions carry a marker for a draft the runtime saved, and the composer can show, restore and discard it
 (#282, #383). The UI API also exports `discardSavedDraft` for this action.
@@ -309,9 +309,21 @@ Refusals retain the external link and explain why the image could not load (#400
 Retained conversation images are cleared when authentication or connection identity changes, and
 visible images reload after authentication succeeds (#412).
 
+The Machines list in Settings can be reordered by dragging or with up and down buttons, and the
+Session filter shares that order. The optional `machineOrderDefaults` UI extension field supplies a
+default order, and Restore defaults clears the saved order (#417).
+
+The Usage panel shows one row per granted limit reset, reports a program the provider does not offer
+as "Not offered", and shows an "as of" age when `limit_resets_checked_at` marks reset data stale. Usage
+windows accept an optional `scope`, and a `weekly_scoped` window renders as a per-model weekly meter
+(#419).
+
+Image tiles retry transient remote image refusals, and the image observer is attached after a branch
+swap (#423).
+
 ### Preserve published releases
 
-Existing `v0.1.0` through `v0.1.61` tags and assets stay immutable. The visibility transition does
+Existing `v0.1.0` through `v0.1.62` tags and assets stay immutable. The visibility transition does
 not republish those releases, change their source or digests, or reuse an existing tag.
 
 A future publication requires separately approved version metadata and an unused tag. This
