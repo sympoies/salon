@@ -23,6 +23,10 @@ docker compose up --build -d
 docker compose ps
 ```
 
+To run a published image instead of building, see
+[Start from the published image](../README.md#start-from-the-published-image) and add
+`-f compose.image.yaml` to every `docker compose` command below.
+
 Open `http://127.0.0.1:3000`. The browser requires its own Salon login token; read that
 token locally:
 

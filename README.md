@@ -33,16 +33,45 @@ An isolated package consumer exercises those artifacts without workspace source
 links. See [package consumption](docs/package-consumption.md) for that developer path.
 
 The first developer milestone will support one provider. The full MVP will
-support two providers. The intended user flow for those milestones is:
+support two providers. The intended user flow for those milestones runs from a
+published image, with no source build:
 
-1. Start the workspace with `docker compose up --build`.
+1. Pull and start the workspace from the pinned image, then run the smoke check.
 2. Complete official provider login or API-key setup.
 3. Create a session and send a prompt.
 4. Receive an actual provider reply.
 5. Refresh the browser or reconnect to the same session.
 
-These are planned application acceptance steps. The local core package checks
-do not establish them.
+Only step 1 can be checked without a provider account. Steps 2 to 5 are
+accepted only after the scheduled tester run on a clean Linux host; do not read
+this section as a claim that they have passed. The local core package checks do
+not establish them either.
+
+### Start from the published image
+
+Each SDK release publishes a linux/amd64 image to
+`ghcr.io/sympoies/salon` and appends its immutable reference to the release
+notes. The image is published only for release tags created after this
+workflow exists. Copy `compose.image.yaml` and `scripts/smoke-compose.sh` from
+the matching tag, then set the reference from those notes:
+
+```bash
+export SALON_IMAGE=ghcr.io/sympoies/salon@sha256:<digest-from-release-notes>
+docker compose -f compose.image.yaml up -d
+bash scripts/smoke-compose.sh compose.image.yaml
+```
+
+`compose.image.yaml` matches `compose.yaml` (loopback port 3000, volumes,
+read-only root, memory limit, init, non-root user and health check) except that
+it pulls `SALON_IMAGE` instead of building the checkout. Compose refuses to
+start while `SALON_IMAGE` is unset.
+
+The smoke check needs no provider credentials. It prints one `PASS` or `FAIL`
+line per check: container running, container healthy, `/healthz` answering,
+the published port bound only to `127.0.0.1:3000`, and no root process. It
+exits 0 when all pass, 1 when a check fails and 2 for a missing tool or file.
+
+To build from source instead, use `docker compose up --build`.
 
 ## Read session previews and restore drafts
 
