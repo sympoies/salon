@@ -76,6 +76,59 @@ for (const pointerType of ["mouse", "pen", "touch"]) {
   });
 }
 
+// Rows with a visible gap between them, positioned by their current place in the list as real layout is.
+const GAP = 8;
+const PITCH = ROW_HEIGHT + GAP;
+function layoutWithGaps(m: Mounted) {
+  for (const row of rows(m)) {
+    row.getBoundingClientRect = () => {
+      const index = rows(m).indexOf(row);
+      const top = index * PITCH;
+      return { x: 0, y: top, left: 0, right: 300, top, bottom: top + ROW_HEIGHT, width: 300, height: ROW_HEIGHT, toJSON() {} } as DOMRect;
+    };
+  }
+}
+const belowRow = (index: number) => index * PITCH + ROW_HEIGHT + 1;
+const rowCentre = (index: number) => index * PITCH + ROW_HEIGHT / 2;
+const LIST = ["cedar", "mesa", "summit", "delta", "ember"];
+
+// A mouse moves in small steps, so the pointer crosses every inter-row gap on the way.
+async function dragThrough(m: Mounted, name: string, fromY: number, toY: number, release = true) {
+  const grip = handle(m, name);
+  await pointer(m, "pointerdown", grip, fromY, "mouse");
+  const direction = toY > fromY ? 1 : -1;
+  for (let y = fromY + direction * 3; direction * (toY - y) > 0; y += direction * 3) await pointer(m, "pointermove", grip, y, "mouse");
+  await pointer(m, "pointermove", grip, toY, "mouse");
+  if (release) await pointer(m, "pointerup", grip, toY, "mouse");
+}
+
+for (const [name, from, to] of [["cedar", 0, 1], ["cedar", 0, 3], ["mesa", 1, 4], ["ember", 4, 0], ["delta", 3, 1]] as const) {
+  test(`a mouse drag across row gaps moves ${from + 1} to ${to + 1} to the slot under the release point`, async () => {
+    const m = await mount(LIST);
+    await m.render(); layoutWithGaps(m);
+    await dragThrough(m, name, rowCentre(from), rowCentre(to));
+    const expected = LIST.filter(host => host !== name);
+    expected.splice(to, 0, name);
+    assert.deepEqual(m.reorders, [expected]);
+    assert.deepEqual(names(m), expected);
+  });
+}
+
+test("holding the pointer over a gap mid-drag previews the nearest row slot, never the end of the list", async () => {
+  const m = await mount(LIST);
+  await m.render(); layoutWithGaps(m);
+  await dragThrough(m, "cedar", rowCentre(0), belowRow(1), false);
+  assert.equal(names(m).indexOf("cedar"), 1, "the preview stays at the slot beside the gap, not at the last slot");
+  assert.deepEqual(m.reorders, [], "nothing is saved while the pointer is down");
+});
+
+test("releasing over a gap drops the row at the nearest slot", async () => {
+  const m = await mount(LIST);
+  await m.render(); layoutWithGaps(m);
+  await dragThrough(m, "cedar", rowCentre(0), belowRow(1));
+  assert.deepEqual(m.reorders, [["mesa", "cedar", "summit", "delta", "ember"]]);
+});
+
 test("a move and the release in the same task save the order shown at the release position", async () => {
   const m = await mount(["cedar", "mesa", "summit"]);
   await m.render(); layout(m);
