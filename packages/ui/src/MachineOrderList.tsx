@@ -7,6 +7,8 @@ interface Drag {
   readonly machine: string;
   readonly pointerId: number;
   readonly startY: number;
+  /** Row boxes in base order, read before the preview reorders the DOM. */
+  readonly slots: readonly { readonly top: number; readonly bottom: number }[];
   moved: boolean;
   order: readonly string[] | null;
 }
@@ -27,15 +29,14 @@ export function MachineOrderList({ machines, onReorder, renderActions }: {
   const [preview, setPreview] = useState<{ readonly machine: string; readonly order: readonly string[] } | null>(null);
   const shown = preview?.order ?? machines;
 
-  const targetIndex = (clientY: number): number => {
-    const rows = [...list.current?.querySelectorAll<HTMLElement>("[data-machine]") ?? []];
-    const hit = rows.findIndex(row => {
-      const box = row.getBoundingClientRect();
-      return clientY >= box.top && clientY < box.bottom;
-    });
-    if (hit >= 0) return hit;
-    const first = rows[0]?.getBoundingClientRect();
-    return first && clientY < first.top ? 0 : rows.length - 1;
+  const rowSlots = () => [...list.current?.querySelectorAll<HTMLElement>("[data-machine]") ?? []].map(row => {
+    const { top, bottom } = row.getBoundingClientRect();
+    return { top, bottom };
+  });
+  // The slot is the row whose box, widened to the middle of the gaps around it, holds the pointer.
+  const targetIndex = (slots: Drag["slots"], clientY: number): number => {
+    const next = slots.findIndex((slot, index) => index > 0 && clientY < (slots[index - 1]!.bottom + slot.top) / 2);
+    return next < 0 ? slots.length - 1 : next - 1;
   };
   const finish = (commit: boolean) => {
     const current = drag.current;
@@ -47,14 +48,14 @@ export function MachineOrderList({ machines, onReorder, renderActions }: {
   const onPointerDown = (event: PointerEvent<HTMLElement>, machine: string) => {
     if (!event.isPrimary || event.button !== 0) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    drag.current = { machine, pointerId: event.pointerId, startY: event.clientY, moved: false, order: null };
+    drag.current = { machine, pointerId: event.pointerId, startY: event.clientY, slots: rowSlots(), moved: false, order: null };
   };
   const onPointerMove = (event: PointerEvent<HTMLElement>) => {
     const current = drag.current;
     if (!current || event.pointerId !== current.pointerId) return;
     if (!current.moved && Math.abs(event.clientY - current.startY) < DRAG_THRESHOLD_PX) return;
     current.moved = true;
-    const order = moveMachine(machines, current.machine, targetIndex(event.clientY));
+    const order = moveMachine(machines, current.machine, targetIndex(current.slots, event.clientY));
     current.order = order;
     setPreview(previous => previous && previous.order.every((name, index) => name === order[index]) ? previous : { machine: current.machine, order });
   };
