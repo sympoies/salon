@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { AccessStore } from "../src/accessStore.ts";
+import { AccessStore, OUTSIDE_COORDINATOR_TREE } from "../src/accessStore.ts";
 import type { BoardRecord } from "../src/board/record.ts";
 import { BoardStore } from "../src/board/store.ts";
 import { loadConfig, type ConsoleStartServiceConfig } from "../src/config.ts";
@@ -29,7 +29,7 @@ function daemon(token: string) {
     assert.equal(req.headers.authorization, `Bearer ${token}`);
     res.setHeader("content-type", "application/json");
     if (req.method === "GET") {
-      res.end(JSON.stringify({ ok: true, data: { sessions } }));
+      res.end(JSON.stringify({ ok: true, data: { coordination: { remote_messaging_supported: true }, sessions } }));
       return;
     }
     const chunks: Buffer[] = [];
@@ -47,10 +47,10 @@ function daemon(token: string) {
     res.writeHead(201);
     res.end(JSON.stringify({ ok: true, data: { session } }));
   });
-  return { server, creates, state };
+  return { server, creates, state, sessions };
 }
 
-async function fixture(admissions: readonly ConsoleStartServiceConfig[] = [ADMISSION]) {
+async function fixture(admissions: readonly ConsoleStartServiceConfig[] = [ADMISSION], crossOwnerMessaging: unknown[] = []) {
   const dir = mkdtempSync(join(tmpdir(), "service-console-start-test-"));
   const db = join(dir, "access.sqlite");
   const boardDb = join(dir, "board.sqlite");
@@ -74,6 +74,7 @@ async function fixture(admissions: readonly ConsoleStartServiceConfig[] = [ADMIS
       { machine: "cedar", token: "cedar-relay", ingress_token: "cedar-ingress" },
     ],
     consoleStartServices: admissions,
+    ...{ crossOwnerMessaging },
     board: { dbPath: boardDb, retention: "3d" },
   }), { board: { autoStart: false, now: () => NOW } });
   const { base } = await listenOnLoopback(edge);
@@ -162,6 +163,78 @@ test("an admitted service starts a root session owned by the named owner on the 
   } finally { await f.cleanup(); }
 });
 
+const COORDINATOR_ADMISSION = { ...ADMISSION, console_role: "coordinator" } as unknown as ConsoleStartServiceConfig;
+const PLAIN_ADMISSION = { ...ADMISSION, service_id: "plain" };
+const PLAIN_SERVICE = { ...SERVICE, source_service_id: "plain" };
+const SECOND_OPERATION = "019a3560-0000-7000-8000-000000000002";
+
+function grantOf(db: string, sessionId: string) {
+  const access = new AccessStore(db);
+  try { return access.sessionGrant("cedar", sessionId); } finally { access.close(); }
+}
+
+test("an admission with a console role records it on the root, and an admission without one records none", async () => {
+  const f = await fixture([COORDINATOR_ADMISSION, PLAIN_ADMISSION]);
+  try {
+    const withRole = await create(f.base, { ...SERVICE, session: SESSION });
+    const without = await create(f.base, { ...PLAIN_SERVICE, session: SESSION }, SECOND_OPERATION);
+    assert.equal(withRole.status, 201);
+    assert.equal(without.status, 201);
+    const granted = grantOf(f.db, withRole.body.data.session.id);
+    assert.equal(granted?.consoleRole, "coordinator");
+    assert.equal(granted?.treeDepth, 0);
+    assert.equal(granted?.launcher, null);
+    assert.equal(granted?.dispatcher, null);
+    const plain = grantOf(f.db, without.body.data.session.id);
+    assert.equal(plain?.consoleRole, null);
+    assert.equal(plain?.treeDepth, OUTSIDE_COORDINATOR_TREE);
+    // The role never reaches the target daemon: only admission decides it.
+    for (const body of f.cedar.creates) assert.equal(JSON.stringify(body).includes("console_role"), false);
+  } finally { await f.cleanup(); }
+});
+
+test("an idempotent replay keeps the role recorded by the first create", async () => {
+  const f = await fixture([COORDINATOR_ADMISSION]);
+  try {
+    const first = await create(f.base, { ...SERVICE, session: SESSION });
+    const replay = await create(f.base, { ...SERVICE, session: SESSION });
+    assert.equal(first.status, 201);
+    assert.equal(replay.status, 201);
+    assert.equal(replay.body.data.session.id, first.body.data.session.id);
+    assert.equal(f.cedar.creates.length, 1);
+    const granted = grantOf(f.db, first.body.data.session.id);
+    assert.equal(granted?.consoleRole, "coordinator");
+    assert.equal(granted?.treeDepth, 0);
+  } finally { await f.cleanup(); }
+});
+
+test("a root admitted with a console role matches coordinator selectors as sender and recipient", async () => {
+  const toCoordinators = { from: "dana", to: "tess", recipients: [{ role: "coordinator" }] };
+  const fromCoordinators = { from: "tess", to: "dana", senders: [{ role: "coordinator" }], recipients: [{ repo_name: "control" }] };
+  const f = await fixture([COORDINATOR_ADMISSION, PLAIN_ADMISSION], [toCoordinators, fromCoordinators]);
+  try {
+    const coordinator = (await create(f.base, { ...SERVICE, session: SESSION })).body.data.session;
+    const plain = (await create(f.base, { ...PLAIN_SERVICE, session: SESSION }, SECOND_OPERATION)).body.data.session;
+    for (const session of f.cedar.sessions) Object.assign(session, { coordination_mode: "advisory", coordination_available: true });
+    const access = new AccessStore(f.db);
+    access.claimSession({ principalId: "dana", machine: "summit", sessionId: "peer", incarnation: "peer-inc" });
+    access.close();
+    f.summit.sessions.push({ id: "peer", repo_name: "control", status: "running", session_incarnation: "peer-inc", coordination_mode: "advisory", coordination_available: true });
+    const peers = async (token: string, id: string, incarnation: string) => {
+      const response = await fetch(`${f.base}/api/coordination/peers/v1?${new URLSearchParams({ source_session_id: id, source_incarnation: incarnation })}`, { headers: { authorization: `Bearer ${token}` } });
+      assert.equal(response.status, 200);
+      return (await response.json() as { peers: { session_id: string }[] }).peers.map(peer => peer.session_id);
+    };
+    // Recipient selector: the peer reaches only the coordinator root.
+    const reachable = await peers("summit-relay", "peer", "peer-inc");
+    assert.equal(reachable.includes(coordinator.id), true);
+    assert.equal(reachable.includes(plain.id), false);
+    // Sender selector: only the coordinator root may reach the peer.
+    assert.equal((await peers("cedar-relay", coordinator.id, coordinator.session_incarnation)).includes("peer"), true);
+    assert.equal((await peers("cedar-relay", plain.id, plain.session_incarnation)).includes("peer"), false);
+  } finally { await f.cleanup(); }
+});
+
 test("every unadmitted selector is refused before anything is created", async () => {
   const f = await fixture();
   try {
@@ -219,6 +292,8 @@ test("a malformed service create is refused and never reaches a session-scoped p
       [{ ...SERVICE, session: { ...SESSION, provider_resume_id: "resume" } }, OPERATION, "invalid-request"],
       [{ ...SERVICE, session: { ...SESSION, resume: "resume" } }, OPERATION, "invalid-request"],
       [{ ...SERVICE, session: { ...SESSION, role: "coordinator" } }, OPERATION, "invalid-request"],
+      [{ ...SERVICE, session: { ...SESSION, console_role: "coordinator" } }, OPERATION, "invalid-request"],
+      [{ ...SERVICE, console_role: "coordinator", session: SESSION }, OPERATION, "invalid-request"],
       [{ ...SERVICE, session: { ...SESSION, work: {} } }, OPERATION, "invalid-request"],
       [{ ...SERVICE, session: { ...SESSION, origin: { parent: { machine: "summit", session_id: "x" } } } }, OPERATION, "invalid-request"],
       [{ ...SERVICE, session: { ...SESSION, agent: "" } }, OPERATION, "invalid-request"],
@@ -387,10 +462,14 @@ test("service admissions load only with configured relays, owners and machines",
   assert.deepEqual(load([entry]), [entry]);
   // Two generations of one service may overlap during a rotation.
   assert.equal(load([entry, { ...entry, service_generation: "generation-2" }])?.length, 2);
+  const coordinator = { ...entry, console_role: "coordinator" };
+  assert.deepEqual(load([coordinator]), [coordinator]);
   for (const invalid of [
     {}, [{ ...entry, extra: 1 }], [entry, entry], [{ ...entry, relay_machine: "pine" }],
     [{ ...entry, service_id: "bad id" }], [{ ...entry, service_generation: "" }],
     [{ ...entry, owners: [] }], [{ ...entry, owners: ["stranger"] }], [{ ...entry, owners: ["root"] }],
     [{ ...entry, machines: [] }], [{ ...entry, machines: ["pine"] }],
+    [{ ...entry, console_role: "worker" }], [{ ...entry, console_role: "domain-coordinator" }],
+    [{ ...entry, console_role: "" }], [{ ...entry, console_role: null }], [{ ...entry, console_role: true }],
   ]) assert.throws(() => load(invalid), /CONSOLE_START_SERVICES/, JSON.stringify(invalid));
 });

@@ -28,6 +28,12 @@ authenticates with that relay's token. `owners` must be configured principals ot
 `root`, and `machines` must be configured machines. A request is admitted only when its
 target machine is also in the owner's own machine allowlist.
 
+An entry may also set `"console_role": "coordinator"`, the only accepted value. Roots
+that entry creates then carry the same role as a coordinator root started through Console,
+at coordinator tree depth 0, so cross-owner messaging rules that select `{"role":
+"coordinator"}` match them as sender or recipient. Without the field a root has no role.
+Only the admission entry decides the role: a create request cannot carry one.
+
 To rotate a generation without downtime, list both generations as separate entries, then
 remove the old one.
 
@@ -50,8 +56,8 @@ The request may not carry `source_session_id` or `source_incarnation`. The `sess
 lineage must be a console root. `session` may not set `id`, `resume`, `role`, `work` or
 `origin`.
 
-The created session belongs to `owner` and has no launcher, dispatcher or coordinator
-tree.
+The created session belongs to `owner` and has no launcher or dispatcher. It sits outside
+the coordinator tree unless the admission entry sets `console_role`.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
@@ -69,7 +75,7 @@ call, and keeps the record.
 
 An identical request replays `{"ok": true, "data": {"session": {"id", "agent",
 "session_incarnation"}}}` with HTTP 201 and never reaches the target daemon, including
-after a generation rotation.
+after a generation rotation. The role recorded by the first create stays.
 
 An operation that failed is never recreated: submit a new operation id.
 
