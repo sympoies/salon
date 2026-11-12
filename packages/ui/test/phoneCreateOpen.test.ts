@@ -97,6 +97,9 @@ test("a phone create on a machine without history opens the terminal", async () 
   try {
     await waitFor(() => h.container.querySelector(".terminal-pane") !== null, "the terminal opens");
     assertNoElement(h.container, ".phone-conversation-pane");
+    // Create keeps its plain terminal open, without the list's history-unavailable notice.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
+    assert.ok(!(h.container.textContent ?? "").includes("Conversation history is unavailable"));
   } finally { await h.close(); }
 });
 

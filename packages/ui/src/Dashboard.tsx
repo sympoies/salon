@@ -1159,10 +1159,13 @@ export function Dashboard({
   }, [conversationBusy, enterSession]);
   // The phone open preference, shared by the session list and a fresh create.
   // Returns false when it does not apply, leaving the caller's own navigation.
-  const openByPhonePreference = useCallback((session: Session): boolean => {
+  // A create keeps its own terminal navigation without the list's history notice.
+  const openByPhonePreference = useCallback((session: Session, terminalFallback = true): boolean => {
     if (!(viewport.mobile || viewport.touchPrimary) || phoneSessionOpen !== "conversation") return false;
+    const hasHistory = historyMachineNames.has(session.machine);
+    if (!hasHistory && !terminalFallback) return false;
     setPhoneConversationNotice(undefined);
-    if (historyMachineNames.has(session.machine)) openConversation(session);
+    if (hasHistory) openConversation(session);
     else openPhoneTerminal(session, viewport.mobile);
     return true;
   }, [historyMachineNames, openConversation, openPhoneTerminal, phoneSessionOpen, viewport.mobile, viewport.touchPrimary]);
@@ -1927,7 +1930,7 @@ export function Dashboard({
       const titleCreatedSession = resolveCreateTitleSession(r.session, reconciledCreatedSession);
       if (reconciledCreatedSession) {
         placeCreatedSession(targetSlot, sessionKey(reconciledCreatedSession), applied);
-        openByPhonePreferenceRef.current(reconciledCreatedSession);
+        openByPhonePreferenceRef.current(reconciledCreatedSession, false);
       } else if (r.id) {
         void refresh();
       }
