@@ -465,9 +465,10 @@ test("Settings styles define sectioned layout and the machine switch", () => {
 });
 
 test("Settings machine color controls align in a shared column", () => {
-  assert.match(css, /\.settings-machines \{[\s\S]*?grid-template-columns: auto minmax\(0, 1fr\) auto auto;/);
-  assert.match(css, /\.settings-row \{[\s\S]*?grid-template-columns: subgrid;/);
-  assert.match(css, /\.settings-row-actions \{[\s\S]*?display: contents;/);
+  const reorderCss = uiSource("ReorderList.css");
+  assert.match(reorderCss, /\.reorder-list \{[\s\S]*?grid-template-columns: auto minmax\(0, 1fr\) auto auto;/);
+  assert.match(reorderCss, /\.reorder-row \{[\s\S]*?grid-template-columns: subgrid;/);
+  assert.match(reorderCss, /\.reorder-row-actions \{[\s\S]*?display: contents;/);
   assert.match(css, /\.settings-machine-color \{[\s\S]*?justify-self: start;/);
   assert.match(css, /\.settings-row-note,\n\.settings-switch \{[\s\S]*?justify-self: end;/);
 });

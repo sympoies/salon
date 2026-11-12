@@ -165,7 +165,7 @@ test("a lost pointer capture does not end the drag, and the release over another
   await pointer(m, "pointerdown", grip, centre(0), "mouse");
   await pointer(m, "pointermove", grip, centre(1), "mouse");
   await act(async () => { grip.dispatchEvent(new m.window.PointerEvent("lostpointercapture", { bubbles: true, pointerId: 7 })); });
-  const elsewhere = m.container.querySelector<HTMLElement>('[data-reorder-key="summit"] .settings-row-label')!;
+  const elsewhere = m.container.querySelector<HTMLElement>('[data-reorder-key="summit"] .reorder-row-label')!;
   await pointer(m, "pointermove", elsewhere, centre(2), "mouse");
   await pointer(m, "pointerup", elsewhere, centre(2), "mouse");
   assert.deepEqual(m.reorders, [["mesa", "summit", "cedar"]]);
@@ -175,7 +175,7 @@ test("a pointercancel away from the handle leaves no drag state behind", async (
   const m = await mount(["cedar", "mesa", "summit"]);
   await m.render(); layout(m);
   const grip = handle(m, "cedar");
-  const elsewhere = m.container.querySelector<HTMLElement>('[data-reorder-key="summit"] .settings-row-label')!;
+  const elsewhere = m.container.querySelector<HTMLElement>('[data-reorder-key="summit"] .reorder-row-label')!;
   await pointer(m, "pointerdown", grip, centre(0), "mouse");
   await pointer(m, "pointermove", elsewhere, centre(2), "mouse");
   assert.equal(m.container.querySelectorAll("[data-dragging]").length, 1);
@@ -187,6 +187,94 @@ test("a pointercancel away from the handle leaves no drag state behind", async (
   assertNoElement(m.container, "[data-dragging]", "later pointer events do not revive the drag");
   assert.deepEqual(m.reorders, [], "nothing is saved after a cancel");
 });
+
+// Counts the document listeners a drag holds: each add without a matching remove of the same function.
+const DRAG_EVENTS = ["pointermove", "pointerup", "pointercancel"];
+function trackDragListeners(m: Mounted) {
+  const target = m.window.document;
+  const active = new Set<string>();
+  const key = (type: string, listener: unknown) => `${type}:${(listener as { id?: string }).id ??= `l${active.size}-${Math.random()}`}`;
+  const add = target.addEventListener.bind(target);
+  const remove = target.removeEventListener.bind(target);
+  target.addEventListener = ((type: string, listener: any, options?: any) => {
+    if (DRAG_EVENTS.includes(type)) active.add(key(type, listener));
+    return add(type, listener, options);
+  }) as typeof target.addEventListener;
+  target.removeEventListener = ((type: string, listener: any, options?: any) => {
+    if (DRAG_EVENTS.includes(type)) active.delete(key(type, listener));
+    return remove(type, listener, options);
+  }) as typeof target.removeEventListener;
+  return { count: () => active.size };
+}
+const press = (m: Mounted, target: Element, y: number, init: PointerEventInit) =>
+  act(async () => { target.dispatchEvent(new m.window.PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 7, pointerType: "mouse", clientX: 20, clientY: y, ...init })); });
+
+test("a drag holds one pointer-move, release and cancel listener on the document and none after a release", async () => {
+  const m = await mount(["cedar", "mesa", "summit"]);
+  await m.render(); layout(m);
+  const listeners = trackDragListeners(m);
+  const grip = handle(m, "cedar");
+  assert.equal(listeners.count(), 0, "an idle list holds no document listener");
+  await pointer(m, "pointerdown", grip, centre(0), "mouse");
+  assert.equal(listeners.count(), 3);
+  await pointer(m, "pointermove", grip, centre(1), "mouse");
+  assert.equal(listeners.count(), 3, "moving adds none");
+  await pointer(m, "pointerup", grip, centre(1), "mouse");
+  assert.equal(listeners.count(), 0);
+});
+
+test("a cancelled drag releases its document listeners", async () => {
+  const m = await mount(["cedar", "mesa", "summit"]);
+  await m.render(); layout(m);
+  const listeners = trackDragListeners(m);
+  const grip = handle(m, "cedar");
+  await pointer(m, "pointerdown", grip, centre(0), "mouse");
+  await pointer(m, "pointermove", grip, centre(1), "mouse");
+  await pointer(m, "pointercancel", grip, centre(1), "mouse");
+  assert.equal(listeners.count(), 0);
+});
+
+test("a second press during a drag replaces the first drag's document listeners", async () => {
+  const m = await mount(["cedar", "mesa", "summit"]);
+  await m.render(); layout(m);
+  const listeners = trackDragListeners(m);
+  await pointer(m, "pointerdown", handle(m, "cedar"), centre(0), "mouse");
+  await pointer(m, "pointerdown", handle(m, "mesa"), centre(1), "mouse");
+  assert.equal(listeners.count(), 3, "the first drag's listeners are removed, not stacked");
+  await pointer(m, "pointerup", handle(m, "mesa"), centre(1), "mouse");
+  assert.equal(listeners.count(), 0);
+  assert.deepEqual(m.reorders, []);
+});
+
+test("unmounting mid-drag removes the document listeners and saves nothing", async () => {
+  const m = await mount(["cedar", "mesa", "summit"]);
+  await m.render(); layout(m);
+  const listeners = trackDragListeners(m);
+  const grip = handle(m, "cedar");
+  await pointer(m, "pointerdown", grip, centre(0), "mouse");
+  await pointer(m, "pointermove", grip, centre(2), "mouse");
+  assert.equal(listeners.count(), 3);
+  await act(async () => m.root.unmount());
+  assert.equal(listeners.count(), 0);
+  await act(async () => { m.window.document.dispatchEvent(new m.window.PointerEvent("pointerup", { pointerId: 7, isPrimary: true, button: 0, clientX: 20, clientY: centre(2) })); });
+  assert.deepEqual(m.reorders, []);
+});
+
+for (const [label, init] of [["a secondary button", { isPrimary: true, button: 2, buttons: 2 }], ["a non-primary pointer", { isPrimary: false, button: 0, buttons: 1 }]] as const) {
+  test(`${label} press on a handle does not start a drag`, async () => {
+    const m = await mount(["cedar", "mesa", "summit"]);
+    await m.render(); layout(m);
+    const listeners = trackDragListeners(m);
+    const grip = handle(m, "cedar");
+    await press(m, grip, centre(0), init);
+    assert.equal(listeners.count(), 0);
+    await pointer(m, "pointermove", grip, centre(2), "mouse");
+    assertNoElement(m.container, "[data-dragging]", "no preview starts");
+    await pointer(m, "pointerup", grip, centre(2), "mouse");
+    assert.deepEqual(m.reorders, []);
+    assert.deepEqual(names(m), ["cedar", "mesa", "summit"]);
+  });
+}
 
 test("ReorderList reorders arbitrary items by key and renders the restore slot after the list", async () => {
   const { ReorderList } = await ssr.loadModule<{ ReorderList: ComponentType<any> }>("/src/ReorderList.tsx");
@@ -214,7 +302,7 @@ test("ReorderList reorders arbitrary items by key and renders the restore slot a
   await act(async () => root.render(createElement(Harness)));
   await act(async () => { container.querySelector<HTMLElement>('[aria-label="Move build up"]')!.click(); });
   assert.deepEqual(saved, [[roles[1], roles[0]]], "the callback receives the items, not their keys");
-  assert.deepEqual([...container.querySelectorAll(".settings-row-label")].map(label => label.textContent), ["Builder", "Planner"]);
+  assert.deepEqual([...container.querySelectorAll(".reorder-row-label")].map(label => label.textContent), ["Builder", "Planner"]);
   assert.equal(container.lastElementChild?.id, "restore", "the restore slot follows the list");
 });
 
@@ -234,12 +322,14 @@ test("up and down buttons reorder, are labelled per host and keep focus at the l
 });
 
 test("the dragged row has an opaque surface, never the translucent panel behind it", () => {
-  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
-  const rule = css.match(/\.settings-machines \[data-dragging\] \{([^}]*)\}/)?.[1] ?? "";
+  const css = readFileSync(new URL("../src/ReorderList.css", import.meta.url), "utf8");
+  const stylesheet = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const rule = css.match(/\.reorder-list \[data-dragging\] \{([^}]*)\}/)?.[1] ?? "";
   const background = rule.match(/background(?:-color)?:\s*var\((--[a-z-]+)\)/)?.[1];
   assert.ok(background, "the dragged row declares a background token");
-  const definitions = [...css.matchAll(new RegExp(`${background}:\\s*([^;]+);`, "g"))].map(match => match[1]!.trim());
+  const definitions = [...stylesheet.matchAll(new RegExp(`${background}:\\s*([^;]+);`, "g"))].map(match => match[1]!.trim());
   assert.ok(definitions.length > 0);
   for (const value of definitions) assert.match(value, /^#[0-9a-fA-F]{6}$/, `${background} is an opaque colour`);
-  assert.match(css, /\.machine-order-handle \{[^}]*touch-action: none/, "touch drags start from the handle instead of scrolling");
+  assert.match(css, /\.reorder-row \{[^}]*border: 1px solid var\(--border-subtle\);/, "rows use the soft hairline");
+  assert.match(css, /\.reorder-handle \{[^}]*touch-action: none/, "touch drags start from the handle instead of scrolling");
 });

@@ -1,5 +1,6 @@
 import { type PointerEvent, type RefObject, type ReactNode, useEffect, useRef, useState } from "react";
 import { moveMachine } from "./machineOrder.ts";
+import "./ReorderList.css";
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -114,25 +115,25 @@ export function ReorderList<T>({ items, itemKey, renderLabel, renderActions, onR
 
   return (
     <>
-      <ul className="settings-machines" ref={list}>
+      <ul className="reorder-list" ref={list}>
         {shownKeys.map((key, index) => {
           const item = byKey.get(key)!;
           return (
-            <li key={key} className="settings-row" data-reorder-key={key} data-dragging={draggingKey === key ? "" : undefined}>
+            <li key={key} className="reorder-row" data-reorder-key={key} data-dragging={draggingKey === key ? "" : undefined}>
               <button
                 type="button"
-                className="machine-order-handle"
+                className="reorder-handle"
                 data-reorder-handle=""
                 aria-label={`Drag ${key} to reorder`}
                 onPointerDown={(event) => begin(event, key)}
               >
                 ⠿
               </button>
-              <span className="settings-row-label">{renderLabel(item)}</span>
-              <span className="settings-row-actions">{renderActions(item)}</span>
-              <span className="machine-order-moves">
-                <button type="button" className="machine-order-move" aria-label={`Move ${key} up`} aria-disabled={index === 0} onClick={() => move(key, -1)}>↑</button>
-                <button type="button" className="machine-order-move" aria-label={`Move ${key} down`} aria-disabled={index === shownKeys.length - 1} onClick={() => move(key, 1)}>↓</button>
+              <span className="reorder-row-label">{renderLabel(item)}</span>
+              <span className="reorder-row-actions">{renderActions(item)}</span>
+              <span className="reorder-moves">
+                <button type="button" className="reorder-move" aria-label={`Move ${key} up`} aria-disabled={index === 0} onClick={() => move(key, -1)}>↑</button>
+                <button type="button" className="reorder-move" aria-label={`Move ${key} down`} aria-disabled={index === shownKeys.length - 1} onClick={() => move(key, 1)}>↓</button>
               </span>
             </li>
           );
