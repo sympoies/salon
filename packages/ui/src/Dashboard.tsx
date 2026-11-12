@@ -1157,6 +1157,17 @@ export function Dashboard({
     setPhoneConversationNotice(unavailable ? "Conversation history is unavailable for this session. Opened terminal." : undefined);
     enterSession(sessionKey(session), session.machine);
   }, [conversationBusy, enterSession]);
+  // The phone open preference, shared by the session list and a fresh create.
+  // Returns false when it does not apply, leaving the caller's own navigation.
+  const openByPhonePreference = useCallback((session: Session): boolean => {
+    if (!(viewport.mobile || viewport.touchPrimary) || phoneSessionOpen !== "conversation") return false;
+    setPhoneConversationNotice(undefined);
+    if (historyMachineNames.has(session.machine)) openConversation(session);
+    else openPhoneTerminal(session, viewport.mobile);
+    return true;
+  }, [historyMachineNames, openConversation, openPhoneTerminal, phoneSessionOpen, viewport.mobile, viewport.touchPrimary]);
+  const openByPhonePreferenceRef = useRef(openByPhonePreference);
+  openByPhonePreferenceRef.current = openByPhonePreference;
   // Sending or dictating a phone reply keeps its session on screen, as the
   // Conversation modal did while busy.
   const phoneConversationLocked = viewport.mobile && phoneConversationMode && conversationBusy;
@@ -1914,9 +1925,9 @@ export function Dashboard({
         ? resolveCreatedSession(res.sessions, before, { machine, id: r.id })
         : null;
       const titleCreatedSession = resolveCreateTitleSession(r.session, reconciledCreatedSession);
-      const createdKey = reconciledCreatedSession ? sessionKey(reconciledCreatedSession) : undefined;
-      if (createdKey) {
-        placeCreatedSession(targetSlot, createdKey, applied);
+      if (reconciledCreatedSession) {
+        placeCreatedSession(targetSlot, sessionKey(reconciledCreatedSession), applied);
+        openByPhonePreferenceRef.current(reconciledCreatedSession);
       } else if (r.id) {
         void refresh();
       }
@@ -2532,12 +2543,7 @@ export function Dashboard({
 
   const onOverviewSession = useCallback((key: string) => {
     const session = sessionsByKey.get(key);
-    if ((viewport.mobile || viewport.touchPrimary) && phoneSessionOpen === "conversation" && session) {
-      setPhoneConversationNotice(undefined);
-      if (historyMachineNames.has(session.machine)) openConversation(session);
-      else openPhoneTerminal(session, viewport.mobile);
-      return;
-    }
+    if (session && openByPhonePreference(session)) return;
     const action = resolveSessionNavigatorSelection({
       selectedSessionKey: key,
       gridSessionKeys: overviewPage.sessionKeys,
@@ -2552,7 +2558,7 @@ export function Dashboard({
     }
     overviewRestorePromptTargetKeyRef.current = action.restorePromptTargetKey;
     enterSession(action.sessionKey, sessionsByKey.get(action.sessionKey)?.machine);
-  }, [enterSession, overviewPage.sessionKeys, promptTargetKey, requestPromptTargetFocus, sessionsByKey, viewport.mobile, viewport.touchPrimary, phoneSessionOpen, historyMachineNames, openConversation, openPhoneTerminal]);
+  }, [enterSession, overviewPage.sessionKeys, promptTargetKey, requestPromptTargetFocus, sessionsByKey, viewport.mobile, viewport.touchPrimary, openByPhonePreference]);
   // ⌘F: toggle between the grid list and a single focused session. From a
   // session it drops back to the list; from the list it enters the last
   // selected pane, falling back to the active terminal, remembered focus,
