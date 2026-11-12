@@ -121,6 +121,6 @@ test("repeated mouse drags on a 7-row Machines list commit at the slot under the
     socket?.close();
     browser.kill();
     await new Promise(resolve => { if (browser.exitCode !== null || browser.signalCode !== null) resolve(null); else browser.once("exit", resolve); });
-    rmSync(temp, { recursive: true, force: true });
+    rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
