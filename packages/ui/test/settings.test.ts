@@ -539,7 +539,7 @@ test("Settings lists machines in the given order and offers Restore defaults onl
   const { Settings } = await ssr.loadModule<{ Settings: ComponentType<SettingsProps> }>("/src/Settings.tsx");
   const render = (machineOrderSaved: boolean) => renderToStaticMarkup(createElement(Settings, { ...versionSettingsProps(), machines: ["mesa", "cedar"], machineOrderSaved }));
   const saved = render(true);
-  assert.ok(saved.indexOf('data-machine="mesa"') < saved.indexOf('data-machine="cedar"'), "rows follow the given order");
+  assert.ok(saved.indexOf('data-reorder-key="mesa"') < saved.indexOf('data-reorder-key="cedar"'), "rows follow the given order");
   assert.match(saved, /<button type="button" class="btn ghost">Restore defaults<\/button>/);
   assert.match(render(false), /<button type="button" class="btn ghost" disabled="">Restore defaults<\/button>/);
 });
