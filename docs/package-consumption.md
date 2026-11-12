@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.64 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.65 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,9 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.64`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.65`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.64
+### Changes retained in SDK 0.1.65
 
 Sessions carry a marker for a draft the runtime saved, and the composer can show, restore and discard it
 (#282, #383). The UI API also exports `discardSavedDraft` for this action.
@@ -326,12 +326,14 @@ Dragging a machine in the Machines list targets the nearest slot, including acro
 A session created on a phone or touch viewport opens according to the phone open preference. A machine
 without history keeps the terminal and shows no notice (#430).
 
-### Changes since SDK 0.1.64
+A Machines drag keeps reordering until release, wherever the pointer moves, and commits reliably. The
+drag is tracked on the document, so a release off the handle is not lost (#444).
 
 `@agent-console/ui/reorder-list` exports `ReorderList` and `useReorderDrag`, so a consumer can reuse
-the list behind the Machines setting for its own ordered settings (#445). The package stylesheet
-for the list loads with the module under the `reorder-*` class names, so the consumer copies no CSS.
-The list has the same drag and up/down controls as Machines.
+the list behind the Machines setting for its own ordered settings (#446). The package stylesheet
+for the list loads with the module under the generic `reorder-*` class names, so the consumer copies
+no CSS. The old Machines list class names are gone. The list has the same drag and up/down controls
+as Machines.
 
 `ReorderList<T>` takes these props:
 
@@ -346,9 +348,12 @@ keys, a ref to the list element whose rows carry `data-reorder-key`, and a callb
 new key order. It returns `shownKeys`, `draggingKey` and `begin(event, key)`, which a handle's
 `onPointerDown` calls.
 
+A container image is published for each release tag, and its digest is recorded in the release notes.
+`compose.image.yaml` runs that image pull-only (#442).
+
 ### Preserve published releases
 
-Existing `v0.1.0` through `v0.1.63` tags and assets stay immutable. The visibility transition does
+Existing `v0.1.0` through `v0.1.64` tags and assets stay immutable. The visibility transition does
 not republish those releases, change their source or digests, or reuse an existing tag.
 
 A future publication requires separately approved version metadata and an unused tag. This
