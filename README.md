@@ -57,13 +57,14 @@ the matching tag, then set the reference from those notes:
 
 ```bash
 export SALON_IMAGE=ghcr.io/sympoies/salon@sha256:<digest-from-release-notes>
-docker compose -f compose.image.yaml up -d
+docker compose -f compose.image.yaml up -d --wait
 bash scripts/smoke-compose.sh compose.image.yaml
 ```
 
 `compose.image.yaml` matches `compose.yaml` (loopback port 3000, volumes,
 read-only root, memory limit, init, non-root user and health check) except that
-it pulls `SALON_IMAGE` instead of building the checkout. Compose refuses to
+it pulls `SALON_IMAGE` instead of building the checkout. `--wait` returns once the
+health check passes, so the smoke check does not race the start period. Compose refuses to
 start while `SALON_IMAGE` is unset.
 
 The smoke check needs no provider credentials. It prints one `PASS` or `FAIL`
