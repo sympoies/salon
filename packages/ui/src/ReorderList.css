@@ -1,0 +1,62 @@
+.reorder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  column-gap: var(--space-md);
+  row-gap: var(--space-xs);
+}
+.reorder-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--surface-toolbar);
+}
+/* The dragged row sits on an opaque token: a transparent row would show the
+   translucent panel's backdrop through the drag preview. */
+.reorder-list [data-dragging] {
+  background: var(--surface-overlay);
+  border-color: var(--border-strong, var(--border-subtle));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.reorder-handle,
+.reorder-move {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg-2);
+  font: inherit;
+  cursor: pointer;
+}
+.reorder-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.reorder-move[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+.reorder-moves {
+  display: inline-flex;
+  gap: var(--space-2xs);
+}
+.reorder-list [data-dragging] .reorder-handle {
+  cursor: grabbing;
+}
+.reorder-row-label {
+  font-family: "BlexMono Nerd Font Mono", ui-monospace, monospace;
+  font-size: var(--text-base);
+  min-width: 0;
+}
+.reorder-row-actions {
+  display: contents;
+}

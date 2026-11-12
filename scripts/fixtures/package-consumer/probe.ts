@@ -167,7 +167,28 @@ async function checkSubmittedUi(base: string) {
     await rpc("Page.navigate", { url: `${base}/?submitted-fixture&later` }, sessionId);
     const remounted = await wait(value => value.outboxReads > 0 && value.proofCount === 1);
     assert.equal(remounted.visibleEchoes, 0, "fresh document with a later history window preserves durable handover");
-    console.log(`packed public UI: PASS ${JSON.stringify({ before, handed, remounted })}`);
+    await rpc("Page.navigate", { url: `${base}/?reorder-fixture` }, sessionId);
+    const reorder = await new Promise<any>((resolve, reject) => {
+      const deadline = Date.now() + 10_000;
+      const poll = async () => {
+        try {
+          const value = await evaluate(`(async () => { const list = document.querySelector("ul.reorder-list");
+            const labels = [...document.querySelectorAll(".reorder-row-label")].map(node => node.textContent);
+            if (!list || labels.length < 2) return null;
+            document.querySelector('[aria-label="Move build up"]').click();
+            await new Promise(done => setTimeout(done, 50));
+            return { before: labels, list: getComputedStyle(list).listStyleType, display: getComputedStyle(list).display,
+              after: [...document.querySelectorAll(".reorder-row-label")].map(node => node.textContent) }; })()`);
+          if (value) { resolve(value); return; }
+          if (Date.now() >= deadline) { reject(Error("packed ReorderList did not render")); return; }
+          setTimeout(poll, 50);
+        } catch (error) { reject(error); }
+      };
+      void poll();
+    });
+    assert.deepEqual(reorder, { before: ["Planner", "Builder"], list: "none", display: "grid", after: ["Builder", "Planner"] },
+      "the installed ReorderList renders two items with its own styles and reorders them");
+    console.log(`packed public UI: PASS ${JSON.stringify({ before, handed, remounted, reorder })}`);
   } finally {
     socket?.close();
     if (chrome.exitCode === null && chrome.signalCode === null) {

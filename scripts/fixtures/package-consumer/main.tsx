@@ -1,6 +1,8 @@
 import { mountApp } from "@agent-console/ui/app";
 import type { UiExtension } from "@agent-console/ui/extensions";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
+import { ReorderList } from "@agent-console/ui/reorder-list";
 import { LiveConversationPanel } from "@agent-console/ui/live-conversation-panel";
 import { setPrincipalStorageNamespace } from "@agent-console/ui/storage";
 import { useTheme } from "@agent-console/ui/theme";
@@ -16,7 +18,16 @@ const extension: UiExtension = {
   id: "fixture",
   settingsPanels: [{ id: "details", render: () => <p>Installed package consumer</p> }],
 };
-if (new URLSearchParams(location.search).has("submitted-fixture")) {
+if (new URLSearchParams(location.search).has("reorder-fixture")) {
+  // The installed list reorders arbitrary items and carries its own styles.
+  const roles = [{ id: "plan", title: "Planner" }, { id: "build", title: "Builder" }];
+  const Fixture = () => {
+    const [items, setItems] = useState<readonly { id: string; title: string }[]>(roles);
+    return <ReorderList items={items} itemKey={role => role.id} renderLabel={role => role.title}
+      renderActions={role => <i>{role.id}</i>} onReorder={setItems} />;
+  };
+  createRoot(document.getElementById("root")!).render(<Fixture />);
+} else if (new URLSearchParams(location.search).has("submitted-fixture")) {
   // Only HTTP is simulated. Public installed components, history normalization
   // and the browser's native IndexedDB journal run unchanged.
   setPrincipalStorageNamespace("fixture");

@@ -326,6 +326,26 @@ Dragging a machine in the Machines list targets the nearest slot, including acro
 A session created on a phone or touch viewport opens according to the phone open preference. A machine
 without history keeps the terminal and shows no notice (#430).
 
+### Changes since SDK 0.1.64
+
+`@agent-console/ui/reorder-list` exports `ReorderList` and `useReorderDrag`, so a consumer can reuse
+the list behind the Machines setting for its own ordered settings (#445). The package stylesheet
+for the list loads with the module under the `reorder-*` class names, so the consumer copies no CSS.
+The list has the same drag and up/down controls as Machines.
+
+`ReorderList<T>` takes these props:
+
+- `items`: the items in their current order.
+- `itemKey`: returns each item's unique string key, which also names its row controls.
+- `renderLabel` and `renderActions`: render the row's label and its trailing actions.
+- `onReorder`: receives the items in the new order after a drop or a move button.
+- `restore`: optional node rendered after the list, such as a restore-defaults button.
+
+`useReorderDrag({ keys, list, onReorder })` is the pointer-drag hook alone. It takes the current
+keys, a ref to the list element whose rows carry `data-reorder-key`, and a callback that receives the
+new key order. It returns `shownKeys`, `draggingKey` and `begin(event, key)`, which a handle's
+`onPointerDown` calls.
+
 ### Preserve published releases
 
 Existing `v0.1.0` through `v0.1.63` tags and assets stay immutable. The visibility transition does

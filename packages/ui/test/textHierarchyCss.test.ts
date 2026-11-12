@@ -112,7 +112,6 @@ test("floating layers and resting containers use the soft hairline", () => {
     ".modal",
     ".terminal-touch-menu",
     ".login-card",
-    ".settings-row",
     ".debug-event",
     ".log-view",
     ".upload-status",

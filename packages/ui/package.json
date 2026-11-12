@@ -75,6 +75,11 @@
       "types": "./dist-package/src/accountDefaults.d.ts",
       "default": "./dist-package/src/accountDefaults.js"
     },
+    "./reorder-list": {
+      "source": "./src/ReorderList.tsx",
+      "types": "./dist-package/src/ReorderList.d.ts",
+      "default": "./dist-package/src/ReorderList.js"
+    },
     "./live-conversation-panel": {
       "source": "./src/LiveConversationPanel.tsx",
       "types": "./dist-package/src/LiveConversationPanel.d.ts",
