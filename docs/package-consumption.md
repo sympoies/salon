@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.65 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.66 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,9 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.65`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.66`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.65
+### Changes retained in SDK 0.1.66
 
 Sessions carry a marker for a draft the runtime saved, and the composer can show, restore and discard it
 (#282, #383). The UI API also exports `discardSavedDraft` for this action.
@@ -340,7 +340,8 @@ as Machines.
 - `items`: the items in their current order.
 - `itemKey`: returns each item's unique string key.
 - `itemName`: optional human-readable name for the drag and up/down controls. For example,
-  `itemName={role => role.title}` names a role with key `lead` as "Project lead". When omitted, controls use the key.
+  `itemName={role => role.title}` names a role with key `lead` as "Project lead". When omitted, controls use the key
+  (#456).
 - `renderLabel` and `renderActions`: render the row's label and its trailing actions.
 - `onReorder`: receives the items in the new order after a drop or a move button.
 - `restore`: optional node rendered after the list, such as a restore-defaults button.
@@ -353,9 +354,18 @@ new key order. It returns `shownKeys`, `draggingKey` and `begin(event, key)`, wh
 A container image is published for each release tag, and its digest is recorded in the release notes.
 `compose.image.yaml` runs that image pull-only (#442).
 
+Start-service admission entries accept an optional `console_role`. Service creation records that role,
+so a coordinator root started by a service matches coordinator messaging selectors (#451).
+
+Codex sessions hand a submitted echo over to its history turn using the runtime's accepted request
+identity, without a duplicate. Claude keeps its existing matching behavior (#455; follow-up #23).
+
+Test-only changes make remote-image cache timing deterministic and cover reorder gaps and slot
+invariants (#453, #454).
+
 ### Preserve published releases
 
-Existing `v0.1.0` through `v0.1.64` tags and assets stay immutable. The visibility transition does
+Existing `v0.1.0` through `v0.1.65` tags and assets stay immutable. The visibility transition does
 not republish those releases, change their source or digests, or reuse an existing tag.
 
 A future publication requires separately approved version metadata and an unused tag. This
