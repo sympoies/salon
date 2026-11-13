@@ -7820,6 +7820,8 @@ textarea {
 .conversation-tools { min-width: 0; max-width: 100%; font-size: var(--text-xs); }
 .conversation-tool { margin-top: 4px; border: 1px solid var(--border-default); border-radius: var(--r-sm); overflow: hidden; }
 .conversation-tool-toggle { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; padding: 6px 8px; border: 0; background: var(--surface-overlay); color: var(--conversation-agent-text); text-align: left; cursor: pointer; font: inherit; }
+/* Keep the full-width hit area under an edge press; scaling can lose the click. */
+.conversation-tool-toggle:not(:disabled):active { transform: none; filter: brightness(1.2); }
 .conversation-tool-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .conversation-tool-toggle strong { flex-shrink: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
 .conversation-tool-input { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--conversation-meta); }
