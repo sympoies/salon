@@ -1,10 +1,11 @@
 import { strict as assert } from "node:assert";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { execFile } from "node:child_process";
+import { mkdirSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
@@ -41,7 +42,7 @@ test("non-image file cards retain names, extensions and stacking at phone and de
           createRoot(document.querySelector('#root')).render(React.createElement(React.Fragment,null,React.createElement('h2',null,'Synthetic file cards'),React.createElement('section',{className:'history-messages'},elements)));
           const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right}};
           setTimeout(()=>{const cards=[...document.querySelectorAll('.file-card')];
-            window.publish({width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,
+            window.publish({charset:document.characterSet,parentCharset:parent.document.characterSet,width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,
               literal:document.querySelector('#root').textContent.includes('[File')||document.querySelector('#root').textContent.includes('stored-'),
               cards:cards.map(card=>{const name=card.querySelector('.file-card-name'),stem=card.querySelector('.file-card-stem'),extension=card.querySelector('.file-card-extension');
                 return {name:name?.textContent,details:card.querySelector('.file-card-details')?.textContent,box:rect(card),bubble:rect(card.closest('.history-bubble')),time:rect(card.closest('article').querySelector('time')),
@@ -58,23 +59,29 @@ test("non-image file cards retain names, extensions and stacking at phone and de
   assert.ok(output && "output" in output);
   const code = output.output.filter(item => item.type === "chunk").map(item => item.code).join("\n");
   const css = output.output.filter(item => item.type === "asset" && item.fileName.endsWith(".css")).map(item => String(item.source)).join("\n");
-  const temp = mkdtempSync(join(tmpdir(), "file-cards-"));
+  let html = "";
+  // Omit transport charset so the documents must declare their own encoding.
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "text/html");
+    response.end(html);
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
   try {
     for (const width of [384, 1280]) {
-      const file = join(temp, `fixture-${width}.html`);
-      const frame = `<!doctype html><style>${css}html,body{margin:0}h2{padding:8px;font-size:16px}.history-messages{height:auto;overflow:visible}#root{padding:8px}</style><div id="root"></div><script>
+      const frame = `<!doctype html><meta charset="utf-8"><style>${css}html,body{margin:0}h2{padding:8px;font-size:16px}.history-messages{height:auto;overflow:visible}#root{padding:8px}</style><div id="root"></div><script>
         window.publish=value=>parent.document.querySelector('#result').textContent=JSON.stringify(value);
         window.onerror=error=>window.publish({error:String(error)});${code.replaceAll("</script", "<\\/script")}</script>`;
-      writeFileSync(file, `<!doctype html><style>html,body{margin:0}iframe{border:0;display:block}</style><iframe width="${width}" height="1050"></iframe><pre id="result" hidden></pre><script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<", "\\u003c")}</script>`);
+      html = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0}iframe{border:0;display:block}</style><iframe width="${width}" height="1050"></iframe><pre id="result" hidden></pre><script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<", "\\u003c")}</script>`;
       const evidence = process.env.AGENT_CONSOLE_UI_SCREENSHOT_DIR;
       if (evidence) mkdirSync(evidence, { recursive: true });
-      const browser = spawnSync(process.env.CHROME_BIN ?? "google-chrome", [
-        "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--allow-file-access-from-files",
+      const browser = await promisify(execFile)(process.env.CHROME_BIN ?? "google-chrome", [
+        "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
         `--window-size=${Math.max(width, 800)},1050`, "--virtual-time-budget=5000",
         ...(evidence ? [`--screenshot=${join(evidence, `file-cards-${width}.png`)}`] : []),
-        "--dump-dom", `file://${file}`,
+        "--dump-dom", `http://127.0.0.1:${address.port}/`,
       ], { encoding: "utf8", timeout: 20000, maxBuffer: 16 * 1024 * 1024 });
-      assert.equal(browser.status, 0, browser.error?.message ?? browser.stderr);
       const json = browser.stdout.match(/<pre id="result"[^>]*>(.+?)<\/pre>/s)?.[1];
       assert.ok(json, "browser publishes the rendered fixture result");
       const result = JSON.parse(json.replaceAll("&quot;", '"').replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">"));
@@ -84,7 +91,10 @@ test("non-image file cards retain names, extensions and stacking at phone and de
         assert.equal(result.overflow, false);
         assert.equal(result.literal, false);
         assert.equal(result.cards.length, 7);
-        assert.deepEqual(result.cards.map(card => card.details), ["Video · 2 MB", "Document · 1 KB", "Document · 10 KB", "Video · 2 MB", "Archive", "File", "Document · 5 B"]);
+        const details = ["Video · 2 MB", "Document · 1 KB", "Document · 10 KB", "Video · 2 MB", "Archive", "File", "Document · 5 B"];
+        for (const [index, expected] of details.entries()) assert.equal(result.cards[index].details, expected);
+        assert.equal(result.parentCharset, "UTF-8");
+        assert.equal(result.charset, "UTF-8");
         assert.equal(result.cards.at(-1).name, "notes.txt", "delivered history reads the frozen descriptor name");
         assert.equal(result.textFirst, true);
         for (const card of result.cards) {
@@ -104,5 +114,7 @@ test("non-image file cards retain names, extensions and stacking at phone and de
         assert.ok(Math.abs(result.cards[4].box.y - (result.cards[3].box.y + result.cards[3].box.h) - 6) < 1);
       });
     }
-  } finally { rmSync(temp, { recursive: true, force: true }); }
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
 });
