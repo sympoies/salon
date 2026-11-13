@@ -11,6 +11,7 @@ export type NoticeSurface = "dashboard" | "shell";
 /** Mount production surfaces, mocking only transport and the terminal renderer. */
 export async function renderNoticeSurface(surface: NoticeSurface, width: number, connection?: {
   readonly restore: boolean;
+  readonly androidLayout?: "desktop" | "mobile";
   readonly error?: string;
   readonly machine?: string;
   readonly conversationUnavailable?: boolean;
@@ -24,6 +25,10 @@ export async function renderNoticeSurface(surface: NoticeSurface, width: number,
 }): Promise<string> {
   const machine = connection?.machine ?? "very-long-production-machine-name";
   const window = new Window({ url: connection?.macTitleBar ? "http://tauri.localhost" : "http://localhost", width, height: 800 });
+  if (connection?.androidLayout) {
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    Object.defineProperty(window.navigator, "userAgent", { value: "Synthetic Android WebView", configurable: true });
+  }
   const globals = { window, document: window.document, Element: window.Element, HTMLElement: window.HTMLElement,
     HTMLInputElement: window.HTMLInputElement, HTMLSelectElement: window.HTMLSelectElement,
     __agentConsoleNoticePoll: undefined, __agentConsoleNoticeOutage: false, localStorage: window.localStorage, navigator: window.navigator, IS_REACT_ACT_ENVIRONMENT: true };
@@ -83,7 +88,7 @@ export async function renderNoticeSurface(surface: NoticeSurface, width: number,
       }
       const { Dashboard } = await harness.loadModule<typeof import("../../src/Dashboard.tsx")>("/src/Dashboard.tsx");
       const renderDashboard = (active: boolean) => root.render(createElement(Dashboard, { active, machines: [machine], enabledMachines: [machine], machineColors: {},
-        phoneFocusCounts: connection?.phoneFocusCounts, phoneSessionOpen: connection?.conversationUnavailable || connection?.focusedConversation ? "conversation" : "terminal", defaultAutoResume: false, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true, onDebug() {}, onUsage() {}, onSettings() {} }));
+        androidLayout: connection?.androidLayout, phoneFocusCounts: connection?.phoneFocusCounts, phoneSessionOpen: connection?.conversationUnavailable || connection?.focusedConversation ? "conversation" : "terminal", defaultAutoResume: false, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true, onDebug() {}, onUsage() {}, onSettings() {} }));
       await act(async () => renderDashboard(true));
       if (connection?.error) await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
       const tick = { signal: new AbortController().signal, isCurrent: () => true };
