@@ -88,11 +88,13 @@ export function useReorderDrag({ keys, list, onReorder }: {
  * A list whose rows reorder by dragging the handle (pointer events, so mouse,
  * pen and touch share one path with no native drag image) or by the up/down
  * buttons. The dragged row previews the new order live and the drop saves it.
- * `itemKey` identifies a row and names it in the control labels.
+ * `itemKey` identifies a row; `itemName` optionally names it in control labels.
  */
-export function ReorderList<T>({ items, itemKey, renderLabel, renderActions, onReorder, restore }: {
+export function ReorderList<T>({ items, itemKey, itemName, renderLabel, renderActions, onReorder, restore }: {
   readonly items: readonly T[];
   readonly itemKey: (item: T) => string;
+  /** Human-readable name for row controls; defaults to the item key. */
+  readonly itemName?: (item: T) => string;
   readonly renderLabel: (item: T) => ReactNode;
   readonly renderActions: (item: T) => ReactNode;
   readonly onReorder: (items: readonly T[]) => void;
@@ -118,13 +120,14 @@ export function ReorderList<T>({ items, itemKey, renderLabel, renderActions, onR
       <ul className="reorder-list" ref={list}>
         {shownKeys.map((key, index) => {
           const item = byKey.get(key)!;
+          const name = itemName ? itemName(item) : key;
           return (
             <li key={key} className="reorder-row" data-reorder-key={key} data-dragging={draggingKey === key ? "" : undefined}>
               <button
                 type="button"
                 className="reorder-handle"
                 data-reorder-handle=""
-                aria-label={`Drag ${key} to reorder`}
+                aria-label={`Drag ${name} to reorder`}
                 onPointerDown={(event) => begin(event, key)}
               >
                 ⠿
@@ -132,8 +135,8 @@ export function ReorderList<T>({ items, itemKey, renderLabel, renderActions, onR
               <span className="reorder-row-label">{renderLabel(item)}</span>
               <span className="reorder-row-actions">{renderActions(item)}</span>
               <span className="reorder-moves">
-                <button type="button" className="reorder-move" aria-label={`Move ${key} up`} aria-disabled={index === 0} onClick={() => move(key, -1)}>↑</button>
-                <button type="button" className="reorder-move" aria-label={`Move ${key} down`} aria-disabled={index === shownKeys.length - 1} onClick={() => move(key, 1)}>↓</button>
+                <button type="button" className="reorder-move" aria-label={`Move ${name} up`} aria-disabled={index === 0} onClick={() => move(key, -1)}>↑</button>
+                <button type="button" className="reorder-move" aria-label={`Move ${name} down`} aria-disabled={index === shownKeys.length - 1} onClick={() => move(key, 1)}>↓</button>
               </span>
             </li>
           );
