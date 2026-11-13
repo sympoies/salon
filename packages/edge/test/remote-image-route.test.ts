@@ -40,7 +40,8 @@ test("remote image route refuses cross-origin and serves fetched bytes", async (
   } finally { edge.closeAllConnections(); await new Promise<void>(resolve => edge.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("remote image cache, refusals and concurrency", async () => {
+test("remote image cache, refusals and concurrency", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const { mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -59,11 +60,13 @@ test("remote image cache, refusals and concurrency", async () => {
   const request = (name: string) => fetch(`${base}/api/history/sessions/fixture/history/remote-image/${imageId(name)}`);
   try {
     assert.equal(await (await request("a")).text(), "a");
+    // Request delays longer than the TTL must not advance the test clock.
+    await new Promise(resolve => setTimeout(resolve, 40));
     assert.equal(await (await request("a")).text(), "a");
     assert.equal(calls, 1);
     await request("b"); await request("a");
     assert.equal(calls, 3, "size eviction refetches oldest entry");
-    await new Promise(resolve => setTimeout(resolve, 40));
+    t.mock.timers.tick(31);
     await request("a"); assert.equal(calls, 4, "expired entry is refetched");
     const refused = await request("refuse");
     assert.equal(refused.status, 422);
