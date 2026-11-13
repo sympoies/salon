@@ -11,7 +11,9 @@ const smoke = join(repo, "scripts/smoke-compose.sh");
 
 type Fake = { id?: string; health?: string; port?: string; uids?: string; curl?: number };
 
-function run(fake: Fake, args: string[] = []) {
+const smokeSource = readFileSync(smoke, "utf8");
+
+function run(fake: Fake, args: string[] = [], source = smokeSource) {
   const root = mkdtempSync(join(tmpdir(), "salon-smoke-"));
   try {
     const bin = join(root, "bin");
@@ -22,14 +24,25 @@ function run(fake: Fake, args: string[] = []) {
       chmodSync(join(bin, name), 0o755);
     };
     tool("docker", `case "$1" in
-  compose) printf '%s\\n' "${fake.id ?? "abc123"}" ;;
-  inspect) printf '%s\\n' "${fake.health ?? "healthy"}" ;;
-  port) printf '%s\\n' "${fake.port ?? "127.0.0.1:3000"}" ;;
-  exec) printf '%b' "${fake.uids ?? "Uid:\\t1000\\t1000\\t1000\\t1000\\n"}" ;;
+  compose)
+    [[ "$#" == 6 && "$2" == -f && "$3" == "$COMPOSE_FILE" && "$4" == ps && "$5" == --quiet && "$6" == workspace ]] || exit 2
+    printf '%s\\n' "${fake.id ?? "abc123"}" ;;
+  inspect)
+    [[ "$#" == 4 && "$2" == --format && "$3" == '{{.State.Health.Status}}' && "$4" == abc123 ]] || exit 2
+    printf '%s\\n' "${fake.health ?? "healthy"}" ;;
+  port)
+    [[ "$#" == 3 && "$2" == abc123 && "$3" == 3000/tcp ]] || exit 2
+    printf '%s\\n' "${fake.port ?? "127.0.0.1:3000"}" ;;
+  exec)
+    [[ "$#" == 5 && "$2" == abc123 && "$3" == sh && "$4" == -c && "$5" == 'grep -h "^Uid:" /proc/[0-9]*/status' ]] || exit 2
+    printf '%b' "${fake.uids ?? "Uid:\\t1000\\t1000\\t1000\\t1000\\n"}" ;;
+  *) exit 2 ;;
 esac`);
     tool("curl", `exit ${fake.curl ?? 0}`);
-    const result = spawnSync("bash", [smoke, ...args], {
-      cwd: root, encoding: "utf8", env: { PATH: `${bin}:/usr/bin:/bin` },
+    const entrypoint = join(root, "smoke.sh");
+    writeFileSync(entrypoint, source);
+    const result = spawnSync("bash", [entrypoint, ...args], {
+      cwd: root, encoding: "utf8", env: { PATH: `${bin}:/usr/bin:/bin`, COMPOSE_FILE: args[0] ?? "compose.image.yaml" },
     });
     return { status: result.status, out: result.stdout, err: result.stderr };
   } finally {
@@ -80,3 +93,24 @@ test("the pull-only compose differs from the build compose only in its image sou
   assert.match(pulled[at], /^    image: \$\{SALON_IMAGE:\?.*\}$/);
   assert.deepEqual(pulled.filter((_, i) => i !== at), build.filter((_, i) => i !== at));
 });
+
+test("an explicit compose file reaches the Docker query", () => {
+  assert.equal(run({}, ["./compose.image.yaml"]).status, 0);
+});
+
+for (const [name, original, wrong] of [
+  ["compose file", 'docker compose -f "$compose_file"', 'docker compose -f absent.yaml'],
+  ["compose subcommand", 'ps --quiet workspace', 'logs --quiet workspace'],
+  ["compose flags", 'ps --quiet workspace', 'ps workspace'],
+  ["health query", "{{.State.Health.Status}}", "{{.State.Status}}"],
+  ["container ID", 'docker port "$container"', 'docker port other-container'],
+  ["port query", '3000/tcp', '4000/tcp'],
+  ["UID query", '/proc/[0-9]*/status', '/proc/1/status'],
+]) {
+  test(`the Docker fake rejects an incorrect ${name}`, () => {
+    assert.ok(smokeSource.includes(original));
+    const result = run({}, [], smokeSource.replace(original, wrong));
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.out, /^FAIL /m);
+  });
+}
