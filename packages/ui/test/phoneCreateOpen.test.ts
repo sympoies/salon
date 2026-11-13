@@ -45,9 +45,12 @@ const boundary: Plugin = {
   },
 };
 
-async function harness(width: number) {
+async function harness(width: number, coarse: boolean) {
   const window = new Window({ url: "http://localhost" });
   Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  (window as unknown as { matchMedia: unknown }).matchMedia = (query: string) => ({
+    matches: query === "(pointer: coarse)" && coarse, media: query, addEventListener() {}, removeEventListener() {},
+  });
   const names = ["window", "document", "Element", "HTMLElement", "HTMLInputElement", "HTMLTextAreaElement", "HTMLSelectElement", "Event", "MouseEvent", "KeyboardEvent", "localStorage", "IS_REACT_ACT_ENVIRONMENT"] as const;
   const previous = Object.fromEntries(names.map(name => [name, globalThis[name]]));
   Object.assign(globalThis, { window, document: window.document, Element: window.Element, HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement, HTMLSelectElement: window.HTMLSelectElement, Event: window.Event, MouseEvent: window.MouseEvent, KeyboardEvent: window.KeyboardEvent, localStorage: window.localStorage, IS_REACT_ACT_ENVIRONMENT: true });
@@ -64,8 +67,8 @@ async function waitFor(condition: () => boolean, message: string) {
   assert.fail(message);
 }
 
-async function create(width: number, phoneSessionOpen: "conversation" | "terminal", history: boolean) {
-  const h = await harness(width);
+async function create(width: number, phoneSessionOpen: "conversation" | "terminal", history: boolean, coarse = false) {
+  const h = await harness(width, coarse);
   globalThis.__createOpenHistory = history;
   const { Dashboard } = await h.ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
   await act(async () => h.root.render(createElement(Dashboard, { phoneSessionOpen, active: true, machines: ["fixture"], enabledMachines: ["fixture"], machineColors: {}, defaultAutoResume: false, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true, onDebug() {}, onUsage() {}, onSettings() {} })));
@@ -110,5 +113,13 @@ test("a wide create ignores the phone preference", async () => {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
     assertNoElement(h.container, ".phone-conversation-pane");
     assertNoElement(h.container, ".conversation-modal");
+  } finally { await h.close(); }
+});
+
+test("a touch-primary wide create with the conversation preference opens the created conversation", async () => {
+  const h = await create(1440, "conversation", true, true);
+  try {
+    await waitFor(() => h.window.document.querySelector(".conversation-modal #conversation-title")?.textContent?.includes(created.title) === true, "the created conversation opens");
+    assertNoElement(h.container, ".phone-conversation-pane");
   } finally { await h.close(); }
 });
