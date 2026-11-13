@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.68 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.69 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,9 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.68`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.69`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.68
+### Changes retained in SDK 0.1.69
 
 Sessions carry a marker for a draft the runtime saved, and the composer can show, restore and discard it
 (#282, #383). The UI API also exports `discardSavedDraft` for this action.
@@ -379,9 +379,17 @@ Every assistant tool row, including the first, aligns with the turn's content co
 saved conversations. Each tool timestamp follows its content with the same placement as assistant
 text timestamps (#474).
 
+Tool call and result rows show the runtime's unmasked text only to the session owner. Shared viewers
+keep masked text and never receive owner-only fields (#481).
+
+A tool row's chevron reliably opens and closes the row at every width (#482).
+
+Settings → Conversation includes a Show tool calls switch, on by default, that hides or restores
+tool rows in live and saved conversations (#483).
+
 ### Preserve published releases
 
-Existing `v0.1.0` through `v0.1.67` tags and assets stay immutable. The visibility transition does
+Existing `v0.1.0` through `v0.1.68` tags and assets stay immutable. The visibility transition does
 not republish those releases, change their source or digests, or reuse an existing tag.
 
 A future publication requires separately approved version metadata and an unused tag. This
