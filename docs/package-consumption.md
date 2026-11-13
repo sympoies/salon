@@ -338,7 +338,9 @@ as Machines.
 `ReorderList<T>` takes these props:
 
 - `items`: the items in their current order.
-- `itemKey`: returns each item's unique string key, which also names its row controls.
+- `itemKey`: returns each item's unique string key.
+- `itemName`: optional human-readable name for the drag and up/down controls. For example,
+  `itemName={role => role.title}` names a role with key `lead` as "Project lead". When omitted, controls use the key.
 - `renderLabel` and `renderActions`: render the row's label and its trailing actions.
 - `onReorder`: receives the items in the new order after a drop or a move button.
 - `restore`: optional node rendered after the list, such as a restore-defaults button.

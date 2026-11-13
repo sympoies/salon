@@ -374,35 +374,46 @@ for (const [label, init] of [["a secondary button", { isPrimary: true, button: 2
   });
 }
 
-test("ReorderList reorders arbitrary items by key and renders the restore slot after the list", async () => {
-  const { ReorderList } = await ssr.loadModule<{ ReorderList: ComponentType<any> }>("/src/ReorderList.tsx");
-  const window = new Window({ url: "https://console.example.test" });
-  const previous = { window: globalThis.window, document: globalThis.document, Element: globalThis.Element, HTMLElement: globalThis.HTMLElement, act: globalThis.IS_REACT_ACT_ENVIRONMENT };
-  Object.assign(globalThis, { window, document: window.document, Element: window.Element, HTMLElement: window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
-  const container = window.document.createElement("div");
-  window.document.body.append(container);
-  const root: Root = createRoot(container);
-  cleanups.push(async () => {
-    await act(async () => root.unmount());
-    Object.assign(globalThis, previous, { IS_REACT_ACT_ENVIRONMENT: previous.act });
-    await window.happyDOM.close();
-  });
-  const saved: Role[][] = [];
-  const roles: Role[] = [{ id: "plan", title: "Planner" }, { id: "build", title: "Builder" }];
-  function Harness() {
-    const [items, setItems] = useState(roles);
-    return createElement(ReorderList, {
-      items, itemKey: (role: Role) => role.id, renderLabel: (role: Role) => role.title, renderActions: (role: Role) => createElement("i", null, role.id),
-      onReorder: (next: Role[]) => { saved.push(next); setItems(next); },
-      restore: createElement("button", { id: "restore" }, "Restore defaults"),
+for (const named of [false, true]) {
+  test(`ReorderList ${named ? "uses itemName" : "falls back to keys"} for controls and reorders by key`, async () => {
+    const { ReorderList } = await ssr.loadModule<{ ReorderList: ComponentType<any> }>("/src/ReorderList.tsx");
+    const window = new Window({ url: "https://console.example.test" });
+    const previous = { window: globalThis.window, document: globalThis.document, Element: globalThis.Element, HTMLElement: globalThis.HTMLElement, act: globalThis.IS_REACT_ACT_ENVIRONMENT };
+    Object.assign(globalThis, { window, document: window.document, Element: window.Element, HTMLElement: window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
+    const container = window.document.createElement("div");
+    window.document.body.append(container);
+    const root: Root = createRoot(container);
+    cleanups.push(async () => {
+      await act(async () => root.unmount());
+      Object.assign(globalThis, previous, { IS_REACT_ACT_ENVIRONMENT: previous.act });
+      await window.happyDOM.close();
     });
-  }
-  await act(async () => root.render(createElement(Harness)));
-  await act(async () => { container.querySelector<HTMLElement>('[aria-label="Move build up"]')!.click(); });
-  assert.deepEqual(saved, [[roles[1], roles[0]]], "the callback receives the items, not their keys");
-  assert.deepEqual([...container.querySelectorAll(".reorder-row-label")].map(label => label.textContent), ["Builder", "Planner"]);
-  assert.equal(container.lastElementChild?.id, "restore", "the restore slot follows the list");
-});
+    const saved: Role[][] = [];
+    const roles: Role[] = [{ id: "plan", title: "Planner" }, { id: "build", title: "Builder" }];
+    function Harness() {
+      const [items, setItems] = useState(roles);
+      return createElement(ReorderList, {
+        items, itemKey: (role: Role) => role.id, itemName: named ? (role: Role) => role.title : undefined, renderLabel: (role: Role) => role.title, renderActions: (role: Role) => createElement("i", null, role.id),
+        onReorder: (next: Role[]) => { saved.push(next); setItems(next); },
+        restore: createElement("button", { id: "restore" }, "Restore defaults"),
+      });
+    }
+    await act(async () => root.render(createElement(Harness)));
+    for (const role of roles) {
+      const row = container.querySelector<HTMLElement>(`[data-reorder-key="${role.id}"]`)!;
+      const name = named ? role.title : role.id;
+      assert.equal(row.querySelector("[data-reorder-handle]")?.getAttribute("aria-label"), `Drag ${name} to reorder`);
+      const moves = row.querySelectorAll(".reorder-move");
+      assert.equal(moves[0]?.getAttribute("aria-label"), `Move ${name} up`);
+      assert.equal(moves[1]?.getAttribute("aria-label"), `Move ${name} down`);
+    }
+    const moveLabel = `Move ${named ? "Builder" : "build"} up`;
+    await act(async () => { container.querySelector<HTMLElement>(`[aria-label="${moveLabel}"]`)!.click(); });
+    assert.deepEqual(saved, [[roles[1], roles[0]]], "the callback receives the items, not their keys");
+    assert.deepEqual([...container.querySelectorAll(".reorder-row-label")].map(label => label.textContent), ["Builder", "Planner"]);
+    assert.equal(container.lastElementChild?.id, "restore", "the restore slot follows the list");
+  });
+}
 
 test("up and down buttons reorder, are labelled per host and keep focus at the list ends", async () => {
   const m = await mount(["cedar", "mesa", "summit"]);
