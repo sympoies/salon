@@ -1,0 +1,34 @@
+{
+  "messages": [
+    {
+      "id": "claude-call-row",
+      "role": "assistant",
+      "text": "",
+      "parts": [
+        {
+          "kind": "tool_call",
+          "id": "claude-call-item",
+          "call_id": "claude-tool-1",
+          "name": "Bash",
+          "input_summary": "printf 'tool output'",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "claude-result-row",
+      "role": "user",
+      "text": "",
+      "parts": [
+        {
+          "kind": "tool_result",
+          "id": "claude-result-item",
+          "call_id": "claude-tool-1",
+          "summary": "tool output",
+          "truncated": false,
+          "is_error": false
+        }
+      ]
+    }
+  ]
+}

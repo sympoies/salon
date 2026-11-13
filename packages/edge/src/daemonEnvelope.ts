@@ -1,6 +1,6 @@
 import { normalizePromptObservation, normalizePromptRequestBinding, type PromptRequestBinding } from "@agent-console/shared/prompt-receipt";
 import { normalizeConversationImages, normalizeConversationFiles } from "@agent-console/shared/conversation-images";
-import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
+import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeHistoryToolParts, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
 import type { ServerResponse } from "node:http";
 import { sendJson } from "./http.ts";
 import type { DaemonResult } from "./upstream.ts";
@@ -384,19 +384,38 @@ function projectHistorySession(value: unknown): Record<string, unknown> | null {
   return projected;
 }
 
+// Runtime status vocabulary is external; the browser uses a small display contract.
+function projectHistoryToolParts(value: unknown) {
+  return normalizeHistoryToolParts(Array.isArray(value) ? value.slice(0, 256).map(part => {
+    if (!part || typeof part !== "object" || Array.isArray(part)) return null;
+    const raw = part as Record<string, unknown>;
+    const status = raw.kind === "tool_result"
+      ? raw.is_error === true ? "error" : raw.is_error === false ? "ok" : undefined
+      : raw.status === "completed" ? "ok" : raw.status === "failed" ? "error" : undefined;
+    return { kind: raw.kind, id: raw.id, call_id: raw.call_id, name: raw.name,
+      input_summary: raw.input_summary, summary: raw.summary, truncated: raw.truncated, status };
+  }) : []);
+}
+
 function projectHistoryMessage(value: unknown, resolveIntent?: (binding: PromptRequestBinding) => string | undefined): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   const id = boundedHistoryString(raw.id, 160);
-  const role = raw.role === "user" || raw.role === "assistant" || raw.role === "goal" || raw.role === "notice" ? raw.role : undefined;
+  let role = raw.role === "user" || raw.role === "assistant" || raw.role === "goal" || raw.role === "notice" ? raw.role : undefined;
   const rowClass = normalizeHistoryRowClass(raw.row_class);
   const text = typeof raw.text === "string" && (rowClass === "compaction" ? [...raw.text].length : raw.text.length) <= 64 * 1024 ? raw.text : undefined;
   const images = normalizeConversationImages(raw.images);
   const files = role === "user" ? normalizeConversationFiles(raw.parts) : [];
+  // Claude 2.1 parts=v1 retains plain tool results in textless user envelopes.
+  // Human text, attachments and classified rows keep their existing ownership.
+  const toolParts = role === "assistant" ? projectHistoryToolParts(raw.parts)
+    : role === "user" && text === "" && !rowClass && !images.length && !files.length
+      ? projectHistoryToolParts(raw.parts).filter(part => part.kind === "tool_result") : [];
+  if (role === "user" && toolParts.length) role = "assistant";
   const compaction = normalizeHistoryCompaction(raw.compaction, rowClass);
-  if (!id || !role || text === undefined || (!text && !images.length && rowClass !== "compaction")) return null;
+  if (!id || !role || text === undefined || (!text && !images.length && !toolParts.length && rowClass !== "compaction")) return null;
   if (role === "notice" && (images.length || (!rowClass && !parseSessionNotice(text)))) return null;
-  const projected: Record<string, unknown> = { id, role, text, ...(rowClass ? { row_class: rowClass } : {}), ...(compaction ? { compaction } : {}), ...(images.length ? { images } : {}), ...(files.length ? { files } : {}) };
+  const projected: Record<string, unknown> = { id, role, text, ...(rowClass ? { row_class: rowClass } : {}), ...(compaction ? { compaction } : {}), ...(images.length ? { images } : {}), ...(files.length ? { files } : {}), ...(toolParts.length ? { tool_parts: toolParts } : {}) };
   const binding = role === "user" && !rowClass ? normalizePromptRequestBinding(raw.prompt_request) : undefined;
   if (binding) {
     // Never trust a producer-supplied local intent ID. Only the scoped durable

@@ -1,6 +1,6 @@
 import { normalizeSavedDraft, normalizeSavedDraftInventory, type SavedDraft } from "@agent-console/shared";
 import { normalizeConversationImages, normalizeConversationFiles, sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
-import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
+import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeHistoryToolParts, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { validOutboxText, SHARED_OUTBOX_MAX_ITEMS, SHARED_OUTBOX_MAX_HOLDS, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
 import { isPromptRequestId, normalizePromptReceipt, normalizePromptRequestBinding, type PromptReceipt } from "@agent-console/shared/prompt-receipt";
@@ -798,8 +798,9 @@ function normalizeHistoryMessage(value: unknown): HistoryMessage | undefined {
   const text = typeof raw.text === "string" && (rowClass === "compaction" ? [...raw.text].length : raw.text.length) <= 64 * 1024 ? raw.text : undefined;
   const images = normalizeConversationImages(raw.images);
   const files = role === "user" ? normalizeConversationFiles(raw.files) : [];
+  const toolParts = role === "assistant" ? normalizeHistoryToolParts(raw.tool_parts) : [];
   const compaction = normalizeHistoryCompaction(raw.compaction, rowClass);
-  if (!id || !role || text === undefined || (!text && !images.length && rowClass !== "compaction")) return undefined;
+  if (!id || !role || text === undefined || (!text && !images.length && !toolParts.length && rowClass !== "compaction")) return undefined;
   if (role === "notice" && (images.length || (!rowClass && !parseSessionNotice(text)))) return undefined;
   const mailbox = role === "notice" ? normalizeMailboxEvent(raw.mailbox) : undefined;
   const promptRequest = role === "user" && !rowClass ? normalizePromptRequestBinding(raw.prompt_request) : undefined;
@@ -811,6 +812,7 @@ function normalizeHistoryMessage(value: unknown): HistoryMessage | undefined {
     ...(compaction ? { compaction } : {}),
     ...(images.length ? { images } : {}),
     ...(files.length ? { files } : {}),
+    ...(toolParts.length ? { tool_parts: toolParts } : {}),
     ...(boundedString(raw.timestamp, 64) ? { timestamp: raw.timestamp as string } : {}),
     ...(mailbox ? { mailbox } : {}),
     ...(promptRequest ? { prompt_request: promptRequest } : {}),

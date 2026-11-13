@@ -3892,3 +3892,21 @@ test("#452 history retains a bounded prompt request association without private 
   assert.equal(rows[1]?.prompt_request, undefined);
   assert.equal(rows[2]?.prompt_request, undefined);
 });
+
+test("history HTTP decoding retains bounded optional assistant tool parts and textless rows", async () => {
+  const call = { kind: "tool_call", id: "call", call_id: "tool-1", name: "exec_command", input_summary: "pnpm test", status: "ok" };
+  const result = { kind: "tool_result", id: "result", call_id: "tool-1", summary: "Tests passed", status: "ok" };
+  setFetchMock(async () => jsonResponse({ ok: true, data: { messages: [
+    { id: "a", role: "assistant", text: "", tool_parts: [call, { kind: "future" }] },
+    { id: "b", role: "assistant", text: "", tool_parts: [result] },
+    { id: "bad", role: "assistant", text: "", tool_parts: [{ ...call, input_summary: "x".repeat(2049) }] },
+    { id: "u", role: "user", text: "Hello", tool_parts: [call] },
+    { id: "old", role: "assistant", text: "Older runtime" },
+  ] } }));
+  const response = await listHistoryMessages("fixture", "history");
+  assert.equal(response.messages.length, 4);
+  assert.equal(response.messages[0]?.tool_parts?.[0]?.kind, "tool_call");
+  assert.equal(response.messages[1]?.tool_parts?.[0]?.kind, "tool_result");
+  assert.equal(response.messages[2]?.tool_parts, undefined);
+  assert.equal(response.messages[3]?.tool_parts, undefined);
+});

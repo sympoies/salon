@@ -170,6 +170,8 @@ export interface HistorySession {
 }
 
 export interface HistoryMessage {
+  /** Optional masked tool summaries; runtimes without typed parts omit this field. */
+  readonly tool_parts?: readonly import("@agent-console/shared/resources").HistoryToolPart[];
   readonly prompt_request?: import("@agent-console/shared/prompt-receipt").PromptRequestBinding;
   readonly files?: readonly import("@agent-console/shared/conversation-images").ConversationFile[];
   readonly row_class?: import("@agent-console/shared").HistoryRowClass;

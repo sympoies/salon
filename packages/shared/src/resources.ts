@@ -1,3 +1,5 @@
+import { normalizeHistoryToolParts, type HistoryToolPart } from "./historyTools.ts";
+export { normalizeHistoryToolParts, type HistoryToolPart } from "./historyTools.ts";
 import { normalizePromptRequestBinding, type PromptRequestBinding } from "./promptReceipt.ts";
 import { normalizeConversationImages, normalizeConversationFiles, type ConversationImage, type ConversationFile } from "./conversationImages.ts";
 import { normalizeMailboxEvent, type MailboxEvent } from "./mailboxEvent.ts";
@@ -30,7 +32,7 @@ export function normalizeHistoryCompaction(value: unknown, rowClass: HistoryRowC
 }
 
 export interface ConversationSnapshot {
-  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly row_class?: HistoryRowClass; readonly compaction?: HistoryCompaction; readonly images?: readonly ConversationImage[]; readonly files?: readonly ConversationFile[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent; readonly prompt_request?: PromptRequestBinding }>;
+  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly row_class?: HistoryRowClass; readonly compaction?: HistoryCompaction; readonly images?: readonly ConversationImage[]; readonly files?: readonly ConversationFile[]; /** Optional masked tools; absent when the runtime supplies no typed parts. */ readonly tool_parts?: readonly HistoryToolPart[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent; readonly prompt_request?: PromptRequestBinding }>;
   readonly next_cursor?: string;
   readonly older_cursor?: string;
 }
@@ -49,13 +51,14 @@ export function normalizeConversationSnapshot(value: unknown): ConversationSnaps
       || (item.timestamp !== undefined && (typeof item.timestamp !== "string" || item.timestamp.length > 64))) return undefined;
     const images = normalizeConversationImages(item.images);
     const files = item.role === "user" ? normalizeConversationFiles(item.files) : [];
+    const toolParts = item.role === "assistant" ? normalizeHistoryToolParts(item.tool_parts) : [];
     const rowClass = normalizeHistoryRowClass(item.row_class);
     if (item.role === "notice" && (images.length || (!rowClass && !parseSessionNotice(item.text)))) continue;
     ids.add(item.id);
     const compaction = normalizeHistoryCompaction(item.compaction, rowClass);
     const mailbox = item.role === "notice" ? normalizeMailboxEvent(item.mailbox) : undefined;
     const promptRequest = item.role === "user" && !rowClass ? normalizePromptRequestBinding(item.prompt_request) : undefined;
-    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal" | "notice", text: item.text, ...(rowClass ? { row_class: rowClass } : {}), ...(compaction ? { compaction } : {}), ...(images.length ? { images } : {}), ...(files.length ? { files } : {}),
+    messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal" | "notice", text: item.text, ...(rowClass ? { row_class: rowClass } : {}), ...(compaction ? { compaction } : {}), ...(images.length ? { images } : {}), ...(files.length ? { files } : {}), ...(toolParts.length ? { tool_parts: toolParts } : {}),
       ...(typeof item.timestamp === "string" ? { timestamp: item.timestamp } : {}), ...(mailbox ? { mailbox } : {}), ...(promptRequest ? { prompt_request: promptRequest } : {}) });
   }
   const snapshot: ConversationSnapshot = { messages };
