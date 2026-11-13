@@ -10,3 +10,4 @@ docs/service-console-starts.md
 docs/status-notice-testing.md
 packages/edge/README.md
 packages/ui/README.md
+docs/reply-queue-design.md
