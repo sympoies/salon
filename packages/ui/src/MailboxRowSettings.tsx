@@ -25,7 +25,7 @@ export function MailboxRowSettings() {
           <span className="settings-preference-label">Mailbox rows start expanded</span>
           <p className="settings-hint">Show the full message body when the agent reads its mailbox. Used on this device.</p>
         </div>
-        <button type="button" className={`settings-switch${expanded ? " is-on" : " is-off"}`} role="switch" aria-checked={expanded}
+        <button type="button" className={`settings-switch${expanded ? " is-on" : " is-off"}`} role="switch" aria-label="Mailbox rows start expanded" aria-checked={expanded}
           onClick={() => { const next = !expanded; setExpanded(next); saveMailboxRowsExpanded(next); }}>
           {expanded ? "on" : "off"}
         </button>
