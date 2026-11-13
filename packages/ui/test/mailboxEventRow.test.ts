@@ -118,14 +118,14 @@ test("the mailbox row setting persists on the device and defaults to collapsed",
     return { container: container as unknown as HTMLElement, unmount: () => act(async () => root.unmount()) };
   };
   const first = await mountSettings();
-  const toggle = () => first.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  const toggle = () => first.container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Mailbox rows start expanded"]')!;
   assert.equal(toggle().getAttribute("aria-checked"), "false");
   await act(async () => { toggle().click(); });
   assert.equal(toggle().getAttribute("aria-checked"), "true");
   assert.equal(window.localStorage.getItem("ac.mailboxRowsExpanded"), "1");
   await first.unmount();
   const second = await mountSettings();
-  assert.equal(second.container.querySelector('[role="switch"]')!.getAttribute("aria-checked"), "true");
-  await act(async () => { second.container.querySelector<HTMLButtonElement>('[role="switch"]')!.click(); });
+  assert.equal(second.container.querySelector('[role="switch"][aria-label="Mailbox rows start expanded"]')!.getAttribute("aria-checked"), "true");
+  await act(async () => { second.container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Mailbox rows start expanded"]')!.click(); });
   assert.equal(window.localStorage.getItem("ac.mailboxRowsExpanded"), null);
 });

@@ -95,6 +95,10 @@ by the runtime; truncated results are marked. Session owners and root see owner
 display text when the runtime supplies it, with credentials still masked. Shared
 viewers see the masked summaries.
 
+In Settings → Conversation, **Show tool calls** is on by default. Turn it off
+to hide tool calls and results in live and saved conversations immediately.
+The choice is saved on this device; text and attachments remain visible.
+
 ## Track outgoing replies and attachments
 
 When a session is replaced or removed, Salon automatically clears its
