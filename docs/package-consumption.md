@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.66 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.67 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,9 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.66`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.67`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.66
+### Changes retained in SDK 0.1.67
 
 Sessions carry a marker for a draft the runtime saved, and the composer can show, restore and discard it
 (#282, #383). The UI API also exports `discardSavedDraft` for this action.
@@ -363,9 +363,21 @@ identity, without a duplicate. Claude keeps its existing matching behavior (#455
 Test-only changes make remote-image cache timing deterministic and cover reorder gaps and slot
 invariants (#453, #454).
 
+The connection notice in the Desktop header stays on one line at header-button height on narrow
+screens, without collapsing or pushing the header down (#466).
+
+Test-only coverage protects Codex echo handover follow-ups and the create preference on wide
+touch-primary viewports (#465, #459). CI guards image-digest reruns and validates smoke probes (#460).
+
+Assistant tool calls, bounded results and unified diffs appear in live and saved conversations.
+Collapsed tool controls expose the details, and separate results join their calls by identity (#461).
+
+The [reply queue design](reply-queue-design.md) proposes an edge-owned editable queue and steering;
+it changes no runtime or product behavior (#462).
+
 ### Preserve published releases
 
-Existing `v0.1.0` through `v0.1.65` tags and assets stay immutable. The visibility transition does
+Existing `v0.1.0` through `v0.1.66` tags and assets stay immutable. The visibility transition does
 not republish those releases, change their source or digests, or reuse an existing tag.
 
 A future publication requires separately approved version metadata and an unused tag. This
