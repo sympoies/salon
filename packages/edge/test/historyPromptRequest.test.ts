@@ -24,6 +24,7 @@ test("#452 real history HTTP and resource events carry only the reader's durable
     { id: "foreign", role: "user", text: "Other reader", prompt_request: { ...binding, request_id: foreignId } },
     { id: "replaced", role: "user", text: "Other incarnation", prompt_request: { ...binding, session_incarnation: "inc-b" } },
     { id: "untracked", role: "user", text: "No durable attempt", prompt_request: { ...binding, request_id: "untracked-request", outbox_intent_id: "untrusted-intent" } },
+    { id: "assistant", role: "assistant", text: "Provider reply", prompt_request: binding },
   ];
   const daemon = createServer((_req, res) => {
     res.setHeader("content-type", "application/json");
@@ -42,6 +43,7 @@ test("#452 real history HTTP and resource events carry only the reader's durable
     assert.equal(rows[2]?.prompt_request?.outbox_intent_id, undefined, "mapping requires the exact incarnation");
     assert.equal(rows[3]?.prompt_request?.request_id, "untracked-request", "untracked request identity is still public");
     assert.equal(rows[3]?.prompt_request?.outbox_intent_id, undefined, "producer intent is stripped even without a durable attempt");
+    assert.equal(rows[4]?.prompt_request, undefined, "assistant history never carries an accepted user association");
   };
   try {
     for (const direction of ["", "latest", "older"]) {
