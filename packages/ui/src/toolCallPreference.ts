@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from "react";
-import { resolveLocalStorage, safeGetItem, safeSetItem } from "./storage.ts";
+import { getPrincipalStorageNamespace, resolveLocalStorage, safeGetItem, safeSetItem } from "./storage.ts";
 
 const KEY = "ac.showToolCalls";
 const CHANGE = "salon-tool-call-preference";
+// Keep an immediate client choice even when the browser refuses persistence.
+const unsavedValues = new Map<string | null, boolean>();
 
 function loadShowToolCalls(): boolean {
-  return safeGetItem(resolveLocalStorage(), KEY) !== "0";
+  return unsavedValues.get(getPrincipalStorageNamespace()) ?? (safeGetItem(resolveLocalStorage(), KEY) !== "0");
 }
 
 function subscribe(listener: () => void): () => void {
@@ -14,7 +16,9 @@ function subscribe(listener: () => void): () => void {
 }
 
 export function saveShowToolCalls(shown: boolean): void {
-  safeSetItem(resolveLocalStorage(), KEY, shown ? "1" : "0");
+  const principal = getPrincipalStorageNamespace();
+  if (safeSetItem(resolveLocalStorage(), KEY, shown ? "1" : "0")) unsavedValues.delete(principal);
+  else unsavedValues.set(principal, shown);
   window.dispatchEvent(new Event(CHANGE));
 }
 
