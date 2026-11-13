@@ -93,7 +93,11 @@ jobs:
         run: |
           set -euo pipefail
           notes="$(gh release view "$TAG" --json body --jq .body)"
-          if grep -qF "$REFERENCE" <<<"$notes"; then exit 0; fi
+          if grep -qxF "$REFERENCE" <<<"$notes"; then exit 0; fi
+          if grep -qxF '## Container image' <<<"$notes"; then
+            echo 'Container image section already records a different pinned reference; release notes were not changed.' >&2
+            exit 1
+          fi
           {
             printf '%s\n\n## Container image\n\n' "$notes"
             printf 'Pin this immutable reference in `SALON_IMAGE`:\n\n```text\n%s\n```\n' "$REFERENCE"
