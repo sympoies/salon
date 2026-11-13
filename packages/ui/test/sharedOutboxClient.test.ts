@@ -1184,3 +1184,53 @@ test("#452 history association clears a still-local admission without consuming 
     assert.equal(h.admissions.length, 0, "history never replays either admission");
   } finally { await h.close(); }
 });
+
+test("#457 an empty snapshot retains a still-local admission's proof through an ambiguous upload", async () => {
+  const factory = new IDBFactory(); let h = await fixture(factory, false);
+  try {
+    const id = "local-intent", turnId = "accepted-local-turn";
+    await h.cacheJournal({ ...h.client.state(h.target), localIntentIds: [id],
+      admissions: [{ id, text: "Original input", created_at: 1, attempted: true }],
+      submittedProofs: { [id]: turnId } });
+    await h.close(); h = await fixture(factory, false); await h.client.ready;
+    h.server({ revision: 1, items: [], compose_holds: [] }); h.mode("lost-put");
+    await h.client.sync(h.target);
+    assert.equal(h.admissions.length, 1, "the lost acknowledgement exercises snapshot reconciliation before upload");
+    assert.equal(h.client.state(h.target).admissions[0]?.id, id, "ambiguous upload retains the original admission");
+    assert.equal(h.client.state(h.target).submittedProofs?.[id], turnId, "empty snapshot cannot revoke a still-local proof");
+    await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
+    await h.showReplies(session, []);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 0, "later history windows cannot resurrect the proven local echo");
+  } finally { await h.close(); }
+});
+
+test("#457 an identity-matched reply leaves an unbound text turn for the next identical reply", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const items: SharedOutboxItem[] = ["first", "second"].map(id => ({ id, text: "Identical input", state: "submitted", revision: 1,
+      session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: `request-${id}`, edit_hold: null, error_code: null,
+      receipt: { request_id: `request-${id}`, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null } }));
+    await h.ownServer({ revision: 1, items, compose_holds: [] }); await h.client.sync(h.target);
+    const proof = h.client.submittedProof(h.client.state(h.target), [
+      { id: "bound-turn", role: "user", text: "Provider projection", prompt_request: {
+        request_id: "request-first", session_id: session.id, session_incarnation: "inc-1", outbox_intent_id: "first" } },
+      { id: "unbound-turn", role: "user", text: "Identical input", timestamp: new Date(3).toISOString() },
+    ]);
+    assert.equal(proof.first, "bound-turn", "text matching cannot overwrite the authoritative association");
+    assert.equal(proof.second?.split("\u0000")[0], "unbound-turn", "the next identical reply owns the remaining text turn");
+  } finally { await h.close(); }
+});
+
+for (const [label, changes] of [
+  ["assistant", { role: "assistant" }],
+  ["classified user", { row_class: "runtime_command" }],
+] as const) test(`#457 ${label} association cannot prove a local admission`, async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const row = { ...h.client.state(h.target), localIntentIds: ["local-intent"],
+      admissions: [{ id: "local-intent", text: "Original input", created_at: 1, attempted: true }] };
+    const proof = h.client.submittedProof(row, [{ id: "ineligible-turn", role: "user", text: "Provider projection",
+      prompt_request: { request_id: "request-a", session_id: session.id, session_incarnation: "inc-1", outbox_intent_id: "local-intent" }, ...changes }]);
+    assert.equal(proof["local-intent"], undefined, "only ordinary user turns can hand over an admission");
+  } finally { await h.close(); }
+});

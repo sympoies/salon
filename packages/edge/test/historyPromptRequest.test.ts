@@ -23,6 +23,7 @@ test("#452 real history HTTP and resource events carry only the reader's durable
     { id: "own", role: "user", text: "Provider projected text", prompt_request: { ...binding, private_proof: "not-public", outbox_intent_id: "untrusted-intent" } },
     { id: "foreign", role: "user", text: "Other reader", prompt_request: { ...binding, request_id: foreignId } },
     { id: "replaced", role: "user", text: "Other incarnation", prompt_request: { ...binding, session_incarnation: "inc-b" } },
+    { id: "untracked", role: "user", text: "No durable attempt", prompt_request: { ...binding, request_id: "untracked-request", outbox_intent_id: "untrusted-intent" } },
   ];
   const daemon = createServer((_req, res) => {
     res.setHeader("content-type", "application/json");
@@ -39,6 +40,8 @@ test("#452 real history HTTP and resource events carry only the reader's durable
     assert.equal(rows[0]?.prompt_request?.private_proof, undefined);
     assert.equal(rows[1]?.prompt_request?.outbox_intent_id, undefined, "another reader's intent is never exposed");
     assert.equal(rows[2]?.prompt_request?.outbox_intent_id, undefined, "mapping requires the exact incarnation");
+    assert.equal(rows[3]?.prompt_request?.request_id, "untracked-request", "untracked request identity is still public");
+    assert.equal(rows[3]?.prompt_request?.outbox_intent_id, undefined, "producer intent is stripped even without a durable attempt");
   };
   try {
     for (const direction of ["", "latest", "older"]) {

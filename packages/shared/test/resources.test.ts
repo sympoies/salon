@@ -86,3 +86,20 @@ test("#452 conversation resource decoding keeps the accepted user request associ
   assert.equal(row?.prompt_request?.outbox_intent_id, binding.outbox_intent_id);
   assert.equal(row?.prompt_request?.private_proof, undefined);
 });
+
+for (const [label, changes] of [
+  ["assistant", { role: "assistant" }],
+  ["classified user", { row_class: "runtime_command" }],
+  ["invalid request", { prompt_request: { request_id: "bad id", session_id: "session-a", session_incarnation: "inc-a" } }],
+  ["invalid session", { prompt_request: { request_id: "request-a", session_id: "bad id", session_incarnation: "inc-a" } }],
+  ["invalid incarnation", { prompt_request: { request_id: "request-a", session_id: "session-a", session_incarnation: "inc\u0000a" } }],
+] as const) test(`#457 resource decoder strips the association from ${label} rows`, () => {
+  const event = normalizeResourceEvent({ schema_version: "agent-console.resource-event.v1", type: "changed",
+    resource: "conversation/fixture/history-a", revision: 1, conversation: { messages: [{
+      id: "guarded-row", role: "user", text: "Synthetic history",
+      prompt_request: { request_id: "request-a", session_id: "session-a", session_incarnation: "inc-a" }, ...changes,
+    }] } });
+  assert.equal(event?.conversation?.messages.length, 1, "a rejected association preserves its history row");
+  assert.equal(event?.conversation?.messages[0]?.id, "guarded-row");
+  assert.equal(event?.conversation?.messages[0]?.prompt_request, undefined);
+});
