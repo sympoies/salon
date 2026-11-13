@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { SelectChevronIcon } from "./icons.tsx";
 import type { HistoryToolPart } from "@agent-console/shared/resources";
 import type { HistoryMessage } from "./types.ts";
 
@@ -31,7 +32,7 @@ function ToolDisclosure({ call, result }: ToolRow) {
   return <div className="conversation-tool">
     <button type="button" className="conversation-tool-toggle" aria-label={name}
       aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>
-      <span aria-hidden="true">{open ? "▾" : "▸"}</span><strong>{name}</strong>
+      <SelectChevronIcon className="conversation-tool-chevron" /><strong>{name}</strong>
       {call?.input_summary ? <span className="conversation-tool-input">{call.input_summary}</span> : null}
       {status ? <span className={`conversation-tool-status is-${status}`}>{status === "ok" ? "OK" : "Error"}</span> : null}
     </button>
