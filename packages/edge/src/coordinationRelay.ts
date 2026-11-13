@@ -403,7 +403,7 @@ function serviceSelectors(serviceId: unknown, generation: unknown, owner: unknow
 // machine. Every create and board scan passes here before any other effect.
 // Refusals are content-free. The unauthorized code stays off HTTP 401, which the
 // daemon reserves for a rejected relay credential.
-function serviceAdmission(config: EdgeConfig, relayMachine: string, selectors: ServiceSelectors): { principal: PrincipalConfig; machine: MachineConfig } {
+function serviceAdmission(config: EdgeConfig, relayMachine: string, selectors: ServiceSelectors): { principal: PrincipalConfig; machine: MachineConfig; consoleRole?: "coordinator" } {
   const admission = config.consoleStartServices?.find(entry => entry.relay_machine === relayMachine
     && entry.service_id === selectors.serviceId && entry.service_generation === selectors.generation);
   if (!admission) return fail(403, "console-start-service-unauthorized", "the service is not admitted");
@@ -411,7 +411,7 @@ function serviceAdmission(config: EdgeConfig, relayMachine: string, selectors: S
   if (!principal || !admission.owners.includes(principal.id)) return fail(422, "console-start-service-owner-denied", "the owner is not admitted for this service");
   const machine = config.machines.find(m => m.name === selectors.machine);
   if (!machine || !admission.machines.includes(machine.name) || !principal.machines.includes(machine.name)) return fail(422, "console-start-service-target-denied", "the machine is not admitted for this service");
-  return { principal, machine };
+  return { principal, machine, ...(admission.console_role ? { consoleRole: admission.console_role } : {}) };
 }
 
 // A service session is always a console root; the target daemon validates the
@@ -437,7 +437,7 @@ async function serviceCreate(config: EdgeConfig, store: AccessStore, relayMachin
   if (!exactKeys(request, SERVICE_CREATE_KEYS) || !selectors || typeof operationId !== "string" || !UUID_V7.test(operationId)
     || !session || Object.keys(session).some(key => !SERVICE_SESSION_KEYS.includes(key))) return fail(400, "invalid-request", "invalid service create request");
   const lineage = serviceLineage(session);
-  const { principal, machine } = serviceAdmission(config, relayMachine, selectors);
+  const { principal, machine, consoleRole } = serviceAdmission(config, relayMachine, selectors);
   const fingerprint = createHash("sha256").update(JSON.stringify([selectors.owner, machine.name, session])).digest("hex");
   const reserve = (): string | null => {
     const sessionId = randomUUID();
@@ -449,8 +449,10 @@ async function serviceCreate(config: EdgeConfig, store: AccessStore, relayMachin
     sendJson(res, 201, { ok: true, data: { session: { id: operation.sessionId, agent: operation.agent, session_incarnation: grant.incarnation } } });
     return null;
   };
-  // A service is no session, so nothing launched or dispatched the root.
-  if (!await createSession(principal, machine, session, async () => ({ treeDepth: OUTSIDE_COORDINATOR_TREE }), lineage, reserve)) return fail(400, "invalid-request", "invalid service create request");
+  // A service is no session, so nothing launched or dispatched the root. Only
+  // the admission decides the role, and a coordinator root sits at depth 0.
+  const ownership = consoleRole ? { consoleRole, treeDepth: 0 } : { treeDepth: OUTSIDE_COORDINATOR_TREE };
+  if (!await createSession(principal, machine, session, async () => ownership, lineage, reserve)) return fail(400, "invalid-request", "invalid service create request");
 }
 const RESUME_OR_IDENTITY_KEYS = ["id", "provider_resume_id", "resume_id"];
 

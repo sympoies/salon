@@ -51,12 +51,15 @@ export interface CrossOwnerSessionAccessRule {
 // Lets `service_id` at `service_generation`, submitted through the relay of
 // `relay_machine`, start root sessions for `owners` on `machines`. Never a
 // session identity: it grants no mailbox, delegation, or browser access.
+// `console_role` is the only way a service root gets a role; a request never
+// carries one.
 export interface ConsoleStartServiceConfig {
   readonly relay_machine: string;
   readonly service_id: string;
   readonly service_generation: string;
   readonly owners: readonly string[];
   readonly machines: readonly string[];
+  readonly console_role?: "coordinator";
 }
 
 export interface SpeechProviderConfig {
@@ -271,10 +274,11 @@ export function parseCoordinationRelays(raw: string | undefined, machines: reado
 
 const SERVICE_SELECTOR = /^[A-Za-z0-9._-]{1,128}$/;
 const SERVICE_ADMISSION_KEYS = ["relay_machine", "service_id", "service_generation", "owners", "machines"];
+const SERVICE_ADMISSION_OPTIONAL_KEYS = ["console_role"];
 
 export function parseConsoleStartServices(raw: string | undefined, machines: readonly MachineConfig[], principals: readonly PrincipalConfig[], relays: readonly CoordinationRelayConfig[]): ConsoleStartServiceConfig[] {
   if (!raw?.trim()) return [];
-  const invalid = (): never => { throw new Error("AGENT_CONSOLE_CONSOLE_START_SERVICES must contain unique service admissions for a configured relay machine, nonempty configured non-root owners and nonempty configured machines"); };
+  const invalid = (): never => { throw new Error("AGENT_CONSOLE_CONSOLE_START_SERVICES must contain unique service admissions for a configured relay machine, nonempty configured non-root owners, nonempty configured machines and an optional console_role of coordinator"); };
   let entries: unknown;
   try { entries = JSON.parse(raw); } catch { return invalid(); }
   if (!Array.isArray(entries)) return invalid();
@@ -282,7 +286,9 @@ export function parseConsoleStartServices(raw: string | undefined, machines: rea
   return entries.map(entry => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return invalid();
     const v = entry as Record<string, unknown>;
-    if (Object.keys(v).length !== SERVICE_ADMISSION_KEYS.length || !SERVICE_ADMISSION_KEYS.every(key => Object.hasOwn(v, key))
+    if (!SERVICE_ADMISSION_KEYS.every(key => Object.hasOwn(v, key))
+      || !Object.keys(v).every(key => SERVICE_ADMISSION_KEYS.includes(key) || SERVICE_ADMISSION_OPTIONAL_KEYS.includes(key))
+      || (Object.hasOwn(v, "console_role") && v.console_role !== "coordinator")
       || !relays.some(relay => relay.machine === v.relay_machine)
       || typeof v.service_id !== "string" || !SERVICE_SELECTOR.test(v.service_id)
       || typeof v.service_generation !== "string" || !SERVICE_SELECTOR.test(v.service_generation)
