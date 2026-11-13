@@ -51,8 +51,8 @@ function layout(m: Mounted) {
     row.getBoundingClientRect = () => ({ x: 0, y: index * ROW_HEIGHT, left: 0, right: 300, top: index * ROW_HEIGHT, bottom: (index + 1) * ROW_HEIGHT, width: 300, height: ROW_HEIGHT, toJSON() {} }) as DOMRect;
   });
 }
-function pointer(m: Mounted, type: string, target: Element, y: number, pointerType: string) {
-  const event = new m.window.PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType, isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1, clientX: 20, clientY: y });
+function pointer(m: Mounted, type: string, target: Element, y: number, pointerType: string, pointerId = 7) {
+  const event = new m.window.PointerEvent(type, { bubbles: true, cancelable: true, pointerId, pointerType, isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1, clientX: 20, clientY: y });
   return act(async () => { target.dispatchEvent(event); });
 }
 const handle = (m: Mounted, name: string) => m.container.querySelector<HTMLElement>(`[data-reorder-key="${name}"] [data-reorder-handle]`)!;
@@ -128,6 +128,42 @@ test("releasing over a gap drops the row at the nearest slot", async () => {
   await m.render(); layoutWithGaps(m);
   await dragThrough(m, "cedar", rowCentre(0), belowRow(1));
   assert.deepEqual(m.reorders, [["mesa", "cedar", "summit", "delta", "ember"]]);
+});
+
+test("releasing in the lower half of a gap chooses the next row's slot", async () => {
+  const m = await mount(LIST);
+  await m.render(); layoutWithGaps(m);
+  await dragThrough(m, "cedar", rowCentre(0), 2 * PITCH - 1);
+  assert.equal(m.reorders.length, 1);
+  assert.equal(m.reorders[0]?.join(","), "mesa,summit,cedar,delta,ember");
+  assert.equal(names(m).join(","), "mesa,summit,cedar,delta,ember");
+});
+
+test("unequal-height previews keep targeting the slots read before the drag", async () => {
+  const m = await mount(LIST);
+  await m.render();
+  // Moving the tall first row changes the boxes of the shorter rows before it.
+  const height = (row: HTMLElement) => row.dataset.reorderKey === "cedar" ? 96 : ROW_HEIGHT;
+  for (const row of rows(m)) {
+    row.getBoundingClientRect = () => {
+      const shown = rows(m);
+      const top = shown.slice(0, shown.indexOf(row)).reduce((sum, item) => sum + height(item) + GAP, 0);
+      return { x: 0, y: top, left: 0, right: 300, top, bottom: top + height(row), width: 300, height: height(row), toJSON() {} } as DOMRect;
+    };
+  }
+  const grip = handle(m, "cedar");
+  await pointer(m, "pointerdown", grip, 48, "mouse");
+  await pointer(m, "pointermove", grip, 172, "mouse");
+  assert.equal(names(m).join(","), "mesa,summit,cedar,delta,ember");
+  assert.equal(rows(m)[0]!.getBoundingClientRect().top, 0, "preview geometry actually changes");
+  await pointer(m, "pointermove", grip, 130, "mouse");
+  assert.equal(names(m).join(","), "mesa,cedar,summit,delta,ember", "the original second slot still owns this coordinate");
+  await pointer(m, "pointermove", grip, 172, "mouse");
+  assert.equal(names(m).join(","), "mesa,summit,cedar,delta,ember", "returning to the original third slot is stable");
+  assert.equal(m.reorders.length, 0);
+  await pointer(m, "pointerup", grip, 172, "mouse");
+  assert.equal(m.reorders.length, 1);
+  assert.equal(m.reorders[0]?.join(","), "mesa,summit,cedar,delta,ember");
 });
 
 test("a move and the release in the same task save the order shown at the release position", async () => {
@@ -208,6 +244,68 @@ function trackDragListeners(m: Mounted) {
 }
 const press = (m: Mounted, target: Element, y: number, init: PointerEventInit) =>
   act(async () => { target.dispatchEvent(new m.window.PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 7, pointerType: "mouse", clientX: 20, clientY: y, ...init })); });
+
+test("another pointer cannot move, release or cancel the active drag", async () => {
+  const m = await mount(["cedar", "mesa", "summit"]);
+  await m.render(); layout(m);
+  const listeners = trackDragListeners(m);
+  const grip = handle(m, "cedar");
+  await pointer(m, "pointerdown", grip, centre(0), "touch");
+  await pointer(m, "pointermove", grip, centre(2), "touch", 8);
+  assertNoElement(m.container, "[data-dragging]", "another pointer cannot start the preview");
+  await pointer(m, "pointermove", grip, centre(1), "touch");
+  await pointer(m, "pointermove", grip, centre(2), "touch", 8);
+  assert.equal(names(m).join(","), "mesa,cedar,summit", "another pointer cannot retarget the preview");
+  for (const type of ["pointerup", "pointercancel"]) {
+    await pointer(m, type, grip, centre(2), "touch", 8);
+    assert.equal(m.reorders.length, 0, `${type} from another pointer cannot save`);
+    assert.equal(listeners.count(), 3, `${type} from another pointer cannot detach the active drag`);
+    assert.equal(m.container.querySelector("[data-dragging]")?.getAttribute("data-reorder-key"), "cedar");
+  }
+  await pointer(m, "pointerup", grip, centre(1), "touch");
+  assert.equal(m.reorders.length, 1);
+  assert.equal(m.reorders[0]?.join(","), "mesa,cedar,summit");
+  assert.equal(listeners.count(), 0);
+});
+
+for (const direction of [-1, 1]) {
+  test(`${direction > 0 ? "a downward" : "an upward"} drag starts at four pixels, not three`, async () => {
+    const m = await mount(["cedar", "mesa", "summit"]);
+    await m.render(); layout(m);
+    const grip = handle(m, direction > 0 ? "cedar" : "mesa");
+    // Straddle the slot boundary, so a premature drag would change the order.
+    const start = ROW_HEIGHT - direction;
+    await pointer(m, "pointerdown", grip, start, "mouse");
+    await pointer(m, "pointermove", grip, start + direction * 3, "mouse");
+    assertNoElement(m.container, "[data-dragging]", "three pixels remain a press");
+    assert.equal(names(m).join(","), "cedar,mesa,summit");
+    await pointer(m, "pointerup", grip, start + direction * 3, "mouse");
+    assert.equal(m.reorders.length, 0, "releasing below the threshold saves nothing");
+    await pointer(m, "pointerdown", grip, start, "mouse");
+    await pointer(m, "pointermove", grip, start + direction * 4, "mouse");
+    assert.equal(m.container.querySelectorAll("[data-dragging]").length, 1, "four pixels start the preview");
+    assert.equal(names(m).join(","), "mesa,cedar,summit");
+    await pointer(m, "pointerup", grip, start + direction * 4, "mouse");
+    assert.equal(m.reorders.length, 1);
+    assert.equal(m.reorders[0]?.join(","), "mesa,cedar,summit");
+  });
+}
+
+test("the rendered list supplies the selectors styled by ReorderList.css", async () => {
+  const m = await mount(["cedar", "mesa", "summit"]);
+  await m.render(); layout(m);
+  const grip = handle(m, "cedar");
+  await pointer(m, "pointerdown", grip, centre(0), "mouse");
+  await pointer(m, "pointermove", grip, centre(1), "mouse");
+  const css = readFileSync(new URL("../src/ReorderList.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{[^}]*\}/g)];
+  assert.ok(rules.length > 0, "the stylesheet has rules");
+  for (const rule of rules) {
+    for (const selector of rule[1]!.split(",")) {
+      assert.ok(m.container.querySelectorAll(selector.trim()).length > 0, `${selector.trim()} styles rendered controls`);
+    }
+  }
+});
 
 test("a drag holds one pointer-move, release and cancel listener on the document and none after a release", async () => {
   const m = await mount(["cedar", "mesa", "summit"]);

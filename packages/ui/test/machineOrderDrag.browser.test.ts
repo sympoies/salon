@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
@@ -12,7 +12,7 @@ const MACHINES = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf
 
 // Real mouse drags in headless Chrome: the preview moves the dragged row's DOM node, which
 // releases pointer capture in a browser, so the drop must still commit in both directions.
-test("repeated mouse drags on a 7-row Machines list commit at the slot under the pointer, down and up", async t => {
+async function assertStyledDrags(t: TestContext, viewport: { width: number; height: number }) {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
   const fixture = `
     import React, { useState } from "react";
@@ -40,7 +40,10 @@ test("repeated mouse drags on a 7-row Machines list commit at the slot under the
   const output = Array.isArray(bundled) ? bundled[0] : bundled;
   assert.ok(output && "output" in output);
   const code = output.output.filter(item => item.type === "chunk").map(item => item.code).join("\n");
-  const css = readFileSync(join(process.cwd(), "src", "styles.css"), "utf8");
+  const emittedCss = output.output.filter(item => item.type === "asset" && item.fileName.endsWith(".css"))
+    .map(item => typeof item.source === "string" ? item.source : new TextDecoder().decode(item.source)).join("\n");
+  assert.ok(emittedCss.length > 0, "the component bundle emits its stylesheet");
+  const css = readFileSync(join(process.cwd(), "src", "styles.css"), "utf8") + "\n" + emittedCss;
   const temp = mkdtempSync(join(tmpdir(), "agent-console-machine-drag-"));
   const browser = spawn(process.env.CHROME_BIN ?? "google-chrome", [
     "--headless", "--disable-gpu", "--no-sandbox", "--remote-debugging-port=0", `--user-data-dir=${temp}`, "about:blank",
@@ -76,6 +79,7 @@ test("repeated mouse drags on a 7-row Machines list commit at the slot under the
       assert.equal(result.exceptionDetails, undefined, "browser fixture executes successfully");
       return result.result.value;
     };
+    await send("Emulation.setDeviceMetricsOverride", { ...viewport, deviceScaleFactor: 1, mobile: false });
     await send("Page.enable");
     await send("Runtime.enable");
     const html = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div><script>${code.replaceAll("</script", "<\\/script")}</script>`;
@@ -84,6 +88,18 @@ test("repeated mouse drags on a 7-row Machines list commit at the slot under the
     for (let attempt = 0; attempt < 100 && !(await evaluate(`document.querySelectorAll("[data-reorder-key]").length === ${MACHINES.length}`)); attempt++) {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
+
+    const styles = await evaluate(`(() => {
+      const list = document.querySelector("[data-reorder-key]").parentElement;
+      const row = list.querySelector("[data-reorder-key]");
+      const handle = row.querySelector("[data-reorder-handle]");
+      return { listDisplay: getComputedStyle(list).display, rowDisplay: getComputedStyle(row).display,
+        rowGap: parseFloat(getComputedStyle(list).rowGap), touchAction: getComputedStyle(handle).touchAction };
+    })()`);
+    assert.equal(styles.listDisplay, "grid", "the bundled list stylesheet applies");
+    assert.equal(styles.rowDisplay, "grid", "rows use the styled grid layout");
+    assert.ok(styles.rowGap > 0, "the drag crosses styled inter-row gaps");
+    assert.equal(styles.touchAction, "none", "the handle prevents native touch scrolling");
 
     const names = () => evaluate(`[...document.querySelectorAll("[data-reorder-key]")].map(row => row.dataset.reorderKey)`) as Promise<string[]>;
     // Row geometry comes from the page, so the test does not depend on font metrics.
@@ -123,4 +139,9 @@ test("repeated mouse drags on a 7-row Machines list commit at the slot under the
     await new Promise(resolve => { if (browser.exitCode !== null || browser.signalCode !== null) resolve(null); else browser.once("exit", resolve); });
     rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
-});
+}
+
+for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  test(`repeated mouse drags on a styled 7-row Machines list commit down and up at ${viewport.width}px`,
+    t => assertStyledDrags(t, viewport));
+}
