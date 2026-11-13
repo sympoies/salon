@@ -15,8 +15,7 @@ import type { Session } from "./types.ts";
 
 /**
  * The user/assistant record of a live session, read from its provider history.
- * The terminal stays the view for following agent actions; this panel is the
- * clean read of what was asked and reported.
+ * Tool calls and bounded results share the same disclosures as archived history.
  */
 export function LiveConversationPanel({ session, onClose, machineReachable = true, onBusyChange, replyDrafts, recovery, docked = false, showComposer = false, onTerminal, pinned = false, onTogglePin }: {
   readonly session: Session;

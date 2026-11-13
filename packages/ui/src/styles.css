@@ -7805,3 +7805,21 @@ textarea {
 .file-card-copy svg { width:16px; height:16px; }
 
 .history-bubble:has(.attachment-file-list):not(:has(.conversation-images,.attachment-chip)) { max-width:min(320px,100%); }
+
+.history-message:has(> .conversation-tools) { flex-wrap: wrap; }
+.conversation-tools { flex: 1 0 100%; min-width: 0; max-width: 100%; font-size: var(--text-xs); }
+.conversation-tool { margin-top: 4px; border: 1px solid var(--border-default); border-radius: 6px; overflow: hidden; }
+.conversation-tool-toggle { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; padding: 6px 8px; border: 0; background: var(--surface-overlay); color: var(--conversation-agent-text); text-align: left; cursor: pointer; font: inherit; }
+.conversation-tool-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.conversation-tool-toggle strong { flex-shrink: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+.conversation-tool-input { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--conversation-meta); }
+.conversation-tool-status { flex-shrink: 0; margin-left: auto; }
+.conversation-tool-status.is-ok { color: var(--ok); }
+.conversation-tool-status.is-error { color: var(--danger); }
+.conversation-tool-body { padding: 8px; color: var(--conversation-agent-text); }
+.conversation-tool-body pre { margin: 0; max-width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: inherit; }
+.conversation-tool-body pre + pre { margin-top: 8px; }
+.conversation-tool-diff span { box-decoration-break: clone; }
+.conversation-tool-diff .is-added { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.conversation-tool-diff .is-removed { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.conversation-tool-truncated { margin: 4px 0 0; color: var(--conversation-meta); }

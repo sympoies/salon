@@ -86,6 +86,13 @@ time. Open its conversation to read saved drafts and restore one to the reply
 composer. Replacing existing text requires confirmation. Restoring does not
 send the draft.
 
+## Inspect agent tools
+
+Live and saved conversations show compact tool rows when the runtime supplies typed
+history parts. Select a tool name to expand its input summary and result. File-edit
+results with unified diffs highlight added and removed lines. Summaries are masked
+and bounded by the runtime; truncated results are marked.
+
 ## Track outgoing replies and attachments
 
 When a session is replaced or removed, Salon automatically clears its

@@ -1,0 +1,57 @@
+{
+  "messages": [
+    {
+      "id": "call-row",
+      "role": "assistant",
+      "text": "",
+      "parts": [
+        {
+          "kind": "tool_call",
+          "id": "call-item",
+          "call_id": "tool-1",
+          "name": "exec_command",
+          "input_summary": "pnpm test",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "result-row",
+      "role": "assistant",
+      "text": "",
+      "parts": [
+        {
+          "kind": "tool_result",
+          "id": "result-item",
+          "call_id": "tool-1",
+          "summary": "12 tests passed",
+          "truncated": false,
+          "is_error": false
+        }
+      ]
+    },
+    {
+      "id": "edit-row",
+      "role": "assistant",
+      "text": "Updated the example.",
+      "parts": [
+        {
+          "kind": "tool_call",
+          "id": "edit-item",
+          "call_id": "tool-2",
+          "name": "apply_patch",
+          "input_summary": "[path]",
+          "status": "completed"
+        },
+        {
+          "kind": "tool_result",
+          "id": "diff-item",
+          "call_id": "tool-2",
+          "summary": "--- a/example.txt\n+++ b/example.txt\n@@ -1 +1 @@\n-old example\n+new example",
+          "truncated": false,
+          "is_error": false
+        }
+      ]
+    }
+  ]
+}

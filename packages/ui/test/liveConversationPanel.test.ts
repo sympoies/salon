@@ -1700,3 +1700,40 @@ test("a running session waiting on its first history row reports the miss as soo
   assert.match(mounted.container.textContent ?? "", /No Codex session with ID provider-7 is in maple history\./);
   assert.doesNotMatch(mounted.container.textContent ?? "", /Finding this session in history/);
 });
+
+for (const view of ["panel", "tile", "phone"] as const) test(`${view} discloses tool results arriving through a live resource snapshot`, async () => {
+  const mounted = installDom(); cleanups.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([conversationApiMockPlugin()]); cleanups.push(ssr.close);
+  globalThis.__agentConsoleConversationApiMock = {
+    listHistorySessions: async () => ({ ok: true, truncated: false, latestMessagePaging: true, sessions: [historyEntry()] }),
+    listHistoryMessages: async () => ({ ok: true, messages: [{ id: "assistant", role: "assistant", text: "Running tests." }] }),
+  };
+  const component = view === "panel" ? "LiveConversationPanel" : view === "tile" ? "SessionConversationPane" : "PhoneConversationPane";
+  const module = await ssr.loadModule<Record<string, import("react").ComponentType<any>>>(`/src/${component}.tsx`);
+  await act(async () => {
+    mounted.root.render(createElement(module[component]!, { session: liveSession(), machineReachable: true, onClose() {}, swipeEnabled: false, onSwipe() {}, refreshRef: { current: null } }));
+    await flush();
+  });
+  await act(async () => flush());
+  await act(async () => {
+    globalThis.__agentConsoleConversationResourceChange?.({
+      schema_version: "agent-console.resource-event.v1", type: "changed", resource: "conversation/maple/history-7", revision: 2,
+      conversation: { messages: [
+        { id: "call", role: "assistant", text: "", tool_parts: [{ kind: "tool_call", id: "call-item", call_id: "tool-1", name: "exec_command", input_summary: "pnpm test" }] },
+        { id: "result", role: "assistant", text: "", tool_parts: [{ kind: "tool_result", id: "result-item", call_id: "tool-1", summary: "12 tests passed", status: "ok" }] },
+      ] },
+    });
+    await flush();
+  });
+  const button = mounted.container.querySelector<HTMLButtonElement>('.conversation-tool-toggle[aria-label="exec_command"]');
+  assert.ok(button);
+  assert.equal(button.getAttribute("aria-expanded"), "false");
+  assert.equal(mounted.container.textContent?.includes("12 tests passed"), false);
+  await act(async () => button.click());
+  assert.equal(button.getAttribute("aria-expanded"), "true");
+  assert.equal(mounted.container.textContent?.includes("12 tests passed"), true);
+  assert.equal(mounted.container.querySelectorAll(".conversation-tool-toggle").length, 1, "the separate result row joins its call");
+  await act(async () => button.click());
+  assert.equal(button.getAttribute("aria-expanded"), "false");
+  assert.equal(mounted.container.textContent?.includes("12 tests passed"), false);
+});
