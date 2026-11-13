@@ -1,3 +1,4 @@
+import { useShowToolCalls } from "./toolCallPreference.ts";
 import { ConversationTools, conversationToolRows } from "./ConversationTools.tsx";
 import { imageCaption } from "./providerImageLabels.ts";
 import { ConversationImages } from "./ConversationImages.tsx";
@@ -368,7 +369,10 @@ export function HistoryConversationView({
     messagePageCursors,
     loading,
   } = conversation;
+  const showToolCalls = useShowToolCalls();
   const toolRows = conversationToolRows(messages);
+  const rows = messages.map((message, index) => ({ message, tools: showToolCalls ? toolRows[index]! : [] }))
+    .filter(({ message, tools }) => !message.tool_parts?.length || tools.length || message.text || message.images?.length);
   const { extensions } = useUiExtensions();
   const present = (row: ConversationRow): ConversationRowPresentation | null | undefined => {
     try {
@@ -388,7 +392,7 @@ export function HistoryConversationView({
     } catch { return undefined; }
     return undefined;
   };
-  const split = splitImages(messages);
+  const split = splitImages(rows.map(row => row.message));
   const showWorking = working && !browsingOlder && (latestMessagePaging || messageCursor === null);
   // Keep a reader who follows the latest messages at the bottom as the line appears.
   useLayoutEffect(() => {
@@ -407,8 +411,7 @@ export function HistoryConversationView({
             {loading ? "Loading…" : "Load older"}
           </button>
         ) : null}
-        {messages.map((message, index) => {
-          if (message.tool_parts?.length && !toolRows[index]?.length && !message.text && !message.images?.length) return null;
+        {rows.map(({ message, tools }, index) => {
           const notice = message.row_class === "notice" || (!message.row_class && message.role === "notice") ? parseSessionNotice(message.text) : null;
           const runtime = message.row_class === "runtime_command"
             ? { title: parseRuntimeCommand(message.text)?.title ?? "Runtime command", text: message.text }
@@ -416,7 +419,7 @@ export function HistoryConversationView({
           const compaction = message.row_class === "compaction";
           const plainNotice = message.row_class === "notice" && !notice;
           const date = messageDate(message.timestamp);
-          const previous = messages[index - 1];
+          const previous = rows[index - 1]?.message;
           const previousDate = messageDate(previous?.timestamp);
           const newDay = Boolean(date && date.toDateString() !== previousDate?.toDateString());
           const sentAt = messageTimeLabel(date);
@@ -431,7 +434,7 @@ export function HistoryConversationView({
           const caption = user ? hideUploadedImages(originalCaption, uploadSessionId, (message.images ?? []).filter(image => image.origin !== "tool_result").length) : originalCaption;
           const { bubble: bubbleImages, reread, tool: toolImages } = split[index]!;
           const imageOnly = Boolean(session && bubbleImages.length && !caption.trim() && message.role !== "goal");
-          const toolOnly = Boolean((toolRows[index]?.length || session && (reread || toolImages.length)) && !bubbleImages.length && !caption.trim());
+          const toolOnly = Boolean((tools.length || session && (reread || toolImages.length)) && !bubbleImages.length && !caption.trim());
           const time = sentAt ? <time dateTime={message.timestamp}>{sentAt}</time> : null;
           return (
             <Fragment key={message.id}>
@@ -450,7 +453,7 @@ export function HistoryConversationView({
                 {userPresentation ? <span className="history-source-label">{userPresentation.label}</span> : null}
                 {toolOnly ? null : <div className={`history-bubble${imageOnly ? " is-image-only" : ""}`} onCopy={userPresentation ? event => { event.clipboardData.setData("text/plain", message.text); event.preventDefault(); } : undefined}>{message.role === "goal" ? <span className="history-goal-label">Goal</span> : null}<MessageMarkdown text={user ? stripPasteWrappers(caption) : caption} suppressImages={Boolean(message.images?.length)} uploadSessionId={user ? uploadSessionId : undefined} neutralUploads={user} files={user ? message.files : undefined} />{bubbleImages.length && session ? <ConversationImages key={`${session.machine}/${session.id}`} machine={session.machine} history={session.id} images={bubbleImages} markdownSource={message} attachmentPaths={user && uploadSessionId ? uploadedFilePaths(stripPasteWrappers(originalCaption), uploadSessionId) : undefined} /> : null}{user && bubbleImages.length ? <span className="history-image-label">{bubbleImages.map(image => image.original_name ?? "Image").join(" · ")}</span> : null}{imageOnly && !user ? time : null}</div>}
                 {!user && !imageOnly ? time : null}
-                {toolRows[index]?.length ? <ConversationTools rows={toolRows[index]!} /> : null}
+                {tools.length ? <ConversationTools rows={tools} /> : null}
                 {session && (reread || toolImages.length) ? <div className="history-tool-output">
                   {reread ? <p className="history-tool-reread">Read attachment</p> : null}
                   {toolImages.length ? <>
