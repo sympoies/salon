@@ -401,12 +401,17 @@ function projectHistoryMessage(value: unknown, resolveIntent?: (binding: PromptR
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   const id = boundedHistoryString(raw.id, 160);
-  const role = raw.role === "user" || raw.role === "assistant" || raw.role === "goal" || raw.role === "notice" ? raw.role : undefined;
+  let role = raw.role === "user" || raw.role === "assistant" || raw.role === "goal" || raw.role === "notice" ? raw.role : undefined;
   const rowClass = normalizeHistoryRowClass(raw.row_class);
   const text = typeof raw.text === "string" && (rowClass === "compaction" ? [...raw.text].length : raw.text.length) <= 64 * 1024 ? raw.text : undefined;
   const images = normalizeConversationImages(raw.images);
   const files = role === "user" ? normalizeConversationFiles(raw.parts) : [];
-  const toolParts = role === "assistant" ? projectHistoryToolParts(raw.parts) : [];
+  // Claude 2.1 parts=v1 retains plain tool results in textless user envelopes.
+  // Human text, attachments and classified rows keep their existing ownership.
+  const toolParts = role === "assistant" ? projectHistoryToolParts(raw.parts)
+    : role === "user" && text === "" && !rowClass && !images.length && !files.length
+      ? projectHistoryToolParts(raw.parts).filter(part => part.kind === "tool_result") : [];
+  if (role === "user" && toolParts.length) role = "assistant";
   const compaction = normalizeHistoryCompaction(raw.compaction, rowClass);
   if (!id || !role || text === undefined || (!text && !images.length && !toolParts.length && rowClass !== "compaction")) return null;
   if (role === "notice" && (images.length || (!rowClass && !parseSessionNotice(text)))) return null;
