@@ -3876,3 +3876,19 @@ test("discard saved draft sends a bodyless POST and distinguishes unsupported ru
   setFetchMock(async () => jsonResponse({ ok: false, error: { code: "draft-not-found", message: "missing" } }, { status: 404 }));
   await assert.rejects(discardSavedDraft("fixture", "session-1", "draft-1"));
 });
+
+test("#452 history retains a bounded prompt request association without private fields", async () => {
+  const binding = { request_id: "request-a", session_id: "session-a", session_incarnation: "inc-a", outbox_intent_id: "intent-a" };
+  setFetchMock(async () => jsonResponse({ ok: true, data: { messages: [
+    { id: "user-a", role: "user", text: "Projected", prompt_request: { ...binding, provider_turn_id: "private" } },
+    { id: "user-b", role: "user", text: "Malformed binding", prompt_request: { ...binding, request_id: "bad id" } },
+    { id: "assistant-a", role: "assistant", text: "Reply", prompt_request: binding },
+  ] } }));
+  const result = await listHistoryMessages("fixture", "history-a");
+  const rows = result.messages as readonly (typeof result.messages[number] & { prompt_request?: typeof binding & { provider_turn_id?: string } })[];
+  assert.equal(rows[0]?.prompt_request?.request_id, binding.request_id);
+  assert.equal(rows[0]?.prompt_request?.outbox_intent_id, binding.outbox_intent_id);
+  assert.equal(rows[0]?.prompt_request?.provider_turn_id, undefined);
+  assert.equal(rows[1]?.prompt_request, undefined);
+  assert.equal(rows[2]?.prompt_request, undefined);
+});

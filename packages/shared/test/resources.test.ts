@@ -74,3 +74,15 @@ test("conversation snapshots preserve sanitized file names and unnamed descripto
     { ...file, kind: "future" }, { ...file, bytes: -1 },
   ] }] } })?.conversation, { messages: [{ ...row, files: [unnamed, file] }] });
 });
+
+
+test("#452 conversation resource decoding keeps the accepted user request association", () => {
+  const binding = { request_id: "request-a", session_id: "session-a", session_incarnation: "inc-a", outbox_intent_id: "intent-a" };
+  const event = normalizeResourceEvent({ schema_version: "agent-console.resource-event.v1", type: "changed",
+    resource: "conversation/fixture/history-a", revision: 1,
+    conversation: { messages: [{ id: "user-a", role: "user", text: "Provider projection", prompt_request: { ...binding, private_proof: "not-public" } }] } });
+  const row = event?.conversation?.messages[0] as { prompt_request?: typeof binding & { private_proof?: string } } | undefined;
+  assert.equal(row?.prompt_request?.request_id, binding.request_id);
+  assert.equal(row?.prompt_request?.outbox_intent_id, binding.outbox_intent_id);
+  assert.equal(row?.prompt_request?.private_proof, undefined);
+});

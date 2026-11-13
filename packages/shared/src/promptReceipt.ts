@@ -39,3 +39,17 @@ export function normalizePromptReceipt(value: unknown, expected: PromptReceiptId
   return { ...(observation ? { observation } : {}), request_id: raw.request_id, session_id: expected.session_id, session_incarnation: raw.session_incarnation,
     outcome: raw.outcome as PromptReceipt["outcome"], code: raw.code as string | null };
 }
+
+/** Authoritative accepted-input association supplied on supported user history rows. */
+export interface PromptRequestBinding extends PromptReceiptIdentity {
+  /** Added by the edge only for an attempt owned by the current reader. */
+  readonly outbox_intent_id?: string;
+}
+export function normalizePromptRequestBinding(value: unknown): PromptRequestBinding | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (!isPromptRequestId(raw.request_id) || !isPromptRequestId(raw.session_id)
+    || !isPromptIncarnation(raw.session_incarnation)) return undefined;
+  return { request_id: raw.request_id, session_id: raw.session_id, session_incarnation: raw.session_incarnation,
+    ...(isPromptRequestId(raw.outbox_intent_id) ? { outbox_intent_id: raw.outbox_intent_id } : {}) };
+}

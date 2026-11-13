@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startEdge } from "@agent-console/edge/start";
@@ -167,6 +167,28 @@ async function checkSubmittedUi(base: string) {
     await rpc("Page.navigate", { url: `${base}/?submitted-fixture&later` }, sessionId);
     const remounted = await wait(value => value.outboxReads > 0 && value.proofCount === 1);
     assert.equal(remounted.visibleEchoes, 0, "fresh document with a later history window preserves durable handover");
+    await rpc("Page.navigate", { url: `${base}/?submitted-fixture&association` }, sessionId);
+    const associatedBefore = await wait(value => value.outboxReads > 0);
+    expectedWrites = 1;
+    await evaluate("window.submittedFixture.send()");
+    await wait(value => value.writes === 1 && value.visibleEchoes === 1);
+    await evaluate("window.submittedFixture.handover()");
+    const associated = await wait(value => value.historyReads > associatedBefore.historyReads && value.matchingHistoryTurns === 1);
+    if (process.env.SALON_UI_EVIDENCE_DIR) {
+      mkdirSync(process.env.SALON_UI_EVIDENCE_DIR, { recursive: true });
+      for (const width of [1280, 390]) {
+        await rpc("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 }, sessionId);
+        const shot = await rpc("Page.captureScreenshot", { format: "png" }, sessionId);
+        writeFileSync(join(process.env.SALON_UI_EVIDENCE_DIR, `associated-${width}.png`), Buffer.from(shot.data, "base64"));
+      }
+      writeFileSync(join(process.env.SALON_UI_EVIDENCE_DIR, "associated.json"), JSON.stringify(associated, null, 2));
+    }
+    assert.equal(associated.visibleEchoes, 0, "installed UI uses the association despite provider-transformed text");
+    assert.equal(associated.proofCount, 1, "installed UI retains exactly one associated proof");
+    expectedWrites = 0;
+    await rpc("Page.navigate", { url: `${base}/?submitted-fixture&association&later` }, sessionId);
+    const associatedRemount = await wait(value => value.outboxReads > 0 && value.proofCount === 1);
+    assert.equal(associatedRemount.visibleEchoes, 0, "associated handover survives an installed-consumer remount");
     await rpc("Page.navigate", { url: `${base}/?reorder-fixture` }, sessionId);
     const reorder = await new Promise<any>((resolve, reject) => {
       const deadline = Date.now() + 10_000;

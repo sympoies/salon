@@ -1,4 +1,4 @@
-import { normalizePromptObservation } from "@agent-console/shared/prompt-receipt";
+import { normalizePromptObservation, normalizePromptRequestBinding, type PromptRequestBinding } from "@agent-console/shared/prompt-receipt";
 import { normalizeConversationImages, normalizeConversationFiles } from "@agent-console/shared/conversation-images";
 import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeMailboxEvent, parseSessionNotice } from "@agent-console/shared";
 import type { ServerResponse } from "node:http";
@@ -384,7 +384,7 @@ function projectHistorySession(value: unknown): Record<string, unknown> | null {
   return projected;
 }
 
-function projectHistoryMessage(value: unknown): Record<string, unknown> | null {
+function projectHistoryMessage(value: unknown, resolveIntent?: (binding: PromptRequestBinding) => string | undefined): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   const id = boundedHistoryString(raw.id, 160);
@@ -397,6 +397,15 @@ function projectHistoryMessage(value: unknown): Record<string, unknown> | null {
   if (!id || !role || text === undefined || (!text && !images.length && rowClass !== "compaction")) return null;
   if (role === "notice" && (images.length || (!rowClass && !parseSessionNotice(text)))) return null;
   const projected: Record<string, unknown> = { id, role, text, ...(rowClass ? { row_class: rowClass } : {}), ...(compaction ? { compaction } : {}), ...(images.length ? { images } : {}), ...(files.length ? { files } : {}) };
+  const binding = role === "user" && !rowClass ? normalizePromptRequestBinding(raw.prompt_request) : undefined;
+  if (binding) {
+    // Never trust a producer-supplied local intent ID. Only the scoped durable
+    // edge attempt can translate its native request key into a browser intent.
+    const { request_id, session_id, session_incarnation } = binding;
+    const outbox_intent_id = resolveIntent?.(binding);
+    projected.prompt_request = { request_id, session_id, session_incarnation,
+      ...(outbox_intent_id ? { outbox_intent_id } : {}) };
+  }
   const timestamp = boundedHistoryString(raw.timestamp, 64);
   if (timestamp) projected.timestamp = timestamp;
   // A mailbox read event is a notice with display metadata; unknown or malformed metadata leaves a plain notice.
@@ -434,14 +443,14 @@ export function projectHistorySessionsDaemonData(
   return projected;
 }
 
-export function projectHistoryMessagesDaemonData(value: unknown): Record<string, unknown> | null {
+export function projectHistoryMessagesDaemonData(value: unknown, resolveIntent?: (binding: PromptRequestBinding) => string | undefined): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   if (!Array.isArray(raw.messages)) return null;
   // Provider rows are bounded at 100; mailbox read events ride in addition to them, so count rows apart from events.
   let rows = 0;
   const messages = raw.messages.flatMap((message) => {
-    const projected = projectHistoryMessage(message);
+    const projected = projectHistoryMessage(message, resolveIntent);
     if (!projected) return [];
     if (projected.mailbox === undefined) {
       if (rows === 100) return [];
@@ -494,8 +503,9 @@ export function forwardHistorySessionsDaemon(
   );
 }
 
-export function forwardHistoryMessagesDaemon(res: ServerResponse, r: DaemonResult): void {
-  forwardProjectedHistoryDaemon(res, r, projectHistoryMessagesDaemonData, "history conversation");
+export function forwardHistoryMessagesDaemon(res: ServerResponse, r: DaemonResult,
+  resolveIntent?: (binding: PromptRequestBinding) => string | undefined): void {
+  forwardProjectedHistoryDaemon(res, r, value => projectHistoryMessagesDaemonData(value, resolveIntent), "history conversation");
 }
 
 export function projectHistoryStarDaemonData(value: unknown): Record<string, unknown> | null {
