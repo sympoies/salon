@@ -90,8 +90,10 @@ send the draft.
 
 Live and saved conversations show compact tool rows when the runtime supplies typed
 history parts. Select a tool name to expand its input summary and result. File-edit
-results with unified diffs highlight added and removed lines. Summaries are masked
-and bounded by the runtime; truncated results are marked.
+results with unified diffs highlight added and removed lines. Summaries are bounded
+by the runtime; truncated results are marked. Session owners and root see owner
+display text when the runtime supplies it, with credentials still masked. Shared
+viewers see the masked summaries.
 
 ## Track outgoing replies and attachments
 

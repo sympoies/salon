@@ -32,7 +32,7 @@ export function normalizeHistoryCompaction(value: unknown, rowClass: HistoryRowC
 }
 
 export interface ConversationSnapshot {
-  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly row_class?: HistoryRowClass; readonly compaction?: HistoryCompaction; readonly images?: readonly ConversationImage[]; readonly files?: readonly ConversationFile[]; /** Optional masked tools; absent when the runtime supplies no typed parts. */ readonly tool_parts?: readonly HistoryToolPart[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent; readonly prompt_request?: PromptRequestBinding }>;
+  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly row_class?: HistoryRowClass; readonly compaction?: HistoryCompaction; readonly images?: readonly ConversationImage[]; readonly files?: readonly ConversationFile[]; /** Optional display tools with edge-authorized owner siblings; absent when the runtime supplies no typed parts. */ readonly tool_parts?: readonly HistoryToolPart[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent; readonly prompt_request?: PromptRequestBinding }>;
   readonly next_cursor?: string;
   readonly older_cursor?: string;
 }

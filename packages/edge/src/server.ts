@@ -100,6 +100,7 @@ import {
   forwardGlanceDaemon,
   forwardHistoryMessagesDaemon,
   projectHistoryMessagesDaemonData,
+  stripOwnerHistoryFields,
   forwardHistoryResumeDaemon,
   forwardHistoryStarDaemon,
   forwardHistorySessionsDaemon,
@@ -251,7 +252,7 @@ export interface EdgeServerOptions {
 }
 
 // Read a small, bounded number of pages when tool-only records consume the page.
-async function readConversationWindow(machine: MachineConfig, id: string, query: URLSearchParams, signal?: AbortSignal, resolveIntent?: (binding: PromptRequestBinding) => string | undefined): Promise<DaemonResult> {
+async function readConversationWindow(machine: MachineConfig, id: string, query: URLSearchParams, signal?: AbortSignal, resolveIntent?: (binding: PromptRequestBinding) => string | undefined, includeOwner: () => boolean = () => false): Promise<DaemonResult> {
   const messages: unknown[] = [];
   const seenCursors = new Set<string>();
   let nextCursor: unknown;
@@ -275,7 +276,7 @@ async function readConversationWindow(machine: MachineConfig, id: string, query:
       throw error;
     }
     const envelope = objectProp(result.body);
-    const data = result.status === 200 && envelope?.ok !== false ? projectHistoryMessagesDaemonData(envelope?.data, resolveIntent) : null;
+    const data = result.status === 200 && envelope?.ok !== false ? projectHistoryMessagesDaemonData(envelope?.data, resolveIntent, includeOwner()) : null;
     if (!data) return result.status === 200 && envelope?.ok !== false
       ? { status: 502, body: { ok: false, error: { message: "invalid history conversation response" } } }
       : result;
@@ -507,6 +508,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     return grant && viewerHistoryOwner(principal, machine, grant.provider, grant.providerSessionId)?.principalId === grant.principalId
       ? grant.principalId : undefined;
   };
+  // Shared session access permits reading, but does not confer ownership.
+  const canReadOwnerHistory = (principal: PrincipalConfig, machine: string, historyId: string) =>
+    !config.multiUser || isRootPrincipal(principal) || Boolean(accessStore?.ownsHistory(principal.id, machine, historyId));
   const canReadHistory = (principal: PrincipalConfig, machine: string, historyId: string) =>
     isRootPrincipal(principal) || historyActor(principal, machine, historyId) !== undefined;
 
@@ -1515,13 +1519,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           }
           const suffix = qs.size > 0 ? `?${qs.toString()}` : "";
           if (qs.get("direction") === "latest" || qs.get("direction") === "older") {
-            const result = await readConversationWindow(machine, historyId, qs, undefined, historyIntentResolver(_principal, machine.name));
-            if (result.status === 200 && objectProp(result.body)?.ok === true) sendJson(res, 200, result.body);
-            else forwardHistoryMessagesDaemon(res, result, historyIntentResolver(_principal, machine.name));
+            const result = await readConversationWindow(machine, historyId, qs, undefined, historyIntentResolver(_principal, machine.name), () => canReadOwnerHistory(_principal, machine.name, historyId));
+            if (result.status === 200 && objectProp(result.body)?.ok === true) sendJson(res, 200, canReadOwnerHistory(_principal, machine.name, historyId) ? result.body : stripOwnerHistoryFields(result.body));
+            else forwardHistoryMessagesDaemon(res, result, historyIntentResolver(_principal, machine.name), canReadOwnerHistory(_principal, machine.name, historyId));
           } else {
             forwardHistoryMessagesDaemon(res, await daemonFetch(machine,
               `/history/sessions/${encodeURIComponent(historyId)}/messages${suffix}`,
-              { timeoutMs: HISTORY_DAEMON_TIMEOUT_MS, debug: daemonDebug(requestId) }), historyIntentResolver(_principal, machine.name));
+              { timeoutMs: HISTORY_DAEMON_TIMEOUT_MS, debug: daemonDebug(requestId) }), historyIntentResolver(_principal, machine.name), canReadOwnerHistory(_principal, machine.name, historyId));
           }
         });
         return;
@@ -1642,7 +1646,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 throw new Error("history unavailable");
               }
               const machine = byName.get(subscription.machine)!;
-              const result = await readConversationWindow(machine, subscription.id, new URLSearchParams({ direction: "latest" }), signal, historyIntentResolver(_principal, machine.name));
+              const result = await readConversationWindow(machine, subscription.id, new URLSearchParams({ direction: "latest" }), signal, historyIntentResolver(_principal, machine.name), () => canReadOwnerHistory(_principal, machine.name, subscription.id));
               const data = result.status === 200 && objectProp(result.body)?.ok !== false ? objectProp(objectProp(result.body)?.data) : null;
               if (!data) throw new Error("conversation unavailable");
               return data;
@@ -1661,7 +1665,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 const type = !observation.available ? "unavailable" : observation.changed ? "changed" : "heartbeat";
                 const event = { schema_version: "agent-console.resource-event.v1", type, resource, revision: observation.revision };
                 const metadata = `event: ${type}\ndata: ${JSON.stringify(event)}\n\n`;
-                let frame = observation.value ? `event: ${type}\ndata: ${JSON.stringify({ ...event, conversation: observation.value })}\n\n` : metadata;
+                const snapshot = subscription.resource === "conversation"
+                  && !canReadOwnerHistory(_principal, subscription.machine, subscription.id)
+                  ? stripOwnerHistoryFields(observation.value) : observation.value;
+                let frame = snapshot ? `event: ${type}\ndata: ${JSON.stringify({ ...event, conversation: snapshot })}\n\n` : metadata;
                 // Snapshot bursts share the response's byte budget. Congestion
                 // falls back to HTTP instead of reconnecting and replaying them.
                 if (res.writableLength + Buffer.byteLength(frame) > 64 * 1024) frame = metadata;
