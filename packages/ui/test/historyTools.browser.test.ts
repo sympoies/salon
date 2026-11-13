@@ -22,8 +22,8 @@ test("shared conversation tools align with text and disclose results in live and
         return `import React from 'react'; import {createRoot} from 'react-dom/client';
           import {HistoryConversationView} from '/src/HistoryConversation.tsx'; import '/src/styles.css';
           const messages=[
-            {id:'call',role:'assistant',text:'',tool_parts:[{kind:'tool_call',id:'call-item',call_id:'command',name:'exec_command',input_summary:'pnpm test '+('long-argument-'.repeat(35)),status:'ok'}]},
-            {id:'result',role:'assistant',text:'',tool_parts:[{kind:'tool_result',id:'result-item',call_id:'command',summary:'12 tests passed <script>unsafe()</script>',status:'ok'}]},
+            {id:'call',role:'assistant',text:'',tool_parts:[{kind:'tool_call',id:'call-item',call_id:'command',name:'exec_command',input_summary:'pnpm test '+('long-argument-'.repeat(35)),...(window.ownerTools?{owner_input_summary:'cat /work/example/notes.txt'}:{}),status:'ok'}]},
+            {id:'result',role:'assistant',text:'',tool_parts:[{kind:'tool_result',id:'result-item',call_id:'command',summary:'12 tests passed <script>unsafe()</script>',...(window.ownerTools?{owner_summary:'Read /work/example: 12 tests passed <script>unsafe()</script>'}:{}),status:'ok'}]},
             {id:'edit',role:'assistant',text:'Updated the example.',tool_parts:[
               {kind:'tool_call',id:'edit-item',call_id:'edit',name:'apply_patch',input_summary:'[path]',status:'ok'},
               {kind:'tool_result',id:'diff-item',call_id:'edit',summary:'--- a/example.txt\\n+++ b/example.txt\\n@@ -1 +1 @@\\n-old example\\n+new example',status:'ok',truncated:true}]},
@@ -47,6 +47,8 @@ test("shared conversation tools align with text and disclose results in live and
                 bubbles:[...document.querySelectorAll('.history-bubble')].map(node=>node.getBoundingClientRect().left),
                 labels:buttons.map(button=>button.getAttribute('aria-label')),
                 open:[...document.querySelectorAll('.conversation-tool-toggle')].every(button=>button.getAttribute('aria-expanded')==='true'),
+                command:document.querySelector(".conversation-tool-command")?.textContent,
+                ownerResult:document.querySelector(".conversation-tool-result")?.textContent.includes("Read /work/example"),
                 result:document.querySelector('#root').textContent.includes('12 tests passed <script>unsafe()</script>'),
                 diff:!!pre,added:add?.textContent,removed:remove?.textContent,
                 distinctColors:!!add&&getComputedStyle(add).backgroundColor!==getComputedStyle(remove).backgroundColor,
@@ -76,7 +78,7 @@ test("shared conversation tools align with text and disclose results in live and
       const name = `tools-${live ? "live" : "saved"}-${width}-${theme}-${expanded ? "expanded" : "collapsed"}`;
       const file = join(temp, `${name}.html`);
       const frame = `<!doctype html><html data-theme="${theme}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}html,body{margin:0}#root{padding:12px}.history-messages{height:auto;overflow:visible}</style><div id="root"></div><script>
-        window.liveConversation=${live};window.expandTools=${expanded};window.publish=value=>parent.document.querySelector('#result').textContent=JSON.stringify(value);
+        window.ownerTools=${theme === "dark"};window.liveConversation=${live};window.expandTools=${expanded};window.publish=value=>parent.document.querySelector('#result').textContent=JSON.stringify(value);
         window.onerror=error=>window.publish({error:String(error)});${code.replaceAll("</script", "<\\/script")}</script>`;
       writeFileSync(file, `<!doctype html><style>html,body{margin:0}iframe{border:0;display:block}</style><iframe width="${width}" height="${height}"></iframe><pre id="result" hidden></pre><script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<", "\\u003c")}</script>`);
       const browser = spawnSync(process.env.CHROME_BIN ?? "google-chrome", [
@@ -117,6 +119,8 @@ test("shared conversation tools align with text and disclose results in live and
         assert.equal(result.emptyBubbles, 0);
         if (expanded) {
           assert.equal(result.open, true);
+          assert.equal(result.command, theme === "dark" ? "cat /work/example/notes.txt" : "pnpm test " + "long-argument-".repeat(35));
+          assert.equal(result.ownerResult, theme === "dark");
           assert.equal(result.added, "+new example");
           assert.equal(result.removed, "-old example\n");
           assert.equal(result.distinctColors, true);

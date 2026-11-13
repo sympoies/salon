@@ -1,0 +1,66 @@
+{
+  "messages": [
+    {
+      "id": "call-row",
+      "role": "assistant",
+      "text": "",
+      "parts": [
+        {
+          "kind": "tool_call",
+          "id": "call",
+          "call_id": "command",
+          "name": "exec_command",
+          "input_summary": "cat [path]",
+          "owner_input_summary": "cat /work/example/notes.txt",
+          "status": "completed",
+          "owner_future": {
+            "owner_nested": "private"
+          }
+        }
+      ]
+    },
+    {
+      "id": "result-row",
+      "role": "user",
+      "text": "",
+      "parts": [
+        {
+          "kind": "tool_result",
+          "id": "result",
+          "call_id": "command",
+          "summary": "Read [path]",
+          "owner_summary": "Read /work/example/notes.txt",
+          "is_error": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "id": "fallback-row",
+      "role": "assistant",
+      "text": "",
+      "parts": [
+        {
+          "kind": "tool_result",
+          "id": "fallback",
+          "summary": "Already masked",
+          "is_error": false
+        }
+      ]
+    },
+    {
+      "id": "question-row",
+      "role": "assistant",
+      "text": "Question pending",
+      "parts": [
+        {
+          "kind": "question",
+          "id": "question",
+          "source": "request_user_input",
+          "text": "Open [path]?",
+          "owner_text": "Open /work/example?"
+        }
+      ]
+    }
+  ]
+}

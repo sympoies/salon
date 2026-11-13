@@ -385,7 +385,7 @@ function projectHistorySession(value: unknown): Record<string, unknown> | null {
 }
 
 // Runtime status vocabulary is external; the browser uses a small display contract.
-function projectHistoryToolParts(value: unknown) {
+function projectHistoryToolParts(value: unknown, includeOwner: boolean) {
   return normalizeHistoryToolParts(Array.isArray(value) ? value.slice(0, 256).map(part => {
     if (!part || typeof part !== "object" || Array.isArray(part)) return null;
     const raw = part as Record<string, unknown>;
@@ -393,11 +393,12 @@ function projectHistoryToolParts(value: unknown) {
       ? raw.is_error === true ? "error" : raw.is_error === false ? "ok" : undefined
       : raw.status === "completed" ? "ok" : raw.status === "failed" ? "error" : undefined;
     return { kind: raw.kind, id: raw.id, call_id: raw.call_id, name: raw.name,
-      input_summary: raw.input_summary, summary: raw.summary, truncated: raw.truncated, status };
+      input_summary: raw.input_summary, summary: raw.summary,
+      ...(includeOwner ? { owner_input_summary: raw.owner_input_summary, owner_summary: raw.owner_summary } : {}), truncated: raw.truncated, status };
   }) : []);
 }
 
-function projectHistoryMessage(value: unknown, resolveIntent?: (binding: PromptRequestBinding) => string | undefined): Record<string, unknown> | null {
+function projectHistoryMessage(value: unknown, resolveIntent?: (binding: PromptRequestBinding) => string | undefined, includeOwner = false): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   const id = boundedHistoryString(raw.id, 160);
@@ -408,9 +409,9 @@ function projectHistoryMessage(value: unknown, resolveIntent?: (binding: PromptR
   const files = role === "user" ? normalizeConversationFiles(raw.parts) : [];
   // Claude 2.1 parts=v1 retains plain tool results in textless user envelopes.
   // Human text, attachments and classified rows keep their existing ownership.
-  const toolParts = role === "assistant" ? projectHistoryToolParts(raw.parts)
+  const toolParts = role === "assistant" ? projectHistoryToolParts(raw.parts, includeOwner)
     : role === "user" && text === "" && !rowClass && !images.length && !files.length
-      ? projectHistoryToolParts(raw.parts).filter(part => part.kind === "tool_result") : [];
+      ? projectHistoryToolParts(raw.parts, includeOwner).filter(part => part.kind === "tool_result") : [];
   if (role === "user" && toolParts.length) role = "assistant";
   const compaction = normalizeHistoryCompaction(raw.compaction, rowClass);
   if (!id || !role || text === undefined || (!text && !images.length && !toolParts.length && rowClass !== "compaction")) return null;
@@ -462,14 +463,22 @@ export function projectHistorySessionsDaemonData(
   return projected;
 }
 
-export function projectHistoryMessagesDaemonData(value: unknown, resolveIntent?: (binding: PromptRequestBinding) => string | undefined): Record<string, unknown> | null {
+// Apply again at delivery: a principal-scoped watch may outlive its ownership grant.
+export function stripOwnerHistoryFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripOwnerHistoryFields);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !key.startsWith("owner_"))
+    .map(([key, child]) => [key, stripOwnerHistoryFields(child)]));
+}
+
+export function projectHistoryMessagesDaemonData(value: unknown, resolveIntent?: (binding: PromptRequestBinding) => string | undefined, includeOwner = false): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   if (!Array.isArray(raw.messages)) return null;
   // Provider rows are bounded at 100; mailbox read events ride in addition to them, so count rows apart from events.
   let rows = 0;
   const messages = raw.messages.flatMap((message) => {
-    const projected = projectHistoryMessage(message, resolveIntent);
+    const projected = projectHistoryMessage(message, resolveIntent, includeOwner);
     if (!projected) return [];
     if (projected.mailbox === undefined) {
       if (rows === 100) return [];
@@ -523,8 +532,8 @@ export function forwardHistorySessionsDaemon(
 }
 
 export function forwardHistoryMessagesDaemon(res: ServerResponse, r: DaemonResult,
-  resolveIntent?: (binding: PromptRequestBinding) => string | undefined): void {
-  forwardProjectedHistoryDaemon(res, r, value => projectHistoryMessagesDaemonData(value, resolveIntent), "history conversation");
+  resolveIntent?: (binding: PromptRequestBinding) => string | undefined, includeOwner = false): void {
+  forwardProjectedHistoryDaemon(res, r, value => projectHistoryMessagesDaemonData(value, resolveIntent, includeOwner), "history conversation");
 }
 
 export function projectHistoryStarDaemonData(value: unknown): Record<string, unknown> | null {

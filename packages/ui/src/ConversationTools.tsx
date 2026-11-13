@@ -27,22 +27,24 @@ function ToolDisclosure({ call, result }: ToolRow) {
   const id = useId();
   const name = call?.name ?? "Tool result";
   const status = result?.status ?? call?.status;
-  const lines = result?.summary.split("\n") ?? [];
-  const diff = result && /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m.test(result.summary);
+  const input = call?.owner_input_summary ?? call?.input_summary;
+  const summary = result?.owner_summary ?? result?.summary;
+  const lines = summary?.split("\n") ?? [];
+  const diff = result && /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m.test(summary ?? "");
   return <div className="conversation-tool">
     <button type="button" className="conversation-tool-toggle" aria-label={name}
       aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>
       <SelectChevronIcon className="conversation-tool-chevron" /><strong>{name}</strong>
-      {call?.input_summary ? <span className="conversation-tool-input">{call.input_summary}</span> : null}
+      {input ? <span className="conversation-tool-input">{input}</span> : null}
       {status ? <span className={`conversation-tool-status is-${status}`}>{status === "ok" ? "OK" : "Error"}</span> : null}
     </button>
     <div id={id} hidden={!open} className="conversation-tool-body">
       {open ? <>
-        {call?.input_summary ? <pre className="conversation-tool-command">{call.input_summary}</pre> : null}
+        {input ? <pre className="conversation-tool-command">{input}</pre> : null}
         {result ? <>
           {diff ? <pre className="conversation-tool-diff" aria-label="Unified diff"><code>{lines.map((line, index) =>
             <span key={index} className={line.startsWith("+") && !line.startsWith("+++") ? "is-added" : line.startsWith("-") && !line.startsWith("---") ? "is-removed" : undefined}>{line}{index < lines.length - 1 ? "\n" : ""}</span>)}</code></pre>
-            : <pre className="conversation-tool-result">{result.summary}</pre>}
+            : <pre className="conversation-tool-result">{summary}</pre>}
           {result.truncated ? <p className="conversation-tool-truncated">Result truncated</p> : null}
         </> : <p>No result available.</p>}
       </> : null}
