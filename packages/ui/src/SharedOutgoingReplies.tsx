@@ -19,10 +19,10 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
   const visibleRows = rows.map(row => {
     const current = row.target.incarnation === session.session_incarnation;
     const proven = current ? client.submittedProof(row, messages) : {};
-    return { ...row, items: client.outgoingItems(row).filter(item => item.state !== "cancelled" && item.state !== "command_dispatched" && !client.isDismissed(row, item)
+    return { ...row, admissions: row.admissions.filter(item => !Object.hasOwn(proven, item.id)), items: client.outgoingItems(row).filter(item => item.state !== "cancelled" && item.state !== "command_dispatched" && !client.isDismissed(row, item)
       && (item.state !== "submitted" || current)
       // Transcript proof outranks an unsent or uncertain row, so no Retry can duplicate it (#181).
-      && !(["submitted", "unknown", "refused"].includes(item.state) && Object.hasOwn(proven, item.id))) };
+      && !Object.hasOwn(proven, item.id)) };
   });
   useEffect(() => {
     for (const row of rows) if (row.target.incarnation === session.session_incarnation && messages.length) {

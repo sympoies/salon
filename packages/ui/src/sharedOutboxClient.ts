@@ -141,18 +141,35 @@ export class SharedOutboxClient {
   /**
    * Replies the transcript shows delivered, one user turn per row (#181). A
    * submitted reply claims its turn first, so a genuine refusal of the same text
-   * sent twice keeps its Retry. No echoed id exists, so a refused or uncertain
-   * row also needs a turn within REPLY_PROOF_WINDOW_MS of its first attempt.
+   * sent twice keeps its Retry. Without an authoritative association, a refused
+   * or uncertain row also needs a turn within REPLY_PROOF_WINDOW_MS of its first attempt.
    * Classified commands only take over echoes with a submitted receipt.
    */
   submittedProof(row: SharedClientTarget, messages: readonly HistoryMessage[]): Readonly<Record<string, string>> {
     const settled = row.submittedProofs ?? {};
     const outgoing = this.outgoingItems(row).filter(item => !Object.hasOwn(settled, item.id));
+    const matches = new Map<string, string>();
+    for (const message of messages) {
+      const binding = message.prompt_request;
+      if (message.role !== "user" || message.row_class || !binding
+        || binding.session_id !== row.target.id || binding.session_incarnation !== row.target.incarnation) continue;
+      const item = outgoing.find(item => item.session_incarnation === binding.session_incarnation
+        && (binding.outbox_intent_id ? item.id === binding.outbox_intent_id : item.request_id === binding.request_id)
+        && (item.request_id === null || item.request_id === binding.request_id));
+      const admission = binding.outbox_intent_id && !row.snapshot.items.some(item => item.id === binding.outbox_intent_id)
+        && row.admissions.find(item => item.id === binding.outbox_intent_id);
+      const id = item?.id ?? (admission ? admission.id : undefined);
+      if (id && !Object.hasOwn(settled, id)) matches.set(id, message.id);
+    }
+    // A bound row cannot prove a different request by equal text or image count.
+    const unbound = messages.filter(message => !message.prompt_request);
+    const unmatched = outgoing.filter(item => !matches.has(item.id));
     const echo = (item: SharedOutboxItem) => ({ id: item.id, text: item.text, incarnation: item.session_incarnation,
       requestId: item.request_id ?? item.id, state: item.state === "submitted" ? "delivered" as const : "unknown" as const, attemptedAt: item.created_at });
-    const matches = transcriptProof(outgoing.filter(item => item.state === "submitted").map(echo), messages, Object.values(settled));
-    for (const state of ["unknown", "refused"]) for (const item of outgoing.filter(candidate => candidate.state === state)) {
-      const window = messages.filter(message => Date.parse(message.timestamp ?? "") <= item.created_at + REPLY_PROOF_WINDOW_MS);
+    for (const [id, proof] of transcriptProof(unmatched.filter(item => item.state === "submitted").map(echo), unbound,
+      [...Object.values(settled), ...matches.values()])) matches.set(id, proof);
+    for (const state of ["unknown", "refused"]) for (const item of unmatched.filter(candidate => candidate.state === state)) {
+      const window = unbound.filter(message => Date.parse(message.timestamp ?? "") <= item.created_at + REPLY_PROOF_WINDOW_MS);
       const proof = transcriptProof([echo(item)], window, [...Object.values(settled), ...matches.values()]).get(item.id);
       if (proof !== undefined) matches.set(item.id, proof);
     }
@@ -224,7 +241,7 @@ export class SharedOutboxClient {
       attachments: snapshot.revision > row.snapshot.revision
         ? Object.fromEntries(Object.entries(row.attachments ?? {}).filter(([id]) =>
           row.admissions.some(item => item.id === id) || snapshot.items.some(item => item.id === id && item.state !== "cancelled" && item.state !== "command_dispatched"))) : row.attachments,
-      submittedProofs: Object.fromEntries(Object.entries(row.submittedProofs ?? {}).filter(([id]) => snapshot.items.some(item => item.id === id))),
+      submittedProofs: Object.fromEntries(Object.entries(row.submittedProofs ?? {}).filter(([id]) => snapshot.items.some(item => item.id === id) || row.admissions.some(item => item.id === id))),
       dismissedIds: row.dismissedIds?.filter(id => snapshot.items.some(item => item.id === id)) });
   }
   async enqueue(session: Session, text: string, attachments: readonly OutgoingAttachment[] = []): Promise<string> {

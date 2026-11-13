@@ -6,7 +6,7 @@ import { accountConflict, projectAccount, translateAccount } from "./createAccou
 import { sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
 import { normalizeSavedDraft } from "@agent-console/shared";
 import { forwardHistoryImage } from "./historyImages.ts";
-import {isPromptRequestId,isPromptIncarnation} from "@agent-console/shared/prompt-receipt";
+import {isPromptRequestId,isPromptIncarnation,type PromptRequestBinding} from "@agent-console/shared/prompt-receipt";
 import {forwardPromptReceipt} from "./promptReceipts.ts";
 import { normalizeOutboxAdmission, normalizeRefusedOutboxAction } from "@agent-console/shared/shared-outbox";
 import { OutboxError, OutboxStore, type OutboxTarget } from "./outboxStore.ts";
@@ -251,7 +251,7 @@ export interface EdgeServerOptions {
 }
 
 // Read a small, bounded number of pages when tool-only records consume the page.
-async function readConversationWindow(machine: MachineConfig, id: string, query: URLSearchParams, signal?: AbortSignal): Promise<DaemonResult> {
+async function readConversationWindow(machine: MachineConfig, id: string, query: URLSearchParams, signal?: AbortSignal, resolveIntent?: (binding: PromptRequestBinding) => string | undefined): Promise<DaemonResult> {
   const messages: unknown[] = [];
   const seenCursors = new Set<string>();
   let nextCursor: unknown;
@@ -275,7 +275,7 @@ async function readConversationWindow(machine: MachineConfig, id: string, query:
       throw error;
     }
     const envelope = objectProp(result.body);
-    const data = result.status === 200 && envelope?.ok !== false ? projectHistoryMessagesDaemonData(envelope?.data) : null;
+    const data = result.status === 200 && envelope?.ok !== false ? projectHistoryMessagesDaemonData(envelope?.data, resolveIntent) : null;
     if (!data) return result.status === 200 && envelope?.ok !== false
       ? { status: 502, body: { ok: false, error: { message: "invalid history conversation response" } } }
       : result;
@@ -320,6 +320,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     : null;
   const machinePreferences = config.accessDbPath ? new MachinePreferencesStore(config.accessDbPath) : null;
   const outboxStore = config.accessDbPath && config.accessDbPath !== ":memory:" ? new OutboxStore(config.accessDbPath) : null;
+  const historyIntentResolver = (principal: PrincipalConfig, machine: string) => (binding: PromptRequestBinding) =>
+    outboxStore?.intentForRequest({ principalId: principal.id, machine, sessionId: binding.session_id,
+      incarnation: binding.session_incarnation }, binding.request_id);
+
   const sessionMachinesForReader = (principal: PrincipalConfig, machines: EdgeConfig["machines"]) =>
     machinePreferences ? applyMachinePreferences(machines, machinePreferences.disabled(principal.id)) : machines;
   // Reachability breaker shared across polls so a sleeping/moved spoke (e.g. a laptop)
@@ -1511,13 +1515,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           }
           const suffix = qs.size > 0 ? `?${qs.toString()}` : "";
           if (qs.get("direction") === "latest" || qs.get("direction") === "older") {
-            const result = await readConversationWindow(machine, historyId, qs);
+            const result = await readConversationWindow(machine, historyId, qs, undefined, historyIntentResolver(_principal, machine.name));
             if (result.status === 200 && objectProp(result.body)?.ok === true) sendJson(res, 200, result.body);
-            else forwardHistoryMessagesDaemon(res, result);
+            else forwardHistoryMessagesDaemon(res, result, historyIntentResolver(_principal, machine.name));
           } else {
             forwardHistoryMessagesDaemon(res, await daemonFetch(machine,
               `/history/sessions/${encodeURIComponent(historyId)}/messages${suffix}`,
-              { timeoutMs: HISTORY_DAEMON_TIMEOUT_MS, debug: daemonDebug(requestId) }));
+              { timeoutMs: HISTORY_DAEMON_TIMEOUT_MS, debug: daemonDebug(requestId) }), historyIntentResolver(_principal, machine.name));
           }
         });
         return;
@@ -1638,7 +1642,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 throw new Error("history unavailable");
               }
               const machine = byName.get(subscription.machine)!;
-              const result = await readConversationWindow(machine, subscription.id, new URLSearchParams({ direction: "latest" }), signal);
+              const result = await readConversationWindow(machine, subscription.id, new URLSearchParams({ direction: "latest" }), signal, historyIntentResolver(_principal, machine.name));
               const data = result.status === 200 && objectProp(result.body)?.ok !== false ? objectProp(objectProp(result.body)?.data) : null;
               if (!data) throw new Error("conversation unavailable");
               return data;

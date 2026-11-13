@@ -170,6 +170,7 @@ export interface HistorySession {
 }
 
 export interface HistoryMessage {
+  readonly prompt_request?: import("@agent-console/shared/prompt-receipt").PromptRequestBinding;
   readonly files?: readonly import("@agent-console/shared/conversation-images").ConversationFile[];
   readonly row_class?: import("@agent-console/shared").HistoryRowClass;
   readonly compaction?: import("@agent-console/shared").HistoryCompaction;

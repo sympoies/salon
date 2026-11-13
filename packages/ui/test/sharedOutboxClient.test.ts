@@ -1118,3 +1118,69 @@ test("shared multi-row composer refusal names recovery", async () => {
     assert.equal(h.container.querySelector('[role="alert"]')?.textContent, "The terminal input holds a multi-row draft, so this reply was not sent. Send or clear it in the terminal, then Retry.");
   } finally { await h.close(); }
 });
+
+for (const shape of ["text", "image", "mixed"] as const) for (const order of ["history-first", "outbox-first"] as const) {
+  test(`#452 Codex ${shape} association hands over ${order} and survives remount`, async () => {
+    const factory = new IDBFactory();
+    let h = await fixture(factory, false);
+    try {
+      const id = crypto.randomUUID(), requestId = crypto.randomUUID();
+      const text = shape === "text" ? "Original submitted text" : `${shape === "mixed" ? "Original caption " : ""}'/attachments/example.png'`;
+      const item: SharedOutboxItem = { id, text, state: order === "history-first" ? "queued" : "submitted", revision: 3,
+        session_incarnation: "inc-1", created_at: 1, updated_at: 2, request_id: order === "history-first" ? null : requestId,
+        receipt: order === "history-first" ? null : { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null },
+        edit_hold: null, error_code: null };
+      await h.ownServer({ revision: 3, compose_holds: [], items: [item] });
+      await h.client.sync(h.target); await h.showReplies(session, []);
+      assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 1, "unconfirmed echo stays visible");
+      const turn = { id: "accepted-turn", role: "user" as const, text: shape === "image" ? "" : "Provider projected text",
+        ...(shape === "text" ? {} : { images: [{ id: "a".repeat(16) + ".0.0." + "b".repeat(32) }] }),
+        prompt_request: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outbox_intent_id: id } };
+      await h.showReplies(session, [turn]);
+      assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 0, "authoritative identity takes over regardless of content or polling order");
+      if (order === "history-first") {
+        h.server({ revision: 4, compose_holds: [], items: [{ ...item, state: "submitted", request_id: requestId,
+          receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null } }] });
+        await h.client.sync(h.target); await h.showReplies(session, []);
+        assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 0, "late receipt cannot resurrect the echo");
+      }
+      await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
+      await h.showReplies(session, []);
+      assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 0, "durable proof survives remount and a later history window");
+    } finally { await h.close(); }
+  });
+}
+
+for (const mismatch of ["request_id", "session_id", "session_incarnation", "outbox_intent_id"] as const) {
+  test(`#452 mismatched ${mismatch} cannot consume an identical submitted echo`, async () => {
+    const h = await fixture(new IDBFactory(), false);
+    try {
+      const id = crypto.randomUUID(), requestId = crypto.randomUUID();
+      const item: SharedOutboxItem = { id, text: "Identical reply", state: "submitted", revision: 3, session_incarnation: "inc-1",
+        created_at: 1, updated_at: 2, request_id: requestId, edit_hold: null, error_code: null,
+        receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null } };
+      await h.ownServer({ revision: 3, compose_holds: [], items: [item] }); await h.client.sync(h.target);
+      const binding = { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outbox_intent_id: id, [mismatch]: "different" };
+      await h.showReplies(session, [{ id: "another-turn", role: "user", text: item.text, timestamp: new Date(3).toISOString(), prompt_request: binding } as HistoryMessage]);
+      assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 1, "association prevents text heuristics from claiming another turn");
+    } finally { await h.close(); }
+  });
+}
+
+test("#452 history association clears a still-local admission without consuming a distinct identical reply", async () => {
+  const factory = new IDBFactory(); let h = await fixture(factory, false);
+  try {
+    const id = crypto.randomUUID(), other = crypto.randomUUID();
+    const row = { ...h.client.state(h.target), admissions: [id, other].map(id => ({ id, text: "Identical input", created_at: 1, attempted: true })), localIntentIds: [id, other] };
+    await h.cacheJournal(row); await h.client.ready;
+    h.online(false); await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
+    const turn = { id: "bound-local-input", role: "user" as const, text: "Identical input", timestamp: new Date(3).toISOString(),
+      prompt_request: { request_id: "request-a", session_id: session.id, session_incarnation: "inc-1", outbox_intent_id: id } };
+    await h.showReplies(session, [turn]);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 1, "only the associated admission hands over");
+    assert.ok(h.client.state(h.target).submittedProofs?.[id]);
+    await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready; await h.showReplies(session, []);
+    assert.equal(h.container.querySelectorAll(".history-outgoing-reply").length, 1, "later windows preserve exactly the other admission");
+    assert.equal(h.admissions.length, 0, "history never replays either admission");
+  } finally { await h.close(); }
+});

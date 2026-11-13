@@ -1,3 +1,4 @@
+import { normalizePromptRequestBinding, type PromptRequestBinding } from "./promptReceipt.ts";
 import { normalizeConversationImages, normalizeConversationFiles, type ConversationImage, type ConversationFile } from "./conversationImages.ts";
 import { normalizeMailboxEvent, type MailboxEvent } from "./mailboxEvent.ts";
 import { NormalizedSseDecoder } from "./sse.ts";
@@ -29,7 +30,7 @@ export function normalizeHistoryCompaction(value: unknown, rowClass: HistoryRowC
 }
 
 export interface ConversationSnapshot {
-  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly row_class?: HistoryRowClass; readonly compaction?: HistoryCompaction; readonly images?: readonly ConversationImage[]; readonly files?: readonly ConversationFile[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent }>;
+  readonly messages: Array<{ readonly id: string; readonly role: "user" | "assistant" | "goal" | "notice"; readonly text: string; readonly row_class?: HistoryRowClass; readonly compaction?: HistoryCompaction; readonly images?: readonly ConversationImage[]; readonly files?: readonly ConversationFile[]; readonly timestamp?: string; readonly mailbox?: MailboxEvent; readonly prompt_request?: PromptRequestBinding }>;
   readonly next_cursor?: string;
   readonly older_cursor?: string;
 }
@@ -53,8 +54,9 @@ export function normalizeConversationSnapshot(value: unknown): ConversationSnaps
     ids.add(item.id);
     const compaction = normalizeHistoryCompaction(item.compaction, rowClass);
     const mailbox = item.role === "notice" ? normalizeMailboxEvent(item.mailbox) : undefined;
+    const promptRequest = item.role === "user" && !rowClass ? normalizePromptRequestBinding(item.prompt_request) : undefined;
     messages.push({ id: item.id, role: item.role as "user" | "assistant" | "goal" | "notice", text: item.text, ...(rowClass ? { row_class: rowClass } : {}), ...(compaction ? { compaction } : {}), ...(images.length ? { images } : {}), ...(files.length ? { files } : {}),
-      ...(typeof item.timestamp === "string" ? { timestamp: item.timestamp } : {}), ...(mailbox ? { mailbox } : {}) });
+      ...(typeof item.timestamp === "string" ? { timestamp: item.timestamp } : {}), ...(mailbox ? { mailbox } : {}), ...(promptRequest ? { prompt_request: promptRequest } : {}) });
   }
   const snapshot: ConversationSnapshot = { messages };
   for (const key of ["next_cursor", "older_cursor"] as const) {

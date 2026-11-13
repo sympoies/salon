@@ -98,6 +98,13 @@ export class OutboxStore {
     });
   }
   close(): void { this.#db.close(); }
+  /** Read the attempt recorded before dispatch, even while its receipt is pending. */
+  intentForRequest(target: OutboxTarget, requestId: string): string | undefined {
+    const row = this.#db.prepare("SELECT intent_id FROM outbox_attempts WHERE request_id=? AND scope=?")
+      .get(requestId, key(target)) as { intent_id: string } | undefined;
+    return row?.intent_id;
+  }
+
   #transaction<T>(action: () => T): T {
     this.#db.exec("BEGIN IMMEDIATE");
     try { const result = action(); this.#db.exec("COMMIT"); return result; }

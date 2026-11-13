@@ -31,16 +31,19 @@ if (new URLSearchParams(location.search).has("reorder-fixture")) {
   // Only HTTP is simulated. Public installed components, history normalization
   // and the browser's native IndexedDB journal run unchanged.
   setPrincipalStorageNamespace("fixture");
+  const associated = new URLSearchParams(location.search).has("association");
+  const intentStorageKey = associated ? "fixture-associated-intent-id" : "fixture-intent-id";
+  const requestId = associated ? "fixture-associated-request" : "fixture-request";
   const text = "Submitted reply awaiting matching history";
   const imageId = `${"a".repeat(16)}.0.u0-0.${"b".repeat(32)}`;
   const imageMessage: HistoryMessage = { id: "image-message", role: "user", text: "Image fixture",
     timestamp: new Date(4).toISOString(), images: [{ id: imageId }] };
-  const session = { id: "fixture-session", machine: "fixture", agent: "codex", status: "running",
+  const session = { id: associated ? "fixture-associated-session" : "fixture-session", machine: "fixture", agent: "codex", status: "running",
     title: "Conversation fixture", session_incarnation: "fixture-incarnation",
     provider_resume: { provider: "codex", session_id: "fixture-thread" } } as Session;
-  const item = { id: sessionStorage.getItem("fixture-intent-id") ?? "fixture-intent", text, state: "submitted", revision: 1, created_at: 1, updated_at: 1,
-    session_incarnation: session.session_incarnation, request_id: "fixture-request", edit_hold: null, error_code: null,
-    receipt: { request_id: "fixture-request", session_id: session.id, session_incarnation: session.session_incarnation,
+  const item = { id: sessionStorage.getItem(intentStorageKey) ?? "fixture-intent", text, state: "submitted", revision: 1, created_at: 1, updated_at: 1,
+    session_incarnation: session.session_incarnation, request_id: requestId, edit_hold: null, error_code: null,
+    receipt: { request_id: requestId, session_id: session.id, session_incarnation: session.session_incarnation,
       outcome: "submitted", code: null } };
   let historyReads = 0, outboxReads = 0, writes = 0;
   const unexpected: string[] = [];
@@ -52,7 +55,7 @@ if (new URLSearchParams(location.search).has("reorder-fixture")) {
     if (init?.method === "PUT" && url.pathname.includes("/outbox/")) {
       writes++;
       item.id = url.pathname.split("/").at(-1)!;
-      sessionStorage.setItem("fixture-intent-id", item.id);
+      sessionStorage.setItem(intentStorageKey, item.id);
       return Response.json({ ok: true, data: { item } }, { status: 201 });
     }
     if (init?.method && !["GET", "HEAD"].includes(init.method)) { writes++; throw Error("Unexpected fixture write"); }
@@ -92,20 +95,22 @@ if (new URLSearchParams(location.search).has("reorder-fixture")) {
       document.querySelector<HTMLButtonElement>('button[aria-label="Send reply"]')!.click();
     },
     handover() {
-      messages = [{ id: "matching-user-turn", role: "user", text, timestamp: new Date(3).toISOString() }, imageMessage];
+      messages = [{ id: "matching-user-turn", role: "user", text: associated ? "Provider projected accepted input" : text,
+        ...(associated ? { prompt_request: { request_id: requestId, session_id: session.id,
+          session_incarnation: session.session_incarnation!, outbox_intent_id: item.id } } : {}), timestamp: new Date(3).toISOString() }, imageMessage];
       document.querySelector<HTMLButtonElement>('button[aria-label="Refresh conversation"]')!.click();
     },
     async inspect() {
       // Observation must leave schema creation to the production client.
       const exists = (await indexedDB.databases()).some(database => database.name === "agent-console-shared-admissions");
-      const rows = exists ? await new Promise<Array<{ snapshot: { items: Array<{ state: string }> }; submittedProofs?: Record<string, string> }>>((resolve, reject) => {
+      const rows = exists ? await new Promise<Array<{ target: { id: string }; snapshot: { items: Array<{ state: string }> }; submittedProofs?: Record<string, string> }>>((resolve, reject) => {
         const request = indexedDB.open("agent-console-shared-admissions", 1);
         request.onerror = () => reject(request.error);
         request.onsuccess = () => {
           const db = request.result;
           if (!db.objectStoreNames.contains("targets")) { db.close(); resolve([]); return; }
           const tx = db.transaction("targets"), read = tx.objectStore("targets").getAll();
-          tx.oncomplete = () => { db.close(); resolve(read.result); };
+          tx.oncomplete = () => { db.close(); resolve(read.result.filter((row: { target: { id: string } }) => row.target.id === session.id)); };
           tx.onerror = () => { db.close(); reject(tx.error); };
         };
       }) : [];
@@ -118,7 +123,7 @@ if (new URLSearchParams(location.search).has("reorder-fixture")) {
         proofCount: rows.reduce((count, row) => count + Object.keys(row.submittedProofs ?? {}).length, 0),
         visibleEchoes: document.querySelectorAll('[aria-label="Shared replies"] article[data-status="submitted"]').length,
         matchingHistoryTurns: [...document.querySelectorAll('.history-message.is-user:not(.history-outgoing-reply)')]
-          .filter(node => node.textContent?.includes(text)).length };
+          .filter(node => node.getAttribute("data-history-message-id") === "matching-user-turn").length };
     },
   } });
 } else {
