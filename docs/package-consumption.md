@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.75 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.76 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,36 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.75`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.76`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.75
+### Changes retained in SDK 0.1.76
+
+Device sign-in exchanges a one-time code for an independently revocable credential with a fixed
+30-day authorization lifetime (#509). Enrollment, approval and explicit Renew require the main
+credential. Metadata lists expiry and last use; selective revocation remains effective across
+bearer, cookie, attach-ticket, HTTP, SSE, WebSocket and queued-work paths. Activity never renews
+authorization.
+
+Pairing uses the existing state database with added pairing-request, device-credential, rate-counter
+and renewal-audit tables, plus an issuing device identifier on durable outbox intentions. Retain the
+state database across edge replacement. `AGENT_CONSOLE_PAIRING_TTL_SECONDS` configures the code
+lifetime (60–600 seconds, default 300).
+
+TLS-terminating consumers must configure
+`AGENT_CONSOLE_PAIRING_TRUSTED_PROXY_PEERS` with exact immediate-proxy IPs and overwrite
+`X-Forwarded-Proto` from the actual TLS connection; direct TLS needs no proxy list.
+
+Extension
+handlers that await work beyond `readJsonBody` must call `ctx.assertAuthorized()` immediately
+before a protected side effect to enforce revocation of the captured credential. See the
+[device sign-in contract](device-sign-in.md) for configuration, storage and extension obligations.
+
+Browser and native flows provide owner code comparison, explicit recipient account/server consent,
+and device listing, Renew and Revoke (#514). Native claim/exchange uses a separate HTTPS transport
+without redirects or a saved bearer. The edge accepts app-shell Origins only for anonymous native
+claim/exchange POSTs with no Cookie, Authorization or WebSocket subprotocol header. The
+[device sign-in guide](device-sign-in-guide.md) describes the user flow. Packaged native transport
+and real redirect-downgrade acceptance remain separate from browser and mocked transport checks.
 
 The reply composer and terminal input carry their accessible names on the input element itself,
 without separate hidden label nodes. Status-count chips expose one name with the label and count
