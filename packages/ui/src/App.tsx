@@ -3,6 +3,8 @@ import { resolveDashboardShortcutAction } from "./dashboardShortcuts.ts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { getAuthStatus, listMachineNames, type AuthStatus, type ConnectFailure } from "./api.ts";
+import { landingPairingCode } from "./pairingLanding.ts";
+import { PairingRecipient } from "./PairingRecipient.tsx";
 import { Login } from "./Login.tsx";
 import { Settings } from "./Settings.tsx";
 import { loadPhoneSessionOpen, savePhoneSessionOpen } from "./phoneSessionOpen.ts";
@@ -63,6 +65,7 @@ export default function App() {
   const initialAuthCheck = useRef(true);
   const startupRecoveryRendered = useRef(false);
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [landingPairing, setLandingPairing] = useState(() => landingPairingCode() !== undefined);
   const [openAccess, setOpenAccess] = useState(false);
   const [startupFailure, setStartupFailure] = useState<AuthStatus["startupFailure"]>();
   const [startupTimingVisible, setStartupTimingVisible] = useState(false);
@@ -319,6 +322,8 @@ export default function App() {
   if (authed === null) {
     return <div className="boot">…</div>;
   }
+  if (landingPairing && !openAccess) return <PairingRecipient
+    onSignedIn={() => { setLandingPairing(false); onSignedIn(); }} onCancel={() => setLandingPairing(false)} />;
   // On device, connection settings (server URL + token) stand in for browser login.
   if (!authed && isTauri()) {
     return (

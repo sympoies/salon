@@ -1,3 +1,5 @@
+import { DeviceSettings } from "./DeviceSettings.tsx";
+import { getPrincipalStorageNamespace } from "./storage.ts";
 import { usePhoneLayout } from "./usePhoneLayout.ts";
 import { ExtensionSettingsPanels } from "./extensions.tsx";
 import { MachineOrderList } from "./MachineOrderList.tsx";
@@ -360,6 +362,7 @@ export function Settings({
           </div>
           {versionCopyStatus ? <p className="settings-hint" role="status">{versionCopyStatus}</p> : null}
         </section>
+        {!native && !openAccess ? <DeviceSettings key={getPrincipalStorageNamespace() ?? "anonymous"} onSignedOut={onSignedOut} /> : null}
         {native ? (
           <section className="settings-section">
             <h2 className="settings-section-title">Connection</h2>

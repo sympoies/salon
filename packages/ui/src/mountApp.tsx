@@ -1,3 +1,4 @@
+import "./pairingLanding.ts";
 import { AppIconContext, DEFAULT_APP_ICON, type AppIcon } from "./appIcon.ts";
 import { AppNameContext } from "./appName.ts";
 import { StrictMode } from "react";
