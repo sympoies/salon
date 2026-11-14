@@ -22,10 +22,10 @@ test("shared conversation tools align with text and disclose results in live and
         return `import React from 'react'; import {createRoot} from 'react-dom/client';
           import {HistoryConversationView} from '/src/HistoryConversation.tsx'; import '/src/styles.css';
           const messages=[
-            {id:'call',role:'assistant',text:'',tool_parts:[{kind:'tool_call',id:'call-item',call_id:'command',name:'exec_command',input_summary:'pnpm test '+('long-argument-'.repeat(35)),...(window.ownerTools?{owner_input_summary:'cat /work/example/notes.txt'}:{}),status:'ok'}]},
+            {id:'call',role:'assistant',text:'',tool_parts:[{kind:'tool_call',id:'call-item',call_id:'command',name:'exec_command',input_summary:JSON.stringify({cmd:'pnpm test '+('long-argument-'.repeat(35)),description:'Run example tests'}),...(window.ownerTools?{owner_input_summary:JSON.stringify({command:'cat /work/example/notes.txt',description:'Read example notes'})}:{}),status:'ok'}]},
             {id:'result',role:'assistant',text:'',tool_parts:[{kind:'tool_result',id:'result-item',call_id:'command',summary:'12 tests passed <script>unsafe()</script>',...(window.ownerTools?{owner_summary:'Read /work/example: 12 tests passed <script>unsafe()</script>'}:{}),status:'ok'}]},
             {id:'edit',role:'assistant',text:'Updated the example.',tool_parts:[
-              {kind:'tool_call',id:'edit-item',call_id:'edit',name:'apply_patch',input_summary:'[path]',status:'ok'},
+              {kind:'tool_call',id:'edit-item',call_id:'edit',name:'apply_patch',input_summary:JSON.stringify({file_path:'[path]'}),status:'ok'},
               {kind:'tool_result',id:'diff-item',call_id:'edit',summary:'--- a/example.txt\\n+++ b/example.txt\\n@@ -1 +1 @@\\n-old example\\n+new example',status:'ok',truncated:true}]},
             {id:'orphan',role:'assistant',text:'',tool_parts:[{kind:'tool_result',id:'orphan-item',call_id:'outside-page',summary:'Earlier call failed',status:'error'}]},
             {id:'reply',role:'assistant',text:'The example is ready.'}].map(message=>({...message,timestamp:'2026-01-01T12:00:00Z'}));
@@ -47,6 +47,8 @@ test("shared conversation tools align with text and disclose results in live and
                 bubbles:[...document.querySelectorAll('.history-bubble')].map(node=>node.getBoundingClientRect().left),
                 labels:buttons.map(button=>button.getAttribute('aria-label')),
                 open:[...document.querySelectorAll('.conversation-tool-toggle')].every(button=>button.getAttribute('aria-expanded')==='true'),
+                title:document.querySelector('.conversation-tool-input')?.textContent,
+                description:document.querySelector('.conversation-tool-description')?.textContent,
                 command:document.querySelector(".conversation-tool-command")?.textContent,
                 ownerResult:document.querySelector(".conversation-tool-result")?.textContent.includes("Read /work/example"),
                 result:document.querySelector('#root').textContent.includes('12 tests passed <script>unsafe()</script>'),
@@ -73,8 +75,8 @@ test("shared conversation tools align with text and disclose results in live and
   const evidence = process.env.SALON_UI_EVIDENCE_DIR;
   if (evidence) mkdirSync(evidence, { recursive: true });
   try {
-    for (const width of [384, 1280]) for (const live of [true, false]) for (const theme of ["dark", "paper"]) for (const expanded of [false, true]) {
-      const height = width === 384 ? 832 : 900;
+    for (const width of [390, 1280]) for (const live of [true, false]) for (const theme of ["dark", "paper"]) for (const expanded of [false, true]) {
+      const height = width === 390 ? 832 : 900;
       const name = `tools-${live ? "live" : "saved"}-${width}-${theme}-${expanded ? "expanded" : "collapsed"}`;
       const file = join(temp, `${name}.html`);
       const frame = `<!doctype html><html data-theme="${theme}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}html,body{margin:0}#root{padding:12px}.history-messages{height:auto;overflow:visible}</style><div id="root"></div><script>
@@ -107,6 +109,7 @@ test("shared conversation tools align with text and disclose results in live and
         assert.equal(result.bubbles[0], result.bubbles[1], "mixed tool/text row uses the same content column");
         assert.equal(result.count, 3, "one disclosure per call and one unmatched result");
         assert.equal(result.labels[0], "exec_command");
+        assert.equal(result.title, theme === "dark" ? "cat /work/example/notes.txt" : "pnpm test " + "long-argument-".repeat(35));
         assert.equal(result.labels[1], "apply_patch");
         assert.equal(result.collapsed, true);
         assert.equal(result.focusable, true);
@@ -119,6 +122,7 @@ test("shared conversation tools align with text and disclose results in live and
         assert.equal(result.emptyBubbles, 0);
         if (expanded) {
           assert.equal(result.open, true);
+          assert.equal(result.description, theme === "dark" ? "Read example notes" : "Run example tests");
           assert.equal(result.command, theme === "dark" ? "cat /work/example/notes.txt" : "pnpm test " + "long-argument-".repeat(35));
           assert.equal(result.ownerResult, theme === "dark");
           assert.equal(result.added, "+new example");

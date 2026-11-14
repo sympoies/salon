@@ -22,12 +22,31 @@ export function conversationToolRows(messages: readonly HistoryMessage[]): ToolR
   }));
 }
 
+/** Format only the summary already selected for this viewer. */
+function readableToolInput(input: string | undefined): { primary?: string; description?: string } {
+  if (!input) return { primary: input };
+  let value: unknown;
+  try { value = JSON.parse(input); } catch { return { primary: input }; }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { primary: input };
+  const fields = value as Record<string, unknown>;
+  const description = typeof fields.description === "string" ? fields.description : undefined;
+  for (const key of ["command", "cmd", "file_path", "path"]) {
+    if (typeof fields[key] === "string" && fields[key]) return { primary: fields[key], description };
+  }
+  const readable = (item: unknown): string => {
+    if (Array.isArray(item)) return item.map(readable).join(", ");
+    if (item && typeof item === "object") return Object.entries(item).map(([key, entry]) => `${key}: ${readable(entry)}`).join("; ");
+    return String(item);
+  };
+  return { primary: readable(Object.fromEntries(Object.entries(fields).filter(([key]) => key !== "description"))), description };
+}
+
 function ToolDisclosure({ call, result }: ToolRow) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const name = call?.name ?? "Tool result";
   const status = result?.status ?? call?.status;
-  const input = call?.owner_input_summary ?? call?.input_summary;
+  const { primary: input, description } = readableToolInput(call?.owner_input_summary ?? call?.input_summary);
   const summary = result?.owner_summary ?? result?.summary;
   const lines = summary?.split("\n") ?? [];
   const diff = result && /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m.test(summary ?? "");
@@ -41,6 +60,7 @@ function ToolDisclosure({ call, result }: ToolRow) {
     <div id={id} hidden={!open} className="conversation-tool-body">
       {open ? <>
         {input ? <pre className="conversation-tool-command">{input}</pre> : null}
+        {description ? <pre className="conversation-tool-description">{description}</pre> : null}
         {result ? <>
           {diff ? <pre className="conversation-tool-diff" aria-label="Unified diff"><code>{lines.map((line, index) =>
             <span key={index} className={line.startsWith("+") && !line.startsWith("+++") ? "is-added" : line.startsWith("-") && !line.startsWith("---") ? "is-removed" : undefined}>{line}{index < lines.length - 1 ? "\n" : ""}</span>)}</code></pre>

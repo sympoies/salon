@@ -7831,6 +7831,7 @@ textarea {
 .conversation-tool-body { padding: 8px; color: var(--conversation-agent-text); }
 .conversation-tool-body pre { margin: 0; max-width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-xs); }
 .conversation-tool-body pre + pre { margin-top: 8px; }
+.conversation-tool-description { color: var(--conversation-meta); }
 .conversation-tool-diff span { box-decoration-break: clone; }
 .conversation-tool-diff .is-added { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .conversation-tool-diff .is-removed { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
