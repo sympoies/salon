@@ -7842,14 +7842,14 @@ textarea {
 
 /* Pairing secrets stay in the active flow; device credentials are never rendered. */
 .device-pairing { overflow-wrap: anywhere; }
-.device-pairing h1 { font-size: 1.3rem; margin: 1rem 0; }
+.device-pairing h1 { font-size: var(--text-2xl); margin: 1rem 0; }
 .device-pairing label { display: grid; gap: .35rem; margin: 1rem 0; }
 .device-pairing input { width: 100%; min-width: 0; box-sizing: border-box; }
 .device-pairing .btn { margin: .4rem .4rem .4rem 0; }
-.pairing-qr { display: block; width: min(240px, 100%); height: auto; margin: 1rem 0; border-radius: 8px; }
-.pairing-code, .pairing-verification { display: block; font-family: monospace; font-size: 1.25rem; letter-spacing: .08em; margin: 1rem 0; }
-.pairing-sender { border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin: 1rem 0; }
+.pairing-qr { display: block; width: min(240px, 100%); height: auto; margin: 1rem 0; border-radius: var(--r-md); }
+.pairing-code, .pairing-verification { display: block; font-family: monospace; font-size: var(--text-2xl); letter-spacing: .08em; margin: 1rem 0; }
+.pairing-sender { border: 1px solid var(--border); border-radius: var(--r-lg); padding: 1rem; margin: 1rem 0; }
 .device-list { padding: 0; list-style: none; }
 .device-list li { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between; padding: 1rem 0; border-bottom: 1px solid var(--border); }
-.device-list span { display: block; font-size: .85rem; margin-top: .3rem; }
+.device-list span { display: block; font-size: var(--text-md); margin-top: .3rem; }
 .device-actions { display: flex; align-items: center; flex-wrap: wrap; }
