@@ -214,6 +214,9 @@ test("anonymous address bucket capacity reserves authenticated owner operations"
 
 for (const stage of ["claim", "exchange"]) test(`anonymous native pairing ${stage} accepts only the app shell without ambient authorization`, async () => {
   const f = await fixture();
+  const refusedOrigins = ["null", "custom://tauri.localhost", "http://localhost",
+    "https://sub.tauri.localhost", "https://untrustedtauri.localhost", "https://tauri.localhost.example.test",
+    "https://tauri.localhost.", "https://tauri.localhost@foreign.example.test", "https://foreign.example.test"];
   try {
     for (const origin of ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"]) {
       const pair = await f.create();
@@ -221,7 +224,7 @@ for (const stage of ["claim", "exchange"]) test(`anonymous native pairing ${stag
       const challenge = createHash("sha256").update(verifier).digest("hex");
       const body = { code: pair.code, challenge, name: "Native tablet", delivery: "native" };
       if (stage === "claim") {
-        for (const headers of [{ origin: "https://foreign.example.test" }, { origin, cookie: f.cookie },
+        for (const headers of [...refusedOrigins.map(origin => ({ origin })), { origin, cookie: f.cookie },
           { origin, authorization: "Bearer primary-fixture" }]) {
           assert.equal((await f.call("pairings/claim", body, headers)).status, 403);
         }
@@ -229,14 +232,15 @@ for (const stage of ["claim", "exchange"]) test(`anonymous native pairing ${stag
       }
       const claim = await f.call("pairings/claim", body, stage === "claim" ? { origin } : {});
       assert.equal(claim.status, 200, "the native transport may claim without a browser cookie");
-      if (stage === "claim") continue;
       const exchange = { ...body, verifier, principal: claim.body.data.principal, origin: f.base, confirmed: true };
       assert.equal((await f.approve(pair, exchange)).status, 200);
-      for (const headers of [{ origin: "https://foreign.example.test" }, { origin, cookie: f.cookie },
-        { origin, authorization: "Bearer primary-fixture" }]) {
-        assert.equal((await f.call("pairings/exchange", exchange, headers)).status, 403);
+      if (stage === "exchange") {
+        for (const headers of [...refusedOrigins.map(origin => ({ origin })), { origin, cookie: f.cookie },
+          { origin, authorization: "Bearer primary-fixture" }]) {
+          assert.equal((await f.call("pairings/exchange", exchange, headers)).status, 403);
+        }
+        assert.equal((await f.call("pairings/exchange", { ...exchange, delivery: "browser" }, { origin })).status, 403);
       }
-      assert.equal((await f.call("pairings/exchange", { ...exchange, delivery: "browser" }, { origin })).status, 403);
       const issued = await f.call("pairings/exchange", exchange, { origin });
       assert.equal(issued.status, 200, "refused requests leave the pairing available to its recipient");
       assert.equal(issued.response.headers.has("set-cookie"), false, "native exchange cannot install an ambient cookie");
