@@ -1,4 +1,5 @@
 import { DeviceSettings } from "./DeviceSettings.tsx";
+import { PairingRecipient } from "./PairingRecipient.tsx";
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { usePhoneLayout } from "./usePhoneLayout.ts";
 import { ExtensionSettingsPanels } from "./extensions.tsx";
@@ -129,6 +130,7 @@ export function Settings({
   const tokenInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [pairing, setPairing] = useState(false);
   // The stored token is never rendered into the DOM: Android WebView accessibility
   // reports input values and attributes. The field only ever holds a replacement.
   const [tokenSaved, setTokenSaved] = useState(() => loadToken() !== "");
@@ -181,8 +183,7 @@ export function Settings({
     setTokenSaved(false);
   };
 
-  const connect = async () => {
-    if (checking || !saveConnection()) return;
+  const checkConnection = async () => {
     setChecking(true);
     const failure = await onSaved();
     setChecking(false);
@@ -190,6 +191,10 @@ export function Settings({
     // A rejected token must not keep looking like a valid saved one.
     if (failure === "rejected") clearSavedToken();
     setError(CONNECT_FAILURE_MESSAGE[failure]);
+  };
+  const connect = async () => {
+    if (checking || !saveConnection()) return;
+    await checkConnection();
   };
 
   const savedTokenStatus = tokenSaved ? (
@@ -202,6 +207,9 @@ export function Settings({
   ) : null;
 
   // First-run onboarding: a single centered card, unchanged in look.
+  if (pairing) return <PairingRecipient onSignedIn={() => {
+    setPairing(false); setTokenSaved(true); void checkConnection();
+  }} onCancel={() => setPairing(false)} />;
   if (variant === "connect") {
     return (
       <div className="login">
@@ -253,6 +261,7 @@ export function Settings({
           </label>
           {savedTokenStatus}
           {error ? <p className="err" role="alert">{error}</p> : null}
+          <button className="btn ghost" type="button" onClick={() => setPairing(true)}>Use a pairing code</button>
           <div className="modal-actions">
             {onCancel ? (
               <button type="button" className="btn ghost" onClick={onCancel}>
@@ -362,7 +371,9 @@ export function Settings({
           </div>
           {versionCopyStatus ? <p className="settings-hint" role="status">{versionCopyStatus}</p> : null}
         </section>
-        {!native && !openAccess ? <DeviceSettings key={getPrincipalStorageNamespace() ?? "anonymous"} onSignedOut={onSignedOut} /> : null}
+        {!openAccess ? <DeviceSettings key={getPrincipalStorageNamespace() ?? "anonymous"} onSignedOut={() => {
+          if (native) clearSavedToken(); onSignedOut();
+        }} /> : null}
         {native ? (
           <section className="settings-section">
             <h2 className="settings-section-title">Connection</h2>

@@ -138,11 +138,23 @@ work must call `ctx.assertAuthorized()` immediately before a side effect; the ch
 
 ## Origin checks, secrecy and threats
 
-Authenticated writes retain the existing CSRF checks. Anonymous claim/exchange use JSON POST and the existing
-strict same-origin predicate; a pairing code is never an origin exemption. Verify the native plugin transport
-before native UI; unexpected Origin behavior needs review, not a new exemption. Use the existing HTTPS
-deployment boundary and reject insecure pairing destinations in production clients; enforce native HTTPS and
-refuse redirect-based downgrade.
+Authenticated writes retain the existing CSRF checks. Browser claim/exchange use JSON POST and strict
+same-origin checks. Only anonymous POST claim/exchange also accept the existing native app-shell Origin
+class: a `tauri:` scheme or HTTP(S) `tauri.localhost`. This branch requires `delivery: "native"` and refuses
+any Cookie or Authorization header, including an empty one. Foreign web origins remain refused. Native
+exchange returns the credential in JSON and never sets a cookie; enrollment, approval, login, logout and
+Renew keep their existing boundaries.
+
+A browser page cannot choose an app-shell Origin. Non-browser clients already can omit Origin, so accepting
+this class grants them no new authority. The one-time code, verifier, immutable claim and both confirmations
+remain required; an app-shell Origin never proves a principal. Native pairing uses a separate HTTPS transport
+without the saved bearer, with redirects disabled and fixed errors.
+
+Native pairing saves the returned device credential
+through the existing native token store only after local account consent and a matching connection generation.
+Changing connection settings or cancelling prevents a stale response from installing credentials. Codes and
+verifiers remain in memory. Clients reject insecure destinations and redirect-based downgrade; actual packaged
+transport acceptance is separate from browser and mocked native transport tests.
 
 The edge independently requires secure transport on all pairing routes. A TLS socket qualifies directly.
 For TLS termination, configure `AGENT_CONSOLE_PAIRING_TRUSTED_PROXY_PEERS` with comma-separated exact IP

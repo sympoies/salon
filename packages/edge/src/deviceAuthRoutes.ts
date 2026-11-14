@@ -4,7 +4,7 @@ import { TLSSocket } from "node:tls";
 import type { EdgeConfig, PrincipalConfig } from "./config.ts";
 import { SESSION_COOKIE, serializeSetCookie } from "./auth.ts";
 import { readJsonBody, sendJson } from "./http.ts";
-import { sameOrigin, forbidCrossOrigin } from "./csrf.ts";
+import { sameOrigin, forbidCrossOrigin, tauriAppShellOriginHeader } from "./csrf.ts";
 import { DEVICE_COOKIE_MAX_AGE, DeviceCredentialStore, PairingError,
   type DeviceIdentity, type PairingClaim, type PairingExchange } from "./deviceCredentials.ts";
 
@@ -50,6 +50,7 @@ export async function handleDeviceAuth(req: IncomingMessage, res: ServerResponse
   const method = req.method ?? "GET";
   const anonymous = path === "/api/auth/pairings/claim" || path === "/api/auth/pairings/exchange";
   const pairing = path.startsWith("/api/auth/pairings");
+  const nativeApp = anonymous && method === "POST" && tauriAppShellOriginHeader(req);
   try {
     if (ctx.config.openAccess || ctx.principal?.managedCredential) throw new PairingError(404, "Not found.");
     if (pairing) ctx.store.limit(`address:${req.socket.remoteAddress ?? "unknown"}`, 60);
@@ -60,7 +61,12 @@ export async function handleDeviceAuth(req: IncomingMessage, res: ServerResponse
       else ctx.store.ownerLimit(ctx.principal.id);
     }
     if (method !== "GET") {
-      if (anonymous ? !sameOrigin(req, res) : !ctx.csrfExempt()) {
+      // Only the body-held pairing proof authorizes this native branch. Never
+      // let an app-shell request consume ambient authentication or issue a cookie.
+      if (nativeApp && (req.headers.cookie !== undefined || req.headers.authorization !== undefined)) {
+        forbidCrossOrigin(res); return true;
+      }
+      if (!nativeApp && (anonymous ? !sameOrigin(req, res) : !ctx.csrfExempt())) {
         if (!res.writableEnded) forbidCrossOrigin(res);
         return true;
       }
@@ -73,6 +79,7 @@ export async function handleDeviceAuth(req: IncomingMessage, res: ServerResponse
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new PairingError();
       body = raw as Record<string, unknown>;
     }
+    if (nativeApp && body.delivery !== "native") { forbidCrossOrigin(res); return true; }
     if (ctx.principal && !ctx.live()) throw new PairingError(401, "Unauthorized.");
     const owner = ctx.principal?.id ?? "";
     const origin = new URL(`${scheme ?? (ctx.config.secureCookie ? "https" : "http")}://${req.headers.host}`).origin;

@@ -74,10 +74,10 @@ exits 0 when all pass, 1 when a check fails and 2 for a missing tool or file.
 
 To build from source instead, use `docker compose up --build`.
 
-## Sign in another browser
+## Sign in another device
 
 In **More → Settings → Devices**, a main-token sign-in can create a one-time QR,
-link or manual code for another browser. Compare both screens and confirm the
+link or manual code for another browser or native app. Compare both screens and confirm the
 account before completing sign-in. Each device has a separate 30-day credential;
 the device list offers explicit renewal and revocation. See the
 [device sign-in guide](docs/device-sign-in-guide.md) for the full flow.
