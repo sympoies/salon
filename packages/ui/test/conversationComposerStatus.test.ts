@@ -100,6 +100,13 @@ test("busy composer keeps the plain placeholder and never submits merely because
   const h = await mount();
   try {
     await h.render("idle"); assert.equal(h.textarea().placeholder, "Reply to this session…");
+    assert.equal(h.textarea().getAttribute("aria-label"), "Reply to session");
+    const labelId = h.textarea().getAttribute("aria-labelledby");
+    assert.ok(labelId, "composer has an associated name text source for native accessibility");
+    const label = h.window.document.getElementById(labelId);
+    assert.ok(label, "composer label exists in the document");
+    assert.equal(label.textContent, "Reply to session");
+    assert.equal(label.className, "sr-only", "name text does not change the visible hint or geometry");
     await h.write("next task"); assert.equal(h.sendButton().disabled, false);
     for (const phase of ["working", "starting"]) {
       await h.render(phase);

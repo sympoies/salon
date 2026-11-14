@@ -27,17 +27,19 @@ export function SessionStatusCountButtons({ counts, activeGroup, offlineCountMac
     {SESSION_STATUS_GROUPS.map(group => {
       const [label, compactLabel, shortLabel] = SESSION_STATUS_LABELS[group];
       const count = counts[group];
+      const accessibleName = `${label}: ${count} ${count === 1 ? "session" : "sessions"}${offlineCountMachines.length ? " (partial counts)" : ""}`;
       // State unknown is exceptional: shown only while a session is in it or
       // its filter is on, so the usual header keeps its four counts (#873).
       if (group === "unknown" && !(typeof count === "number" && count > 0) && activeGroup !== group) return null;
       const iconState = group === "attention" ? "blocked" : group === "stopped" ? "stopped" : group;
       return <button key={group} type="button" className={`control-counter session-status-count card-state-${iconState} ${group === "stopped" ? "is-stopped" : ""}`}
-        data-status-group={group} title={`${label}: ${count} ${count === 1 ? "session" : "sessions"}${offlineCountMachines.length ? " (partial counts)" : ""}`}
-        aria-label={`${label}: ${count} ${count === 1 ? "session" : "sessions"}${offlineCountMachines.length ? " (partial counts)" : ""}`}
+        data-status-group={group} title={accessibleName}
+        aria-label={accessibleName}
         aria-pressed={activeGroup === group} onClick={() => onToggle(group)}>
         <CardStatusIcon state={iconState} dot /><span>{count}</span>
         {compactHeader ? <><span className="session-status-count-label">{compactLabel}</span>
           <span className="session-status-count-short-label" aria-hidden="true">{shortLabel}</span></> : null}
+        <span className="sr-only">{accessibleName}</span>
       </button>;
     })}<HeaderCountsNotice machines={offlineCountMachines} />
   </div>;
