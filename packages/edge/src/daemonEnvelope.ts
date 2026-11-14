@@ -1010,6 +1010,16 @@ export function forwardSessionAccountDaemon(
   });
 }
 
+/** Startup refusal fields for the creating principal, excluding runtime diagnostics. */
+export function createDaemonRefusal(r: DaemonResult): { code: string; reason: string; message: string } | undefined {
+  const body = r.body as { error?: { code?: unknown; message?: unknown; details?: { reason?: unknown } } } | undefined;
+  const error = body?.error;
+  const reason = error?.code === "start-failed" ? safeErrorCode(error.details?.reason) : undefined;
+  return reason && typeof error?.message === "string" && error.message
+    ? { code: "start-failed", reason, message: error.message }
+    : undefined;
+}
+
 export function forwardCreateDaemon(res: ServerResponse, requestBody: unknown, r: DaemonResult): void {
   const providerResumeId = providerResumeIdOf(requestBody);
   if (providerResumeId !== undefined && r.status >= 200 && r.status < 300 && !confirmsProviderResume(r.body, providerResumeId)) {
@@ -1042,6 +1052,7 @@ export function forwardCreateDaemon(res: ServerResponse, requestBody: unknown, r
   if (!ok2xx || body?.ok === false || !body?.data?.session || typeof body.data.session !== "object" || Array.isArray(body.data.session)) {
     const error = safeDaemonError(body?.error?.code, "session creation failed", body?.error?.details?.reason);
     const details = body?.error?.details;
+    const refusal = createDaemonRefusal(r);
     // A complete runtime capacity refusal proves that creation never started.
     // Project only its numeric counts and explicit safe-retry flags.
     const capacityProof = error.code === "session-capacity-exceeded"
@@ -1058,7 +1069,7 @@ export function forwardCreateDaemon(res: ServerResponse, requestBody: unknown, r
       : undefined;
     sendJson(res, ok2xx ? 502 : r.status, {
       ok: false,
-      error: { ...error, ...(capacityProof ? { details: capacityProof } : {}) },
+      error: { ...error, ...(capacityProof || refusal ? { details: capacityProof ?? refusal } : {}) },
     });
     return;
   }

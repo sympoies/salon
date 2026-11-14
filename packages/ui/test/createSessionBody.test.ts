@@ -201,3 +201,21 @@ test("createSessionBody carries the chosen account for its provider, except wher
   );
   assert.deepEqual(createSessionBody({ ...base, agent: "claude", account: "" }), { agent: "claude" });
 });
+
+for (const [displayValue, expectedCwd] of [["/work/example", "/work/example"], ["", undefined]] as const) {
+  test(`createSessionBody preserves the typed directory ${JSON.stringify(displayValue)}`, () => {
+    const body = createSessionBody({
+      mode: "new", agent: "codex", title: "", workdirSelection: { displayValue, selectedPath: "" },
+      prompt: "", providerResumeId: "", account: "",
+    });
+    assert.equal(body?.cwd, expectedCwd);
+    assert.equal(Object.hasOwn(body!, "cwd"), expectedCwd !== undefined);
+  });
+}
+
+test("createSessionBody rejects a relative working directory with a reason", () => {
+  assert.throws(() => createSessionBody({
+    mode: "new", agent: "codex", title: "", workdirSelection: { displayValue: "work/example", selectedPath: "" },
+    prompt: "", providerResumeId: "", account: "",
+  }), { message: "Working directory must be an absolute path starting with /." });
+});

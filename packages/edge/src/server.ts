@@ -94,6 +94,7 @@ import {
   forwardAccountsDaemon,
   forwardSessionAccountDaemon,
   forwardCreateDaemon,
+  createDaemonRefusal,
   forwardDaemon,
   forwardDisplayMetadataDaemon,
   forwardFencedStructuredPromptDaemon,
@@ -3073,7 +3074,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     }
     if (!daemonSucceeded(daemonResult)
       && await claimFailedCreate(
-        res, principal, machine, requestBody.id, expectedProvider, false, startMark, debug,
+        res, principal, machine, requestBody.id, expectedProvider, false, startMark, debug, createDaemonRefusal(daemonResult),
       )) return;
     if (config.multiUser && accessStore && daemonSucceeded(daemonResult)) {
       if (!claimCreatedDaemonSession(
@@ -3104,6 +3105,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     poll: boolean,
     startMark: Promise<SessionStartMark> | undefined,
     debug: DaemonDebugContext | undefined,
+    refusal?: ReturnType<typeof createDaemonRefusal>,
   ): Promise<boolean> {
     if (!config.multiUser || !accessStore || typeof sessionId !== "string") return false;
     const deadline = Date.now() + (poll ? failedCreateLookupMs : 0);
@@ -3121,6 +3123,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           ok: false,
           error: {
             code: "create-outcome-unknown",
+            ...(refusal ? { details: refusal } : {}),
             session_id: sessionId,
             ...(typeof created.session_incarnation === "string" ? { session_incarnation: created.session_incarnation } : {}),
             message: `session ${sessionId} was created and claimed, but its create did not finish; check it before starting another`,

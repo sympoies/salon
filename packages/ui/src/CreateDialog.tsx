@@ -31,6 +31,7 @@ import {
   secondaryWorkdirLabel,
   WORKDIR_CONTEXT_HINT,
   selectWorkdir,
+  workdirValidationError,
   type WorkdirSelection,
 } from "./workdirPicker.ts";
 import { useAnchoredFloating } from "./useAnchoredFloating.ts";
@@ -178,8 +179,9 @@ export function CreateDialog({
     setActiveWorkdirIndex(0);
   };
 
+  const workdirInputError = mode === "new" ? workdirValidationError(workdirSelection) : null;
   const submit = () => {
-    if (!machine) {
+    if (!machine || workdirInputError) {
       return;
     }
     const body = createSessionBody({
@@ -202,6 +204,7 @@ export function CreateDialog({
   const promptValidationError = mode === "new" ? promptInputError ?? validateInitialPrompt(prompt) : null;
   const canSubmit =
     Boolean(machine)
+    && workdirInputError === null
     && promptValidationError === null
     && (mode === "new" || (isProviderResumeAgent(agent) && Boolean(parsedResumeId)));
 
@@ -332,6 +335,8 @@ export function CreateDialog({
                     : undefined
                 }
                 autoComplete="off"
+                aria-invalid={workdirInputError ? true : undefined}
+                aria-describedby={workdirInputError ? "workdir-validation-error" : undefined}
               />
               {workdirOpen ? (
                 <div
@@ -369,6 +374,7 @@ export function CreateDialog({
               ) : null}
             </div>
             <span className="hint">{WORKDIR_CONTEXT_HINT}</span>
+            {workdirInputError ? <span id="workdir-validation-error" className="hint" role="alert">{workdirInputError}</span> : null}
             {workdirError ? <span className="hint">{workdirError}</span> : null}
           </label>
         ) : null}

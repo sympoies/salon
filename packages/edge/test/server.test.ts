@@ -1764,3 +1764,39 @@ test("a supplemental page deadline returns the accepted window and its unread co
     await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
   }
 });
+
+test("session creator receives the runtime refusal reason and explanation over HTTP", async () => {
+  const seenCwds: unknown[] = [];
+  const daemon = createHttpServer(async (req, res) => {
+    const request = JSON.parse((await readRaw(req)).toString("utf8"));
+    seenCwds.push(request.cwd);
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: false, error: {
+      code: "start-failed", message: "Review folder trust for /work/example before retrying.",
+      details: { reason: "startup-trust-required", stderr_tail: "discard diagnostic output", extra: "discard" },
+    } }));
+  });
+  const { base: daemonBase } = await listenOnLoopback(daemon);
+  const edge = createEdgeServer({ ...config, machines: [{ name: "fixture", url: daemonBase, token: "fixture-daemon" }] });
+  const { base: edgeBase } = await listenOnLoopback(edge);
+  try {
+    const cookie = await loginCookie(edgeBase);
+    const create = await fetch(`${edgeBase}/api/sessions/fixture`, {
+      method: "POST", headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ agent: "codex", cwd: "/work/example" }),
+    });
+    const body = await create.json();
+    assert.equal(create.status, 500);
+    assert.equal(seenCwds[0], "/work/example");
+    assert.equal(body.error.code, "start-failed");
+    assert.equal(body.error.message, "session creation failed");
+    assert.equal(body.error.details?.reason, "startup-trust-required");
+    assert.equal(body.error.details?.message, "Review folder trust for /work/example before retrying.");
+    assert.equal(Object.hasOwn(body.error.details, "stderr_tail"), false);
+    const unauthenticated = await fetch(`${edgeBase}/api/sessions/fixture`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ agent: "codex" }),
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(seenCwds.length, 1);
+  } finally { edge.close(); daemon.close(); }
+});

@@ -56,8 +56,17 @@ export function selectWorkdir(item: WorkdirSuggestion): WorkdirSelection {
   };
 }
 
+export function workdirValidationError(selection: WorkdirSelection): string | null {
+  const path = selection.selectedPath || selection.displayValue;
+  return path && !path.startsWith("/")
+    ? "Working directory must be an absolute path starting with /."
+    : null;
+}
+
 export function cwdForCreate(selection: WorkdirSelection): string | undefined {
-  return selection.selectedPath.trim() || undefined;
+  const error = workdirValidationError(selection);
+  if (error) throw new Error(error);
+  return selection.selectedPath || selection.displayValue || undefined;
 }
 
 function parentSegment(path: string): string | undefined {

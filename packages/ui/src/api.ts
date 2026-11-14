@@ -1006,6 +1006,8 @@ export interface CreatedSessionSnapshot {
 }
 
 export interface CreateSessionResult extends IndeterminateApiResult {
+  /** Runtime explanation retained even when creation must be reconciled before retrying. */
+  readonly runtimeRefusal?: string;
   readonly id?: string;
   /** History resume found the conversation already live under `id`. */
   readonly alreadyLive?: true;
@@ -1113,7 +1115,19 @@ export async function createSession(
       ? { id: error.session_id, ...(typeof error.session_incarnation === "string" && error.session_incarnation
         ? { sessionIncarnation: error.session_incarnation } : {}) }
       : {};
-    const failure = errorCode ? { ...result, errorCode, ...identity } : result;
+    const details = (r.body as { error?: { details?: { code?: unknown; reason?: unknown; message?: unknown } } } | undefined)?.error?.details;
+    const runtimeCode = errorCode === "create-outcome-unknown" ? details?.code : errorCode;
+    const refusal = runtimeCode === "start-failed"
+      && typeof details?.reason === "string" && details.reason
+      && typeof details.message === "string" && details.message
+      ? `${runtimeCode} / ${details.reason}: ${details.message}`
+      : undefined;
+    const failure = {
+      ...result,
+      ...(errorCode ? { errorCode } : {}),
+      ...identity,
+      ...(refusal ? { error: refusal, runtimeRefusal: refusal } : {}),
+    };
     return r.status >= 500 && !DETERMINATE_CREATE_FAILURE_CODES.has(errorCode ?? "")
       ? { ...failure, outcomeUnknown: true }
       : failure;
