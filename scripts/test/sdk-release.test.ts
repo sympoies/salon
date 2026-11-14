@@ -67,9 +67,12 @@ if (command === "git") {
     json({ full_name: state.scenario === "wrong-repository" ? "example/other" : "sympoies/salon", private: privateScope, visibility: privateScope ? "private" : "public" });
   } else if (path.includes("/compare/")) {
     json({ merge_base_commit: { sha: state.scenario === "unapproved" ? "b".repeat(40) : state.source } });
-  } else if (path.includes("/git/matching-refs/")) json(state.scenario.startsWith("existing-") || state.published ? [{ ref: "refs/tags/v0.1.70" }] : []);
+  } else if (path.includes("/git/matching-refs/")) json((state.scenario.startsWith("existing-") && state.scenario !== "existing-draft-no-tag") || state.published ? [{ ref: "refs/tags/v0.1.70" }] : []);
   else if (path.includes("/git/ref/tags/")) json({ object: { type: "commit", sha: state.scenario === "existing-other-source" ? "b".repeat(40) : state.source } });
-  else if (path.includes("/releases/tags/")) {
+  else if (path.endsWith("/releases?per_page=100")) {
+    // gh applies --jq to every page: only matching draft IDs reach stdout.
+    if (state.scenario === "existing-draft-no-tag") json(20);
+  } else if (path.includes("/releases/tags/")) {
     const metadata = state.assets.map((name, index) => {
       const bytes = readFileSync(join(root, "packs", name));
       return { id: 100 + index, name, size: bytes.length, state: "uploaded", digest: "sha256:" + (state.scenario === "existing-other-assets" && index === 2 ? "0".repeat(64) : createHash("sha256").update(bytes).digest("hex")) };
@@ -244,4 +247,17 @@ test("SDK rerun refuses an existing tag at another source", () => {
 test("SDK rerun refuses different provider assets and corrupt immutable downloads", () => {
   rejectedBeforePublishing("existing-other-assets", /existing.*(?:asset|digest)|(?:asset|digest).*mismatch/i);
   rejectedBeforePublishing("existing-corrupt-download", /download|bytes|digest/i);
+});
+
+test("SDK partial-publication rerun refuses a provider draft before its tag exists", () => {
+  const setup = fixture("existing-draft-no-tag");
+  try {
+    const result = setup.run();
+    assert.equal(setup.calls().filter(call => call.command === "forge-cli").length, 0,
+      "an existing provider draft reached release creation");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /draft.*20/i);
+    assert.match(result.stderr, /v0\.1\.70/);
+    assert.match(result.stderr, /owner.*(?:complete|abandon)/i);
+  } finally { setup.close(); }
 });

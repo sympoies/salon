@@ -447,6 +447,10 @@ and asset-ID byte checks;
 it does not create another release, upload assets or replace anything. Dry-run also verifies an
 existing release without publication.
 
+The script also checks provider drafts independently of tag refs. A draft left before its tag exists
+refuses before packing or invoking the publisher. The error names the draft and tag; the release
+owner must decide how to complete or abandon that draft before rerunning.
+
 A different source, different or missing assets, or an incomplete release state refuses the rerun.
 A failed readback does not roll back or replace a release; hand that state to the release owner.
 

@@ -48,6 +48,11 @@ for (const name of names) {
 }
 const notes = resolve(notesPath);
 requireValue(readFileSync(notes, "utf8").includes(source), "Release notes must name the exact approved source");
+// A failed native create can leave a draft before creating its tag. Inspect
+// release records independently so that state never reaches another create.
+const drafts = run("gh", ["api", `repos/${repository}/releases?per_page=100`, "--method", "GET", "--paginate",
+  "--jq", `.[] | select(.draft and .tag_name == "${tag}") | .id`]).trim();
+requireValue(!drafts, `Existing draft release ${drafts} for ${tag}; refusing automatic publication. The release owner must decide how to complete or abandon the draft before rerunning. No release, tag or assets were changed.`);
 const existing = api<{ ref: string }[]>(`git/matching-refs/tags/${tag}`).some(ref => ref.ref === `refs/tags/${tag}`);
 const assertTag = () => {
   const ref = api<TagRef>(`git/ref/tags/${tag}`);
