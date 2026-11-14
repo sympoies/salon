@@ -82,6 +82,8 @@ import { classifyTerminalData } from "./terminalInput.ts";
 import { createTerminalLinkRegistry, type TerminalLinkEntry } from "./terminalLinkRegistry.ts";
 import { readTerminalSelection, resolveTerminalCopyText } from "./terminalClipboard.ts";
 
+let nextTerminalInputLabelId = 0;
+
 export type TerminalConnectionStatus = TerminalTransportStatus;
 
 export type TerminalTouchMenu = {
@@ -322,6 +324,14 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
     });
     deps.termRef.current = term;
     const helperTextarea = term.element?.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+    // Native WebView accessibility needs name text as well as xterm's aria-label.
+    const inputLabel = document.createElement("span");
+    inputLabel.id = `terminal-input-label-${++nextTerminalInputLabelId}`;
+    inputLabel.className = "sr-only";
+    inputLabel.textContent = "Terminal input";
+    helperTextarea?.before(inputLabel);
+    helperTextarea?.setAttribute("aria-labelledby", inputLabel.id);
+    helperTextarea?.setAttribute("aria-label", "Terminal input");
     const compositionGuard = createTerminalCompositionGuard(helperTextarea);
     deps.compositionGuardRef.current = compositionGuard;
     const onPromptFocus = () => {
@@ -1526,6 +1536,7 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       hostEl.removeEventListener("mouseup", bufferWarmer.onMouseUp, { capture: true });
       viewport?.removeEventListener("scroll", onViewportScroll);
       helperTextarea?.removeEventListener("focus", onPromptFocus);
+      inputLabel.remove();
       compositionGuard.dispose();
       if (deps.compositionGuardRef.current === compositionGuard) {
         deps.compositionGuardRef.current = null;

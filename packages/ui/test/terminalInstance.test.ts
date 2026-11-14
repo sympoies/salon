@@ -456,6 +456,7 @@ function terminalPaneHarnessPlugin(): Plugin {
               element.className = "xterm";
               const textarea = document.createElement("textarea");
               textarea.className = "xterm-helper-textarea";
+              textarea.setAttribute("aria-label", "Terminal input"); // xterm 6 default
               const viewport = document.createElement("div");
               viewport.className = "xterm-viewport";
               const screen = document.createElement("div");
@@ -779,6 +780,16 @@ test("TerminalPane lifecycle creates one terminal, routes input/output, resizes,
   const transport = mounted.harness.transports[0];
   assert.ok(terminal, "terminal was created");
   assert.ok(transport, "transport was created");
+
+  const textarea = mounted.container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+  assert.ok(textarea, "terminal input exists");
+  assert.equal(textarea.getAttribute("aria-label"), "Terminal input", "xterm desktop name stays unchanged");
+  const labelId = textarea.getAttribute("aria-labelledby");
+  assert.ok(labelId, "terminal input has an associated name text source for native accessibility");
+  const label = mounted.window.document.getElementById(labelId);
+  assert.ok(label, "terminal input label exists in the document");
+  assert.equal(label.textContent, "Terminal input");
+  assert.equal(label.className, "sr-only", "terminal name text does not change geometry");
 
   assert.equal(terminal.options.scrollback, 123);
   assert.equal(terminal.openHost?.className, "term-host");
