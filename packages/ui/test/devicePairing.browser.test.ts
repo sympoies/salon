@@ -88,7 +88,11 @@ for (const width of [390, 1280]) test(`two browsers pair, confirm, renew and rev
     assert.equal(await sender.evaluate("document.querySelectorAll('.pairing-qr path').length"), 1);
     await capture(sender, `sender-code-${width}`, ".device-pairing");
 
-    await recipient.navigate(`${base}/#pair=${encodeURIComponent(code)}`);
+    if (width === 390) {
+      await recipient.navigate(base);
+      await until(recipient, "document.querySelector('[data-testid=console-sign-in]')", "existing new-device login page");
+      await recipient.evaluate(`location.hash=${JSON.stringify(`pair=${encodeURIComponent(code)}`)}`);
+    } else await recipient.navigate(`${base}/#pair=${encodeURIComponent(code)}`);
     await until(recipient, "document.querySelector('[aria-label=\"Pairing code\"]')", "new-device landing");
     assert.equal(await recipient.evaluate("location.hash"), "");
     assert.equal(await recipient.evaluate("window.authHashClean"), true, "fragment is removed before auth/debug requests");
