@@ -1329,7 +1329,7 @@ button.history-outgoing-bubble {
   --fg-2: #a8bdd4;
   --muted: #8ba1b8;
   --accent: #82aaff;
-  --ok: #22da6e;
+  --ok: #addb67;
   --warn: #ffcb8b;
   --err: #ef5350;
   --cyan: #7fdbca;
@@ -1356,7 +1356,7 @@ button.history-outgoing-bubble {
   --err-rgb: 239, 83, 80;
   --danger-fill-rgb: 127, 29, 29;
   --brand-mark-rgb: 214, 222, 235;
-  --danger: #d64f52;
+  --danger: #f78c6c;
   --danger-soft: #f87171;
   --danger-fg: #ffb4a8;
   --text-soft: #9fb0c3;
