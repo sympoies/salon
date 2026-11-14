@@ -1,7 +1,7 @@
 import { CONVERSATION_IMAGE_TYPES } from "@agent-console/shared/conversation-images";
 import { uploadedFilePaths, type OutgoingAttachment } from "./attachmentPaths.ts";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ClipboardEvent, DragEvent } from "react";
 import { conversationOutbox, queuedReplyDeliverablePhase, queuedReplyTargetAllowed, useConversationOutbox } from "./conversationOutbox.ts";
 import { uploadAttachment, fetchSavedDrafts, fetchSavedDraftText, discardSavedDraft } from "./api.ts";
@@ -167,7 +167,6 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     updateReply({ text: savedText, attachments: [], incarnation: session.session_incarnation, error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
     savedRequest.current++; setSavedOpen(false); setSavedText(null);
   };
-  const composerLabelId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -402,8 +401,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
             event.currentTarget.value = "";
             void attach(files);
           }} />
-        <span id={composerLabelId} className="sr-only">Reply to session</span>
-        <textarea ref={textareaRef} aria-labelledby={composerLabelId} aria-label="Reply to session" placeholder="Reply to this session…" rows={1}
+        <textarea ref={textareaRef} aria-label="Reply to session" placeholder="Reply to this session…" rows={1}
           value={draft} disabled={sending} onChange={(event) => updateDraft(event.target.value)} onPaste={onPaste}
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;

@@ -36,10 +36,9 @@ export function SessionStatusCountButtons({ counts, activeGroup, offlineCountMac
         data-status-group={group} title={accessibleName}
         aria-label={accessibleName}
         aria-pressed={activeGroup === group} onClick={() => onToggle(group)}>
-        <CardStatusIcon state={iconState} dot /><span>{count}</span>
-        {compactHeader ? <><span className="session-status-count-label">{compactLabel}</span>
+        <CardStatusIcon state={iconState} dot /><span aria-hidden="true">{count}</span>
+        {compactHeader ? <><span className="session-status-count-label" aria-hidden="true">{compactLabel}</span>
           <span className="session-status-count-short-label" aria-hidden="true">{shortLabel}</span></> : null}
-        <span className="sr-only">{accessibleName}</span>
       </button>;
     })}<HeaderCountsNotice machines={offlineCountMachines} />
   </div>;

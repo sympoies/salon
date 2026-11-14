@@ -79,8 +79,8 @@ test("actual header renders reachable counts with a tap detail, and all-online r
     const props = { filters: CLEAR_SESSION_FILTERS, records: rows, countsAvailable: true, onChange() {}, machines: online.map(m => m.name), harnesses: [], resultCount: 2, compactHeader: true, mobile: true };
     const partial = renderComponent(SessionFiltersBar, { ...props, countRecords: rows.slice(0, 1), offlineCountMachines: [{ name: "fixture-b", since: 1000, held: false }] });
     assert.match(partial, /Working: 1 session \(partial counts\)/);
-    assert.match(partial, /<span>1<\/span>/);
-    assert.doesNotMatch(partial, /<span>\d+\*<\/span>/);
+    assert.match(partial, /<span aria-hidden="true">1<\/span>/);
+    assert.doesNotMatch(partial, /<span[^>]*>\d+\*<\/span>/);
     assert.match(partial, /<summary[^>]*aria-label="Partial session counts"/);
     assert.match(partial, /fixture-b/);
     assert.match(partial, /dateTime="1970-01-01T00:00:01\.000Z"/);
