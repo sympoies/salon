@@ -148,10 +148,10 @@ test("role choices select No role and Roles chip removes only that dimension",as
 
 test("status controls render four named groups with category counts", async()=>{
  const html=renderComponent(await loadNavigator(),{...base,countsAvailable:true,statusCounts:{working:7,waiting:3,attention:2,stopped:4}});
- assert.match(html,/data-status-group="working"[^>]*aria-label="Working: 7 sessions"[\s\S]*?<span class="session-status-count-label">Working<\/span>/);
- assert.match(html,/data-status-group="waiting"[^>]*aria-label="Waiting: 3 sessions"[\s\S]*?<span class="session-status-count-label">Waiting<\/span>/);
- assert.match(html,/data-status-group="attention"[^>]*aria-label="Needs attention: 2 sessions"[\s\S]*?<span class="session-status-count-label">Attention<\/span>/);
- assert.match(html,/data-status-group="stopped"[^>]*aria-label="Stopped: 4 sessions"[\s\S]*?<span class="session-status-count-label">Stop<\/span>/);
+ assert.match(html,/data-status-group="working"[^>]*aria-label="Working: 7 sessions"[\s\S]*?<span class="session-status-count-label" aria-hidden="true">Working<\/span>/);
+ assert.match(html,/data-status-group="waiting"[^>]*aria-label="Waiting: 3 sessions"[\s\S]*?<span class="session-status-count-label" aria-hidden="true">Waiting<\/span>/);
+ assert.match(html,/data-status-group="attention"[^>]*aria-label="Needs attention: 2 sessions"[\s\S]*?<span class="session-status-count-label" aria-hidden="true">Attention<\/span>/);
+ assert.match(html,/data-status-group="stopped"[^>]*aria-label="Stopped: 4 sessions"[\s\S]*?<span class="session-status-count-label" aria-hidden="true">Stop<\/span>/);
 });
 
 test("default dimensions do not count as filters and narrowed hosts show their names", async()=>{

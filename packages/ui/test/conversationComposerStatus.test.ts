@@ -101,12 +101,9 @@ test("busy composer keeps the plain placeholder and never submits merely because
   try {
     await h.render("idle"); assert.equal(h.textarea().placeholder, "Reply to this session…");
     assert.equal(h.textarea().getAttribute("aria-label"), "Reply to session");
-    const labelId = h.textarea().getAttribute("aria-labelledby");
-    assert.ok(labelId, "composer has an associated name text source for native accessibility");
-    const label = h.window.document.getElementById(labelId);
-    assert.ok(label, "composer label exists in the document");
-    assert.equal(label.textContent, "Reply to session");
-    assert.equal(label.className, "sr-only", "name text does not change the visible hint or geometry");
+    assert.equal(h.textarea().getAttribute("aria-labelledby"), null, "the input's own name is not overridden by a separate text node");
+    assert.equal(h.container.querySelectorAll(".conversation-composer .sr-only").length, 0,
+      "no separate accessible name text is emitted beside the input");
     await h.write("next task"); assert.equal(h.sendButton().disabled, false);
     for (const phase of ["working", "starting"]) {
       await h.render(phase);
