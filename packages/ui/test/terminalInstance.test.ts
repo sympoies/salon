@@ -784,12 +784,9 @@ test("TerminalPane lifecycle creates one terminal, routes input/output, resizes,
   const textarea = mounted.container.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
   assert.ok(textarea, "terminal input exists");
   assert.equal(textarea.getAttribute("aria-label"), "Terminal input", "xterm desktop name stays unchanged");
-  const labelId = textarea.getAttribute("aria-labelledby");
-  assert.ok(labelId, "terminal input has an associated name text source for native accessibility");
-  const label = mounted.window.document.getElementById(labelId);
-  assert.ok(label, "terminal input label exists in the document");
-  assert.equal(label.textContent, "Terminal input");
-  assert.equal(label.className, "sr-only", "terminal name text does not change geometry");
+  assert.equal(textarea.getAttribute("aria-labelledby"), null, "the helper textarea uses its own name");
+  assert.equal(terminal.element?.querySelectorAll(".sr-only").length, 0,
+    "no separate accessible name text is emitted beside the terminal input");
 
   assert.equal(terminal.options.scrollback, 123);
   assert.equal(terminal.openHost?.className, "term-host");

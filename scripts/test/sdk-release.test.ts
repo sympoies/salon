@@ -56,7 +56,7 @@ if (command === "git") {
     state.packed = true; save();
   }
 } else if (command === "forge-cli") {
-  if (args.slice(0, 3).join(" ") !== "release create v0.1.74") throw new Error("unexpected publisher");
+  if (args.slice(0, 3).join(" ") !== "release create v0.1.75") throw new Error("unexpected publisher");
   if (!args.includes("--dry-run")) { state.published = true; save(); }
   json({ ok: true });
 } else if (command === "gh") {
@@ -67,7 +67,7 @@ if (command === "git") {
     json({ full_name: state.scenario === "wrong-repository" ? "example/other" : "sympoies/salon", private: privateScope, visibility: privateScope ? "private" : "public" });
   } else if (path.includes("/compare/")) {
     json({ merge_base_commit: { sha: state.scenario === "unapproved" ? "b".repeat(40) : state.source } });
-  } else if (path.includes("/git/matching-refs/")) json((state.scenario.startsWith("existing-") && state.scenario !== "existing-draft-no-tag") || state.published ? [{ ref: "refs/tags/v0.1.74" }] : []);
+  } else if (path.includes("/git/matching-refs/")) json((state.scenario.startsWith("existing-") && state.scenario !== "existing-draft-no-tag") || state.published ? [{ ref: "refs/tags/v0.1.75" }] : []);
   else if (path.includes("/git/ref/tags/")) json({ object: { type: "commit", sha: state.scenario === "existing-other-source" ? "b".repeat(40) : state.source } });
   else if (path.endsWith("/releases?per_page=100")) {
     // gh applies --jq to every page: only matching draft IDs reach stdout.
@@ -77,7 +77,7 @@ if (command === "git") {
       const bytes = readFileSync(join(root, "packs", name));
       return { id: 100 + index, name, size: bytes.length, state: "uploaded", digest: "sha256:" + (state.scenario === "existing-other-assets" && index === 2 ? "0".repeat(64) : createHash("sha256").update(bytes).digest("hex")) };
     });
-    json({ id: 20, tag_name: "v0.1.74", draft: false, prerelease: true, html_url: "https://example.com/release", assets: metadata });
+    json({ id: 20, tag_name: "v0.1.75", draft: false, prerelease: true, html_url: "https://example.com/release", assets: metadata });
   } else if (path.includes("/releases/assets/")) {
     const index = Number(path.split("/").at(-1)) - 100;
     const bytes = readFileSync(join(root, "packs", state.assets[index]));
@@ -91,10 +91,10 @@ function fixture(scenario = "valid") {
   const root = mkdtempSync("/tmp/sdk-release-");
   for (const directory of ["bin", "packs", ".agents/scripts", "scripts"]) mkdirSync(join(root, directory), { recursive: true });
   for (const path of [".agents/scripts/release.sh", "scripts/release-core-sdk.ts", "scripts/pack-core.ts", "scripts/release-step.ts"]) cpSync(join(repo, path), join(root, path));
-    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "salon", version: "0.1.74", type: "module" }));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "salon", version: "0.1.75", type: "module" }));
   const packages = [];
   for (const name of ["shared", "edge", "ui"]) {
-      const metadata = { name: `@agent-console/${name}`, version: "0.1.74" };
+      const metadata = { name: `@agent-console/${name}`, version: "0.1.75" };
     const packageRoot = join(root, "packages", name);
     mkdirSync(packageRoot, { recursive: true });
     writeFileSync(join(packageRoot, "package.json"), JSON.stringify(metadata));
@@ -194,7 +194,7 @@ for (const step of ["pack", "publish", "archive"]) {
     try {
       const result = setup.run();
       assert.notEqual(result.status, 0);
-      assert.match(result.stderr, step === "pack" ? /pnpm.*run.*pack:core/ : step === "archive" ? /pnpm.*pack.*--out/ : /forge-cli.*release.*create.*v0\.1\.74/);
+      assert.match(result.stderr, step === "pack" ? /pnpm.*run.*pack:core/ : step === "archive" ? /pnpm.*pack.*--out/ : /forge-cli.*release.*create.*v0\.1\.75/);
       assert.match(result.stderr, /exit status 23/);
       assert.match(result.stderr, /synthetic provider failure/);
       assert.match(result.stderr, /rerun/i);
@@ -207,7 +207,7 @@ for (const step of ["pack", "publish", "archive"]) {
     try {
       const result = setup.run();
       assert.notEqual(result.status, 0);
-      assert.match(result.stderr, step === "pack" ? /pnpm.*run.*pack:core/ : step === "archive" ? /pnpm.*pack.*--out/ : /forge-cli.*release.*create.*v0\.1\.74/);
+      assert.match(result.stderr, step === "pack" ? /pnpm.*run.*pack:core/ : step === "archive" ? /pnpm.*pack.*--out/ : /forge-cli.*release.*create.*v0\.1\.75/);
       assert.match(result.stderr, /signal SIGTERM/);
       assert.doesNotMatch(result.stderr, /output: \[|pid:/);
     } finally { setup.close(); }
@@ -257,7 +257,7 @@ test("SDK partial-publication rerun refuses a provider draft before its tag exis
       "an existing provider draft reached release creation");
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /draft.*20/i);
-    assert.match(result.stderr, /v0\.1\.74/);
+    assert.match(result.stderr, /v0\.1\.75/);
     assert.match(result.stderr, /owner.*(?:complete|abandon)/i);
   } finally { setup.close(); }
 });
