@@ -105,6 +105,9 @@ for (const mobile of [false, true]) {
       const body = window.document.body;
       const trigger = body.querySelector(".session-command-copy-button");
       assert.ok(trigger);
+      assert.equal(trigger.getAttribute("aria-label"), "Copy session command for Test session");
+      assert.equal(trigger.textContent?.trim(), "Copy session command for Test session",
+        "WebView can map the copy trigger name from its text as well as aria-label");
       await click(trigger);
       assert.deepEqual(writes, [], "opening must not copy immediately");
       const menu = body.querySelector('[role="menu"][aria-label="Copy session actions"]');

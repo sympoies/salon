@@ -51,6 +51,10 @@ for (const mobile of [false, true]) for (const mode of ["default", "saved all", 
     assert.equal(filterRecords(records, filters).length, 3);
     assert.equal(filters.excludedWorkspaces, null, "a deliberate workspace choice exits legacy mode");
     assert.equal(open, false);
+    const trigger = container.querySelector(".session-filter-search-open");
+    assert.ok(trigger);
+    assert.equal(trigger.textContent?.trim(), "Filter sessions", "active chips leave a named filter trigger for WebView");
+    assert.match(trigger.getAttribute("aria-label")!, /^Filter sessions\. /);
     assert.ok(container.querySelector('[aria-label^="Remove Workspace:"]'));
     records.push({ ...records[0]!, session_id: "later", workspace: "later-team" });
     await act(render);

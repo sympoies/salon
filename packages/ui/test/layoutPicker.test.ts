@@ -22,6 +22,8 @@ test("compact layout offers all six layouts, selects, restores focus and dismiss
     }
     await act(async () => root.render(createElement(Host)));
     const trigger = container.querySelector<HTMLButtonElement>(".layout-picker-trigger")!;
+    assert.equal(trigger.getAttribute("aria-label"), "Choose layout, currently 2 panes");
+    assert.equal(trigger.textContent?.trim(), "Choose layout, currently 2 panes");
     await act(async () => trigger.click());
     const all = container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
     assert.equal(all.length, 7);
@@ -32,7 +34,8 @@ test("compact layout offers all six layouts, selects, restores focus and dismiss
     await act(async () => options[5]!.click());
     assert.equal(selection, 6); assert.equal(trigger.getAttribute("aria-expanded"), "false");
     assert.equal(window.document.activeElement === trigger, true);
-    assert.ok(trigger.getAttribute("aria-label")?.includes("6 panes"));
+    assert.equal(trigger.getAttribute("aria-label"), "Choose layout, currently 6 panes");
+    assert.equal(trigger.textContent?.trim(), "Choose layout, currently 6 panes", "name text follows layout changes");
     await act(async () => trigger.click());
     await act(async () => container.querySelector('[role="menu"]')!.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     assert.equal(trigger.getAttribute("aria-expanded"), "false");

@@ -1335,10 +1335,13 @@ test('the conversation header offers equal square icon actions: Refresh, Reply, 
     const label = button.getAttribute('aria-label');
     assert.equal(button.classList.contains('icon-btn'), true, `${label} is a square icon button`);
     assert.equal(button.querySelector('svg[aria-hidden="true"]') !== null, true, `${label} draws an inline SVG icon`);
-    assert.equal(button.textContent?.trim(), '', `${label} carries no text label`);
+    const visible = button.cloneNode(true) as HTMLButtonElement;
+    for (const hidden of visible.querySelectorAll('.sr-only')) hidden.remove();
+    assert.equal(visible.textContent?.trim(), '', `${label} carries no visible text label`);
     assert.ok(button.getAttribute('title'), `${label} has a tooltip`);
   }
   const reply = actions()[1]!;
+  assert.equal(reply.textContent?.trim(), 'Reply', 'the disclosure has name text for WebView mapping');
   assert.equal(reply.getAttribute('aria-controls'), 'conversation-composer');
   assert.equal(reply.getAttribute('aria-expanded'), 'false');
   await panel.toggle();
