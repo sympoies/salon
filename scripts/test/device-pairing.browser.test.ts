@@ -4,21 +4,23 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { build } from "vite";
-import react from "@vitejs/plugin-react";
-import { createEdgeServer } from "../../edge/src/server.ts";
-import { loadConfig } from "../../edge/src/config.ts";
-import { listenOnLoopback } from "../../edge/test/support.ts";
-import { launchPage, type Page } from "../../../scripts/readme-previews/chrome.ts";
+import { createRequire } from "node:module";
+const uiRequire = createRequire(new URL("../../packages/ui/package.json", import.meta.url));
+const { build } = await import(uiRequire.resolve("vite"));
+const { default: react } = await import(uiRequire.resolve("@vitejs/plugin-react"));
+import { createEdgeServer } from "../../packages/edge/src/server.ts";
+import { loadConfig } from "../../packages/edge/src/config.ts";
+import { listenOnLoopback } from "../../packages/edge/test/support.ts";
+import { launchPage, type Page } from "../readme-previews/chrome.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "device-pairing-browser-"));
 before(async () => {
   const previous = process.env.NODE_ENV;
   try {
-    const result = await build({ root: fileURLToPath(new URL("../", import.meta.url)), configFile: false, logLevel: "silent",
+    const result = await build({ root: fileURLToPath(new URL("../../packages/ui/", import.meta.url)), configFile: false, logLevel: "silent", resolve: { conditions: ["source"] },
       plugins: [react(), { name: "pairing-app-entry",
-        resolveId(id) { if (id.endsWith("pairing-app-entry")) return "\0pairing-app-entry"; },
-        load(id) { if (id === "\0pairing-app-entry") return 'import {mountApp} from "/src/mountApp.tsx"; mountApp(document.querySelector("#root"),{appName:"Example Console"});'; },
+        resolveId(id: string) { if (id.endsWith("pairing-app-entry")) return "\0pairing-app-entry"; },
+        load(id: string) { if (id === "\0pairing-app-entry") return 'import {mountApp} from "/src/mountApp.tsx"; mountApp(document.querySelector("#root"),{appName:"Example Console"});'; },
       }], define: { "process.env.NODE_ENV": JSON.stringify("production"), __AGENT_CONSOLE_APP_VERSION__: JSON.stringify("0.0.0"), __AGENT_CONSOLE_BUILD_SHA__: JSON.stringify("fixture") },
       build: { write: false, target: "esnext", lib: { entry: "pairing-app-entry", name: "PairingApp", formats: ["iife"] } },
     });
