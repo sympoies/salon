@@ -243,6 +243,8 @@ function fencedStructuredPromptBody(value: unknown): FencedStructuredPromptBody 
 
 
 
+class RequestAuthorizationError extends Error {}
+
 export interface EdgeServerOptions {
   readonly authNow?: () => number;
   readonly remoteImageFetch?: typeof fetchRemoteImage;
@@ -317,6 +319,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   }, (hash, owner) => store.activeReference(hash, owner), options.authNow);
   // Preserve the authenticating credential across awaited body parsing and upstream writes.
   const requestAuthorization = new AsyncLocalStorage<() => boolean>();
+  const assertRequestAuthorized = (): void => {
+    if (requestAuthorization.getStore()?.() === false) throw new RequestAuthorizationError();
+  };
   const daemonFetch: typeof unguardedDaemonFetch = async (...args) => {
     if (requestAuthorization.getStore()?.() === false)
       return { status: 401, body: { ok: false, error: { message: "unauthorized" } } };
@@ -478,11 +483,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     const previous = outboxStore?.lifecycle(machine.name, sessionId);
     if (previous) {
       const observed = await aggregateSessions([machine]);
+      assertRequestAuthorized();
       const session = observed.sessions.find(s => s.id === sessionId);
       if (observed.machines.some(m => m.ok) && session?.status === "running" && isPromptIncarnation(session.session_incarnation)) {
         outboxStore?.releaseObsoleteLifecycle(previous, session.session_incarnation);
       }
     }
+    assertRequestAuthorized();
     const fence = outboxStore?.beginLifecycle(machine.name, sessionId, incarnation, operation);
     const result = await action();
     const envelope = objectProp(result.body);
@@ -550,6 +557,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   };
 
   const decoratedSessionsForReader = (principal: PrincipalConfig, sessions: Array<Record<string, unknown>>) => {
+    assertRequestAuthorized();
     const scoped = config.multiUser ? visibleSessions(principal, sessions, accessStore, viewerAccessFor(principal)) : sessions;
     const metadata = Object.assign({}, ...extensions.extensions.map(extension => extension.decorateSessions?.(decorationContext(principal), scoped)));
     return { sessions: scoped, metadata };
@@ -663,6 +671,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     res.once("finish", () => clearRequestDeadline(req));
     res.once("close", () => clearRequestDeadline(req));
     handle(req, res).catch((err) => {
+      if (err instanceof RequestAuthorizationError) {
+        if (!res.headersSent) sendJson(res, 401, { ok: false, error: { message: "unauthorized" } });
+        else res.destroy();
+        return;
+      }
       if (err instanceof OutboxError && !res.headersSent) {
         sendJson(res, err.status, { ok: false, error: { code: err.code, message: err.code } });
         return;
@@ -917,6 +930,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       }
     }
     if (method !== "GET" && !csrfExempt(req)) return forbidCrossOrigin(res);
+    // Extensions retain the exact credential check across their own awaits.
+    const assertAuthorized = (): void => {
+      if (!credentialStillActive(principal)) throw new RequestAuthorizationError();
+    };
+    assertAuthorized();
     await route.handle({
       req,
       res,
@@ -926,7 +944,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       principal: { id: principal.id, permissions: principal.permissions },
       requestId,
       sendJson: (status, body) => sendJson(res, status, body),
-      readJsonBody: (limitBytes) => readJsonBody(req, limitBytes),
+      assertAuthorized,
+      readJsonBody: async (limitBytes) => {
+        const body = await readJsonBody(req, limitBytes);
+        assertAuthorized();
+        return body;
+      },
     });
   }
 
@@ -1045,6 +1068,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           if (admission || action?.operation === "retry_refused") {
             const fence = outboxStore.lifecycle(machine.name, sessionId);
             const observed = await aggregateSessions([machine]);
+            assertRequestAuthorized();
             if (!observed.machines.some(m => m.ok)) throw new OutboxError("outbox-target-unavailable", 503);
             const session = observed.sessions.find(s => s.id === sessionId);
             if (!session || session.session_incarnation !== incarnation) throw new OutboxError("outbox-session-changed", 409);
@@ -1056,6 +1080,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             if (fence && session.status === "running") outboxStore.releaseObsoleteLifecycle(fence, incarnation);
           }
           if (action && intent) {
+            assertRequestAuthorized();
             // Route authorization and the principal-scoped target already fence
             // discard. It sends nothing and may retire an earlier incarnation.
             const allowed = action.operation === "retry_refused" ? outboxAccess(target, "dispatch") : null;
@@ -1066,6 +1091,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             sendJson(res, 200, { ok: true, data: { item } }); return;
           }
           if (admission && intent) {
+            assertRequestAuthorized();
             const allowed = outboxAccess(target, "dispatch");
             if (!allowed) throw new OutboxError("outbox-authorization-changed", 403);
             const result = outboxStore.admit(target, intent, admission.text, outboxCredentialGeneration(allowed.principal, allowed.machine));
@@ -1170,6 +1196,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           sendJson(res, 400, { ok: false, error: { message: "enabled and a non-empty reason are required" } }); return;
         }
         try {
+          assertRequestAuthorized();
           machinePreferences.write(_principal.id, name, body.enabled, body.reason, `principal:${_principal.id}`, body.initialize_only === true);
         } catch (error) {
           if (!(error instanceof MachinePreferenceInitializedError)) throw error;
@@ -1244,6 +1271,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           };
           res.once("close", abortOnClose);
           try {
+            assertRequestAuthorized();
             const result = await transcribeSpeech(provider, audio, contentType, engine, disconnect.signal);
             if (!res.destroyed) sendJson(res, 200, { ok: true, data: { ...result, provider: provider.id } });
           } finally {
@@ -1283,6 +1311,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         const repoName = typeof body?.repoName === "string" ? body.repoName : null;
         const trace = normalizeTitleSummaryTrace(body?.trace);
         const trustedTrace = trace && byName.has(trace.machine) ? trace : undefined;
+        assertRequestAuthorized();
         const evaluation = await summarizeTitleWithDiagnostics(config.titleSummarizer, {
           agent,
           baseTitle,
@@ -1513,6 +1542,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                   if (claimant === undefined) {
                     return isRootPrincipal(_principal);
                   }
+                  assertRequestAuthorized();
                   accessStore.claimHistory(
                     claimant,
                     machine.name,
@@ -1627,6 +1657,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             debug: daemonDebug(requestId),
           });
           if (config.multiUser && accessStore && daemonSucceeded(daemonResult)) {
+            assertRequestAuthorized();
             // A viewer resumes through the owner's history; the new session stays with
             // the owner and descends from the selected session so the viewer keeps it.
             const actor = historyActor(_principal, machine.name, historyId) ?? _principal.id;
@@ -1871,6 +1902,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         try {
+          assertRequestAuthorized();
           sendJson(res, 200, {
             ok: true,
             data: await resetCodexRateLimit(config.codexReset, account, idempotencyKey),
@@ -1899,6 +1931,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         try {
+          assertRequestAuthorized();
           sendJson(res, 200, { ok: true, data: await resetClaudeLimit(config.claudeReset, request) });
         } catch (error) {
           sendJson(res, 502, {
@@ -1923,6 +1956,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             sendJson(res, 422, { ok: false, error: { message: "layout body must include order and base_revision" } });
             return;
           }
+          assertRequestAuthorized();
           const result = accessStore.writeLayout(_principal.id, order, baseRevision);
           sendJson(res, result.ok ? 200 : 409, {
             ok: result.ok,
@@ -1959,6 +1993,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           const baseRevision = normalizeRevision(rawBodyObject?.base_revision);
           const reason = asString(rawBodyObject?.reason)?.slice(0, 64);
           await sendReachableData(res, config.layout, {}, async (reader) => {
+            assertRequestAuthorized();
             const result = await writeLayoutOrder(reader, { order, baseRevision, reason });
             if (result.conflict) {
               return {
@@ -2213,6 +2248,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                   (result.body as { data?: { maintenance_result?: unknown } } | undefined)?.data?.maintenance_result,
                   { sessionId, operation: "resume", action: "retry_resume", schemaVersion: MAINTENANCE_SCHEMA_VERSION },
                 );
+                assertRequestAuthorized();
                 if (actionResult?.outcome !== "resumed" || !advanceResumedSessionOwnership(
                   accessStore, _principal, actsForAnotherOwner(_principal, machine.name, sessionId), machine.name, sessionId,
                   previousIncarnation, actionResult.session_incarnation,
@@ -2290,6 +2326,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 && typeof archived.provider === "string"
                 && typeof archived.provider_session_id === "string"
               ) {
+                assertRequestAuthorized();
                 accessStore.claimHistory(
                   archiveOwner,
                   machine.name,
@@ -2429,6 +2466,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                   },
                 );
                 if (actionResult?.outcome === "resumed") {
+                  assertRequestAuthorized();
                   if (!advanceResumedSessionOwnership(
                     accessStore, _principal, actsForAnotherOwner(_principal, machine.name, sessionId), machine.name, sessionId,
                     previousIncarnation, actionResult.session_incarnation,
@@ -2988,6 +3026,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       machineHealth,
       requestId ? daemonDebug(requestId) : undefined,
     );
+    assertRequestAuthorized();
     return visibleSessions(principal, aggregate.sessions, accessStore, viewerAccessFor(principal));
   }
 
@@ -3136,9 +3175,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         res, principal, machine, requestBody.id, expectedProvider, false, startMark, debug, createDaemonRefusal(daemonResult),
       )) return;
     if (config.multiUser && accessStore && daemonSucceeded(daemonResult)) {
+      const mark = await startMark;
+      assertRequestAuthorized();
       if (!claimCreatedDaemonSession(
         accessStore, principal.id, machine.name, daemonResult, requestBody.id,
-        expectedProvider, await startMark,
+        expectedProvider, mark,
       )) {
         sendJson(res, 502, { ok: false, error: { message: "session creation did not confirm ownership" } });
         return;
@@ -3173,10 +3214,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       // A machine the lookup cannot reach never received the create either.
       if (created === null) return false;
       if (created) {
+        const mark = await startMark;
+        assertRequestAuthorized();
         if (!claimCreatedDaemonSession(
           accessStore, principal.id, machine.name,
           { status: 200, body: { ok: true, data: { session: created } } },
-          sessionId, expectedProvider, await startMark,
+          sessionId, expectedProvider, mark,
         )) return false;
         sendJson(res, 502, {
           ok: false,

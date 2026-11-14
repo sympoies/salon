@@ -119,6 +119,11 @@ invalidates device credentials and pending pairings. Carry device identity throu
 downloads, SSE and WebSockets; reject stale tickets/writes and stop streamed output after revocation, closing
 idle streams within the existing 250 ms interval. Existing tester-only guards must be extended for devices.
 
+Recheck the captured credential immediately before protected writes after asynchronous work, including local
+settings, controller calls and ownership updates. Rejecting a response after a write cannot undo that write.
+Extension `readJsonBody` rechecks authorization before returning the body. Extension handlers that await other
+work must call `ctx.assertAuthorized()` immediately before a side effect; the check retains the exact credential.
+
 ## Origin checks, secrecy and threats
 
 Authenticated writes retain the existing CSRF checks. Anonymous claim/exchange use JSON POST and the existing

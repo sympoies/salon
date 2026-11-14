@@ -5,17 +5,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { AccessStore } from "../src/accessStore.ts";
 import { loadConfig } from "../src/config.ts";
-import { createEdgeServer } from "../src/server.ts";
+import { createEdgeServer, type EdgeServerOptions } from "../src/server.ts";
 import { cookieFrom, listenOnLoopback, loginCookie } from "./support.ts";
 
 const DAY = 86_400_000;
 type Data = Record<string, any>;
 
-async function fixture(multiUser = false, daemon?: string) {
+async function fixture(multiUser = false, daemon?: string, options: EdgeServerOptions = {}) {
   const dir = mkdtempSync(join(tmpdir(), "pairing-fixture-"));
   const path = join(dir, "state.sqlite");
   let now = Date.now();
@@ -32,7 +32,7 @@ async function fixture(multiUser = false, daemon?: string) {
     access.claimHistory("primary", "fixture", "history", "codex", "provider-fixture");
     access.close();
   }
-  let edge = createEdgeServer(config, { authNow: () => now });
+  let edge = createEdgeServer(config, { ...options, authNow: () => now });
   let { base } = await listenOnLoopback(edge);
   const cookie = await loginCookie(base, "primary-fixture");
   const call = async (route: string, body?: unknown, auth: Record<string, string> = {}, method = body === undefined ? "GET" : "POST") => {
@@ -71,13 +71,74 @@ async function fixture(multiUser = false, daemon?: string) {
       edge = createEdgeServer({ ...config,
         clientToken: multiUser ? "" : main,
         principals: config.principals.map(principal => principal.id === "primary" ? { ...principal, token: main } : principal),
-      }, { authNow: () => now });
+      }, { ...options, authNow: () => now });
       ({ base } = await listenOnLoopback(edge));
     },
     advance(ms: number) { now += ms; },
     async close() { edge.closeAllConnections(); await new Promise<void>(resolve => edge.close(() => resolve())); rmSync(dir, { recursive: true }); },
   };
 }
+
+for (const target of ["layout", "extension"]) test(`revoking an authenticated slow-body request prevents ${target} side effects`, async () => {
+  let effects = 0;
+  const f = await fixture(true, undefined, { extensions: [{ id: "fixture", routes: [{ id: "write",
+    pattern: "/api/ext/fixture/write", methods: ["PUT"], permission: "debug", async handle(ctx) {
+      await ctx.readJsonBody(); effects++; ctx.sendJson(200, { ok: true });
+    }, }] }] });
+  const db = new DatabaseSync(f.path);
+  try {
+    const { token, id } = await f.issue();
+    const previous = (db.prepare("SELECT last_used FROM device_credentials WHERE id=?").get(id) as { last_used: number }).last_used;
+    f.advance(1);
+    const body = JSON.stringify({ order: ["fixture/session"], base_revision: 0 });
+    let finish!: () => void;
+    const result = new Promise<void>((resolve, reject) => {
+      const req = httpRequest(`${f.base}/api/${target === "layout" ? "layout" : "ext/fixture/write"}`, { method: "PUT", headers: {
+        authorization: `Bearer ${token}`, "content-type": "application/json", "content-length": Buffer.byteLength(body),
+      } }, res => { res.resume(); res.on("end", resolve); res.on("error", resolve); });
+      req.on("error", error => { if ((error as NodeJS.ErrnoException).code === "ECONNRESET") resolve(); else reject(error); });
+      req.write(body.slice(0, 1)); finish = () => req.end(body.slice(1));
+    });
+    // last_used is a real authentication barrier, before the unfinished body can be parsed.
+    const deadline = Date.now() + 2000;
+    while ((db.prepare("SELECT last_used FROM device_credentials WHERE id=?").get(id) as { last_used: number }).last_used === previous) {
+      assert.ok(Date.now() < deadline, "partial request must authenticate before revocation");
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.equal((await f.call(`devices/${id}`, undefined, { cookie: f.cookie }, "DELETE")).status, 200);
+    finish(); await result;
+    assert.equal(effects, 0, "extension must not commit after its credential is revoked");
+    const layout = new AccessStore(f.path);
+    try { assert.equal(layout.readLayout("primary").revision, 0, "layout must not commit after revocation"); }
+    finally { layout.close(); }
+  } finally { db.close(); await f.close(); }
+});
+
+test("extension authorization can fence a side effect after its own asynchronous work", async () => {
+  let effects = 0;
+  let entered!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const f = await fixture(true, undefined, { extensions: [{ id: "fixture", routes: [{ id: "write",
+    pattern: "/api/ext/fixture/write", methods: ["POST"], permission: "debug", async handle(ctx) {
+      const body = await ctx.readJsonBody() as { defer: boolean };
+      if (body.defer) { entered(); await pending; }
+      ctx.assertAuthorized(); effects++; ctx.sendJson(200, { ok: true });
+    }, }] }] });
+  try {
+    const { token, id } = await f.issue();
+    const write = (defer: boolean) => fetch(`${f.base}/api/ext/fixture/write`, { method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ defer }) });
+    assert.equal((await write(false)).status, 200, "valid credential may commit an extension effect");
+    effects = 0;
+    const response = write(true).catch(() => undefined);
+    await started;
+    assert.equal((await f.call(`devices/${id}`, undefined, { cookie: f.cookie }, "DELETE")).status, 200);
+    release(); await response;
+    assert.equal(effects, 0, "custom awaits must retain the original device identity");
+  } finally { release(); await f.close(); }
+});
 
 for (const multiUser of [false, true]) test(`pairing binds explicit consent and one credential in ${multiUser ? "principal" : "single-token"} mode`, async () => {
   const f = await fixture(multiUser);
