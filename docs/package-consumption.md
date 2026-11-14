@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.73 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.74 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,14 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.73`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.74`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.73
+### Changes retained in SDK 0.1.74
+
+The reply composer and terminal input have associated visually hidden names. Status-count chips
+retain their complete label and count as hidden text in every header mode, including compact layouts
+(#506). Existing desktop names, placeholders, CSS and geometry stay unchanged. Android native
+accessibility mapping remains a separate device acceptance check.
 
 Copy, More, layout and Reply icon-only popup or disclosure triggers retain their accessible names as
 visually hidden DOM text. Active compact filters retain their placeholder as hidden text when chips
