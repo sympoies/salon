@@ -34,6 +34,8 @@ export interface OutboxDispatchOptions {
   /** Check machine access for observation and exact ownership for dispatch, including after I/O. */
   readonly access: (target: OutboxTarget, purpose: "observe" | "dispatch") => DispatchAccess | null;
   readonly intervalMs?: number;
+  /** A public issuing-device identity is not an authorization credential. */
+  readonly deviceActive?: (id: string, principal: string) => boolean;
 }
 
 /** A durable claim is never re-POSTed, even if the process died before POST. */
@@ -46,6 +48,9 @@ export class SharedOutboxDispatcher {
   #stopped = false;
   readonly #active = new Set<string>();
   constructor(options: OutboxDispatchOptions) { this.#options = options; }
+  #credentialActive(attempt: OutboxAttempt): boolean {
+    return attempt.deviceId === null || this.#options.deviceActive?.(attempt.deviceId, attempt.target.principalId) === true;
+  }
   start(): void {
     this.#timer = setInterval(() => void this.tick(), this.#options.intervalMs ?? 2_000);
     this.#timer.unref();
@@ -73,7 +78,7 @@ export class SharedOutboxDispatcher {
         if (this.#stopped) return;
         const candidate = store.candidate(target);
         if (!candidate) continue;
-        if (candidate.credentialGeneration !== generation) { store.refuse(candidate, "outbox-authorization-changed"); continue; }
+        if (candidate.credentialGeneration !== generation || !this.#credentialActive(candidate)) { store.refuse(candidate, "outbox-authorization-changed"); continue; }
         let observed = observations.get(target.machine);
         if (!observed) {
           observed = await aggregateSessions([allowed.machine]);
@@ -86,7 +91,7 @@ export class SharedOutboxDispatcher {
         const session = observed.sessions.find(session => session.id === target.sessionId);
         if (!session || session.session_incarnation !== target.incarnation) { store.cancelUnconfirmed(target); continue; }
         const current = access(target, "dispatch");
-        if (!current || outboxCredentialGeneration(current.principal, current.machine) !== generation) {
+        if (!current || outboxCredentialGeneration(current.principal, current.machine) !== generation || !this.#credentialActive(candidate)) {
           store.refuse(candidate, "outbox-authorization-changed"); continue;
         }
         const provider = (session.provider_resume as { provider?: unknown } | undefined)?.provider ?? session.agent;
@@ -162,7 +167,7 @@ export class SharedOutboxDispatcher {
         for (const attempt of store.uncertain(target)) {
           if (this.#stopped) return;
           if (this.#active.has(attempt.item.request_id!)) continue;
-          if (attempt.credentialGeneration !== generation) { store.settle(attempt, null); continue; }
+          if (attempt.credentialGeneration !== generation || !this.#credentialActive(attempt)) { store.settle(attempt, null); continue; }
           let receipt: PromptReceipt | null = null;
           try {
             const result = await daemonFetch(allowed.machine,
@@ -171,7 +176,7 @@ export class SharedOutboxDispatcher {
           } catch { /* Missing/unavailable claims stay unknown, never replay. */ }
           if (this.#stopped) return;
           const current = access(target, "dispatch");
-          if (current && outboxCredentialGeneration(current.principal, current.machine) === generation) store.settle(attempt, receipt);
+          if (current && outboxCredentialGeneration(current.principal, current.machine) === generation && this.#credentialActive(attempt)) store.settle(attempt, receipt);
         }
       }
     } catch {

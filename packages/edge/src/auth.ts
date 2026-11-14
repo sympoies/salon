@@ -203,6 +203,11 @@ export class SessionStore {
     this.#db.prepare("DELETE FROM auth_sessions WHERE id_hash = ?").run(this.#hash(id));
   }
 
+  activeReference(hash: string, principal: string): boolean {
+    return this.#db.prepare("SELECT 1 FROM auth_sessions WHERE id_hash=? AND principal_id=? AND expires_at>?")
+      .get(hash, principal, this.#now()) !== undefined;
+  }
+
   #fingerprint(id: string, credential: string): string {
     return createHmac("sha256", id).update(credential).digest("hex");
   }
@@ -218,12 +223,14 @@ export interface WsTicket {
   readonly principalId?: string;
   readonly incarnation?: string;
   readonly credentialFingerprint?: string;
+  readonly isAuthorized?: () => boolean;
 }
 
 export interface WsTicketOwnership {
   readonly principalId: string;
-  readonly incarnation: string;
+  readonly incarnation?: string;
   readonly credentialFingerprint?: string;
+  readonly isAuthorized?: () => boolean;
 }
 
 // Short-lived one-time WebSocket attach tickets for device clients. They avoid
