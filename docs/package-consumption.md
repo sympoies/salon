@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.70 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.71 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,17 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.70`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.71`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.70
+### Changes retained in SDK 0.1.71
+
+The New session dialog keeps a typed absolute working directory and rejects a relative path with an
+inline reason. Runtime startup refusals show their reason and explanation to the creating principal,
+including when the creation outcome remains unknown (#493).
+
+Release tooling reports failing child commands, their exit status or signal, and a stderr tail. It
+resumes verification for an exact complete release and refuses a provider draft without a tag (#491).
+These tooling changes do not change package behavior.
 
 Tool rows show the command or file path as their collapsed title and the description as secondary
 text instead of raw JSON (#487). Masked rows and owner-only projection remain unchanged.
