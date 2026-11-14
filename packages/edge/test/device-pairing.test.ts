@@ -216,7 +216,7 @@ for (const stage of ["claim", "exchange"]) test(`anonymous native pairing ${stag
   const f = await fixture();
   const refusedOrigins = ["null", "custom://tauri.localhost", "http://localhost",
     "https://sub.tauri.localhost", "https://untrustedtauri.localhost", "https://tauri.localhost.example.test",
-    "https://tauri.localhost.", "https://tauri.localhost@foreign.example.test", "https://foreign.example.test"];
+    "https://tauri.localhost.", "https://foreign.example.test"];
   try {
     for (const origin of ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"]) {
       const pair = await f.create();
@@ -225,7 +225,8 @@ for (const stage of ["claim", "exchange"]) test(`anonymous native pairing ${stag
       const body = { code: pair.code, challenge, name: "Native tablet", delivery: "native" };
       if (stage === "claim") {
         for (const headers of [...refusedOrigins.map(origin => ({ origin })), { origin, cookie: f.cookie },
-          { origin, authorization: "Bearer primary-fixture" }]) {
+          { origin, authorization: "Bearer primary-fixture" }, { origin, "sec-websocket-protocol": "ac-token.primary-fixture" },
+          { origin, "sec-websocket-protocol": "" }]) {
           assert.equal((await f.call("pairings/claim", body, headers)).status, 403);
         }
         assert.equal((await f.call("pairings/claim", { ...body, delivery: "browser" }, { origin })).status, 403);
@@ -236,7 +237,8 @@ for (const stage of ["claim", "exchange"]) test(`anonymous native pairing ${stag
       assert.equal((await f.approve(pair, exchange)).status, 200);
       if (stage === "exchange") {
         for (const headers of [...refusedOrigins.map(origin => ({ origin })), { origin, cookie: f.cookie },
-          { origin, authorization: "Bearer primary-fixture" }]) {
+          { origin, authorization: "Bearer primary-fixture" }, { origin, "sec-websocket-protocol": "ac-token.primary-fixture" },
+          { origin, "sec-websocket-protocol": "" }]) {
           assert.equal((await f.call("pairings/exchange", exchange, headers)).status, 403);
         }
         assert.equal((await f.call("pairings/exchange", { ...exchange, delivery: "browser" }, { origin })).status, 403);

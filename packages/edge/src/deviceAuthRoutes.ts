@@ -63,7 +63,8 @@ export async function handleDeviceAuth(req: IncomingMessage, res: ServerResponse
     if (method !== "GET") {
       // Only the body-held pairing proof authorizes this native branch. Never
       // let an app-shell request consume ambient authentication or issue a cookie.
-      if (nativeApp && (req.headers.cookie !== undefined || req.headers.authorization !== undefined)) {
+      if (nativeApp && (req.headers.cookie !== undefined || req.headers.authorization !== undefined
+        || req.headers["sec-websocket-protocol"] !== undefined)) {
         forbidCrossOrigin(res); return true;
       }
       if (!nativeApp && (anonymous ? !sameOrigin(req, res) : !ctx.csrfExempt())) {
