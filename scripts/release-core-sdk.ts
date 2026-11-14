@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { releaseStep } from "./release-step.ts";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -22,7 +22,7 @@ const requireValue: (condition: unknown, message: string) => asserts condition =
 requireValue(/^[0-9a-f]{40}$/.test(source ?? "") && notesPath && !extra.length && (!mode || mode === "--dry-run"),
   "Usage: release.sh <approved-full-source-sha> <notes-file> [--dry-run]");
 requireValue(process.versions.node.split(".")[0] === "24", "SDK release requires Node 24");
-const run = (command: string, args: string[]) => execFileSync(command, args, { cwd: root, encoding: "utf8" });
+const run = (command: string, args: string[]) => releaseStep(command, args, { cwd: root }).toString("utf8");
 const git = (args: string[]) => run("git", args).trim();
 const readJson = (path: string): Manifest => JSON.parse(readFileSync(resolve(root, path), "utf8"));
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -48,10 +48,15 @@ for (const name of names) {
 }
 const notes = resolve(notesPath);
 requireValue(readFileSync(notes, "utf8").includes(source), "Release notes must name the exact approved source");
-requireValue(!api<{ ref: string }[]>(`git/matching-refs/tags/${tag}`).some(ref => ref.ref === `refs/tags/${tag}`),
-  "SDK release tag already exists; do not replace or reuse published identities");
+const existing = api<{ ref: string }[]>(`git/matching-refs/tags/${tag}`).some(ref => ref.ref === `refs/tags/${tag}`);
+const assertTag = () => {
+  const ref = api<TagRef>(`git/ref/tags/${tag}`);
+  requireValue(ref.object?.type === "commit" && ref.object.sha === source,
+    "Existing release tag source differs from approved commit; refusing tag reuse");
+};
+if (existing) assertTag();
 
-execFileSync("pnpm", ["run", "pack:core"], { cwd: root, stdio: "inherit" });
+releaseStep("pnpm", ["run", "pack:core"], { cwd: root, inherit: true });
 assertSource();
 const manifest = readJson("dist-packages/manifest.json");
 requireValue(manifest.sourceCommit === source && manifest.dirty === false, "Packed manifest must bind clean approved source");
@@ -80,26 +85,32 @@ assertPublic();
 const create = ["release", "create", tag, ...assets.map(asset => `dist-packages/${asset}`),
   "--repo", repository, "--target", source, "--title", `Salon core SDK ${version}`,
   "--notes-file", notes, "--prerelease", "--latest", "false", "--format", "json"];
-execFileSync("forge-cli", [...create, "--dry-run"], { cwd: root, stdio: "inherit" });
-if (mode === "--dry-run") {
-  console.log("\nPublic SDK provenance and native release dry-run passed; no publication.");
+if (existing) {
+  console.log(`Resuming verification of existing release ${tag} at ${source}; no uploads, publication or replacements will be performed.`);
 } else {
-  execFileSync("forge-cli", create, { cwd: root, stdio: "inherit" });
+  releaseStep("forge-cli", [...create, "--dry-run"], { cwd: root, inherit: true });
+  if (mode === "--dry-run") {
+    console.log("\nPublic SDK provenance and native release dry-run passed; no publication.");
+  } else {
+    releaseStep("forge-cli", create, { cwd: root, inherit: true });
+  }
+}
+if (existing || mode !== "--dry-run") {
   assertPublic();
-  const ref = api<TagRef>(`git/ref/tags/${tag}`);
-  requireValue(ref.object?.type === "commit" && ref.object.sha === source, "Published tag does not resolve to approved source");
+  assertTag();
   const release = api<Release>(`releases/tags/${tag}`);
-  requireValue(release.tag_name === tag && release.draft === false && release.prerelease === true, "Published release must be the SDK prerelease");
-  requireValue(Array.isArray(release.assets) && release.assets.length === assets.length && new Set(release.assets.map(asset => asset.name)).size === assets.length, "Published release must have exactly four distinct assets");
+  requireValue(release.tag_name === tag && release.draft === false && release.prerelease === true, "Release must be the published SDK prerelease; refusing incomplete or different release state");
+  requireValue(Array.isArray(release.assets) && release.assets.length === assets.length && new Set(release.assets.map(asset => asset.name)).size === assets.length, "Release assets differ: expected exactly four distinct assets; refusing resume or replacement");
   const verified = [];
   for (const name of assets) {
     const metadata = release.assets.find(asset => asset.name === name);
     const bytes = files.get(name)!;
     requireValue(metadata && Number.isSafeInteger(metadata.id) && metadata.id > 0 && metadata.state === "uploaded" && metadata.size === bytes.length && metadata.digest === `sha256:${hash(bytes)}`, `Provider asset size/digest mismatch: ${name}`);
-    const downloaded = execFileSync("gh", ["api", `repos/${repository}/releases/assets/${metadata.id}`, "--method", "GET", "-H", "Accept: application/octet-stream"], { cwd: root, maxBuffer: Math.max(bytes.length + 1, 1024 * 1024) });
+    const downloaded = releaseStep("gh", ["api", `repos/${repository}/releases/assets/${metadata.id}`, "--method", "GET", "-H", "Accept: application/octet-stream"], { cwd: root, maxBuffer: Math.max(bytes.length + 1, 1024 * 1024) });
     requireValue(downloaded.equals(bytes), `Downloaded asset-ID bytes differ: ${name}`);
     verified.push({ id: metadata.id, name, bytes: metadata.size, digest: metadata.digest });
   }
   console.log("\n" + JSON.stringify({ repository, private: false, tag, sourceCommit: source,
     releaseId: release.id, url: release.html_url, prerelease: true, assets: verified }, null, 2));
+  if (mode === "--dry-run") console.log("Existing release dry-run verification passed; no publication.");
 }

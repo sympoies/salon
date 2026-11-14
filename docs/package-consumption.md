@@ -426,8 +426,8 @@ The publisher runs the same command without `--dry-run` only under its existing 
 authorization.
 
 The script checks public repository identity and visibility, clean exact source already merged into
-main, fixed versions and an unused tag. It runs the existing `pack:core`, verifies manifest
-source/cleanliness/versions plus actual archive sizes, hashes and compiled-only payloads, then
+main and fixed versions. A new publication requires an unused tag. It runs the existing `pack:core`,
+verifies manifest source/cleanliness/versions plus actual archive sizes, hashes and compiled-only payloads, then
 repeats the public-scope check before the native publisher.
 
 Main may advance without changing the exact approved release source. Dry-run performs the same local
@@ -439,8 +439,16 @@ After publication the entrypoint checks actual tag resolution, prerelease state,
 uploaded asset IDs and provider sizes/digests, then downloads each asset by ID and compares its
 bytes, including the manifest itself. Its final stdout records those actual identities.
 
-A failed readback does not roll back or replace a release; stop and hand the observed state to the
-release owner.
+If a step fails, its error names the command and arguments, exit status or signal, and the last
+4 KiB of captured stderr. For a transient provider error, rerun with the same approved source and
+notes. An existing tag must resolve to that exact source. After rebuilding and checking the local
+artifacts, the script announces that it is resuming verification and repeats all provider digest
+and asset-ID byte checks;
+it does not create another release, upload assets or replace anything. Dry-run also verifies an
+existing release without publication.
+
+A different source, different or missing assets, or an incomplete release state refuses the rerun.
+A failed readback does not roll back or replace a release; hand that state to the release owner.
 
 Public acquisition uses the exact versioned release assets without a reader App or acquisition
 token. Publishing still uses an authorized credential with release write access; making assets
