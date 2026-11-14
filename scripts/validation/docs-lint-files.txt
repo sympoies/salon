@@ -12,3 +12,4 @@ packages/edge/README.md
 packages/ui/README.md
 docs/reply-queue-design.md
 docs/device-sign-in.md
+docs/device-sign-in-guide.md

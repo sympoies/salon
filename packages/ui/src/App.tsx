@@ -3,6 +3,8 @@ import { resolveDashboardShortcutAction } from "./dashboardShortcuts.ts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { getAuthStatus, listMachineNames, type AuthStatus, type ConnectFailure } from "./api.ts";
+import { capturePairingLanding, landingPairingCode } from "./pairingLanding.ts";
+import { PairingRecipient } from "./PairingRecipient.tsx";
 import { Login } from "./Login.tsx";
 import { Settings } from "./Settings.tsx";
 import { loadPhoneSessionOpen, savePhoneSessionOpen } from "./phoneSessionOpen.ts";
@@ -63,6 +65,16 @@ export default function App() {
   const initialAuthCheck = useRef(true);
   const startupRecoveryRendered = useRef(false);
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [landingPairing, setLandingPairing] = useState(landingPairingCode);
+  useEffect(() => {
+    const onHashChange = () => {
+      if (!window.location.hash.startsWith("#pair=")) return;
+      capturePairingLanding(window);
+      setLandingPairing(landingPairingCode());
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
   const [openAccess, setOpenAccess] = useState(false);
   const [startupFailure, setStartupFailure] = useState<AuthStatus["startupFailure"]>();
   const [startupTimingVisible, setStartupTimingVisible] = useState(false);
@@ -319,6 +331,8 @@ export default function App() {
   if (authed === null) {
     return <div className="boot">…</div>;
   }
+  if (landingPairing !== undefined && !openAccess) return <PairingRecipient key={landingPairing}
+    onSignedIn={() => { setLandingPairing(undefined); onSignedIn(); }} onCancel={() => setLandingPairing(undefined)} />;
   // On device, connection settings (server URL + token) stand in for browser login.
   if (!authed && isTauri()) {
     return (

@@ -1,3 +1,4 @@
+import { PairingRecipient } from "./PairingRecipient.tsx";
 import { useState } from "react";
 import { login } from "./api.ts";
 import { AsyncButton } from "./AsyncButton.tsx";
@@ -8,6 +9,7 @@ export interface LoginProps {
 }
 
 export function Login({ onSignedIn }: LoginProps) {
+  const [pairing, setPairing] = useState(false);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +29,8 @@ export function Login({ onSignedIn }: LoginProps) {
       setError("Invalid token.");
     }
   };
+
+  if (pairing) return <PairingRecipient onSignedIn={onSignedIn} onCancel={() => setPairing(false)} />;
 
   return (
     <div className="login">
@@ -50,6 +54,7 @@ export function Login({ onSignedIn }: LoginProps) {
           autoFocus
         />
         {error ? <p className="err">{error}</p> : null}
+        <button type="button" className="btn ghost" onClick={() => setPairing(true)}>Use a pairing code</button>
         <AsyncButton data-testid="console-sign-in" className="btn primary" type="submit" pending={busy} disabled={!token}>
           Sign in
         </AsyncButton>

@@ -212,6 +212,64 @@ test("anonymous address bucket capacity reserves authenticated owner operations"
   } finally { await f.close(); }
 });
 
+for (const stage of ["claim", "exchange"]) test(`anonymous native pairing ${stage} accepts only the app shell without ambient authorization`, async () => {
+  const f = await fixture();
+  const refusedOrigins = ["null", "custom://tauri.localhost", "http://localhost",
+    "https://sub.tauri.localhost", "https://untrustedtauri.localhost", "https://tauri.localhost.example.test",
+    "https://tauri.localhost.", "https://foreign.example.test"];
+  try {
+    for (const origin of ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"]) {
+      const pair = await f.create();
+      const verifier = randomBytes(32).toString("base64url");
+      const challenge = createHash("sha256").update(verifier).digest("hex");
+      const body = { code: pair.code, challenge, name: "Native tablet", delivery: "native" };
+      if (stage === "claim") {
+        for (const headers of [...refusedOrigins.map(origin => ({ origin })), { origin, cookie: f.cookie },
+          { origin, authorization: "Bearer primary-fixture" }, { origin, "sec-websocket-protocol": "ac-token.primary-fixture" },
+          { origin, "sec-websocket-protocol": "" }]) {
+          assert.equal((await f.call("pairings/claim", body, headers)).status, 403);
+        }
+        assert.equal((await f.call("pairings/claim", { ...body, delivery: "browser" }, { origin })).status, 403);
+      }
+      const claim = await f.call("pairings/claim", body, stage === "claim" ? { origin } : {});
+      assert.equal(claim.status, 200, "the native transport may claim without a browser cookie");
+      const exchange = { ...body, verifier, principal: claim.body.data.principal, origin: f.base, confirmed: true };
+      assert.equal((await f.approve(pair, exchange)).status, 200);
+      if (stage === "exchange") {
+        for (const headers of [...refusedOrigins.map(origin => ({ origin })), { origin, cookie: f.cookie },
+          { origin, authorization: "Bearer primary-fixture" }, { origin, "sec-websocket-protocol": "ac-token.primary-fixture" },
+          { origin, "sec-websocket-protocol": "" }]) {
+          assert.equal((await f.call("pairings/exchange", exchange, headers)).status, 403);
+        }
+        assert.equal((await f.call("pairings/exchange", { ...exchange, delivery: "browser" }, { origin })).status, 403);
+      }
+      const issued = await f.call("pairings/exchange", exchange, { origin });
+      assert.equal(issued.status, 200, "refused requests leave the pairing available to its recipient");
+      assert.equal(issued.response.headers.has("set-cookie"), false, "native exchange cannot install an ambient cookie");
+      assert.equal(typeof issued.body.data.credential, "string");
+      assert.equal((await f.call("status", undefined, { authorization: `Bearer ${issued.body.data.credential}`, origin })).body.authenticated, true);
+    }
+  } finally { await f.close(); }
+});
+
+test("native anonymous pairing does not exempt cookie login or main-only operations", async () => {
+  const f = await fixture();
+  try {
+    const origin = "http://tauri.localhost";
+    const auth = { cookie: f.cookie, origin };
+    const pair = await f.create();
+    const bound = await f.claim(pair);
+    const { id } = await f.issue();
+    for (const [route, body, method] of [
+      ["login", { token: "primary-fixture" }, "POST"], ["logout", {}, "POST"],
+      ["pairings", {}, "POST"], [`pairings/${pair.id}/approve`, { code: pair.code, challenge: bound.challenge }, "POST"],
+      [`pairings/${pair.id}`, undefined, "DELETE"], [`devices/${id}/renew`, {}, "POST"],
+      [`devices/${id}`, undefined, "DELETE"],
+    ] as const) assert.equal((await f.call(route, body, auth, method)).status, 403, `${route} retains its cookie Origin gate`);
+    assert.equal((await f.approve(pair, bound)).status, 200, "refused cross-origin operations do not cancel a pairing");
+  } finally { await f.close(); }
+});
+
 for (const target of ["layout", "extension"]) test(`revoking an authenticated slow-body request prevents ${target} side effects`, async () => {
   let effects = 0;
   const f = await fixture(true, undefined, { extensions: [{ id: "fixture", routes: [{ id: "write",

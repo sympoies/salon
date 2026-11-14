@@ -33,7 +33,7 @@ function sameOriginHeader(req: IncomingMessage): boolean {
   }
 }
 
-function tauriAppShellOriginHeader(req: IncomingMessage): boolean {
+export function tauriAppShellOriginHeader(req: IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) {
     return false;
