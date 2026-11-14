@@ -1,10 +1,11 @@
 import { strict as assert } from "node:assert";
-import { readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
-import { launchPage } from "../../../scripts/readme-previews/chrome.ts";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
 const explanation = "Review folder trust for /work/example before retrying.";
@@ -45,43 +46,88 @@ test("New session preserves typed directories and shows startup refusals at phon
   assert.ok(output && "output" in output);
   const code = output.output.filter(item => item.type === "chunk").map(item => item.code).join("\n");
   const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
-  const page = await launchPage();
+  const temp = mkdtempSync(join(tmpdir(), "salon-create-workdir-"));
+  const browser = spawn(process.env.CHROME_BIN ?? "google-chrome", [
+    "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--remote-debugging-port=0", `--user-data-dir=${temp}`, "about:blank",
+  ], { stdio: ["ignore", "ignore", "pipe"] });
+  let socket: WebSocket | undefined;
   const results: Array<{ width: number; cwd?: string; error: string; relativeError: string; relativeDisabled: boolean; count: number; overflow: number }> = [];
-  const wait = (condition: string) => page.evaluate(`new Promise((resolve,reject)=>{
-    let attempts=300; const check=()=>{if(${condition})resolve(true);else if(--attempts)setTimeout(check,10);else reject(new Error("fixture timed out"));}; check();
-  })`);
-  const typeDirectory = (value: string) => page.evaluate(`(()=>{
-    const input=document.querySelector('input[role="combobox"]');
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(value)});
-    input.dispatchEvent(new Event("input",{bubbles:true}));
-  })()`);
   try {
+    const endpoint = await new Promise<string>((resolve, reject) => {
+      let stderr = "";
+      const timeout = setTimeout(() => reject(new Error("Chrome debugging endpoint timed out")), 10_000);
+      browser.stderr.on("data", data => {
+        stderr += data.toString();
+        const match = stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);
+        if (match) { clearTimeout(timeout); resolve(match[1]!); }
+      });
+      browser.once("error", error => { clearTimeout(timeout); reject(error); });
+      browser.once("exit", () => { clearTimeout(timeout); reject(new Error("Chrome exited before debugging was ready")); });
+    });
+    const pages = await (await fetch(new URL("/json/list", endpoint.replace("ws:", "http:")))).json() as Array<{type:string;webSocketDebuggerUrl:string}>;
+    const page = pages.find(item => item.type === "page"); assert.ok(page);
+    socket = new WebSocket(page.webSocketDebuggerUrl);
+    await new Promise<void>((resolve, reject) => { socket!.addEventListener("open", () => resolve(), { once:true }); socket!.addEventListener("error", reject, { once:true }); });
+    let id = 0;
+    const pending = new Map<number, {resolve:(result:any)=>void;reject:(error:Error)=>void}>();
+    socket.addEventListener("message", event => {
+      const reply = JSON.parse(String(event.data)), waiter = pending.get(reply.id);
+      if (waiter) { pending.delete(reply.id); reply.error ? waiter.reject(new Error(JSON.stringify(reply.error))) : waiter.resolve(reply.result); }
+    });
+    const send = (method:string, params:object = {}) => new Promise<any>((resolve,reject) => {
+      const request = ++id; pending.set(request,{resolve,reject}); socket!.send(JSON.stringify({id:request,method,params}));
+    });
+    const evaluate = async (expression:string) => {
+      const result = await send("Runtime.evaluate",{expression,returnByValue:true,awaitPromise:true});
+      assert.equal(result.exceptionDetails,undefined,"browser fixture executes successfully");
+      return result.result.value;
+    };
+    const wait = (condition: string) => evaluate(`new Promise((resolve,reject)=>{
+      let attempts=300; const check=()=>{if(${condition})resolve(true);else if(--attempts)setTimeout(check,10);else reject(new Error("fixture timed out"));}; check();
+    })`);
+    const typeDirectory = (value: string) => evaluate(`(()=>{
+      const input=document.querySelector('input[role="combobox"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(value)});
+      input.dispatchEvent(new Event("input",{bubbles:true}));
+    })()`);
     for (const width of [390, 1280]) {
-      await page.setViewport(width, 900, 1);
-      await page.navigate(`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div>`)}`);
-      await page.evaluate(code);
+      await send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
+      await send("Page.navigate", { url: `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div>`)}` });
+      await wait(`document.querySelector('#root') && !document.querySelector('input[role="combobox"]')`);
+      await evaluate(code);
       await wait(`document.querySelector('input[role="combobox"]')`);
       await typeDirectory("/work/example");
       await wait(`document.querySelector('input[role="combobox"]').value === "/work/example"`);
-      await page.evaluate(`document.querySelector('.modal-actions .btn:not(.ghost)').click()`);
+      await evaluate(`document.querySelector('.modal-actions .btn:not(.ghost)').click()`);
       await wait(`document.querySelector('.err')`);
-      await page.evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+      await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
       const directory = process.env.CREATE_DIALOG_CAPTURE_DIR;
-      if (directory) writeFileSync(join(directory, `create-workdir-${width}.png`), await page.screenshot());
-      const submitted = await page.evaluate<{cwd?: string; error: string; overflow: number}>(`({
+      if (directory) {
+        const { data } = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+        writeFileSync(join(directory, `create-workdir-${width}.png`), Buffer.from(data, "base64"));
+      }
+      const submitted = await evaluate(`({
         cwd:window.creates[0]?.cwd,error:document.querySelector('.err').textContent,
         overflow:document.documentElement.scrollWidth-innerWidth
       })`);
       await typeDirectory("work/example");
-      await page.evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
-      const relative = await page.evaluate<{relativeError:string; relativeDisabled:boolean; count:number}>(`({
+      await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+      const relative = await evaluate(`({
         relativeError:document.querySelector('[role="alert"]')?.textContent??"",
         relativeDisabled:document.querySelector('.modal-actions .btn:not(.ghost)').disabled,
         count:window.creates.length
       })`);
       results.push({width,...submitted,...relative});
     }
-  } finally { await page.close(); }
+  } finally {
+    socket?.close();
+    if (browser.exitCode === null && browser.signalCode === null) {
+      const exited = new Promise<void>(resolve => browser.once("exit", () => resolve()));
+      browser.kill();
+      await exited;
+    }
+    rmSync(temp, { recursive: true, force: true });
+  }
   for (const result of results) {
     await t.test(`${result.width}px dialog`, () => {
       assert.equal(result.cwd, "/work/example");
