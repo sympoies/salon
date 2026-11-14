@@ -75,8 +75,13 @@ export class DeviceCredentialStore {
         device TEXT NOT NULL, occurred_at INTEGER NOT NULL, previous_expiry INTEGER NOT NULL, expires_at INTEGER NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS device_pairing_limits (
-        bucket TEXT PRIMARY KEY, started INTEGER NOT NULL, attempts INTEGER NOT NULL
+        bucket TEXT PRIMARY KEY, started INTEGER NOT NULL, attempts INTEGER NOT NULL,
+        category TEXT NOT NULL DEFAULT 'address'
       ) STRICT;`);
+    const columns = this.#db.prepare("PRAGMA table_info(device_pairing_limits)").all() as { name: string }[];
+    if (!columns.some(column => column.name === "category")) {
+      this.#db.exec("ALTER TABLE device_pairing_limits ADD COLUMN category TEXT NOT NULL DEFAULT 'address'; DELETE FROM device_pairing_limits;");
+    }
   }
   close(): void { this.#db.close(); }
 
@@ -84,19 +89,20 @@ export class DeviceCredentialStore {
     const now = this.now();
     this.#db.prepare("DELETE FROM device_pairing_limits WHERE started <= ?").run(now - 600_000);
     const bucket = credentialHash(key);
-    const counted = this.#db.prepare(`INSERT INTO device_pairing_limits
-      SELECT ?, ?, 1 WHERE EXISTS(SELECT 1 FROM device_pairing_limits WHERE bucket=?)
-        OR (SELECT COUNT(*) FROM device_pairing_limits)<10000
+    const category = key.startsWith("address:") ? "address" : "credential";
+    const counted = this.#db.prepare(`INSERT INTO device_pairing_limits(bucket,started,attempts,category)
+      SELECT ?, ?, 1, ? WHERE ? != 'address' OR EXISTS(SELECT 1 FROM device_pairing_limits WHERE bucket=?)
+        OR (SELECT COUNT(*) FROM device_pairing_limits WHERE category='address')<10000
       ON CONFLICT(bucket) DO UPDATE SET
         started=CASE WHEN device_pairing_limits.started<=? THEN excluded.started ELSE device_pairing_limits.started END,
         attempts=CASE WHEN device_pairing_limits.started<=? THEN 1 ELSE device_pairing_limits.attempts+1 END
-      RETURNING attempts`).get(bucket, now, bucket, now - window, now - window) as { attempts: number } | undefined;
+      RETURNING attempts`).get(bucket, now, category, category, bucket, now - window, now - window) as { attempts: number } | undefined;
     if (!counted) throw new PairingError(429, "Too many pairing requests.");
     const attempts = counted.attempts;
     if (attempts > max) throw new PairingError(429, "Too many pairing requests.");
   }
   ownerLimit(owner: string, anonymous = false): void {
-    try { this.limit(`owner:${owner}`, 120); }
+    try { this.limit(`${anonymous ? "claimant" : "owner"}:${owner}`, 120); }
     catch (error) { if (anonymous && error instanceof PairingError) throw new PairingError(); throw error; }
   }
   create(principal: string, main: string, source: string | undefined, ttl: number) {
@@ -197,6 +203,11 @@ export class DeviceCredentialStore {
       || !equalHash(row.generation, generation(credential, main))) return undefined;
     if (touch) this.#db.prepare("UPDATE device_credentials SET last_used=? WHERE id=?").run(this.now(), row.id);
     return { id: row.id, credential, principal: row.principal };
+  }
+  /** Outbox generation checks separately bind the current main token and machine. */
+  activeDevice(id: string, principal: string): boolean {
+    return Boolean(this.mainFor(principal) && this.#db.prepare(`SELECT 1 FROM device_credentials
+      WHERE id=? AND principal=? AND revoked IS NULL AND expires_at>?`).get(id, principal, this.now()));
   }
   list(principal: string, current?: string) {
     return (this.#db.prepare("SELECT * FROM device_credentials WHERE principal=? ORDER BY created DESC").all(principal) as unknown as DeviceRow[])

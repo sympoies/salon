@@ -344,6 +344,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     : null;
   const machinePreferences = config.accessDbPath ? new MachinePreferencesStore(config.accessDbPath) : null;
   const outboxStore = config.accessDbPath && config.accessDbPath !== ":memory:" ? new OutboxStore(config.accessDbPath) : null;
+  const revokeDevice = (id: string, principal: string): void => {
+    deviceCredentials.revoke(id, principal);
+    outboxStore?.refuseDevice(id);
+  };
   const historyIntentResolver = (principal: PrincipalConfig, machine: string) => (binding: PromptRequestBinding) =>
     outboxStore?.intentForRequest({ principalId: principal.id, machine, sessionId: binding.session_id,
       incarnation: binding.session_incarnation }, binding.request_id);
@@ -475,6 +479,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   };
   const outboxDispatcher = outboxStore ? new SharedOutboxDispatcher({
     store: outboxStore, access: outboxAccess, intervalMs: options.outboxPollIntervalMs,
+    deviceActive: (id, principal) => deviceCredentials.activeDevice(id, principal),
   }) : null;
   const protectOutboxLifecycle = async (machine: MachineConfig, sessionId: string, incarnation: string | null,
     operation: "archive" | "delete" | "maintenance-delete", action: () => Promise<DaemonResult>) => {
@@ -759,6 +764,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         sourceSession: principal && !explicitToken(req) && !devicePrincipals.has(principal) && cookie
           ? credentialHash(cookie) : undefined,
         live: () => !principal || (credentialStillActive(principal) && principalForRequest(req)?.id === principal.id), csrfExempt: () => csrfExempt(req),
+        revoke: revokeDevice,
       })) return;
     }
 
@@ -787,7 +793,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       const id = parseCookies(req.headers.cookie).get(SESSION_COOKIE);
       if (id) {
         const device = deviceCredentials.authenticate(id, false);
-        if (device) deviceCredentials.revoke(device.id, device.principal);
+        if (device) revokeDevice(device.id, device.principal);
         store.delete(id);
       }
       res.setHeader("set-cookie", sessionCookie("", 0, config.secureCookie));
@@ -1086,7 +1092,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             const allowed = action.operation === "retry_refused" ? outboxAccess(target, "dispatch") : null;
             if (action.operation === "retry_refused" && !allowed) throw new OutboxError("outbox-authorization-changed", 403);
             const item = outboxStore.actOnRefused(target, intent, action,
-              allowed ? outboxCredentialGeneration(allowed.principal, allowed.machine) : undefined);
+              allowed ? outboxCredentialGeneration(allowed.principal, allowed.machine) : undefined,
+              devicePrincipals.get(_principal)?.id ?? null);
             if (action.operation === "retry_refused") void outboxDispatcher?.tick();
             sendJson(res, 200, { ok: true, data: { item } }); return;
           }
@@ -1094,7 +1101,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             assertRequestAuthorized();
             const allowed = outboxAccess(target, "dispatch");
             if (!allowed) throw new OutboxError("outbox-authorization-changed", 403);
-            const result = outboxStore.admit(target, intent, admission.text, outboxCredentialGeneration(allowed.principal, allowed.machine));
+            const result = outboxStore.admit(target, intent, admission.text, outboxCredentialGeneration(allowed.principal, allowed.machine),
+              devicePrincipals.get(_principal)?.id ?? null);
             void outboxDispatcher?.tick();
             sendJson(res, result.created ? 201 : 200, { ok: true, data: { item: result.item } }); return;
           }

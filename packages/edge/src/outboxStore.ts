@@ -21,6 +21,7 @@ export interface OutboxAttempt {
   readonly target: OutboxTarget;
   readonly item: SharedOutboxItem;
   readonly credentialGeneration: string;
+  readonly deviceId: string | null;
 }
 interface ItemRow {
   sequence: number;
@@ -28,6 +29,7 @@ interface ItemRow {
   id: string;
   admission_hash: string;
   credential_generation: string;
+  device_id: string | null;
   next_attempt_at: number;
   native_handoff: number;
   value: string;
@@ -62,7 +64,7 @@ export class OutboxStore {
       CREATE TABLE IF NOT EXISTS outbox_items (
         sequence INTEGER PRIMARY KEY, scope TEXT NOT NULL, id TEXT NOT NULL,
         admission_hash TEXT NOT NULL, credential_generation TEXT NOT NULL,
-        next_attempt_at INTEGER NOT NULL, value TEXT NOT NULL, UNIQUE(scope,id)
+        next_attempt_at INTEGER NOT NULL, value TEXT NOT NULL, device_id TEXT, UNIQUE(scope,id)
       ) STRICT;
       CREATE INDEX IF NOT EXISTS outbox_items_scope ON outbox_items(scope,sequence);
       CREATE TABLE IF NOT EXISTS outbox_attempts (
@@ -83,6 +85,9 @@ export class OutboxStore {
       const columns = this.#db.prepare("PRAGMA table_info(outbox_items)").all() as { name: string }[];
       if (!columns.some(column => column.name === "native_handoff")) {
         this.#db.exec("ALTER TABLE outbox_items ADD COLUMN native_handoff INTEGER NOT NULL DEFAULT 0");
+      }
+      if (!columns.some(column => column.name === "device_id")) {
+        this.#db.exec("ALTER TABLE outbox_items ADD COLUMN device_id TEXT");
       }
       const lifecycle = this.#db.prepare("PRAGMA table_info(outbox_lifecycle)").all() as { name: string }[];
       if (!lifecycle.some(column => column.name === "incarnation")) {
@@ -168,7 +173,7 @@ export class OutboxStore {
       .get(key(target), id) as { value: string } | undefined;
     return cancelled ? JSON.parse(cancelled.value) as SharedOutboxItem : undefined;
   }
-  admit(target: OutboxTarget, id: string, text: string, credentialGeneration: string): { created: boolean; item: SharedOutboxItem } {
+  admit(target: OutboxTarget, id: string, text: string, credentialGeneration: string, deviceId: string | null = null): { created: boolean; item: SharedOutboxItem } {
     return this.#transaction(() => {
       const existing = this.#row(target, id);
       if (existing) {
@@ -198,12 +203,12 @@ export class OutboxStore {
       const now = Date.now();
       const value: SharedOutboxItem = { id, text, session_incarnation: target.incarnation, state: "queued", revision: 1,
         created_at: now, updated_at: now, request_id: null, receipt: null, edit_hold: null, error_code: null };
-      this.#db.prepare("INSERT INTO outbox_items(scope,id,admission_hash,credential_generation,next_attempt_at,value,native_handoff) VALUES(?,?,?,?,?,?,1)")
-        .run(key(target), id, fingerprint(text), credentialGeneration, 0, JSON.stringify(value));
+      this.#db.prepare("INSERT INTO outbox_items(scope,id,admission_hash,credential_generation,next_attempt_at,value,native_handoff,device_id) VALUES(?,?,?,?,?,?,1,?)")
+        .run(key(target), id, fingerprint(text), credentialGeneration, 0, JSON.stringify(value), deviceId);
       this.#bump(target); return { created: true, item: value };
     });
   }
-  actOnRefused(target: OutboxTarget, id: string, action: RefusedOutboxAction, credentialGeneration?: string): SharedOutboxItem {
+  actOnRefused(target: OutboxTarget, id: string, action: RefusedOutboxAction, credentialGeneration?: string, deviceId: string | null = null): SharedOutboxItem {
     return this.#transaction(() => {
       const current = this.get(target, id);
       if (!current) throw new OutboxError("outbox-intent-not-found", 404);
@@ -215,8 +220,8 @@ export class OutboxStore {
       }
       if (!credentialGeneration) throw new OutboxError("outbox-authorization-changed", 403);
       if (this.#lifecycleBlocked(target)) throw new OutboxError("outbox-lifecycle-pending", 409);
-      this.#db.prepare("UPDATE outbox_items SET credential_generation=?,native_handoff=1 WHERE scope=? AND id=?")
-        .run(credentialGeneration, key(target), id);
+      this.#db.prepare("UPDATE outbox_items SET credential_generation=?,device_id=?,native_handoff=1 WHERE scope=? AND id=?")
+        .run(credentialGeneration, deviceId, key(target), id);
       // Prior attempt receipts remain in outbox_attempts. Claim allocates a new
       // request ID; replaying this action with its old revision cannot resend.
       return this.#write(target, { ...current, state: "queued", request_id: null, receipt: null, error_code: null, edit_hold: null });
@@ -231,7 +236,7 @@ export class OutboxStore {
     if (!row) return undefined;
     const value = item(row);
     if (this.#lifecycleBlocked(target)) return undefined;
-    return { target, item: value, credentialGeneration: row.credential_generation };
+    return { target, item: value, credentialGeneration: row.credential_generation, deviceId: row.device_id };
   }
   claim(candidate: OutboxAttempt, now = Date.now()): OutboxAttempt | undefined {
     return this.#transaction(() => {
@@ -264,6 +269,18 @@ export class OutboxStore {
       this.#write(attempt.target, { ...current, state: "refused", error_code: code, receipt: null, edit_hold: null });
     });
   }
+  /** Revoke only work that has not crossed the durable dispatch boundary. */
+  refuseDevice(id: string): void {
+    this.#transaction(() => {
+      const rows = this.#db.prepare("SELECT * FROM outbox_items WHERE device_id=? AND json_extract(value,'$.state')='queued'")
+        .all(id) as unknown as ItemRow[];
+      for (const row of rows) {
+        const targetRow = this.#db.prepare("SELECT target FROM outbox_targets WHERE scope=?").get(row.scope) as { target: string };
+        const target = JSON.parse(targetRow.target) as OutboxTarget;
+        this.#write(target, { ...item(row), state: "refused", error_code: "outbox-authorization-changed", receipt: null, edit_hold: null });
+      }
+    });
+  }
   /** Retire obsolete intentions without retracting a confirmed provider outcome. */
   cancelUnconfirmed(target: OutboxTarget): void {
     this.#transaction(() => {
@@ -276,7 +293,7 @@ export class OutboxStore {
   }
   uncertain(target: OutboxTarget): OutboxAttempt[] {
     return this.#rows(target).filter(row => ["sending", "unknown"].includes(item(row).state))
-      .map(row => ({ target, item: item(row), credentialGeneration: row.credential_generation }));
+      .map(row => ({ target, item: item(row), credentialGeneration: row.credential_generation, deviceId: row.device_id }));
   }
   targets(): OutboxTarget[] {
     return (this.#db.prepare("SELECT target FROM outbox_targets ORDER BY scope").all() as { target: string }[])

@@ -66,8 +66,14 @@ key nor an offline verifier for the main token is stored. Recompute at approval/
 Conditional transactions enforce single use; retained state survives edge replacement.
 
 Limit pairing operations to 60/minute per socket address and 120/minute per known owner, creation to 5/10 minutes
-per owner, and active requests to 3 per owner. Count failures and polling. Bound bodies to 2 KiB, prune counters
-and expire requests, and refuse new address buckets at a fixed capacity.
+per owner, and active requests to 3 per owner. Device-authenticated metadata operations use a separate
+120/minute budget per device; anonymous known-code attempts use a separate 120/minute owner budget.
+Neither can consume the main credential's management budget or prevent selective revocation. Count failures
+and polling.
+
+Bound bodies to 2 KiB, prune counters and expire requests. Cap address buckets at 10,000 without
+using that capacity for authenticated owner, device or creation counters. Upgrading the counter schema resets
+only transient rate counters; pairing requests and credentials are preserved.
 
 Do not trust forwarded client addresses;
 reverse-proxy clients share that proxy's address budget. Address throttling returns a uniform 429 independent
@@ -118,6 +124,12 @@ curl --config "$SALON_AUTH_CONFIG" "$SALON_ORIGIN/api/auth/devices"
 invalidates device credentials and pending pairings. Carry device identity through cookies, attach tickets,
 downloads, SSE and WebSockets; reject stale tickets/writes and stop streamed output after revocation, closing
 idle streams within the existing 250 ms interval. Existing tester-only guards must be extended for devices.
+
+Durable outbox intentions retain their issuing public device identifier alongside the existing main/machine
+generation binding, never the device secret. Refuse pending device work immediately on revocation and recheck
+device activity before dispatch, including after daemon observations and edge replacement. Expiry and
+revocation cannot transfer queued work to the main credential; other active devices and main intentions
+continue normally. Already dispatched or uncertain provider actions cannot be retracted.
 
 Recheck the captured credential immediately before protected writes after asynchronous work, including local
 settings, controller calls and ownership updates. Rejecting a response after a write cannot undo that write.

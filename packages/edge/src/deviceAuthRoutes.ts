@@ -16,6 +16,7 @@ interface Context {
   readonly sourceSession: string | undefined;
   readonly live: () => boolean;
   readonly csrfExempt: () => boolean;
+  readonly revoke: (id: string, principal: string) => void;
 }
 
 export function deviceCookie(credential: string, secure: boolean): string {
@@ -54,7 +55,10 @@ export async function handleDeviceAuth(req: IncomingMessage, res: ServerResponse
     if (pairing) ctx.store.limit(`address:${req.socket.remoteAddress ?? "unknown"}`, 60);
     const scheme = pairing ? pairingScheme(req, ctx.config) : undefined;
     if (!anonymous && !ctx.principal) throw new PairingError(401, "Unauthorized.");
-    if (ctx.principal && !anonymous) ctx.store.ownerLimit(ctx.principal.id);
+    if (ctx.principal && !anonymous) {
+      if (ctx.device) ctx.store.limit(`device:${ctx.device.id}`, 120);
+      else ctx.store.ownerLimit(ctx.principal.id);
+    }
     if (method !== "GET") {
       if (anonymous ? !sameOrigin(req, res) : !ctx.csrfExempt()) {
         if (!res.writableEnded) forbidCrossOrigin(res);
@@ -111,7 +115,7 @@ export async function handleDeviceAuth(req: IncomingMessage, res: ServerResponse
     }
     const device = /^\/api\/auth\/devices\/([a-f0-9-]{36})(\/renew)?$/.exec(path);
     if (device && method === "DELETE" && !device[2]) {
-      ctx.store.revoke(device[1]!, owner); sendJson(res, 200, { ok: true }); return true;
+      ctx.revoke(device[1]!, owner); sendJson(res, 200, { ok: true }); return true;
     }
     if (device && method === "POST" && device[2]) {
       const data = ctx.store.renew(device[1]!, owner, ctx.sourceSession ? "main-session" : "main-token");

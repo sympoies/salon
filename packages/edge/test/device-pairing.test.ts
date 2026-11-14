@@ -9,6 +9,7 @@ import { createServer, request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { AccessStore } from "../src/accessStore.ts";
 import { loadConfig } from "../src/config.ts";
+import { DeviceCredentialStore, credentialHash } from "../src/deviceCredentials.ts";
 import { createEdgeServer, type EdgeServerOptions } from "../src/server.ts";
 import { cookieFrom, listenOnLoopback, loginCookie } from "./support.ts";
 
@@ -78,6 +79,138 @@ async function fixture(multiUser = false, daemon?: string, options: EdgeServerOp
     async close() { edge.closeAllConnections(); await new Promise<void>(resolve => edge.close(() => resolve())); rmSync(dir, { recursive: true }); },
   };
 }
+
+for (const fate of ["revoked", "expired", "revoked-during-observation"]) test(`the ${fate} device cannot dispatch its persisted queued outbox intentions`, async () => {
+  let running = false;
+  let pauseObservation = false;
+  let observed = false;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const posts: string[] = [];
+  const daemon = createServer(async (req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/sessions") {
+      if (pauseObservation) { pauseObservation = false; observed = true; await pending; }
+      return void res.end(JSON.stringify({ ok: true, data: { sessions: [{
+      id: "fixture-session", status: running ? "running" : "stopped", agent: "codex", session_incarnation: "fixture-inc",
+      provider_resume: { provider: "codex", session_id: "provider-fixture" },
+      }] } }));
+    }
+    if (req.method === "POST" && req.url === "/sessions/fixture-session/prompt/v2") {
+      let raw = ""; for await (const chunk of req) raw += String(chunk);
+      const body = JSON.parse(raw); posts.push(body.text);
+      return void res.end(JSON.stringify({ ok: true, data: { submitted: true, session_incarnation: "fixture-inc", receipt: {
+        request_id: body.request_id, session_id: "fixture-session", session_incarnation: "fixture-inc", outcome: "submitted", code: null,
+      } } }));
+    }
+    res.writeHead(404); res.end("{}");
+  });
+  const { base } = await listenOnLoopback(daemon);
+  const f = await fixture(true, base, { outboxPollIntervalMs: 20 });
+  const main = { authorization: "Bearer primary-fixture" };
+  const path = "/api/sessions/fixture/fixture-session/outbox";
+  const admit = async (id: string, text: string, token: string) => {
+    const response = await fetch(`${f.base}${path}/${id}`, { method: "PUT", headers: {
+      authorization: `Bearer ${token}`, "content-type": "application/json", "x-console-expected-principal": "primary",
+    }, body: JSON.stringify({ text, expected_session_incarnation: "fixture-inc" }) });
+    assert.equal(response.status, 201);
+  };
+  try {
+    const first = await f.issue(); const second = await f.issue();
+    await admit("retired-device", "Must not dispatch", first.token);
+    await admit("active-device", "Active device intention", second.token);
+    await admit("main-intention", "Main intention", "primary-fixture");
+    assert.deepEqual(posts, [], "stopped sessions keep all three intentions pending");
+    if (fate === "revoked") {
+      assert.equal((await f.call(`devices/${first.id}`, undefined, main, "DELETE")).status, 200);
+      const response = await fetch(`${f.base}${path}?expected_session_incarnation=fixture-inc`, { headers: {
+        ...main, "x-console-expected-principal": "primary",
+      } });
+      assert.equal((await response.json() as Data).data.items[0].state, "refused", "revocation immediately retires pending work");
+    } else {
+      if (fate === "revoked-during-observation") {
+        running = true; pauseObservation = true;
+        const deadline = Date.now() + 2000;
+        while (!observed) {
+          assert.ok(Date.now() < deadline, "dispatcher must start the controlled daemon observation");
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+      }
+      const db = new DatabaseSync(f.path);
+      db.prepare(fate === "expired" ? "UPDATE device_credentials SET expires_at=0 WHERE id=?"
+        : "UPDATE device_credentials SET revoked=0 WHERE id=?").run(first.id); db.close();
+    }
+    if (fate !== "revoked-during-observation") await f.restart();
+    running = true; release();
+    const deadline = Date.now() + 3000;
+    while (!posts.includes("Main intention")) {
+      assert.ok(Date.now() < deadline, "the dispatcher must progress to the healthy main intention");
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(posts, ["Active device intention", "Main intention"], "pending work cannot inherit the main credential after device retirement");
+    const response = await fetch(`${f.base}${path}?expected_session_incarnation=fixture-inc`, { headers: {
+      ...main, "x-console-expected-principal": "primary",
+    } });
+    const snapshot = await response.json() as Data;
+    assert.equal(snapshot.data.items[0].state, "refused");
+    assert.equal(snapshot.data.items[0].error_code, "outbox-authorization-changed");
+    const db = new DatabaseSync(f.path);
+    try {
+      const rows = JSON.stringify(db.prepare("SELECT * FROM outbox_items").all());
+      assert.equal(rows.includes(first.token), false); assert.equal(rows.includes(second.token), false);
+      assert.equal(rows.includes(first.id), true, "only public issuing-device identity is retained");
+    } finally { db.close(); }
+  } finally {
+    release();
+    await f.close(); daemon.closeAllConnections(); await new Promise<void>(resolve => daemon.close(() => resolve()));
+  }
+});
+
+test("device read saturation cannot block main metadata reads or selective revocation", async () => {
+  const f = await fixture();
+  try {
+    const first = await f.issue(); const second = await f.issue();
+    let limited = false;
+    for (let i = 0; i < 130; i++) {
+      const status = (await f.call("devices", undefined, { authorization: `Bearer ${first.token}` })).status;
+      if (status === 429) { limited = true; break; } assert.equal(status, 200);
+    }
+    assert.equal(limited, true, "device reads have a bounded independent budget");
+    assert.equal((await f.call(`devices/${first.id}`, undefined, { authorization: "Bearer primary-fixture" }, "DELETE")).status, 200);
+    assert.equal((await f.call("devices", undefined, { cookie: f.cookie })).status, 200);
+    assert.equal((await f.call("devices", undefined, { authorization: `Bearer ${second.token}` })).status, 200);
+  } finally { await f.close(); }
+});
+
+test("a known-code holder cannot spend the main credential management budget", async () => {
+  const f = await fixture();
+  let store: DeviceCredentialStore | undefined;
+  try {
+    const device = await f.issue();
+    const pair = await f.create(); const bound = await f.claim(pair); await f.approve(pair, bound);
+    store = new DeviceCredentialStore(f.path, () => "primary-fixture", () => true);
+    // Different source addresses share the code-owner budget; no forwarding header is trusted.
+    for (let i = 0; i < 130; i++) assert.throws(() => store!.exchange({ ...bound, verifier: "x".repeat(43) } as any),
+      (error: any) => error.status === 400 && error.message === "Pairing unavailable.");
+    assert.equal((await f.call(`devices/${device.id}`, undefined, { cookie: f.cookie }, "DELETE")).status, 200);
+    assert.equal((await f.call("devices", undefined, { cookie: f.cookie })).status, 200);
+  } finally { store?.close(); await f.close(); }
+});
+
+test("anonymous address bucket capacity reserves authenticated owner operations", async () => {
+  const f = await fixture();
+  try {
+    const db = new DatabaseSync(f.path);
+    try {
+      db.exec("BEGIN");
+      const insert = db.prepare("INSERT INTO device_pairing_limits(bucket,started,attempts) VALUES(?,?,1)");
+      for (let i = 0; i < 10_000; i++) insert.run(credentialHash(`address:synthetic-${i}`), Date.now());
+      db.exec("COMMIT");
+    } finally { db.close(); }
+    assert.equal((await f.call("devices", undefined, { cookie: f.cookie })).status, 200, "anonymous table saturation cannot deny the owner's first management request");
+    assert.equal((await f.call("pairings/claim", {})).status, 429, "new anonymous address buckets remain bounded");
+  } finally { await f.close(); }
+});
 
 for (const target of ["layout", "extension"]) test(`revoking an authenticated slow-body request prevents ${target} side effects`, async () => {
   let effects = 0;
