@@ -123,7 +123,9 @@ for (const width of [390, 1280]) test(`two browsers pair, confirm, renew and rev
     await until(sender, "document.querySelector('.device-list').textContent.includes('Revoked')", "revocation metadata");
     assert.equal(await recipient.evaluate("fetch('/api/auth/status').then(response=>response.json()).then(value=>value.authenticated)"), false);
   } finally {
-    await recipient.close(); await sender.close(); edge.closeAllConnections();
+    const browsers = await Promise.allSettled([recipient.close(), sender.close()]);
+    edge.closeAllConnections();
     await new Promise<void>(resolve => edge.close(() => resolve()));
+    for (const browser of browsers) if (browser.status === "rejected") throw browser.reason;
   }
 });
