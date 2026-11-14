@@ -21,6 +21,24 @@ for (const [index, match] of blocks.entries()) {
   const theme = index === 0 ? 'dark' : 'paper';
   const tokens = Object.fromEntries([...match[1]!.matchAll(/--conversation-([\w-]+):\s*(#[\da-f]{6})/g)].map(item => [item[1], item[2]]));
   test(`${theme} conversation tokens match the approved palette`, () => assert.deepEqual(tokens, approved[index]));
+  const statusTokens = Object.fromEntries([...match[1]!.matchAll(/--(ok|danger|surface-overlay):\s*(#[\da-f]{6})/g)].map(item => [item[1], item[2]]));
+  test(`${theme} tool status colours match the theme palette`, () => {
+    assert.equal(statusTokens.ok, theme === 'dark' ? '#addb67' : '#2d6c3f');
+    assert.equal(statusTokens.danger, theme === 'dark' ? '#f78c6c' : '#a43c2e');
+  });
+  test(`${theme} tool status labels clear WCAG AA on the conversation and tool row backgrounds`, () => {
+    for (const state of ['ok', 'error']) {
+      const rule = css.match(new RegExp(`\\.conversation-tool-status\\.is-${state}\\s*\\{([^}]*)\\}`))?.[1];
+      const token = rule?.match(/color:\s*var\(--([\w-]+)\)/)?.[1];
+      assert.ok(token, `${state} label uses a theme token`);
+      const foreground = statusTokens[token];
+      assert.ok(foreground, `${state} label colour resolves in ${theme}`);
+      for (const background of [tokens.pane!, statusTokens['surface-overlay']!]) {
+        const measured = ratio(foreground, background);
+        assert.ok(measured >= 4.5, `${theme} ${state} on ${background}: ${measured.toFixed(4)}:1`);
+      }
+    }
+  });
   for (const role of ['agent', 'user']) {
     test(`${theme} ${role} body text clears 7:1 on its bubble`, () => {
       const measured = ratio(tokens[`${role}-text`]!, tokens[`${role}-bubble`]!);
