@@ -15,6 +15,7 @@ const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex")
 // lists real tarballs and verifies the actual bytes returned by immutable IDs.
 const transport = `#!/usr/bin/env node
 import { appendFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { basename, join } from "node:path";
 import { createHash } from "node:crypto";
 const root = process.env.SDK_RELEASE_FIXTURE;
@@ -25,13 +26,30 @@ const command = basename(process.argv[1]);
 appendFileSync(join(root, "calls.jsonl"), JSON.stringify({ command, args }) + "\\n");
 const save = () => writeFileSync(statePath, JSON.stringify(state));
 const json = data => process.stdout.write(JSON.stringify(data));
+if ((command === "pnpm" && args.join(" ") === "run pack:core") ||
+    (command === "forge-cli" && !args.includes("--dry-run"))) {
+  const step = command === "pnpm" ? "pack" : "publish";
+  if (state.scenario === step + "-failure") {
+    process.stderr.write("synthetic provider failure\\n");
+    process.exit(23);
+  }
+  if (state.scenario === step + "-signal") process.kill(process.pid, "SIGTERM");
+}
 if (command === "git") {
   if (args[0] === "rev-parse") console.log(state.source);
   else if (args[0] === "status") console.log(state.scenario === "dirty" ? " M package.json" : "");
   else throw new Error("unexpected git invocation");
 } else if (command === "pnpm") {
   if (args[0] === "--version") console.log("11.9.0");
-  else {
+  else if (args[0] === "pack" && state.scenario.startsWith("archive-")) {
+    process.stderr.write("synthetic provider failure\\n");
+    if (state.scenario === "archive-signal") process.kill(process.pid, "SIGTERM");
+    else process.exit(23);
+  } else {
+    if (state.scenario.startsWith("archive-")) {
+      try { execFileSync(process.execPath, [join(root, "scripts/pack-core.ts")], { stdio: "inherit" }); }
+      catch { process.exit(1); }
+    }
     if (args.join(" ") !== "run pack:core") throw new Error("unexpected pack command");
     mkdirSync(join(root, "dist-packages"), { recursive: true });
     for (const name of state.assets) cpSync(join(root, "packs", name), join(root, "dist-packages", name));
@@ -49,18 +67,21 @@ if (command === "git") {
     json({ full_name: state.scenario === "wrong-repository" ? "example/other" : "sympoies/salon", private: privateScope, visibility: privateScope ? "private" : "public" });
   } else if (path.includes("/compare/")) {
     json({ merge_base_commit: { sha: state.scenario === "unapproved" ? "b".repeat(40) : state.source } });
-  } else if (path.includes("/git/matching-refs/")) json([]);
-  else if (path.includes("/git/ref/tags/")) json({ object: { type: "commit", sha: state.source } });
-  else if (path.includes("/releases/tags/")) {
+  } else if (path.includes("/git/matching-refs/")) json((state.scenario.startsWith("existing-") && state.scenario !== "existing-draft-no-tag") || state.published ? [{ ref: "refs/tags/v0.1.70" }] : []);
+  else if (path.includes("/git/ref/tags/")) json({ object: { type: "commit", sha: state.scenario === "existing-other-source" ? "b".repeat(40) : state.source } });
+  else if (path.endsWith("/releases?per_page=100")) {
+    // gh applies --jq to every page: only matching draft IDs reach stdout.
+    if (state.scenario === "existing-draft-no-tag") json(20);
+  } else if (path.includes("/releases/tags/")) {
     const metadata = state.assets.map((name, index) => {
       const bytes = readFileSync(join(root, "packs", name));
-      return { id: 100 + index, name, size: bytes.length, state: "uploaded", digest: "sha256:" + createHash("sha256").update(bytes).digest("hex") };
+      return { id: 100 + index, name, size: bytes.length, state: "uploaded", digest: "sha256:" + (state.scenario === "existing-other-assets" && index === 2 ? "0".repeat(64) : createHash("sha256").update(bytes).digest("hex")) };
     });
     json({ id: 20, tag_name: "v0.1.70", draft: false, prerelease: true, html_url: "https://example.com/release", assets: metadata });
   } else if (path.includes("/releases/assets/")) {
     const index = Number(path.split("/").at(-1)) - 100;
     const bytes = readFileSync(join(root, "packs", state.assets[index]));
-    if (state.scenario === "download-corruption" && index === 2) bytes[0] ^= 1;
+    if (["download-corruption", "existing-corrupt-download"].includes(state.scenario) && index === 2) bytes[0] ^= 1;
     process.stdout.write(bytes);
   } else throw new Error("unexpected API read: " + path);
 } else throw new Error("unexpected transport");
@@ -69,8 +90,8 @@ if (command === "git") {
 function fixture(scenario = "valid") {
   const root = mkdtempSync("/tmp/sdk-release-");
   for (const directory of ["bin", "packs", ".agents/scripts", "scripts"]) mkdirSync(join(root, directory), { recursive: true });
-  for (const path of [".agents/scripts/release.sh", "scripts/release-core-sdk.ts"]) cpSync(join(repo, path), join(root, path));
-    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "salon", version: "0.1.70" }));
+  for (const path of [".agents/scripts/release.sh", "scripts/release-core-sdk.ts", "scripts/pack-core.ts", "scripts/release-step.ts"]) cpSync(join(repo, path), join(root, path));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "salon", version: "0.1.70", type: "module" }));
   const packages = [];
   for (const name of ["shared", "edge", "ui"]) {
       const metadata = { name: `@agent-console/${name}`, version: "0.1.70" };
@@ -164,5 +185,79 @@ test("SDK release never reports success when asset-ID bytes disagree with provid
     const result = setup.run();
     assert.notEqual(result.status, 0, "corrupt immutable asset bytes were accepted");
     assert.match(result.stderr, /download|bytes|digest/);
+  } finally { setup.close(); }
+});
+
+for (const step of ["pack", "publish", "archive"]) {
+  test(`SDK ${step} failure names the command, exit status and captured stderr`, () => {
+    const setup = fixture(`${step}-failure`);
+    try {
+      const result = setup.run();
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, step === "pack" ? /pnpm.*run.*pack:core/ : step === "archive" ? /pnpm.*pack.*--out/ : /forge-cli.*release.*create.*v0\.1\.70/);
+      assert.match(result.stderr, /exit status 23/);
+      assert.match(result.stderr, /synthetic provider failure/);
+      assert.match(result.stderr, /rerun/i);
+      assert.doesNotMatch(result.stderr, /output: \[|pid:/);
+    } finally { setup.close(); }
+  });
+
+  test(`SDK ${step} signal failure names the command and signal`, () => {
+    const setup = fixture(`${step}-signal`);
+    try {
+      const result = setup.run();
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, step === "pack" ? /pnpm.*run.*pack:core/ : step === "archive" ? /pnpm.*pack.*--out/ : /forge-cli.*release.*create.*v0\.1\.70/);
+      assert.match(result.stderr, /signal SIGTERM/);
+      assert.doesNotMatch(result.stderr, /output: \[|pid:/);
+    } finally { setup.close(); }
+  });
+}
+
+test("SDK rerun resumes verification of an identical release without publishing again", () => {
+  const setup = fixture();
+  try {
+    assert.equal(setup.run().status, 0);
+    const firstCalls = setup.calls().length;
+    const result = setup.run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /resum.*verif/i);
+    assert.match(result.stdout, /no.*(?:upload|publish|replace)/i);
+    const resumedCalls = setup.calls().slice(firstCalls);
+    assert.equal(resumedCalls.filter(call => call.command === "forge-cli").length, 0);
+    assert.equal(resumedCalls.filter(call => call.command === "gh" && call.args[1].includes("/releases/assets/")).length, 4);
+  } finally { setup.close(); }
+});
+
+test("SDK rerun dry-run verifies an existing release without publication", () => {
+  const setup = fixture("existing-identical");
+  try {
+    const result = setup.run("--dry-run");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /resum.*verif/i);
+    assert.match(result.stdout, /dry-run/i);
+    assert.equal(setup.calls().filter(call => call.command === "forge-cli").length, 0);
+  } finally { setup.close(); }
+});
+
+test("SDK rerun refuses an existing tag at another source", () => {
+  rejectedBeforePublishing("existing-other-source", /existing.*(?:source|commit)|source.*differs/i);
+});
+
+test("SDK rerun refuses different provider assets and corrupt immutable downloads", () => {
+  rejectedBeforePublishing("existing-other-assets", /existing.*(?:asset|digest)|(?:asset|digest).*mismatch/i);
+  rejectedBeforePublishing("existing-corrupt-download", /download|bytes|digest/i);
+});
+
+test("SDK partial-publication rerun refuses a provider draft before its tag exists", () => {
+  const setup = fixture("existing-draft-no-tag");
+  try {
+    const result = setup.run();
+    assert.equal(setup.calls().filter(call => call.command === "forge-cli").length, 0,
+      "an existing provider draft reached release creation");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /draft.*20/i);
+    assert.match(result.stderr, /v0\.1\.70/);
+    assert.match(result.stderr, /owner.*(?:complete|abandon)/i);
   } finally { setup.close(); }
 });
