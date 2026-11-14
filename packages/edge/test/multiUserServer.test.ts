@@ -26,6 +26,7 @@ let providerCreateMode: "valid" | "wrong-thread" | "failed" = "valid";
 // Keeps the created session but answers an error, as serve does when a create
 // outlives its own prompt budget.
 let errorAfterCreate = false;
+let startupRefusalAfterCreate = false;
 let resumeResponseMode: "valid" | "wrong-id" | "empty-incarnation" | "failed" = "valid";
 let maintenanceResponseMode: "valid" | "malformed" | "legacy-null" = "valid";
 let previewIncarnationOverride: string | null = null;
@@ -150,6 +151,14 @@ before(async () => {
             : {}),
         };
         daemonSessions.push(session);
+        if (startupRefusalAfterCreate) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ ok: false, error: {
+            code: "start-failed", message: "Review folder trust for /work/example before retrying.",
+            details: { reason: "startup-trust-required", stderr_tail: "discard diagnostic output" },
+          } }));
+          return;
+        }
         if (errorAfterCreate) {
           res.writeHead(500);
           res.end(JSON.stringify({ ok: false, error: { code: "structured-prompt-outcome-unknown", message: "unknown" } }));
@@ -1209,4 +1218,25 @@ test("history image reads require the caller's history ownership before contacti
   assert.equal(daemonRequests,before + 1,"owned history uses the history gate rather than live-session admission");
   assert.equal((await api(`/api/history/sessions/hub/viewer-history/images/${image}`, "root-token")).status,422,
     "root can read history images through the same history read policy");
+});
+
+test("a retained failed startup keeps its refusal details for the creating principal", async () => {
+  startupRefusalAfterCreate = true;
+  try {
+    const response = await fetch(base + "/api/sessions/hub", {
+      method: "POST", headers: { authorization: "Bearer owner-token", "content-type": "application/json" },
+      body: JSON.stringify({ agent: "codex", cwd: "/work/example" }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 502);
+    assert.equal(body.error.code, "create-outcome-unknown");
+    assert.equal(body.error.details?.code, "start-failed");
+    assert.equal(body.error.details?.reason, "startup-trust-required");
+    assert.equal(body.error.details?.message, "Review folder trust for /work/example before retrying.");
+    assert.equal(Object.hasOwn(body.error.details, "stderr_tail"), false);
+    const denied = await fetch(`${base}/api/sessions/hub/${body.error.session_id}/glance`, {
+      method: "GET", headers: { authorization: "Bearer viewer-token" },
+    });
+    assert.equal(denied.status, 404);
+  } finally { startupRefusalAfterCreate = false; }
 });

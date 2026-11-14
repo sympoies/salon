@@ -652,6 +652,7 @@ interface DashboardBehaviorApiMock {
     readonly error?: string;
     readonly outcomeUnknown?: boolean;
     readonly startup?: StartupStatus | null;
+    readonly runtimeRefusal?: string;
   }>;
   readonly fetchLayoutOrder?: () => Promise<LayoutOrderResult>;
   readonly fetchRepoRemoteUrl?: (machine: string, cwd?: string | null) => Promise<string>;
@@ -7707,4 +7708,29 @@ test("page shortcuts wrap in overview", async () => {
   assert.equal(pageLabel(), "2 / 2");
   await press(".");
   assert.equal(pageLabel(), "1 / 2");
+});
+
+test("Dashboard leaves the runtime refusal visible in the dialog while guarding an unknown creation", async () => {
+  const mounted = installDom();
+  cleanupStack.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([dashboardApiMockPlugin(), terminalPaneMockPlugin(), stagedPromptCreateDialogMockPlugin()]);
+  cleanupStack.push(ssr.close);
+  const refusal = "start-failed / startup-trust-required: Review folder trust before retrying.";
+  let creates = 0;
+  globalThis.__agentConsoleDashboardBehaviorApiMock = {
+    createSession: async () => { creates++; return { ok: false, error: refusal, runtimeRefusal: refusal, outcomeUnknown: true }; },
+  };
+  const { Dashboard } = await ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
+  await act(async () => {
+    mounted.root.render(createElement(Dashboard, { active: true, machines: ["fixture"], enabledMachines: ["fixture"],
+      machineColors: {}, onDebug() {}, onUsage() {}, onSettings() {} }));
+    await flushPromises();
+  });
+  await act(async () => { findTextButton(mounted.container, "New").click(); await flushPromises(); });
+  await act(async () => { findTextButton(mounted.container, "Create").click(); await flushPromises(); });
+  assert.equal(creates, 1);
+  assert.equal(mounted.container.querySelector('textarea[aria-label="Initial prompt"]') !== null, true);
+  assert.equal(mounted.container.textContent?.includes(refusal), true);
+  await act(async () => { findTextButton(mounted.container, "Create").click(); await flushPromises(); });
+  assert.equal(creates, 1);
 });

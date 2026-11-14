@@ -3910,3 +3910,29 @@ test("history HTTP decoding retains bounded optional assistant tool parts and te
   assert.equal(response.messages[2]?.tool_parts, undefined);
   assert.equal(response.messages[3]?.tool_parts, undefined);
 });
+
+test("createSession exposes a startup refusal while preserving the unknown-outcome guard", async () => {
+  setFetchMock(async () => jsonResponse({ ok: false, error: {
+    code: "start-failed", message: "session creation failed",
+    details: { reason: "startup-trust-required", message: "Review folder trust for /work/example before retrying." },
+  } }, { status: 500 }));
+  const result = await createSession("fixture", { agent: "codex", cwd: "/work/example" });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "start-failed");
+  assert.equal(result.error, "start-failed / startup-trust-required: Review folder trust for /work/example before retrying.");
+  assert.equal(result.outcomeUnknown, true);
+  assert.equal(result.runtimeRefusal, result.error);
+});
+
+test("createSession keeps startup refusal details alongside an unknown retained-session outcome", async () => {
+  setFetchMock(async () => jsonResponse({ ok: false, error: {
+    code: "create-outcome-unknown", session_id: "retained-example", message: "Check the retained session.",
+    details: { code: "start-failed", reason: "startup-trust-required", message: "Review folder trust before retrying." },
+  } }, { status: 502 }));
+  const result = await createSession("fixture", { agent: "codex" });
+  assert.equal(result.errorCode, "create-outcome-unknown");
+  assert.equal(result.error, "start-failed / startup-trust-required: Review folder trust before retrying.");
+  assert.equal(result.runtimeRefusal, result.error);
+  assert.equal(result.outcomeUnknown, true);
+  assert.equal(result.id, "retained-example");
+});

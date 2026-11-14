@@ -1813,6 +1813,12 @@ export function Dashboard({
           retainUnknownCreation(
             "Session creation outcome is unknown; inspect the session list and retained prompt before retrying.",
           );
+          if (r.runtimeRefusal) {
+            // Keep the actionable refusal in the dialog while the retained
+            // recovery entry continues to prevent duplicate creation.
+            setShowCreate(true);
+            setCreateError(r.runtimeRefusal);
+          }
           if (r.id) {
             pendingCreatedFocusKeyRef.current = sessionKey({ machine, id: r.id });
             pendingCreatedFocusFulfilledRef.current = false;

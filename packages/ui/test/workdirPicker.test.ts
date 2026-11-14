@@ -55,12 +55,15 @@ test("workdir picker filters by typed text while preserving daemon order", () =>
   );
 });
 
-test("workdir picker is select-only for create cwd", () => {
+test("workdir picker preserves typed absolute paths and selected suggestions", () => {
   assert.deepEqual(selectWorkdir(repos[0]!), {
     displayValue: "agent-console",
     selectedPath: "/home/runner/Project/summit/agent-console",
   });
-  assert.equal(cwdForCreate({ displayValue: "not-a-real-repo", selectedPath: "" }), undefined);
+  assert.equal(cwdForCreate({ displayValue: "/work/example", selectedPath: "" }), "/work/example");
+  assert.equal(cwdForCreate({ displayValue: "/work/example with spaces/ ", selectedPath: "" }), "/work/example with spaces/ ");
+  assert.equal(cwdForCreate({ displayValue: "", selectedPath: "" }), undefined);
+  assert.throws(() => cwdForCreate({ displayValue: "work/example", selectedPath: "" }), { message: "Working directory must be an absolute path starting with /." });
   assert.equal(cwdForCreate(selectWorkdir(repos[0]!)), "/home/runner/Project/summit/agent-console");
 });
 
