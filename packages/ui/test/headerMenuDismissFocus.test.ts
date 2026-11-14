@@ -30,6 +30,8 @@ for (const dismissal of ["scrim", "controlled", "Escape", "outside focus"] as co
       await act(async () => root.render(createElement(Probe)));
       const trigger = container.querySelector<HTMLElement>(".header-menu-trigger");
       assert.ok(trigger);
+      assert.equal(trigger.getAttribute("aria-label"), "More");
+      assert.equal(trigger.textContent?.trim(), "More", "the summary has name text for WebView mapping");
       await act(async () => trigger.click());
       await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)); });
       const item = container.querySelector<HTMLElement>('[role="menuitem"]');

@@ -252,7 +252,7 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
                 aria-label={`Filter sessions. ${summary}. ${resultCount} matching ${resultCount === 1 ? "session" : "sessions"}.${noticeCue ? ` Notice: ${noticeCue}.` : ""}`}
                 aria-haspopup="dialog" aria-expanded={open} aria-controls={panelId} onClick={event => { event.stopPropagation(); setOpen(!open); }}>
                 <svg className="session-filter-search-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>
-                {chips.length === 0 ? <span className="session-filter-placeholder">Filter sessions</span> : null}
+                <span className={chips.length === 0 ? "session-filter-placeholder" : "sr-only"}>Filter sessions</span>
               </button>
               <span className="session-filter-search-chips" aria-label="Active session filters">
                 {chips.map(chip => <button key={chip.key} type="button" className="control-chip control-chip--dense btn session-filter-chip" aria-label={`Remove ${chip.label}`}
