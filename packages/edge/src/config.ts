@@ -1,6 +1,7 @@
 import { defaults as remoteImageDefaults, type RemoteImageConfig } from "./remoteImage/service.ts";
 import { parseAllowList } from "./remoteImage/address.ts";
 import { homedir } from "node:os";
+import { isIP } from "node:net";
 import { join } from "node:path";
 import { isAbsolute, resolve } from "node:path";
 import {
@@ -105,6 +106,8 @@ export function principalCanUseTerminal(principal: PrincipalConfig): boolean {
 }
 
 export interface EdgeConfig {
+  readonly pairingTtlMs?: number;
+  readonly pairingTrustedProxyPeers?: readonly string[];
   readonly remoteImage?: RemoteImageConfig;
   readonly host: string;
   readonly port: number;
@@ -567,6 +570,15 @@ export interface LoadConfigOptions {
 }
 
 export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfig {
+  const pairingTrustedProxyPeers = env.AGENT_CONSOLE_PAIRING_TRUSTED_PROXY_PEERS === undefined
+    ? [] : env.AGENT_CONSOLE_PAIRING_TRUSTED_PROXY_PEERS.split(",").map(value => value.trim());
+  if (pairingTrustedProxyPeers.some(value => isIP(value) === 0)) {
+    throw new Error("AGENT_CONSOLE_PAIRING_TRUSTED_PROXY_PEERS must contain comma-separated IP literals");
+  }
+  const pairingTtlSeconds = Number(env.AGENT_CONSOLE_PAIRING_TTL_SECONDS ?? "300");
+  if (!Number.isInteger(pairingTtlSeconds) || pairingTtlSeconds < 60 || pairingTtlSeconds > 600) {
+    throw new Error("AGENT_CONSOLE_PAIRING_TTL_SECONDS must be an integer from 60 to 600");
+  }
   const openAccess = truthy(env.AGENT_CONSOLE_NO_AUTH);
   const clientToken = env.AGENT_CONSOLE_TOKEN ?? "";
   const machines = parseMachines(env.AGENT_CONSOLE_MACHINES);
@@ -613,6 +625,8 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
     port: Number(env.AGENT_CONSOLE_EDGE_PORT ?? "8790"),
     serverVersion: env.AGENT_CONSOLE_SERVER_VERSION?.trim() || undefined,
     serverBuild: env.AGENT_CONSOLE_SERVER_BUILD?.trim() || undefined,
+    pairingTtlMs: pairingTtlSeconds * 1000,
+    pairingTrustedProxyPeers,
     clientToken,
     principals,
     multiUser,

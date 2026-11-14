@@ -34,3 +34,21 @@ Numeric values must be positive integers. Allow-list entries use exact hosts and
 optional ports; wildcards and URL schemes are not accepted. An omitted port matches
 the default port of the URL's scheme. The allow-list permits eligible private network
 addresses, but does not permit loopback or other blocked address classes.
+
+## Device credentials
+
+The edge supports one-time device pairing, independent credential revocation and fixed
+30-day authorization. Only main-credential sessions may manage pairings or explicitly
+Renew devices. Authenticated devices may read principal-scoped expiry metadata.
+
+`AGENT_CONSOLE_PAIRING_TTL_SECONDS` sets the fixed pairing lifetime from 60 to 600 seconds
+(default 300). The existing state database retains pairing and device records across
+replacement. No-auth mode and managed tester credentials do not offer pairing.
+
+Pairing requires TLS or an exact HTTPS forwarding signal from an immediate proxy listed
+in `AGENT_CONSOLE_PAIRING_TRUSTED_PROXY_PEERS` (comma-separated IP literals, empty by default).
+The proxy must overwrite `X-Forwarded-Proto` from its actual TLS connection. The existing
+insecure-cookie opt-in permits only loopback HTTP development pairing.
+
+See the [device sign-in protocol](../../docs/device-sign-in.md) for the endpoint flow,
+recipient confirmation, cookie behavior, metadata call, audit and threat model.

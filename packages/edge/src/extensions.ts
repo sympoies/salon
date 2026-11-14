@@ -22,6 +22,9 @@ export interface EdgeRouteContext {
   readonly principal: { readonly id: string; readonly permissions: readonly string[] };
   readonly requestId: string;
   sendJson(status: number, body: unknown): void;
+  /** Recheck the captured credential immediately before a side effect after an asynchronous operation. */
+  assertAuthorized(): void;
+  /** Rechecks authorization after reading; revoked credentials reject instead of returning a body. */
   readJsonBody(limitBytes?: number): Promise<unknown>;
 }
 

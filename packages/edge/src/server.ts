@@ -1,6 +1,10 @@
 import { createRemoteImageService, defaults as remoteImageDefaults } from "./remoteImage/service.ts";
 import { fetchRemoteImage } from "./remoteImage/fetch.ts";
 import { homedir } from "node:os";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { daemonFetch as unguardedDaemonFetch } from "./upstream.ts";
+import { DeviceCredentialStore, credentialHash, type DeviceIdentity } from "./deviceCredentials.ts";
+import { handleDeviceAuth, deviceCookie } from "./deviceAuthRoutes.ts";
 import { join } from "node:path";
 import { accountConflict, projectAccount, translateAccount } from "./createAccount.ts";
 import { sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
@@ -239,7 +243,10 @@ function fencedStructuredPromptBody(value: unknown): FencedStructuredPromptBody 
 
 
 
+class RequestAuthorizationError extends Error {}
+
 export interface EdgeServerOptions {
+  readonly authNow?: () => number;
   readonly remoteImageFetch?: typeof fetchRemoteImage;
   readonly outboxPollIntervalMs?: number;
   readonly attachmentUploadTimeoutMs?: number;
@@ -304,7 +311,22 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   const failedCreateLookupIntervalMs = options.failedCreateLookupIntervalMs ?? FAILED_CREATE_LOOKUP_INTERVAL_MS;
   // Validated before anything starts, so a bad extension fails startup.
   const extensions = createEdgeExtensionRegistry(options.extensions ?? []);
-  const store = new SessionStore(config.accessDbPath ?? ":memory:");
+  const store = new SessionStore(config.accessDbPath ?? ":memory:", options.authNow);
+  const devicePrincipals = new WeakMap<PrincipalConfig, DeviceIdentity>();
+  const deviceCredentials = new DeviceCredentialStore(config.accessDbPath ?? ":memory:", id => {
+    const principal = config.multiUser ? principalById(id) : id === "legacy" ? legacyPrincipal : undefined;
+    return principal && !principal.managedCredential ? principal.token : undefined;
+  }, (hash, owner) => store.activeReference(hash, owner), options.authNow);
+  // Preserve the authenticating credential across awaited body parsing and upstream writes.
+  const requestAuthorization = new AsyncLocalStorage<() => boolean>();
+  const assertRequestAuthorized = (): void => {
+    if (requestAuthorization.getStore()?.() === false) throw new RequestAuthorizationError();
+  };
+  const daemonFetch: typeof unguardedDaemonFetch = async (...args) => {
+    if (requestAuthorization.getStore()?.() === false)
+      return { status: 401, body: { ok: false, error: { message: "unauthorized" } } };
+    return unguardedDaemonFetch(...args);
+  };
   const testCredentials = config.multiUser && config.accessDbPath
     && config.principals.some(principal => principal.managedCredential)
     ? new TestCredentialStore(config.accessDbPath) : null;
@@ -322,6 +344,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     : null;
   const machinePreferences = config.accessDbPath ? new MachinePreferencesStore(config.accessDbPath) : null;
   const outboxStore = config.accessDbPath && config.accessDbPath !== ":memory:" ? new OutboxStore(config.accessDbPath) : null;
+  const revokeDevice = (id: string, principal: string): void => {
+    deviceCredentials.revoke(id, principal);
+    outboxStore?.refuseDevice(id);
+  };
   const historyIntentResolver = (principal: PrincipalConfig, machine: string) => (binding: PromptRequestBinding) =>
     outboxStore?.intentForRequest({ principalId: principal.id, machine, sessionId: binding.session_id,
       incarnation: binding.session_incarnation }, binding.request_id);
@@ -378,31 +404,36 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     const fingerprint = testCredentials?.fingerprint(id);
     return fingerprint ? { ...principal, token: fingerprint } : undefined;
   };
-  const testerStillActive = (principal: PrincipalConfig): boolean =>
-    !principal.managedCredential || testCredentials?.fingerprint(principal.id) === principal.token;
+  const revocableCredential = (principal: PrincipalConfig): boolean =>
+    principal.managedCredential === true || devicePrincipals.has(principal);
+  const credentialStillActive = (principal: PrincipalConfig): boolean => {
+    const device = devicePrincipals.get(principal);
+    if (device) return deviceCredentials.authenticate(device.credential, false)?.id === device.id;
+    return !principal.managedCredential || testCredentials?.fingerprint(principal.id) === principal.token;
+  };
   const managedResponses = new Map<ServerResponse, PrincipalConfig>();
-  const guardTesterResponse = (res: ServerResponse, principal: PrincipalConfig): void => {
-    if (!principal.managedCredential) return;
+  const guardCredentialResponse = (res: ServerResponse, principal: PrincipalConfig): void => {
+    if (!revocableCredential(principal)) return;
     managedResponses.set(res, principal);
     res.once("close", () => managedResponses.delete(res));
     const write = res.write.bind(res);
     res.write = ((...args: Parameters<typeof res.write>) => {
-      if (!testerStillActive(principal)) { res.destroy(); return false; }
+      if (!credentialStillActive(principal)) { res.destroy(); return false; }
       return write(...args);
     }) as typeof res.write;
     const end = res.end.bind(res);
     res.end = ((...args: Parameters<typeof res.end>) => {
-      if (!testerStillActive(principal)) { res.destroy(); return res; }
+      if (!credentialStillActive(principal)) { res.destroy(); return res; }
       return end(...args);
     }) as typeof res.end;
   };
   // New operations and stream chunks check synchronously; idle streams are
   // disconnected within one poll, including when the owner CLI is a process
   // outside this edge. No restart or cache refresh is needed.
-  const testerRevocationTimer = testCredentials ? setInterval(() => {
-    for (const [res, principal] of managedResponses) if (!testerStillActive(principal)) res.destroy();
+  const credentialRevocationTimer = testCredentials || !config.openAccess ? setInterval(() => {
+    for (const [res, principal] of managedResponses) if (!credentialStillActive(principal)) res.destroy();
   }, 250) : undefined;
-  testerRevocationTimer?.unref();
+  credentialRevocationTimer?.unref();
   const legacyPrincipal: PrincipalConfig = {
     id: "legacy",
     token: config.clientToken,
@@ -448,6 +479,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   };
   const outboxDispatcher = outboxStore ? new SharedOutboxDispatcher({
     store: outboxStore, access: outboxAccess, intervalMs: options.outboxPollIntervalMs,
+    deviceActive: (id, principal) => deviceCredentials.activeDevice(id, principal),
   }) : null;
   const protectOutboxLifecycle = async (machine: MachineConfig, sessionId: string, incarnation: string | null,
     operation: "archive" | "delete" | "maintenance-delete", action: () => Promise<DaemonResult>) => {
@@ -456,11 +488,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     const previous = outboxStore?.lifecycle(machine.name, sessionId);
     if (previous) {
       const observed = await aggregateSessions([machine]);
+      assertRequestAuthorized();
       const session = observed.sessions.find(s => s.id === sessionId);
       if (observed.machines.some(m => m.ok) && session?.status === "running" && isPromptIncarnation(session.session_incarnation)) {
         outboxStore?.releaseObsoleteLifecycle(previous, session.session_incarnation);
       }
     }
+    assertRequestAuthorized();
     const fence = outboxStore?.beginLifecycle(machine.name, sessionId, incarnation, operation);
     const result = await action();
     const envelope = objectProp(result.body);
@@ -528,6 +562,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   };
 
   const decoratedSessionsForReader = (principal: PrincipalConfig, sessions: Array<Record<string, unknown>>) => {
+    assertRequestAuthorized();
     const scoped = config.multiUser ? visibleSessions(principal, sessions, accessStore, viewerAccessFor(principal)) : sessions;
     const metadata = Object.assign({}, ...extensions.extensions.map(extension => extension.decorateSessions?.(decorationContext(principal), scoped)));
     return { sessions: scoped, metadata };
@@ -535,21 +570,30 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   const displaySessionsForReader = (principal: PrincipalConfig, sessions: Array<Record<string, unknown>>) =>
     decoratedSessionsForReader(principal, sessions).sessions;
 
+  const principalForDevice = (token: string): PrincipalConfig | undefined => {
+    const device = deviceCredentials.authenticate(token);
+    if (!device) return undefined;
+    const base = config.multiUser ? principalById(device.principal)
+      : device.principal === legacyPrincipal.id ? legacyPrincipal : undefined;
+    if (!base || base.managedCredential) return undefined;
+    const principal = { ...base };
+    devicePrincipals.set(principal, device);
+    return principal;
+  };
   const principalForToken = (token: string | undefined): PrincipalConfig | undefined => {
     if (!token) return undefined;
-    if (!config.multiUser) {
-      return timingSafeEqualStr(token, config.clientToken) ? legacyPrincipal : undefined;
-    }
+    if (!config.multiUser && timingSafeEqualStr(token, config.clientToken)) return legacyPrincipal;
     let match: PrincipalConfig | undefined;
     for (const principal of config.principals) {
       if (!principal.managedCredential && timingSafeEqualStr(token, principal.token)) match = principal;
     }
+    if (match) return match;
+    const device = principalForDevice(token);
+    if (device) return device;
     const managedId = testCredentials?.authenticate(token);
     const managedPrincipal = managedId ? configuredPrincipals.get(managedId) : undefined;
-    // Keep the fingerprint that authenticate matched, even if the owner
-    // revokes/reissues before this request resolves its configured scope.
-    return match ?? (managedPrincipal?.managedCredential
-      ? { ...managedPrincipal, token: testCredentialHash(token) } : undefined);
+    return managedPrincipal?.managedCredential
+      ? { ...managedPrincipal, token: testCredentialHash(token) } : undefined;
   };
 
   // Native Tauri auth: the client token directly — as a bearer header on HTTP,
@@ -573,8 +617,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // while a bearer/subprotocol token supplies the CSRF exemption.
     const credential = explicitToken(req);
     if (credential !== undefined) return principalForToken(credential);
+    const cookie = parseCookies(req.headers.cookie).get(SESSION_COOKIE);
+    if (cookie?.startsWith("salon_device_")) return principalForDevice(cookie);
     let sessionPrincipal: PrincipalConfig | undefined;
-    const sessionPrincipalId = store.get(parseCookies(req.headers.cookie).get(SESSION_COOKIE), id => {
+    const sessionPrincipalId = store.get(cookie, id => {
       sessionPrincipal = config.multiUser ? principalById(id)
         : id === legacyPrincipal.id ? legacyPrincipal : undefined;
       return sessionPrincipal?.token;
@@ -630,6 +676,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     res.once("finish", () => clearRequestDeadline(req));
     res.once("close", () => clearRequestDeadline(req));
     handle(req, res).catch((err) => {
+      if (err instanceof RequestAuthorizationError) {
+        if (!res.headersSent) sendJson(res, 401, { ok: false, error: { message: "unauthorized" } });
+        else res.destroy();
+        return;
+      }
       if (err instanceof OutboxError && !res.headersSent) {
         sendJson(res, err.status, { ok: false, error: { code: err.code, message: err.code } });
         return;
@@ -645,8 +696,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   });
   server.once("close", () => {
     outboxDispatcher?.stop(); outboxStore?.close();
-    if (testerRevocationTimer) clearInterval(testerRevocationTimer);
-    store.close(); testCredentials?.close();
+    if (credentialRevocationTimer) clearInterval(credentialRevocationTimer);
+    store.close(); testCredentials?.close(); deviceCredentials.close();
   });
   if (accessStore) server.once("close", () => accessStore.close());
   if (machinePreferences) server.once("close", () => machinePreferences.close());
@@ -705,6 +756,18 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       return;
     }
 
+    if (/^\/api\/auth\/(pairings|devices)(\/|$)/.test(path)) {
+      const principal = principalForRequest(req);
+      const cookie = parseCookies(req.headers.cookie).get(SESSION_COOKIE);
+      if (await handleDeviceAuth(req, res, url, { config, store: deviceCredentials, principal,
+        device: principal && devicePrincipals.get(principal),
+        sourceSession: principal && !explicitToken(req) && !devicePrincipals.has(principal) && cookie
+          ? credentialHash(cookie) : undefined,
+        live: () => !principal || (credentialStillActive(principal) && principalForRequest(req)?.id === principal.id), csrfExempt: () => csrfExempt(req),
+        revoke: revokeDevice,
+      })) return;
+    }
+
     if (method === "POST" && path === "/api/auth/login") {
       if (!sameOrigin(req, res)) return;
       const body = (await readJsonBody(req).catch(() => undefined)) as { token?: unknown } | undefined;
@@ -714,9 +777,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         sendJson(res, 401, { ok: false, error: { message: "invalid token" } });
         return;
       }
-      const id = store.create(principal.id, principal.token);
-      if (principal.managedCredential) testCredentials?.signIn(principal.id);
-      res.setHeader("set-cookie", sessionCookie(id, SESSION_MAX_AGE, config.secureCookie));
+      const device = devicePrincipals.get(principal);
+      if (device) res.setHeader("set-cookie", deviceCookie(device.credential, config.secureCookie));
+      else {
+        const id = store.create(principal.id, principal.token);
+        if (principal.managedCredential) testCredentials?.signIn(principal.id);
+        res.setHeader("set-cookie", sessionCookie(id, SESSION_MAX_AGE, config.secureCookie));
+      }
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -725,6 +792,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       if (!sameOrigin(req, res)) return;
       const id = parseCookies(req.headers.cookie).get(SESSION_COOKIE);
       if (id) {
+        const device = deviceCredentials.authenticate(id, false);
+        if (device) revokeDevice(device.id, device.principal);
         store.delete(id);
       }
       res.setHeader("set-cookie", sessionCookie("", 0, config.secureCookie));
@@ -736,6 +805,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       // openAccess lets the UI hide the "Sign out" control in open mode (there is
       // no session to end; signing out would just drop to a dead login screen).
       const principal = principalForRequest(req);
+      const device = principal && devicePrincipals.get(principal);
+      if (device && !explicitToken(req)) res.setHeader("set-cookie", deviceCookie(device.credential, config.secureCookie));
       if (principal?.managedCredential && explicitToken(req)) testCredentials?.signIn(principal.id);
       sendJson(res, 200, {
         ok: true,
@@ -774,15 +845,19 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         }
         return;
       }
-      guardTesterResponse(res, principal);
+      guardCredentialResponse(res, principal);
+      const device = devicePrincipals.get(principal);
+      if (device && !explicitToken(req)) res.setHeader("set-cookie", deviceCookie(device.credential, config.secureCookie));
       requestPrincipals.set(res, principal);
       if (isDebugRoute(path)) {
-        await handleApi(req, res, method, path, url, requestId, principal);
+        await requestAuthorization.run(() => credentialStillActive(principal),
+          () => handleApi(req, res, method, path, url, requestId, principal));
         return;
       }
       const started = performance.now();
       try {
-        await handleApi(req, res, method, path, url, requestId, principal);
+        await requestAuthorization.run(() => credentialStillActive(principal),
+          () => handleApi(req, res, method, path, url, requestId, principal));
         const envelope = sentErrorEnvelope(res);
         debugEvents.record({
           source: "edge",
@@ -812,6 +887,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
 
     // Static UI (GET/HEAD only).
     if (method === "GET" || method === "HEAD") {
+      res.setHeader("referrer-policy", "no-referrer");
       serveStatic(res, config.uiDir, path, method === "HEAD");
       return;
     }
@@ -860,6 +936,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       }
     }
     if (method !== "GET" && !csrfExempt(req)) return forbidCrossOrigin(res);
+    // Extensions retain the exact credential check across their own awaits.
+    const assertAuthorized = (): void => {
+      if (!credentialStillActive(principal)) throw new RequestAuthorizationError();
+    };
+    assertAuthorized();
     await route.handle({
       req,
       res,
@@ -869,7 +950,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       principal: { id: principal.id, permissions: principal.permissions },
       requestId,
       sendJson: (status, body) => sendJson(res, status, body),
-      readJsonBody: (limitBytes) => readJsonBody(req, limitBytes),
+      assertAuthorized,
+      readJsonBody: async (limitBytes) => {
+        const body = await readJsonBody(req, limitBytes);
+        assertAuthorized();
+        return body;
+      },
     });
   }
 
@@ -988,6 +1074,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           if (admission || action?.operation === "retry_refused") {
             const fence = outboxStore.lifecycle(machine.name, sessionId);
             const observed = await aggregateSessions([machine]);
+            assertRequestAuthorized();
             if (!observed.machines.some(m => m.ok)) throw new OutboxError("outbox-target-unavailable", 503);
             const session = observed.sessions.find(s => s.id === sessionId);
             if (!session || session.session_incarnation !== incarnation) throw new OutboxError("outbox-session-changed", 409);
@@ -999,19 +1086,23 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             if (fence && session.status === "running") outboxStore.releaseObsoleteLifecycle(fence, incarnation);
           }
           if (action && intent) {
+            assertRequestAuthorized();
             // Route authorization and the principal-scoped target already fence
             // discard. It sends nothing and may retire an earlier incarnation.
             const allowed = action.operation === "retry_refused" ? outboxAccess(target, "dispatch") : null;
             if (action.operation === "retry_refused" && !allowed) throw new OutboxError("outbox-authorization-changed", 403);
             const item = outboxStore.actOnRefused(target, intent, action,
-              allowed ? outboxCredentialGeneration(allowed.principal, allowed.machine) : undefined);
+              allowed ? outboxCredentialGeneration(allowed.principal, allowed.machine) : undefined,
+              devicePrincipals.get(_principal)?.id ?? null);
             if (action.operation === "retry_refused") void outboxDispatcher?.tick();
             sendJson(res, 200, { ok: true, data: { item } }); return;
           }
           if (admission && intent) {
+            assertRequestAuthorized();
             const allowed = outboxAccess(target, "dispatch");
             if (!allowed) throw new OutboxError("outbox-authorization-changed", 403);
-            const result = outboxStore.admit(target, intent, admission.text, outboxCredentialGeneration(allowed.principal, allowed.machine));
+            const result = outboxStore.admit(target, intent, admission.text, outboxCredentialGeneration(allowed.principal, allowed.machine),
+              devicePrincipals.get(_principal)?.id ?? null);
             void outboxDispatcher?.tick();
             sendJson(res, result.created ? 201 : 200, { ok: true, data: { item: result.item } }); return;
           }
@@ -1045,7 +1136,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             }
             const ticket = wsTickets.create(machine.name, `shell:${incarnation}`, 30_000,
               { principalId: owner, incarnation,
-                ...(_principal.managedCredential ? { credentialFingerprint: _principal.token } : {}) });
+                ...(_principal.managedCredential ? { credentialFingerprint: _principal.token } : {}),
+                ...(revocableCredential(_principal) ? { isAuthorized: () => credentialStillActive(_principal) } : {}) });
             sendJson(res, 200, { ok: true, data: { ticket, expiresInMs: 30_000 } });
             return;
           }
@@ -1112,6 +1204,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           sendJson(res, 400, { ok: false, error: { message: "enabled and a non-empty reason are required" } }); return;
         }
         try {
+          assertRequestAuthorized();
           machinePreferences.write(_principal.id, name, body.enabled, body.reason, `principal:${_principal.id}`, body.initialize_only === true);
         } catch (error) {
           if (!(error instanceof MachinePreferenceInitializedError)) throw error;
@@ -1186,6 +1279,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           };
           res.once("close", abortOnClose);
           try {
+            assertRequestAuthorized();
             const result = await transcribeSpeech(provider, audio, contentType, engine, disconnect.signal);
             if (!res.destroyed) sendJson(res, 200, { ok: true, data: { ...result, provider: provider.id } });
           } finally {
@@ -1225,6 +1319,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         const repoName = typeof body?.repoName === "string" ? body.repoName : null;
         const trace = normalizeTitleSummaryTrace(body?.trace);
         const trustedTrace = trace && byName.has(trace.machine) ? trace : undefined;
+        assertRequestAuthorized();
         const evaluation = await summarizeTitleWithDiagnostics(config.titleSummarizer, {
           agent,
           baseTitle,
@@ -1455,6 +1550,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                   if (claimant === undefined) {
                     return isRootPrincipal(_principal);
                   }
+                  assertRequestAuthorized();
                   accessStore.claimHistory(
                     claimant,
                     machine.name,
@@ -1569,6 +1665,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             debug: daemonDebug(requestId),
           });
           if (config.multiUser && accessStore && daemonSucceeded(daemonResult)) {
+            assertRequestAuthorized();
             // A viewer resumes through the owner's history; the new session stays with
             // the owner and descends from the selected session so the viewer keeps it.
             const actor = historyActor(_principal, machine.name, historyId) ?? _principal.id;
@@ -1813,6 +1910,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         try {
+          assertRequestAuthorized();
           sendJson(res, 200, {
             ok: true,
             data: await resetCodexRateLimit(config.codexReset, account, idempotencyKey),
@@ -1841,6 +1939,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         try {
+          assertRequestAuthorized();
           sendJson(res, 200, { ok: true, data: await resetClaudeLimit(config.claudeReset, request) });
         } catch (error) {
           sendJson(res, 502, {
@@ -1865,6 +1964,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             sendJson(res, 422, { ok: false, error: { message: "layout body must include order and base_revision" } });
             return;
           }
+          assertRequestAuthorized();
           const result = accessStore.writeLayout(_principal.id, order, baseRevision);
           sendJson(res, result.ok ? 200 : 409, {
             ok: result.ok,
@@ -1901,6 +2001,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           const baseRevision = normalizeRevision(rawBodyObject?.base_revision);
           const reason = asString(rawBodyObject?.reason)?.slice(0, 64);
           await sendReachableData(res, config.layout, {}, async (reader) => {
+            assertRequestAuthorized();
             const result = await writeLayoutOrder(reader, { order, baseRevision, reason });
             if (result.conflict) {
               return {
@@ -2027,8 +2128,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             machineName,
             sessionId,
             30_000,
-            incarnation ? { principalId: _principal.id, incarnation,
-              ...(_principal.managedCredential ? { credentialFingerprint: _principal.token } : {}) } : undefined,
+            { principalId: _principal.id, ...(incarnation ? { incarnation } : {}),
+              ...(_principal.managedCredential ? { credentialFingerprint: _principal.token } : {}),
+              ...(revocableCredential(_principal) ? { isAuthorized: () => credentialStillActive(_principal) } : {}) },
           );
           sendJson(res, 200, { ok: true, data: { ticket, expiresInMs: 30_000 } });
         });
@@ -2154,6 +2256,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                   (result.body as { data?: { maintenance_result?: unknown } } | undefined)?.data?.maintenance_result,
                   { sessionId, operation: "resume", action: "retry_resume", schemaVersion: MAINTENANCE_SCHEMA_VERSION },
                 );
+                assertRequestAuthorized();
                 if (actionResult?.outcome !== "resumed" || !advanceResumedSessionOwnership(
                   accessStore, _principal, actsForAnotherOwner(_principal, machine.name, sessionId), machine.name, sessionId,
                   previousIncarnation, actionResult.session_incarnation,
@@ -2231,6 +2334,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 && typeof archived.provider === "string"
                 && typeof archived.provider_session_id === "string"
               ) {
+                assertRequestAuthorized();
                 accessStore.claimHistory(
                   archiveOwner,
                   machine.name,
@@ -2370,6 +2474,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                   },
                 );
                 if (actionResult?.outcome === "resumed") {
+                  assertRequestAuthorized();
                   if (!advanceResumedSessionOwnership(
                     accessStore, _principal, actsForAnotherOwner(_principal, machine.name, sessionId), machine.name, sessionId,
                     previousIncarnation, actionResult.session_incarnation,
@@ -2929,6 +3034,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       machineHealth,
       requestId ? daemonDebug(requestId) : undefined,
     );
+    assertRequestAuthorized();
     return visibleSessions(principal, aggregate.sessions, accessStore, viewerAccessFor(principal));
   }
 
@@ -3077,9 +3183,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         res, principal, machine, requestBody.id, expectedProvider, false, startMark, debug, createDaemonRefusal(daemonResult),
       )) return;
     if (config.multiUser && accessStore && daemonSucceeded(daemonResult)) {
+      const mark = await startMark;
+      assertRequestAuthorized();
       if (!claimCreatedDaemonSession(
         accessStore, principal.id, machine.name, daemonResult, requestBody.id,
-        expectedProvider, await startMark,
+        expectedProvider, mark,
       )) {
         sendJson(res, 502, { ok: false, error: { message: "session creation did not confirm ownership" } });
         return;
@@ -3114,10 +3222,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       // A machine the lookup cannot reach never received the create either.
       if (created === null) return false;
       if (created) {
+        const mark = await startMark;
+        assertRequestAuthorized();
         if (!claimCreatedDaemonSession(
           accessStore, principal.id, machine.name,
           { status: 200, body: { ok: true, data: { session: created } } },
-          sessionId, expectedProvider, await startMark,
+          sessionId, expectedProvider, mark,
         )) return false;
         sendJson(res, 502, {
           ok: false,
@@ -3161,6 +3271,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       sendJson(res, 404, { ok: false, error: { message: `unknown machine: ${name}` } });
       return;
     }
+    if (principal && !credentialStillActive(principal)) {
+      sendJson(res, 401, { ok: false, error: { message: "unauthorized" } }); return;
+    }
     await fn(machine);
   }
 
@@ -3175,6 +3288,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     machine: MachineConfig,
     daemonPath: string,
     principal?: PrincipalConfig,
+    ticketAuthorized?: () => boolean,
   ): void => {
     if (!attachHealth.shouldProbe(machine.name)) {
       socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
@@ -3182,7 +3296,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       return;
     }
     proxyUpgrade(req, socket, head, machine, daemonPath, { health: attachHealth,
-      ...(principal?.managedCredential ? { isAuthorized: () => testerStillActive(principal) } : {}) });
+      ...(ticketAuthorized ? { isAuthorized: ticketAuthorized }
+        : principal && revocableCredential(principal) ? { isAuthorized: () => credentialStillActive(principal) } : {}) });
   };
 
   // Browser WebSocket attach -> daemon attach, injecting the machine bearer token.
@@ -3204,7 +3319,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       const machine = byName.get(shellTarget.machine);
       const reject = (status: string) => { socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`); socket.destroy(); };
       if (!ticket && !csrfExempt(req)) { reject("403 Forbidden"); return; }
-      if (!principal || (principal.managedCredential && ticket
+      if (ticket?.isAuthorized?.() === false || !principal || (principal.managedCredential && ticket
         && ticket.credentialFingerprint !== principal.token)) { reject("401 Unauthorized"); return; }
       if (config.multiUser && !principalCanUseTerminal(principal)) { reject("403 Forbidden"); return; }
       if (!machine || !principalCanAccessMachine(principal, machine.name)
@@ -3214,7 +3329,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       // The daemon checks the incarnation at upgrade and at every input/resize;
       // browser paths never select an owner and stale tickets never create a shell.
       const path = `/shells/${encodeURIComponent(principal.id)}/attach?incarnation=${encodeURIComponent(shellTarget.incarnation)}`;
-      relayAttach(req, socket, head, machine, path, principal);
+      relayAttach(req, socket, head, machine, path, principal, ticket?.isAuthorized);
       return;
     }
     const m = requireParams(matchPath("/api/sessions/:machine/:id/attach", url.pathname), ["machine", "id"]);
@@ -3236,7 +3351,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       socket.destroy();
       return;
     }
-    if ((!ticketAuthed && !requestPrincipal)
+    if (ticket?.isAuthorized?.() === false || (!ticketAuthed && !requestPrincipal)
       || ticketAuthed && requestPrincipal?.managedCredential && ticket.credentialFingerprint !== requestPrincipal.token) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       socket.destroy();
@@ -3273,7 +3388,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       socket.destroy();
       return;
     }
-    relayAttach(req, socket, head, machine, `/sessions/${encodeURIComponent(m.id)}/attach`, requestPrincipal);
+    relayAttach(req, socket, head, machine, `/sessions/${encodeURIComponent(m.id)}/attach`, requestPrincipal, ticket?.isAuthorized);
   });
 
   return server;
