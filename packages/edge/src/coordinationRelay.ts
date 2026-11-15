@@ -235,6 +235,29 @@ function peerDiagnostics(snapshot: Snapshot, session: Record<string, unknown>) {
     ...(code ? { startup_failure_code: code } : {}) };
 }
 const OWNERSHIP_RECOVERY = "refresh sessions; if the conflict persists, ask the maintainer to recover session ownership with scoped import-owner --repair-session";
+function continuityConversation(session: Record<string, unknown>, provider: string, incarnation: string, conversation: string): string | null {
+  const continuity = object(session.provider_continuity);
+  const links = continuity?.links;
+  if (continuity?.schema_version !== "agent-session.provider-continuity.v1" || continuity.provider !== provider
+    || !Array.isArray(links) || links.length < 1 || links.length > 16) return null;
+  let previous: Record<string, unknown> | null = null;
+  let starts = false;
+  for (const value of links) {
+    const link = object(value);
+    if (!link || !["clear", "restart", "resume"].includes(String(link.kind))
+      || ![link.from_incarnation, link.to_incarnation, link.from_conversation, link.to_conversation].every(v => typeof v === "string" && v.length > 0)
+      || !Number.isSafeInteger(link.at_epoch) || (link.at_epoch as number) < 0
+      || (link.kind === "clear" ? link.from_conversation === link.to_conversation : link.from_conversation !== link.to_conversation)
+      || (previous && (previous.to_incarnation !== link.from_incarnation || previous.to_conversation !== link.from_conversation
+        || (previous.at_epoch as number) > (link.at_epoch as number)))) return null;
+    if (link.from_incarnation === incarnation && link.from_conversation === conversation) starts = true;
+    previous = link;
+  }
+  const resume = object(session.provider_resume);
+  if (!starts || !previous || previous.to_incarnation !== session.session_incarnation
+    || (resume && "session_id" in resume && resume.session_id !== previous.to_conversation)) return null;
+  return previous.to_conversation as string;
+}
 function grant(store: AccessStore, target: Identity, state?: Snapshot): string {
   const grant = store.sessionGrant(target.machine, target.session_id);
   if (!grant) return fail(403, "ownership-unknown", `session ownership is unknown; ${OWNERSHIP_RECOVERY}`);
@@ -243,11 +266,16 @@ function grant(store: AccessStore, target: Identity, state?: Snapshot): string {
     const resume = object(session?.provider_resume);
     // Only the configured machine's live snapshot can prove a native resume.
     // Advance the existing owner's exact grant; never claim or rebind identity.
-    if (!session || session.status !== "running" || session.session_incarnation !== target.session_incarnation
-      || !grant.provider || !grant.providerSessionId
-      || resume?.provider !== grant.provider || resume.session_id !== grant.providerSessionId
-      || !store.advanceSessionIncarnation(grant.principalId, target.machine, target.session_id,
-        grant.incarnation, target.session_incarnation)) {
+    const live = session && session.status === "running" && session.session_incarnation === target.session_incarnation;
+    const nativeResume = live && grant.provider && grant.providerSessionId
+      && resume?.provider === grant.provider && resume.session_id === grant.providerSessionId;
+    const nextConversation = live && grant.provider && grant.providerSessionId
+      ? continuityConversation(session, grant.provider, grant.incarnation, grant.providerSessionId) : null;
+    const advanced = nativeResume
+      ? store.advanceSessionIncarnation(grant.principalId, target.machine, target.session_id, grant.incarnation, target.session_incarnation)
+      : nextConversation && store.advanceSessionContinuity(grant.principalId, target.machine, target.session_id,
+        grant.incarnation, grant.providerSessionId!, target.session_incarnation, nextConversation);
+    if (!advanced) {
       return fail(409, "session-incarnation-conflict", `session continuity is unproven; ${OWNERSHIP_RECOVERY}`);
     }
   }

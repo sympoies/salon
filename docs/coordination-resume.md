@@ -88,6 +88,20 @@ creation.
 
 ## Recover a stale mailbox ownership binding
 
+An authenticated running-session snapshot may include `provider_continuity` with
+schema `agent-session.provider-continuity.v1`, a provider, and up to 16 ordered
+links. Each link records `kind` (`clear`, `restart`, or `resume`), `from_incarnation`,
+`to_incarnation`, `from_conversation`, `to_conversation`, and `at_epoch`. Clear
+changes the conversation; restart and resume retain it. Adjacent endpoints must
+match, times cannot decrease, and the last endpoint must match the current
+incarnation and any reported provider conversation. Only daemon-performed
+lifecycle operations on the same managed session supply this evidence.
+
+When a valid chain connects the existing grant's incarnation and conversation
+to the current snapshot, the relay atomically advances both values for the same
+owner and selectors. Missing, malformed, inconsistent, or stale evidence is
+ignored and the existing refusal and recovery procedure still apply.
+
 Peer discovery (`GET /api/coordination/peers/v1`) returns authorized current identities in
 `peers` and a separate `excluded` array. A running recipient whose incarnation changed and
 whose provider conversation differs from its durable ownership binding appears as:

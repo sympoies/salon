@@ -95,6 +95,23 @@ test("AccessStore advances only the exact owned session incarnation", () => {
   store.close();
 });
 
+test("AccessStore atomically advances the exact continuity binding", () => {
+  const store = new AccessStore(join(tempRoot, "continuity-advance.sqlite"));
+  store.claimSession({ principalId: "tess", machine: "summit", sessionId: "session-1", incarnation: "before", provider: "codex", providerSessionId: "old" });
+  for (const args of [["dana", "summit", "session-1", "before", "old"], ["tess", "other", "session-1", "before", "old"],
+    ["tess", "summit", "other", "before", "old"], ["tess", "summit", "session-1", "wrong", "old"],
+    ["tess", "summit", "session-1", "before", "wrong"]]) {
+    assert.equal(store.advanceSessionContinuity(args[0]!, args[1]!, args[2]!, args[3]!, args[4]!, "after", "new"), false);
+  }
+  assert.equal(store.advanceSessionContinuity("tess", "summit", "session-1", "before", "old", "after", "new"), true);
+  assert.equal(store.advanceSessionContinuity("tess", "summit", "session-1", "before", "old", "raced", "other"), false);
+  const grant = store.sessionGrant("summit", "session-1")!;
+  assert.equal(grant.principalId, "tess");
+  assert.equal(grant.incarnation, "after");
+  assert.equal(grant.providerSessionId, "new");
+  store.close();
+});
+
 test("AccessStore rolls back an ownership import when any identity conflicts", () => {
   const store = new AccessStore(join(tempRoot, "atomic-import.sqlite"));
   store.claimProvider("dana", "summit", "codex", "provider-1");

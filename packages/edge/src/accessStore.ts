@@ -380,6 +380,16 @@ export class AccessStore {
     return result.changes === 1;
   }
 
+  advanceSessionContinuity(principalId: string, machine: string, sessionId: string,
+    previousIncarnation: string, previousConversation: string, nextIncarnation: string, nextConversation: string): boolean {
+    if (!nextIncarnation || !nextConversation) return false;
+    const result = this.#db.prepare(`
+      UPDATE session_ownership SET incarnation = ?, provider_session_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE machine = ? AND session_id = ? AND principal_id = ? AND incarnation = ? AND provider_session_id = ?
+    `).run(nextIncarnation, nextConversation, machine, sessionId, principalId, previousIncarnation, previousConversation);
+    return result.changes === 1;
+  }
+
   bindSessionProvider(
     principalId: string,
     machine: string,
