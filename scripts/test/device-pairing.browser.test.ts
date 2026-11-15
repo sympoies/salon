@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
@@ -133,5 +134,45 @@ for (const width of [390, 1280]) test(`two browsers pair, confirm, renew and rev
     edge.closeAllConnections();
     await new Promise<void>(resolve => edge.close(() => resolve()));
     for (const browser of browsers) if (browser.status === "rejected") throw browser.reason;
+  }
+});
+
+test("browser pairing refuses redirects before forwarding its claim body", async () => {
+  const forwarded: string[] = [];
+  const server = createServer(async (req, res) => {
+    if (req.url === "/api/auth/pairings/claim" || req.url === "/redirect-control") {
+      res.writeHead(307, { location: "/redirected-claim" }); res.end(); return;
+    }
+    if (req.url === "/redirected-claim") {
+      let body = ""; for await (const chunk of req) body += String(chunk);
+      forwarded.push(body);
+      res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, data: {} })); return;
+    }
+    if (req.url?.startsWith("/api/")) {
+      res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, authenticated: false })); return;
+    }
+    const name = req.url === "/" ? "index.html" : req.url?.slice(1);
+    if (!name || !/^[a-zA-Z0-9_.-]+$/.test(name)) { res.writeHead(404); res.end(); return; }
+    try {
+      res.setHeader("content-type", name.endsWith(".js") ? "application/javascript" : name.endsWith(".css") ? "text/css" : "text/html");
+      res.end(readFileSync(join(dir, name)));
+    } catch { res.writeHead(404); res.end(); }
+  });
+  const { base } = await listenOnLoopback(server);
+  const page = await launchPage();
+  try {
+    await page.navigate(base);
+    assert.equal(await page.evaluate("fetch('/redirect-control',{method:'POST',body:'control'}).then(response=>response.status)"), 200);
+    assert.deepEqual(forwarded, ["control"], "the fixture and browser can follow a 307 and forward a POST body");
+    forwarded.length = 0;
+    await click(page, "Use a pairing code");
+    await page.evaluate(`document.querySelector('[aria-label="Pairing code"]').value='ABCD-EFGH-JKLM-NPQR-STUV'`);
+    await click(page, "Continue");
+    await until(page, "document.querySelector('[role=alert]')", "redirect refusal");
+    assert.match(await page.evaluate<string>("document.querySelector('[role=alert]').textContent"), /Pairing unavailable/);
+    assert.deepEqual(forwarded, [], "the pairing code and verifier challenge never reach the redirected endpoint");
+    assert.equal(await page.evaluate("Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes('Sign in as'))"), false);
+  } finally {
+    await page.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
