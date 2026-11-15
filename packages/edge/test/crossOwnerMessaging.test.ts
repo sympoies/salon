@@ -84,11 +84,12 @@ async function fixture(rules: unknown[] = [], sharedMachine = false, coordinator
     coordinationRelays: machines.map((m, i) => ({ machine: m.name, token: "relay-" + i, ingress_token: "ingress-" + i })),
   }));
   const { base } = await listenOnLoopback(edge);
-  const peers = async () => {
+  const discovery = async () => {
     const res = await fetch(base + "/api/coordination/peers/v1?source_session_id=sender&source_incarnation=sender-inc", { headers: { authorization: "Bearer relay-0" } });
     assert.equal(res.status, 200);
-    return (await res.json() as { peers: { session_id: string }[] }).peers.map(p => p.session_id);
+    return await res.json() as { peers: { session_id: string }[]; excluded: unknown[] };
   };
+  const peers = async () => (await discovery()).peers.map(p => p.session_id);
   const send = async (id: string, reply = false, reverse = false, recipientIncarnation = id + "-inc") => {
     const now = Math.floor(Date.now() / 1000);
     const sender = { machine: "host-a", session_id: "sender", session_incarnation: "sender-inc" };
@@ -100,7 +101,7 @@ async function fixture(rules: unknown[] = [], sharedMachine = false, coordinator
       created_at_epoch: now, expires_at_epoch: now + 3600, reply_to: reply ? "parent" : null, reply_depth: reply ? 1 : 0,
     }) });
   };
-  return { db, base, sessions, sourceSessions, hooks, peers, send, destinationSnapshots: () => destinationSnapshots, writes: () => writes, cleanup: async () => {
+  return { db, base, sessions, sourceSessions, hooks, peers, discovery, send, destinationSnapshots: () => destinationSnapshots, writes: () => writes, cleanup: async () => {
     await Promise.all([edge, ...daemons].map(s => new Promise<void>(resolve => { s.closeAllConnections(); s.close(() => resolve()); })));
     rmSync(dir, { recursive: true, force: true });
   } };
@@ -124,6 +125,32 @@ test("configured discovery and send allow only selected recipients on the recipi
     assert.equal(hidden.status, 404);
   } finally { await f.cleanup(); }
 });
+
+for (const policy of ["allowed", "no-rule", "sender-denied"] as const) {
+  test(`stale binding exclusions respect cross-owner recipient and sender selectors: ${policy}`, async () => {
+    const f = await fixture(policy === "no-rule" ? [] : [policy === "sender-denied"
+      ? { ...rule, senders: [{ role: "coordinator" }] } : rule]);
+    try {
+      const access = new AccessStore(f.db);
+      try {
+        for (const session of f.sessions) {
+          const id = session.id as string;
+          if (id !== "unowned") access.claimSession({ principalId: "owner-b", machine: "host-b", sessionId: id,
+            incarnation: id + "-inc", provider: "codex", providerSessionId: "old-" + id });
+          session.session_incarnation = "restarted-" + id;
+          session.provider_resume = { provider: "codex", session_id: "private-provider-" + id };
+        }
+      } finally { access.close(); }
+      const body = await f.discovery();
+      assert.deepEqual(body.peers.map(peer => peer.session_id), ["sender"]);
+      assert.deepEqual(body.excluded, policy === "allowed" ? ["coordinator", "resident"].map(session_id => ({
+        machine: "host-b", session_id, reason: "ownership-binding-stale",
+      })) : []);
+      assert.equal(JSON.stringify(body).includes("private-provider-"), false);
+      assert.equal(f.writes(), 0);
+    } finally { await f.cleanup(); }
+  });
+}
 
 test("sender role restriction denies an ordinary worker sending to a foreign coordinator", async () => {
   // The source has no coordinator grant, while the destination has a trusted

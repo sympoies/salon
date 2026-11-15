@@ -85,3 +85,63 @@ Existing provider ownership rules and provider mutation serialization apply. Ter
 pre-create refusal codes and their no-create/no-retry details survive this hop. Missing or
 unsupported endpoints refuse without falling back to legacy `/sessions` or provider-import
 creation.
+
+## Recover a stale mailbox ownership binding
+
+Peer discovery (`GET /api/coordination/peers/v1`) returns authorized current identities in
+`peers` and a separate `excluded` array. A running recipient whose incarnation changed and
+whose provider conversation differs from its durable ownership binding appears as:
+
+```json
+{
+  "machine": "target",
+  "session_id": "recipient-session",
+  "reason": "ownership-binding-stale"
+}
+```
+
+This record is an exclusion, not permission to send. Discovery includes it only when the
+existing owner's machine access and the sender's messaging policy allow visibility.
+It contains no provider conversation, incarnation, credential or session content.
+Other ownership exclusions remain omitted; an empty `excluded` array means none of these
+stale bindings were visible. Message delivery still refuses an unproven incarnation.
+
+### Re-bind through the existing owner maintenance command
+
+A maintainer authorized to manage the edge's ownership database can use the existing scoped
+`import-owner --claim-session` command to re-associate a session with its current conversation.
+Run from the repository root using the deployment's private edge configuration, including
+`AGENT_CONSOLE_MACHINES`, `AGENT_CONSOLE_PRINCIPALS` and `AGENT_CONSOLE_STATE_DB`.
+Keep configuration and identity values out of public logs.
+
+1. Confirm the existing owner in the edge store and the recipient's current running
+   incarnation in the authenticated daemon inventory. Set `OWNER`, `MACHINE`, `SESSION_ID`
+   and `CURRENT_INCARNATION` to those verified values.
+2. Check the exact session without committing any ownership changes:
+
+   ```bash
+   node --conditions=source packages/edge/scripts/import-owner.ts \
+     --principal "$OWNER" --machine "$MACHINE" \
+     --claim-session "$SESSION_ID" --expected-incarnation "$CURRENT_INCARNATION" --check
+   ```
+
+3. After a successful check, apply the same scoped command without `--check`:
+
+   ```bash
+   node --conditions=source packages/edge/scripts/import-owner.ts \
+     --principal "$OWNER" --machine "$MACHINE" \
+     --claim-session "$SESSION_ID" --expected-incarnation "$CURRENT_INCARNATION"
+   ```
+
+4. Repeat authenticated peer discovery. The recipient should appear in `peers` and no
+   longer appear in `excluded`; delivery still requires its current incarnation.
+
+The command verifies machine access, a running session and the exact current incarnation.
+It refuses a session or provider conversation owned by another principal. The transaction
+updates only the selected session and its provider ownership, preserving its existing
+dispatcher, launcher, role and tree metadata. Check mode rolls the transaction back.
+If the runtime changes or ownership conflicts, stop and inspect the new state before retrying.
+
+The narrower `--repair-session` command requires the same provider conversation (or an
+unbound session); it cannot repair the changed conversation produced by clear then restart.
+This procedure adds no relay endpoint or automatic re-bind.

@@ -6,10 +6,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { AccessStore } from "../src/accessStore.ts";
+import { claimSessionOwner } from "../scripts/import-owner.ts";
 import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
-async function fixture(allowedMachines?: string[], machineNames = { source: "summit", destination: "cedar" }) {
+async function fixture(allowedMachines?: string[], machineNames = { source: "summit", destination: "cedar" }, bindDestination = true) {
   const sourceName = machineNames.source;
   const destinationName = machineNames.destination;
   const dir = mkdtempSync(join(tmpdir(), "relay-test-"));
@@ -51,10 +52,12 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
   const dstAddr = await listenOnLoopback(dest);
   const access = new AccessStore(db);
   access.claimSession({ principalId: "tess", machine: sourceName, sessionId: "source", incarnation: "src-inc", provider: "codex", providerSessionId: "source-provider", consoleRole: "coordinator", treeDepth: 0 });
-  access.claimSession({ principalId: "tess", machine: destinationName, sessionId: "destination", incarnation: "dest-inc", provider: "codex", providerSessionId: "destination-provider", dispatcher: { machine: sourceName, sessionId: "source" }, treeDepth: 1 });
+  access.claimSession({ principalId: "tess", machine: destinationName, sessionId: "destination", incarnation: "dest-inc",
+    ...(bindDestination ? { provider: "codex", providerSessionId: "destination-provider" } : {}),
+    dispatcher: { machine: sourceName, sessionId: "source" }, treeDepth: 1 });
   access.claimSession({ principalId: "dana", machine: destinationName, sessionId: "other-user", incarnation: "other-inc" });
   access.close();
-  const edge = createEdgeServer(makeEdgeConfig({
+  const config = makeEdgeConfig({
     openAccess: false, multiUser: true, accessDbPath: db,
     principals: [
       { id: "tess", token: "browser-tess", machines: allowedMachines ?? [sourceName, destinationName], permissions: ["debug"] },
@@ -62,7 +65,8 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
     ],
     machines: [ { name: sourceName, url: srcAddr.base, token: "source-operator" }, { name: destinationName, url: dstAddr.base, token: "dest-operator" } ],
     ...{ coordinationRelays: [ { machine: sourceName, token: "source-relay", ingress_token: "source-ingress" }, { machine: destinationName, token: "dest-relay", ingress_token: "dest-ingress" } ] },
-  }));
+  });
+  const edge = createEdgeServer(config);
   const { base } = await listenOnLoopback(edge);
   const now = Math.floor(Date.now() / 1000);
   const envelope = {
@@ -72,7 +76,7 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
     body: "private-message-sentinel", body_sha256: createHash("sha256").update("private-message-sentinel").digest("hex"),
     created_at_epoch: now, expires_at_epoch: now + 3600, reply_depth: 0,
   };
-  return { state, base, envelope, db, cleanup: async () => {
+  return { state, base, envelope, db, config, cleanup: async () => {
     await Promise.all([edge, source, dest].map(server => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); })));
     rmSync(dir, { recursive: true, force: true });
   } };
@@ -132,6 +136,59 @@ for (const via of ["relay", "discovery"] as const) {
   }
 }
 
+test("clear then restart reports a stale binding and explicit owner re-bind restores relay access", async () => {
+  const f = await fixture();
+  try {
+    const before = readGrant(f.db, "cedar", "destination")!;
+    f.state.destinationIncarnation = "restarted-inc";
+    f.state.destinationResume.session_id = "new-private-provider-sentinel";
+    f.envelope.to.session_incarnation = "restarted-inc";
+    const response = await discover(f);
+    assert.equal(response.status, 200);
+    const body = await response.json() as { peers: Array<{ session_id: string }>; excluded: unknown[] };
+    assert.equal(body.peers.some(peer => peer.session_id === "destination"), false);
+    assert.deepEqual(body.excluded, [{ machine: "cedar", session_id: "destination", reason: "ownership-binding-stale" }]);
+    assert.equal(JSON.stringify(body).includes("new-private-provider-sentinel"), false);
+    assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+    assert.equal((await send(f.base, f.envelope)).status, 409);
+    assert.equal(f.state.writes, 0);
+
+    const scope = { machine: "cedar", sessionId: "destination", expectedIncarnation: "restarted-inc" };
+    await assert.rejects(claimSessionOwner(f.config, "dana", scope), /session is already owned by another principal/);
+    await assert.rejects(claimSessionOwner(f.config, "tess", { ...scope, expectedIncarnation: "wrong-inc" }), /daemon session runtime changed/);
+    await claimSessionOwner(f.config, "tess", { ...scope, checkOnly: true });
+    assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+    await claimSessionOwner(f.config, "tess", scope);
+    assert.deepEqual(readGrant(f.db, "cedar", "destination"), {
+      ...before, incarnation: "restarted-inc", providerSessionId: "new-private-provider-sentinel",
+    });
+    const repaired = await (await discover(f)).json() as { peers: Array<{ session_id: string }>; excluded: unknown[] };
+    assert.ok(repaired.peers.some(peer => peer.session_id === "destination"));
+    assert.deepEqual(repaired.excluded, []);
+    assert.equal((await send(f.base, f.envelope)).status, 200);
+    assert.equal(f.state.writes, 1);
+  } finally { await f.cleanup(); }
+});
+
+for (const reason of ["stopped", "unbound-grant"] as const) {
+  test(`changed conversation stays silently excluded for a ${reason} recipient`, async () => {
+    const f = await fixture(undefined, undefined, reason !== "unbound-grant");
+    try {
+      const before = readGrant(f.db, "cedar", "destination");
+      f.state.destinationIncarnation = "restarted-inc";
+      f.state.destinationResume.session_id = "different-conversation";
+      if (reason === "stopped") f.state.destinationStatus = "stopped";
+      const response = await discover(f);
+      assert.equal(response.status, 200);
+      const body = await response.json() as { peers: Array<{ session_id: string }>; excluded: unknown[] };
+      assert.equal(body.peers.some(peer => peer.session_id === "destination"), false);
+      assert.deepEqual(body.excluded, []);
+      assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+      assert.equal(f.state.writes, 0);
+    } finally { await f.cleanup(); }
+  });
+}
+
 for (const reason of ["provider-session", "provider", "not-live", "unbound"] as const) {
   test(`native resume refuses unproven continuity: ${reason}`, async () => {
     const f = await fixture();
@@ -151,8 +208,10 @@ for (const reason of ["provider-session", "provider", "not-live", "unbound"] as 
       assert.equal(f.state.writes, 0);
       const discovery = await discover(f);
       assert.equal(discovery.status, 200);
-      const body = await discovery.json() as { peers: Array<{ session_id: string }> };
+      const body = await discovery.json() as { peers: Array<{ session_id: string }>; excluded: unknown[] };
       assert.equal(body.peers.some(peer => peer.session_id === "destination"), false);
+      assert.deepEqual(body.excluded, reason === "provider-session" || reason === "provider"
+        ? [{ machine: "cedar", session_id: "destination", reason: "ownership-binding-stale" }] : []);
     } finally { await f.cleanup(); }
   });
 }
