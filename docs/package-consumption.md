@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.77 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.78 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,17 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.77`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.78`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.77
+### Changes retained in SDK 0.1.78
+
+The coordination relay adds an `excluded` array to its remote-peers response (#523). A policy-visible
+running recipient whose incarnation and provider conversation changed is reported with the typed,
+content-free `ownership-binding-stale` reason. The existing owner-scoped claim re-bind restores its
+eligibility; see [Coordination resume](coordination-resume.md).
+
+Pairing regression coverage retains the client consistency checks and refused-item retry device
+binding (#524). This carried change adds tests without changing runtime behavior.
 
 Status-count chips retain their accessible names on Android toggle buttons (#519). Each chip
 keeps `aria-pressed`, `aria-label` and `title`, adds visually hidden text equal to its full name,
@@ -219,10 +227,15 @@ claim/exchange POSTs with no Cookie, Authorization or WebSocket subprotocol head
 [device sign-in guide](device-sign-in-guide.md) describes the user flow. Packaged native transport
 and real redirect-downgrade acceptance remain separate from browser and mocked transport checks.
 
-Native shells import received HTTPS pairing links through `importPairingLink` from
-`@agent-console/ui/pairing`. Optional `mountApp` adapters add connection-screen scanning and an explicit
-browser-to-app handoff before claim. Consumer-supplied `EdgeConfig.androidAppLinks` can serve the Android
-association document without default package names or signing identities. See the
+Native shells import received HTTPS pairing links through the public `importPairingLink(url)` from
+`@agent-console/ui/pairing` (#526). Parsing requires an HTTPS root and fragment-only payload; explicit
+consent precedes claim and credential installation. Generation and import-identity fences prevent stale
+imports from installing credentials.
+
+Optional `mountApp` hooks `scanPairingLink` and `openPairingLinkInApp` add connection-screen scanning and
+an explicit browser-to-app handoff before claim. Consumer-supplied `EdgeConfig.androidAppLinks` can serve
+the Android association document; it is absent by default, and alias paths return 404. No default package
+names or signing identities are supplied. See the
 [link-import contract](device-sign-in.md#import-a-pairing-link-from-a-native-shell) for parsing and cancellation rules.
 
 The reply composer and terminal input carry their accessible names on the input element itself,
