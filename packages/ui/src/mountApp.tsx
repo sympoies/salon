@@ -9,8 +9,9 @@ import { installAndroidSafeAreaInsets } from "./runtime.ts";
 import { installMacTitleBar, MacTitleBar } from "./MacTitleBar.tsx";
 import { installTheme } from "./theme.ts";
 import "./styles.css";
+import { PairingLinkContext, type PairingLinkOptions } from "./PairingLinkActions.tsx";
 
-export interface MountAppOptions {
+export interface MountAppOptions extends PairingLinkOptions {
   /** Name displayed in the application title. Defaults to Agent Console. */
   readonly appName?: string;
   /** Header mark: `dark` for dark surfaces, `light` for light and Paper surfaces. Defaults to the Salon mark. */
@@ -35,7 +36,7 @@ export function mountApp(root: HTMLElement | null, options: MountAppOptions = {}
         <AppIconContext.Provider value={options.appIcon ?? DEFAULT_APP_ICON}>
           <MacTitleBar />
           <UiExtensionsProvider registry={registry}>
-            <App />
+            <PairingLinkContext.Provider value={options}><App /></PairingLinkContext.Provider>
           </UiExtensionsProvider>
         </AppIconContext.Provider>
       </AppNameContext.Provider>

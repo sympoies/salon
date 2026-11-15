@@ -1,5 +1,6 @@
 import { DeviceSettings } from "./DeviceSettings.tsx";
 import { PairingRecipient } from "./PairingRecipient.tsx";
+import { ScanPairingLinkButton } from "./PairingLinkActions.tsx";
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { usePhoneLayout } from "./usePhoneLayout.ts";
 import { ExtensionSettingsPanels } from "./extensions.tsx";
@@ -262,6 +263,7 @@ export function Settings({
           {savedTokenStatus}
           {error ? <p className="err" role="alert">{error}</p> : null}
           <button className="btn ghost" type="button" onClick={() => setPairing(true)}>Use a pairing code</button>
+          <ScanPairingLinkButton />
           <div className="modal-actions">
             {onCancel ? (
               <button type="button" className="btn ghost" onClick={onCancel}>

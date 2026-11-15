@@ -304,6 +304,13 @@ async function readConversationWindow(machine: MachineConfig, id: string, query:
 }
 
 export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions = {}): Server {
+  if (config.androidAppLinks?.some(app => !/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/.test(app.packageName)
+    || !app.sha256CertFingerprints.length || app.sha256CertFingerprints.some(value => !/^(?:[A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}$/.test(value))))
+    throw new Error("Invalid Android app association configuration.");
+  const androidAssetLinks = config.androidAppLinks?.length ? JSON.stringify(config.androidAppLinks.map(app => ({
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: { namespace: "android_app", package_name: app.packageName, sha256_cert_fingerprints: app.sha256CertFingerprints },
+  }))) : undefined;
   const remoteImage = createRemoteImageService(config.remoteImage ?? { ...remoteImageDefaults, stateDir: join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "salon") }, options.remoteImageFetch);
   const attachmentUploadTimeoutMs = options.attachmentUploadTimeoutMs ?? ATTACHMENT_UPLOAD_TIMEOUT_MS;
   const ordinaryRequestTimeoutMs = options.ordinaryRequestTimeoutMs ?? ORDINARY_REQUEST_TIMEOUT_MS;
@@ -710,6 +717,14 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     const method = req.method ?? "GET";
     const url = new URL(req.url ?? "/", "http://edge.local");
     const path = url.pathname;
+    if (path === "/.well-known/assetlinks.json") {
+      res.setHeader("cache-control", "no-store");
+      if (method !== "GET" && method !== "HEAD") { sendJson(res, 405, { ok: false, error: { message: "method not allowed" } }); return; }
+      if (!androidAssetLinks) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(method === "HEAD" ? undefined : androidAssetLinks);
+      return;
+    }
     const requestId = requestIdFromHeader(req.headers["x-agent-console-request-id"]);
     if (path.startsWith("/api/")) {
       res.setHeader("x-agent-console-request-id", requestId);

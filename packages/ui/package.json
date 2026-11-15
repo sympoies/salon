@@ -5,6 +5,11 @@
   "description": "agent-console UI: a terminal-first React 19 + @xterm/xterm client over the edge backend's WebSocket/HTTP API.",
   "type": "module",
   "exports": {
+    "./pairing": {
+      "source": "./src/pairingLink.ts",
+      "types": "./dist-package/src/pairingLink.d.ts",
+      "default": "./dist-package/src/pairingLink.js"
+    },
     "./app": {
       "source": "./src/mountApp.tsx",
       "types": "./dist-package/src/mountApp.d.ts",

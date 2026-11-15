@@ -1,4 +1,5 @@
 import { mountApp } from "@agent-console/ui/app";
+import { importPairingLink } from "@agent-console/ui/pairing";
 import type { UiExtension } from "@agent-console/ui/extensions";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -127,5 +128,6 @@ if (new URLSearchParams(location.search).has("reorder-fixture")) {
     },
   } });
 } else {
-  mountApp(document.getElementById("root"), { extensions: [extension] });
+  if (typeof importPairingLink !== "function") throw new Error("Native pairing import entry unavailable");
+  mountApp(document.getElementById("root"), { extensions: [extension], scanPairingLink: async () => null });
 }

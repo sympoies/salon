@@ -48,7 +48,69 @@ their existing authentication behavior. The configured single-token principal ma
 7. Browser exchange delivers its device secret only in an HttpOnly, SameSite=Strict, Secure cookie using the
    existing session cookie name, with metadata-only JSON. Native exchange returns the credential once over HTTPS
    and saves it through the existing token storage path. Refuse silent replacement of a different-principal
-   browser session. Native code entry uses the configured server; an OS-camera link signs in its target browser.
+   browser session. Native code entry uses the configured server. A shell can import the link through the public
+   API below; without shell integration, an OS-camera link signs in its target browser.
+
+## Import a pairing link from a native shell
+
+Consumers call `importPairingLink(url)` from `@agent-console/ui/pairing` for OS link delivery or a QR scan.
+Call it after the native runtime is available, before or after `mountApp`. It accepts only
+`https://<host>[:port]/#pair=<code>`, at most 2048 characters, with the current 20-character uppercase
+pairing alphabet. The path must be `/`; whitespace, backslashes, user information, queries, additional
+fragment fields and encoded or grouped codes are refused. A custom-scheme envelope belongs to the shell;
+extract its HTTPS payload before calling the API. Never log or persist the envelope or payload.
+
+The import throws `Invalid pairing link.` for malformed input, or
+`Pairing link import requires a native shell.` outside a native runtime. It returns no credential.
+The UI claims the link using native delivery and displays the server, account and comparison string.
+The recipient must choose **Sign in as …**, and the owner must approve the matching claim.
+Only then can the credential replace the saved connection. Cancel, a replacement import or a connection
+generation change discards the pending import and prevents stale credential installation.
+An invalid replacement also discards the previous import.
+
+`mountApp` accepts two optional consumer adapters:
+
+```ts
+mountApp(root, {
+  scanPairingLink: async () => scanQrWithNativePlugin(),
+  openPairingLinkInApp: url => openRegisteredAppSchemeWithFragmentPayload(url),
+});
+```
+
+`scanPairingLink` returns a link or `null` for cancellation. When supplied in a native shell,
+**Scan QR** appears on the connection card. The scanner adapter owns camera permission and scanner cancellation;
+results from an unmounted card or changed connection are discarded. Scanner errors produce fixed UI text.
+
+`openPairingLinkInApp` supplies **Open in app** on an HTTPS browser pairing landing before a browser claim.
+It runs only after a user action and receives the HTTPS fragment link from memory. It must use a registered
+OS handoff without server redirects or logging. The browser keeps its **Continue** path available.
+These actions are absent when their adapters are not supplied.
+Salon does not register schemes or bundle a camera plugin.
+
+## Configure Android app association
+
+A consumer can pass `androidAppLinks` through `EdgeConfig`, for example alongside `loadConfig(env)`:
+
+```ts
+createEdgeServer({
+  ...loadConfig(env),
+  androidAppLinks: [{
+    packageName: consumerConfiguration.androidPackageName,
+    sha256CertFingerprints: consumerConfiguration.androidSigningFingerprints,
+  }],
+});
+```
+
+Package names and colon-separated SHA-256 signing fingerprints are validated at server creation.
+`GET` and `HEAD /.well-known/assetlinks.json` return the configured Android Digital Asset Links document
+as anonymous JSON without authentication, cookies or redirects. An absent or empty configuration returns 404.
+Other methods return 405. There are no default identities or signing fingerprints.
+
+Expose the document directly over HTTPS and configure the matching host in the consumer's Android manifest.
+[Android App Links documentation][android-app-links] describes OS verification requirements;
+serving this document alone does not prove that an installed app receives a link.
+
+[android-app-links]: https://developer.android.com/training/app-links/add-applinks
 
 ## Entropy, storage, expiry and throttling
 

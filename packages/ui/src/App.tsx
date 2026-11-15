@@ -1,10 +1,11 @@
 import { ShellPage } from "./ShellPage.tsx";
 import { resolveDashboardShortcutAction } from "./dashboardShortcuts.ts";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
 import { getAuthStatus, listMachineNames, type AuthStatus, type ConnectFailure } from "./api.ts";
 import { capturePairingLanding, landingPairingCode } from "./pairingLanding.ts";
 import { PairingRecipient } from "./PairingRecipient.tsx";
+import { clearPairingLink, pendingPairingLink, subscribePairingLink } from "./runtime.ts";
 import { Login } from "./Login.tsx";
 import { Settings } from "./Settings.tsx";
 import { loadPhoneSessionOpen, savePhoneSessionOpen } from "./phoneSessionOpen.ts";
@@ -66,6 +67,7 @@ export default function App() {
   const startupRecoveryRendered = useRef(false);
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [landingPairing, setLandingPairing] = useState(landingPairingCode);
+  const importedPairing = useSyncExternalStore(subscribePairingLink, pendingPairingLink, pendingPairingLink);
   useEffect(() => {
     const onHashChange = () => {
       if (!window.location.hash.startsWith("#pair=")) return;
@@ -328,6 +330,8 @@ export default function App() {
     setView({ kind: "dashboard" });
   };
 
+  if (importedPairing) return <PairingRecipient key={importedPairing.revision} imported={importedPairing}
+    onSignedIn={onSignedIn} onCancel={() => clearPairingLink(importedPairing)} />;
   if (authed === null) {
     return <div className="boot">…</div>;
   }
