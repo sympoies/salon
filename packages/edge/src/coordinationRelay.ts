@@ -526,6 +526,7 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
       const recipientOwners = new Set([principal.id, ...rulesForSender(config, store, principal, from, sourceSession).map(r => r.to)]);
       const candidates = config.machines.filter(m => config.principals.some(p => recipientOwners.has(p.id) && p.machines.includes(m.name))
         && config.coordinationRelays?.some(r => r.machine === m.name));
+      const excluded: Array<{ machine: string; session_id: string; reason: "ownership-binding-stale" }> = [];
       const peers = (await Promise.all(candidates.map(async machine => {
         let state: Snapshot;
         try { state = machine.name === source.name ? sourceSnapshot : await snapshot(machine); }
@@ -534,12 +535,29 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
           const target = identity({ machine: machine.name, session_id: session.id, session_incarnation: session.session_incarnation });
           if (!target || !recipientOwners.has(store.sessionGrant(target.machine, target.session_id)?.principalId ?? "")) return [];
           try { grant(store, target, state); }
-          catch (error) { if (error instanceof RelayError) return []; throw error; }
+          catch (error) {
+            if (!(error instanceof RelayError)) throw error;
+            const ownership = store.sessionGrant(target.machine, target.session_id);
+            const resume = object(session.provider_resume);
+            if (error.code === "session-incarnation-conflict" && session.status === "running"
+              && ownership && ownership.incarnation !== target.session_incarnation
+              && ownership.provider && ownership.providerSessionId
+              && typeof resume?.provider === "string" && resume.provider
+              && typeof resume.session_id === "string" && resume.session_id
+              && (resume.provider !== ownership.provider || resume.session_id !== ownership.providerSessionId)
+              // Check visibility using the durable grant only. This never
+              // authorizes the replacement incarnation or repairs its binding.
+              && mayMessage(config, store, principal, from, sourceSession,
+                { ...target, session_incarnation: ownership.incarnation }, session)) {
+              excluded.push({ machine: target.machine, session_id: target.session_id, reason: "ownership-binding-stale" });
+            }
+            return [];
+          }
           if (!mayMessage(config, store, principal, from, sourceSession, target, session)) return [];
           return [{ ...target, ...peerDiagnostics(state, session) }];
         });
       }))).flat();
-      sendJson(res, 200, { schema_version: "agent-session.remote-peers.v1", peers });
+      sendJson(res, 200, { schema_version: "agent-session.remote-peers.v1", peers, excluded });
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/coordination/board/v1") {
