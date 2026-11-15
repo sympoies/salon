@@ -10,7 +10,7 @@ import { claimSessionOwner } from "../scripts/import-owner.ts";
 import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
-async function fixture(allowedMachines?: string[], machineNames = { source: "summit", destination: "cedar" }) {
+async function fixture(allowedMachines?: string[], machineNames = { source: "summit", destination: "cedar" }, bindDestination = true) {
   const sourceName = machineNames.source;
   const destinationName = machineNames.destination;
   const dir = mkdtempSync(join(tmpdir(), "relay-test-"));
@@ -52,7 +52,9 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
   const dstAddr = await listenOnLoopback(dest);
   const access = new AccessStore(db);
   access.claimSession({ principalId: "tess", machine: sourceName, sessionId: "source", incarnation: "src-inc", provider: "codex", providerSessionId: "source-provider", consoleRole: "coordinator", treeDepth: 0 });
-  access.claimSession({ principalId: "tess", machine: destinationName, sessionId: "destination", incarnation: "dest-inc", provider: "codex", providerSessionId: "destination-provider", dispatcher: { machine: sourceName, sessionId: "source" }, treeDepth: 1 });
+  access.claimSession({ principalId: "tess", machine: destinationName, sessionId: "destination", incarnation: "dest-inc",
+    ...(bindDestination ? { provider: "codex", providerSessionId: "destination-provider" } : {}),
+    dispatcher: { machine: sourceName, sessionId: "source" }, treeDepth: 1 });
   access.claimSession({ principalId: "dana", machine: destinationName, sessionId: "other-user", incarnation: "other-inc" });
   access.close();
   const config = makeEdgeConfig({
@@ -167,6 +169,25 @@ test("clear then restart reports a stale binding and explicit owner re-bind rest
     assert.equal(f.state.writes, 1);
   } finally { await f.cleanup(); }
 });
+
+for (const reason of ["stopped", "unbound-grant"] as const) {
+  test(`changed conversation stays silently excluded for a ${reason} recipient`, async () => {
+    const f = await fixture(undefined, undefined, reason !== "unbound-grant");
+    try {
+      const before = readGrant(f.db, "cedar", "destination");
+      f.state.destinationIncarnation = "restarted-inc";
+      f.state.destinationResume.session_id = "different-conversation";
+      if (reason === "stopped") f.state.destinationStatus = "stopped";
+      const response = await discover(f);
+      assert.equal(response.status, 200);
+      const body = await response.json() as { peers: Array<{ session_id: string }>; excluded: unknown[] };
+      assert.equal(body.peers.some(peer => peer.session_id === "destination"), false);
+      assert.deepEqual(body.excluded, []);
+      assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+      assert.equal(f.state.writes, 0);
+    } finally { await f.cleanup(); }
+  });
+}
 
 for (const reason of ["provider-session", "provider", "not-live", "unbound"] as const) {
   test(`native resume refuses unproven continuity: ${reason}`, async () => {
