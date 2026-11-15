@@ -158,7 +158,7 @@ test("clear then restart with continuity restores discovery and delivery", async
   } finally { await f.cleanup(); }
 });
 
-for (const reason of ["missing", "provider", "start", "broken", "time", "length", "end", "stopped", "malformed", "kind"] as const) {
+for (const reason of ["missing", "provider", "start", "broken", "time", "unsafe-time", "blank-id", "long-id", "control-id", "length", "end", "stopped", "malformed", "kind", "array-kind", "object-kind"] as const) {
   test(`continuity refuses ${reason} evidence without failing discovery`, async () => {
     const f = await fixture();
     try {
@@ -173,9 +173,17 @@ for (const reason of ["missing", "provider", "start", "broken", "time", "length"
       if (reason === "start") links[0]!.from_conversation = "other";
       if (reason === "broken") links[1]!.from_incarnation = "other";
       if (reason === "time") links[1]!.at_epoch = 0;
+      if (reason === "unsafe-time") links[1]!.at_epoch = Number.MAX_SAFE_INTEGER + 1;
+      if (reason === "blank-id" || reason === "long-id" || reason === "control-id") {
+        const invalid = reason === "blank-id" ? " " : reason === "long-id" ? "é".repeat(128) + "x" : "bad\nvalue";
+        links[0]!.to_incarnation = invalid;
+        links[1]!.from_incarnation = invalid;
+      }
       if (reason === "length") links.push(...Array.from({ length: 15 }, () => ({ ...links[1]! })));
       if (reason === "end") links[1]!.to_incarnation = "other";
       if (reason === "kind") links[0]!.kind = "restart";
+      if (reason === "array-kind") (links[1] as { kind: unknown }).kind = ["restart"];
+      if (reason === "object-kind") (links[1] as { kind: unknown }).kind = { toString: null };
       if (reason === "stopped") f.state.destinationStatus = "stopped";
       f.state.destinationContinuity = reason === "missing" ? undefined : reason === "malformed" ? { links: "invalid" } :
         { schema_version: "agent-session.provider-continuity.v1", provider: reason === "provider" ? "claude" : "codex", links };
@@ -184,6 +192,54 @@ for (const reason of ["missing", "provider", "start", "broken", "time", "length"
       const body = await response.json() as { peers: Array<{ session_id: string }>; excluded: unknown[] };
       assert.equal(body.peers.some(peer => peer.session_id === "destination"), false);
       assert.deepEqual(body.excluded, reason === "stopped" ? [] : [{ machine: "cedar", session_id: "destination", reason: "ownership-binding-stale" }]);
+      assert.equal((await send(f.base, f.envelope)).status, 409);
+      assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+    } finally { await f.cleanup(); }
+  });
+}
+
+test("clear can retain the incarnation before a restart", async () => {
+  const f = await fixture();
+  try {
+    f.state.destinationIncarnation = "restarted-inc";
+    f.state.destinationResume.session_id = "new-conversation";
+    f.envelope.to.session_incarnation = "restarted-inc";
+    f.state.destinationContinuity = { schema_version: "agent-session.provider-continuity.v1", provider: "codex", links: [
+      { kind: "restart", from_incarnation: "prior-inc", to_incarnation: "dest-inc", from_conversation: "destination-provider", to_conversation: "destination-provider", at_epoch: 0 },
+      { kind: "clear", from_incarnation: "dest-inc", to_incarnation: "dest-inc", from_conversation: "destination-provider", to_conversation: "new-conversation", at_epoch: 1 },
+      { kind: "restart", from_incarnation: "dest-inc", to_incarnation: "restarted-inc", from_conversation: "new-conversation", to_conversation: "new-conversation", at_epoch: 2 },
+    ] };
+    assert.equal((await send(f.base, f.envelope)).status, 200);
+  } finally { await f.cleanup(); }
+});
+
+for (const reason of ["incarnation-return", "conversation-return", "stale-chain", "no-op"] as const) {
+  test(`continuity refuses ${reason}`, async () => {
+    const f = await fixture();
+    try {
+      const store = new AccessStore(f.db);
+      assert.equal(store.advanceSessionContinuity("tess", "cedar", "destination", "dest-inc", "destination-provider", "middle-inc", "middle-conversation"), true);
+      store.close();
+      f.state.destinationIncarnation = reason === "incarnation-return" || reason === "stale-chain" ? "dest-inc" : "next-inc";
+      f.state.destinationResume.session_id = reason === "conversation-return" || reason === "stale-chain" ? "destination-provider" : "next-conversation";
+      f.envelope.to.session_incarnation = f.state.destinationIncarnation;
+      const links = [
+        { kind: "clear", from_incarnation: "dest-inc", to_incarnation: "dest-inc", from_conversation: "destination-provider", to_conversation: "middle-conversation", at_epoch: 1 },
+        { kind: "restart", from_incarnation: "dest-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "middle-conversation", at_epoch: 2 },
+      ];
+      if (reason === "incarnation-return") {
+        links.push({ kind: "clear", from_incarnation: "middle-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "next-conversation", at_epoch: 3 });
+        links.push({ kind: "restart", from_incarnation: "middle-inc", to_incarnation: "dest-inc", from_conversation: "next-conversation", to_conversation: "next-conversation", at_epoch: 4 });
+      } else if (reason === "conversation-return") {
+        links.push({ kind: "clear", from_incarnation: "middle-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "destination-provider", at_epoch: 3 });
+        links.push({ kind: "restart", from_incarnation: "middle-inc", to_incarnation: "next-inc", from_conversation: "destination-provider", to_conversation: "destination-provider", at_epoch: 4 });
+      } else if (reason === "no-op") {
+        links.push({ kind: "restart", from_incarnation: "middle-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "middle-conversation", at_epoch: 3 });
+        links.push({ kind: "clear", from_incarnation: "middle-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "next-conversation", at_epoch: 4 });
+        links.push({ kind: "restart", from_incarnation: "middle-inc", to_incarnation: "next-inc", from_conversation: "next-conversation", to_conversation: "next-conversation", at_epoch: 5 });
+      }
+      f.state.destinationContinuity = { schema_version: "agent-session.provider-continuity.v1", provider: "codex", links };
+      const before = readGrant(f.db, "cedar", "destination");
       assert.equal((await send(f.base, f.envelope)).status, 409);
       assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
     } finally { await f.cleanup(); }

@@ -242,14 +242,25 @@ function continuityConversation(session: Record<string, unknown>, provider: stri
     || !Array.isArray(links) || links.length < 1 || links.length > 16) return null;
   let previous: Record<string, unknown> | null = null;
   let starts = false;
+  const incarnations = new Set<unknown>();
+  const conversations = new Set<unknown>();
   for (const value of links) {
     const link = object(value);
-    if (!link || !["clear", "restart", "resume"].includes(String(link.kind))
-      || ![link.from_incarnation, link.to_incarnation, link.from_conversation, link.to_conversation].every(v => typeof v === "string" && v.length > 0)
+    if (!link || typeof link.kind !== "string" || !["clear", "restart", "resume"].includes(link.kind)
+      || ![link.from_incarnation, link.to_incarnation, link.from_conversation, link.to_conversation].every(v =>
+        typeof v === "string" && v.trim().length > 0 && Buffer.byteLength(v, "utf8") <= 256 && !/\p{Cc}/u.test(v))
       || !Number.isSafeInteger(link.at_epoch) || (link.at_epoch as number) < 0
       || (link.kind === "clear" ? link.from_conversation === link.to_conversation : link.from_conversation !== link.to_conversation)
       || (previous && (previous.to_incarnation !== link.from_incarnation || previous.to_conversation !== link.from_conversation
         || (previous.at_epoch as number) > (link.at_epoch as number)))) return null;
+    if (!previous) { incarnations.add(link.from_incarnation); conversations.add(link.from_conversation); }
+    const incarnationChanged = link.from_incarnation !== link.to_incarnation;
+    const conversationChanged = link.from_conversation !== link.to_conversation;
+    if ((!incarnationChanged && !conversationChanged)
+      || (incarnationChanged && incarnations.has(link.to_incarnation))
+      || (conversationChanged && conversations.has(link.to_conversation))) return null;
+    incarnations.add(link.to_incarnation);
+    conversations.add(link.to_conversation);
     if (link.from_incarnation === incarnation && link.from_conversation === conversation) starts = true;
     previous = link;
   }

@@ -93,7 +93,12 @@ schema `agent-session.provider-continuity.v1`, a provider, and up to 16 ordered
 links. Each link records `kind` (`clear`, `restart`, or `resume`), `from_incarnation`,
 `to_incarnation`, `from_conversation`, `to_conversation`, and `at_epoch`. Clear
 changes the conversation; restart and resume retain it. Adjacent endpoints must
-match, times cannot decrease, and the last endpoint must match the current
+match, times are Unix seconds from 0 through 2^53 - 1 and cannot decrease, and
+identifiers must be nonblank, control-free strings of at most 256 UTF-8 bytes.
+
+Once an incarnation or conversation is replaced, it cannot return later in the
+chain, and a link must change at least one of these values.
+The last endpoint must match the current
 incarnation and any reported provider conversation. Only daemon-performed
 lifecycle operations on the same managed session supply this evidence.
 
