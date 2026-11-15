@@ -166,6 +166,69 @@ for (const fate of ["revoked", "expired", "revoked-during-observation"]) test(`t
   }
 });
 
+test("a refused outbox retry is bound to the retrying device rather than the original issuer", async () => {
+  let running = false;
+  const posts: string[] = [];
+  const daemon = createServer(async (req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/sessions") return void res.end(JSON.stringify({ ok: true, data: { sessions: [{
+      id: "fixture-session", status: running ? "running" : "stopped", agent: "codex", session_incarnation: "fixture-inc",
+      provider_resume: { provider: "codex", session_id: "provider-fixture" },
+    }] } }));
+    if (req.method === "POST" && req.url === "/sessions/fixture-session/prompt/v2") {
+      let raw = ""; for await (const chunk of req) raw += String(chunk);
+      const body = JSON.parse(raw); posts.push(body.text);
+      return void res.end(JSON.stringify({ ok: true, data: { submitted: true, session_incarnation: "fixture-inc", receipt: {
+        request_id: body.request_id, session_id: "fixture-session", session_incarnation: "fixture-inc", outcome: "submitted", code: null,
+      } } }));
+    }
+    res.writeHead(404); res.end("{}");
+  });
+  const { base } = await listenOnLoopback(daemon);
+  const f = await fixture(true, base, { outboxPollIntervalMs: 20 });
+  const path = "/api/sessions/fixture/fixture-session/outbox";
+  const headers = (token: string) => ({ authorization: `Bearer ${token}`, "content-type": "application/json",
+    "x-console-expected-principal": "primary" });
+  const admit = async (id: string, text: string, token: string) => {
+    const response = await fetch(`${f.base}${path}/${id}`, { method: "PUT", headers: headers(token),
+      body: JSON.stringify({ text, expected_session_incarnation: "fixture-inc" }) });
+    assert.equal(response.status, 201);
+  };
+  const item = async () => {
+    const response = await fetch(`${f.base}${path}/retry-intention?expected_session_incarnation=fixture-inc`,
+      { headers: headers("primary-fixture") });
+    assert.equal(response.status, 200);
+    return (await response.json() as Data).data.item;
+  };
+  try {
+    const original = await f.issue(); const retrying = await f.issue();
+    await admit("retry-intention", "Retried intention", original.token);
+    assert.equal((await f.call(`devices/${original.id}`, undefined, headers("primary-fixture"), "DELETE")).status, 200);
+    const refused = await item();
+    assert.equal(refused.state, "refused");
+    assert.equal(refused.error_code, "outbox-authorization-changed");
+    const response = await fetch(`${f.base}${path}/retry-intention`, { method: "PATCH", headers: headers(retrying.token),
+      body: JSON.stringify({ operation: "retry_refused", base_revision: refused.revision, expected_session_incarnation: "fixture-inc" }) });
+    assert.equal(response.status, 200);
+    assert.equal((await item()).state, "queued", "a healthy device can explicitly retry a retired device's refusal");
+    assert.deepEqual(posts, [], "retry waits while the session is stopped");
+    assert.equal((await f.call(`devices/${retrying.id}`, undefined, headers("primary-fixture"), "DELETE")).status, 200);
+    await admit("main-control", "Main control", "primary-fixture");
+    await f.restart(); running = true;
+    const deadline = Date.now() + 3000;
+    while (!posts.includes("Main control")) {
+      assert.ok(Date.now() < deadline, "dispatcher must progress to the healthy control after restart");
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(posts, ["Main control"], "revocation prevents delivery of the retried intention");
+    const retired = await item();
+    assert.equal(retired.state, "refused");
+    assert.equal(retired.error_code, "outbox-authorization-changed");
+  } finally {
+    await f.close(); daemon.closeAllConnections(); await new Promise<void>(resolve => daemon.close(() => resolve()));
+  }
+});
+
 test("device read saturation cannot block main metadata reads or selective revocation", async () => {
   const f = await fixture();
   try {
