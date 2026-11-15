@@ -12,6 +12,46 @@ const WS_TOKEN_PROTO_B64_PREFIX = "ac-token-b64.";
 let connectionConfigGeneration = 0;
 let authenticatedConnection: { generation: number; principal: string | null } | undefined;
 
+export interface ImportedPairingLink {
+  readonly origin: string;
+  readonly code: string;
+  readonly generation: number;
+  readonly revision: number;
+}
+let importedPairingLink: ImportedPairingLink | undefined;
+let pairingImportRevision = 0;
+const pairingImportListeners = new Set<() => void>();
+export const pendingPairingLink = (): ImportedPairingLink | undefined => importedPairingLink;
+export function subscribePairingLink(listener: () => void): () => void {
+  pairingImportListeners.add(listener);
+  return () => { pairingImportListeners.delete(listener); };
+}
+export function clearPairingLink(expected = importedPairingLink): void {
+  if (!importedPairingLink || expected !== importedPairingLink) return;
+  importedPairingLink = undefined;
+  for (const listener of pairingImportListeners) listener();
+}
+
+/** Strict current pairing-link format. Never include input in diagnostics. */
+export function parsePairingLink(raw: string): { origin: string; code: string } {
+  try {
+    if (typeof raw !== "string" || raw.length > 2048 || /[\s\\]/u.test(raw)
+      || !/^https:\/\/[^/?#]+\/#pair=[A-HJ-NP-Z2-9]{20}$/.test(raw)) throw new Error();
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search) throw new Error();
+    return { origin: url.origin, code: url.hash.slice(6) };
+  } catch { throw new Error("Invalid pairing link."); }
+}
+
+/** Native shell handoff: memory only; never authenticates or saves a connection. */
+export function importPairingLink(url: string): void {
+  clearPairingLink();
+  const parsed = parsePairingLink(url);
+  if (!isTauri()) throw new Error("Pairing link import requires a native shell.");
+  importedPairingLink = { ...parsed, generation: connectionConfigGeneration, revision: ++pairingImportRevision };
+  for (const listener of pairingImportListeners) listener();
+}
+
 export function nativeConnectionConfigGeneration(): number {
   return connectionConfigGeneration;
 }
@@ -131,6 +171,7 @@ export function saveServerUrl(raw: string): void {
   if (loadServerUrl() !== normalizeServerUrl(raw)) conversationImageCache.clear();
   unscopedLocalStorageSetItem(SERVER_KEY, normalizeServerUrl(raw));
   connectionConfigGeneration += 1;
+  clearPairingLink();
 }
 export function loadToken(): string {
   return unscopedLocalStorageGetItem(TOKEN_KEY) ?? "";
@@ -139,6 +180,7 @@ export function saveToken(v: string): void {
   if (loadToken() !== v.trim()) conversationImageCache.clear();
   unscopedLocalStorageSetItem(TOKEN_KEY, v.trim());
   connectionConfigGeneration += 1;
+  clearPairingLink();
 }
 
 // Native clients need a configured server URL + token before they can talk to

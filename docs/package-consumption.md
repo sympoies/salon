@@ -219,6 +219,12 @@ claim/exchange POSTs with no Cookie, Authorization or WebSocket subprotocol head
 [device sign-in guide](device-sign-in-guide.md) describes the user flow. Packaged native transport
 and real redirect-downgrade acceptance remain separate from browser and mocked transport checks.
 
+Native shells import received HTTPS pairing links through `importPairingLink` from
+`@agent-console/ui/pairing`. Optional `mountApp` adapters add connection-screen scanning and an explicit
+browser-to-app handoff before claim. Consumer-supplied `EdgeConfig.androidAppLinks` can serve the Android
+association document without default package names or signing identities. See the
+[link-import contract](device-sign-in.md#import-a-pairing-link-from-a-native-shell) for parsing and cancellation rules.
+
 The reply composer and terminal input carry their accessible names on the input element itself,
 without separate hidden label nodes. Status-count chips expose one name with the label and count
 once in the session list and both header modes; their visible count and label are hidden from

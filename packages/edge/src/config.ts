@@ -106,6 +106,11 @@ export function principalCanUseTerminal(principal: PrincipalConfig): boolean {
 }
 
 export interface EdgeConfig {
+  /** Consumer-owned Android signing identity. No document is served when absent. */
+  readonly androidAppLinks?: readonly {
+    readonly packageName: string;
+    readonly sha256CertFingerprints: readonly string[];
+  }[];
   readonly pairingTtlMs?: number;
   readonly pairingTrustedProxyPeers?: readonly string[];
   readonly remoteImage?: RemoteImageConfig;

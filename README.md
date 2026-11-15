@@ -81,6 +81,9 @@ link or manual code for another browser or native app. Compare both screens and 
 account before completing sign-in. Each device has a separate 30-day credential;
 the device list offers explicit renewal and revocation. See the
 [device sign-in guide](docs/device-sign-in-guide.md) for the full flow.
+Native shells can import the same HTTPS link into the consent flow. Consumers may
+also provide **Scan QR** and browser **Open in app** actions; OS link registration
+and camera support belong to the consuming application.
 
 ## Read session previews and restore drafts
 

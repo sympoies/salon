@@ -11,9 +11,12 @@ sign-in that you can revoke without changing the main token.
 2. On the new device, scan the displayed QR with its camera app or open the copied
    sign-in link. You can also choose **Use a pairing code** on the sign-in page and
    enter the code manually. Use only the server you intended to contact.
-3. In a native app, choose **Use a pairing code** on the connection screen, enter
-   your HTTPS server URL and the code. No main access token is needed.
-4. Enter a device name and choose **Continue**. Check the displayed server and
+3. A native app with link integration opens its sign-in confirmation from the link.
+   If offered, use **Scan QR** on the connection screen, or **Open in app** on the
+   browser landing page. These paths fill the server and code for you.
+   Manual entry remains available through **Use a pairing code** with your HTTPS server URL.
+   No main access token is needed.
+4. For manual or browser entry, enter a device name and choose **Continue**. Check the displayed server and
    account. Compare the short verification string with the signed-in browser.
 5. On the signed-in device, approve only the device you have with you. On the new
    device, choose **Sign in as …** only when the account is correct. Both actions
@@ -23,6 +26,7 @@ Codes expire after a few minutes. Cancel an unexpected request, an incorrect
 comparison or a code you no longer need. If a code expires, has already been used,
 or its first recipient lost the page, create a new one. A copied link can be
 forwarded, so treat it as private until the pairing ends.
+Native link and camera integration depend on the consuming app and its operating-system setup.
 
 ## Renew or revoke a device
 
