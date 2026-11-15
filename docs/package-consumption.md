@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.76 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.77 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,14 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.76`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.77`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.76
+### Changes retained in SDK 0.1.77
+
+Status-count chips retain their accessible names on Android toggle buttons (#519). Each chip
+keeps `aria-pressed`, `aria-label` and `title`, adds visually hidden text equal to its full name,
+and keeps its visible count and labels `aria-hidden` in the session list and both header modes.
+Visuals, geometry and desktop names stay unchanged.
 
 Device sign-in exchanges a one-time code for an independently revocable credential with a fixed
 30-day authorization lifetime (#509). Enrollment, approval and explicit Renew require the main
