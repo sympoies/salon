@@ -725,6 +725,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       res.end(method === "HEAD" ? undefined : androidAssetLinks);
       return;
     }
+    // Association aliases must not fall through to the SPA document.
+    if (path.startsWith("/.well-known/assetlinks.json")) { res.writeHead(404); res.end(); return; }
     const requestId = requestIdFromHeader(req.headers["x-agent-console-request-id"]);
     if (path.startsWith("/api/")) {
       res.setHeader("x-agent-console-request-id", requestId);

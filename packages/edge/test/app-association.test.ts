@@ -28,6 +28,30 @@ test("absent Android association is 404 rather than the SPA or authentication", 
   } finally { await new Promise<void>(resolve => edge.close(() => resolve())); }
 });
 
+for (const suffix of ["/extra", ".backup"]) test(`configured Android association refuses the alias ${suffix}`, async () => {
+  const edge = createEdgeServer({ ...makeEdgeConfig(), androidAppLinks: [
+    { packageName: "test.example.shell", sha256CertFingerprints: [Array(32).fill("AB").join(":")] },
+  ] });
+  try {
+    const { base } = await listenOnLoopback(edge);
+    const response = await fetch(`${base}/.well-known/assetlinks.json${suffix}`, { redirect: "manual" });
+    assert.equal(response.status, 404, "association aliases must not serve the document or the SPA");
+  } finally { await new Promise<void>(resolve => edge.close(() => resolve())); }
+});
+
+test("configured Android association refuses POST without an authentication side effect", async () => {
+  const edge = createEdgeServer({ ...makeEdgeConfig(), androidAppLinks: [
+    { packageName: "test.example.shell", sha256CertFingerprints: [Array(32).fill("AB").join(":")] },
+  ] });
+  try {
+    const { base } = await listenOnLoopback(edge);
+    const response = await fetch(`${base}/.well-known/assetlinks.json`, { method: "POST", redirect: "manual" });
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(response.headers.get("location"), null);
+  } finally { await new Promise<void>(resolve => edge.close(() => resolve())); }
+});
+
 test("invalid Android signing identity is refused at startup with a fixed error", () => {
   for (const app of [
     { packageName: "not a package", sha256CertFingerprints: [Array(32).fill("AB").join(":")] },

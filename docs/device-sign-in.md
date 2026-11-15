@@ -105,6 +105,7 @@ Package names and colon-separated SHA-256 signing fingerprints are validated at 
 `GET` and `HEAD /.well-known/assetlinks.json` return the configured Android Digital Asset Links document
 as anonymous JSON without authentication, cookies or redirects. An absent or empty configuration returns 404.
 Other methods return 405. There are no default identities or signing fingerprints.
+Longer or suffixed association paths return 404 instead of the SPA document.
 
 Expose the document directly over HTTPS and configure the matching host in the consumer's Android manifest.
 [Android App Links documentation][android-app-links] describes OS verification requirements;

@@ -64,6 +64,7 @@ test("native pairing imports reject malformed and non-fragment links with a fixe
       link.replace("/#", "/?"), link.replace("/#", "/?extra=1#"), link + "&extra=1",
       link.replace("/#", "/path#"), link.replace("/#", "/path/..#"), link.replace("//", "//user:password@"),
       link.replace(code, "I".repeat(20)), link.replace(code, "A".repeat(81)), `${link}${"x".repeat(2048)}`,
+      `https://${"a".repeat(2048)}.example.test/#pair=${code}`,
       ` ${link}`, link.replace("https://", "https:\\"), `${link}\n`]) {
       assert.throws(() => f.runtime.importPairingLink(invalid), { message: "Invalid pairing link." });
     }
