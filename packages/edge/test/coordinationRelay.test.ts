@@ -15,13 +15,14 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
   const destinationName = machineNames.destination;
   const dir = mkdtempSync(join(tmpdir(), "relay-test-"));
   const db = join(dir, "access.sqlite");
-  const state = { writes: 0, loseResponse: false, badReceipt: false, destinationMode: "advisory", destinationAvailable: true as boolean | undefined, destinationSupported: true, destinationStatus: "running" as unknown, destinationStartup: undefined as unknown, destinationError: "", destinationErrorStatus: 409, destinationErrorDetails: undefined as unknown, destinationIncarnation: "dest-inc", sourceIncarnation: "src-inc", sourceResume: { provider: "codex", session_id: "source-provider" }, destinationResume: { provider: "codex", session_id: "destination-provider" }, seen: {} as Record<string, unknown> };
+  const state = { writes: 0, loseResponse: false, badReceipt: false, destinationMode: "advisory", destinationAvailable: true as boolean | undefined, destinationSupported: true, destinationStatus: "running" as unknown, destinationStartup: undefined as unknown, destinationContinuity: undefined as unknown, sourceExtra: [] as unknown[], destinationError: "", destinationErrorStatus: 409, destinationErrorDetails: undefined as unknown, destinationIncarnation: "dest-inc", sourceIncarnation: "src-inc", sourceResume: { provider: "codex", session_id: "source-provider" }, destinationResume: { provider: "codex", session_id: "destination-provider" }, seen: {} as Record<string, unknown> };
   const source = createServer((req, res) => {
     assert.equal(req.headers.authorization, "Bearer source-operator");
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify({ ok: true, data: { coordination: { remote_messaging_supported: true }, sessions: [
       { id: "source", provider_resume: state.sourceResume, session_incarnation: state.sourceIncarnation, status: "running", coordination_mode: "advisory", coordination_available: true },
       { id: "unowned", session_incarnation: "unknown-inc", coordination_mode: "advisory", coordination_available: true },
+      ...state.sourceExtra,
     ] } }));
   });
   const dest = createServer(async (req, res) => {
@@ -29,7 +30,7 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
     res.setHeader("content-type", "application/json");
     if (req.url === "/sessions") {
       res.end(JSON.stringify({ ok: true, data: { coordination: { remote_messaging_supported: state.destinationSupported }, sessions: [
-        { id: "destination", provider_resume: state.destinationResume, session_incarnation: state.destinationIncarnation, status: state.destinationStatus, startup: state.destinationStartup, coordination_mode: state.destinationMode, coordination_available: state.destinationAvailable },
+        { id: "destination", provider_resume: state.destinationResume, provider_continuity: state.destinationContinuity, session_incarnation: state.destinationIncarnation, status: state.destinationStatus, startup: state.destinationStartup, coordination_mode: state.destinationMode, coordination_available: state.destinationAvailable },
         { id: "other-user", session_incarnation: "other-inc", coordination_mode: "advisory", coordination_available: true },
       ] } }));
       return;
@@ -135,6 +136,156 @@ for (const via of ["relay", "discovery"] as const) {
     });
   }
 }
+
+test("clear then restart with continuity restores discovery and delivery", async () => {
+  const f = await fixture();
+  try {
+    const before = readGrant(f.db, "cedar", "destination")!;
+    f.state.destinationIncarnation = "restarted-inc";
+    f.state.destinationResume.session_id = "new-conversation";
+    f.state.destinationContinuity = { schema_version: "agent-session.provider-continuity.v1", provider: "codex", links: [
+      { kind: "clear", from_incarnation: "dest-inc", to_incarnation: "cleared-inc", from_conversation: "destination-provider", to_conversation: "new-conversation", at_epoch: 1 },
+      { kind: "restart", from_incarnation: "cleared-inc", to_incarnation: "restarted-inc", from_conversation: "new-conversation", to_conversation: "new-conversation", at_epoch: 2 },
+    ] };
+    f.envelope.to.session_incarnation = "restarted-inc";
+    const response = await discover(f);
+    assert.equal(response.status, 200);
+    const body = await response.json() as { peers: Array<{ session_id: string }> };
+    assert.ok(body.peers.some(peer => peer.session_id === "destination"));
+    assert.equal((await send(f.base, f.envelope)).status, 200);
+    assert.equal(f.state.writes, 1);
+    assert.deepEqual(readGrant(f.db, "cedar", "destination"), { ...before, incarnation: "restarted-inc", providerSessionId: "new-conversation" });
+  } finally { await f.cleanup(); }
+});
+
+for (const reason of ["missing", "provider", "start", "broken", "time", "unsafe-time", "blank-id", "long-id", "control-id", "length", "end", "stopped", "malformed", "kind", "array-kind", "object-kind"] as const) {
+  test(`continuity refuses ${reason} evidence without failing discovery`, async () => {
+    const f = await fixture();
+    try {
+      const before = readGrant(f.db, "cedar", "destination")!;
+      f.state.destinationIncarnation = "restarted-inc";
+      f.state.destinationResume.session_id = "new-conversation";
+      f.envelope.to.session_incarnation = "restarted-inc";
+      const links = [
+        { kind: "clear", from_incarnation: "dest-inc", to_incarnation: "cleared-inc", from_conversation: "destination-provider", to_conversation: "new-conversation", at_epoch: 1 },
+        { kind: "restart", from_incarnation: "cleared-inc", to_incarnation: "restarted-inc", from_conversation: "new-conversation", to_conversation: "new-conversation", at_epoch: 2 },
+      ];
+      if (reason === "start") links[0]!.from_conversation = "other";
+      if (reason === "broken") links[1]!.from_incarnation = "other";
+      if (reason === "time") links[1]!.at_epoch = 0;
+      if (reason === "unsafe-time") links[1]!.at_epoch = Number.MAX_SAFE_INTEGER + 1;
+      if (reason === "blank-id" || reason === "long-id" || reason === "control-id") {
+        const invalid = reason === "blank-id" ? " " : reason === "long-id" ? "é".repeat(128) + "x" : "bad\nvalue";
+        links[0]!.to_incarnation = invalid;
+        links[1]!.from_incarnation = invalid;
+      }
+      if (reason === "length") links.push(...Array.from({ length: 15 }, () => ({ ...links[1]! })));
+      if (reason === "end") links[1]!.to_incarnation = "other";
+      if (reason === "kind") links[0]!.kind = "restart";
+      if (reason === "array-kind") (links[1] as { kind: unknown }).kind = ["restart"];
+      if (reason === "object-kind") (links[1] as { kind: unknown }).kind = { toString: null };
+      if (reason === "stopped") f.state.destinationStatus = "stopped";
+      f.state.destinationContinuity = reason === "missing" ? undefined : reason === "malformed" ? { links: "invalid" } :
+        { schema_version: "agent-session.provider-continuity.v1", provider: reason === "provider" ? "claude" : "codex", links };
+      const response = await discover(f);
+      assert.equal(response.status, 200);
+      const body = await response.json() as { peers: Array<{ session_id: string }>; excluded: unknown[] };
+      assert.equal(body.peers.some(peer => peer.session_id === "destination"), false);
+      assert.deepEqual(body.excluded, reason === "stopped" ? [] : [{ machine: "cedar", session_id: "destination", reason: "ownership-binding-stale" }]);
+      assert.equal((await send(f.base, f.envelope)).status, 409);
+      assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+    } finally { await f.cleanup(); }
+  });
+}
+
+test("clear can retain the incarnation before a restart", async () => {
+  const f = await fixture();
+  try {
+    f.state.destinationIncarnation = "restarted-inc";
+    f.state.destinationResume.session_id = "new-conversation";
+    f.envelope.to.session_incarnation = "restarted-inc";
+    f.state.destinationContinuity = { schema_version: "agent-session.provider-continuity.v1", provider: "codex", links: [
+      { kind: "restart", from_incarnation: "prior-inc", to_incarnation: "dest-inc", from_conversation: "destination-provider", to_conversation: "destination-provider", at_epoch: 0 },
+      { kind: "clear", from_incarnation: "dest-inc", to_incarnation: "dest-inc", from_conversation: "destination-provider", to_conversation: "new-conversation", at_epoch: 1 },
+      { kind: "restart", from_incarnation: "dest-inc", to_incarnation: "restarted-inc", from_conversation: "new-conversation", to_conversation: "new-conversation", at_epoch: 2 },
+    ] };
+    assert.equal((await send(f.base, f.envelope)).status, 200);
+  } finally { await f.cleanup(); }
+});
+
+for (const reason of ["incarnation-return", "conversation-return", "stale-chain", "no-op"] as const) {
+  test(`continuity refuses ${reason}`, async () => {
+    const f = await fixture();
+    try {
+      const store = new AccessStore(f.db);
+      assert.equal(store.advanceSessionContinuity("tess", "cedar", "destination", "dest-inc", "destination-provider", "middle-inc", "middle-conversation"), true);
+      store.close();
+      f.state.destinationIncarnation = reason === "incarnation-return" || reason === "stale-chain" ? "dest-inc" : "next-inc";
+      f.state.destinationResume.session_id = reason === "conversation-return" || reason === "stale-chain" ? "destination-provider" : "next-conversation";
+      f.envelope.to.session_incarnation = f.state.destinationIncarnation;
+      const links = [
+        { kind: "clear", from_incarnation: "dest-inc", to_incarnation: "dest-inc", from_conversation: "destination-provider", to_conversation: "middle-conversation", at_epoch: 1 },
+        { kind: "restart", from_incarnation: "dest-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "middle-conversation", at_epoch: 2 },
+      ];
+      if (reason === "incarnation-return") {
+        links.push({ kind: "clear", from_incarnation: "middle-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "next-conversation", at_epoch: 3 });
+        links.push({ kind: "restart", from_incarnation: "middle-inc", to_incarnation: "dest-inc", from_conversation: "next-conversation", to_conversation: "next-conversation", at_epoch: 4 });
+      } else if (reason === "conversation-return") {
+        links.push({ kind: "clear", from_incarnation: "middle-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "destination-provider", at_epoch: 3 });
+        links.push({ kind: "restart", from_incarnation: "middle-inc", to_incarnation: "next-inc", from_conversation: "destination-provider", to_conversation: "destination-provider", at_epoch: 4 });
+      } else if (reason === "no-op") {
+        links.push({ kind: "restart", from_incarnation: "middle-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "middle-conversation", at_epoch: 3 });
+        links.push({ kind: "clear", from_incarnation: "middle-inc", to_incarnation: "middle-inc", from_conversation: "middle-conversation", to_conversation: "next-conversation", at_epoch: 4 });
+        links.push({ kind: "restart", from_incarnation: "middle-inc", to_incarnation: "next-inc", from_conversation: "next-conversation", to_conversation: "next-conversation", at_epoch: 5 });
+      }
+      f.state.destinationContinuity = { schema_version: "agent-session.provider-continuity.v1", provider: "codex", links };
+      const before = readGrant(f.db, "cedar", "destination");
+      assert.equal((await send(f.base, f.envelope)).status, 409);
+      assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+    } finally { await f.cleanup(); }
+  });
+}
+
+test("a concurrent continuity advance refuses the losing delivery", async () => {
+  const f = await fixture();
+  const original = AccessStore.prototype.advanceSessionContinuity;
+  try {
+    f.state.destinationIncarnation = "next-inc";
+    f.state.destinationResume.session_id = "next-conversation";
+    f.state.destinationContinuity = { schema_version: "agent-session.provider-continuity.v1", provider: "codex", links: [
+      { kind: "clear", from_incarnation: "dest-inc", to_incarnation: "next-inc", from_conversation: "destination-provider", to_conversation: "next-conversation", at_epoch: 1 },
+    ] };
+    f.envelope.to.session_incarnation = "next-inc";
+    AccessStore.prototype.advanceSessionContinuity = function (...args) {
+      const competitor = new AccessStore(f.db);
+      try { assert.equal(original.call(competitor, args[0], args[1], args[2], args[3], args[4], "raced-inc", "raced-conversation"), true); }
+      finally { competitor.close(); }
+      return original.apply(this, args);
+    };
+    const result = await send(f.base, f.envelope);
+    assert.equal(result.status, 409);
+    assert.equal(f.state.writes, 0);
+    assert.equal(readGrant(f.db, "cedar", "destination")?.incarnation, "raced-inc");
+  } finally { AccessStore.prototype.advanceSessionContinuity = original; await f.cleanup(); }
+});
+
+test("continuity from another machine cannot advance a grant", async () => {
+  const f = await fixture();
+  try {
+    const before = readGrant(f.db, "cedar", "destination");
+    f.state.destinationStatus = "stopped";
+    f.state.sourceExtra = [{ id: "destination", session_incarnation: "next-inc", status: "running", coordination_mode: "advisory", coordination_available: true,
+      provider_resume: { provider: "codex", session_id: "next-conversation" },
+      provider_continuity: { schema_version: "agent-session.provider-continuity.v1", provider: "codex", links: [
+        { kind: "clear", from_incarnation: "dest-inc", to_incarnation: "next-inc", from_conversation: "destination-provider", to_conversation: "next-conversation", at_epoch: 1 },
+      ] } }];
+    const response = await discover(f);
+    assert.equal(response.status, 200);
+    const body = await response.json() as { peers: Array<{ machine: string; session_id: string }> };
+    assert.equal(body.peers.some(peer => peer.machine === "summit" && peer.session_id === "destination"), false);
+    assert.deepEqual(readGrant(f.db, "cedar", "destination"), before);
+  } finally { await f.cleanup(); }
+});
 
 test("clear then restart reports a stale binding and explicit owner re-bind restores relay access", async () => {
   const f = await fixture();
