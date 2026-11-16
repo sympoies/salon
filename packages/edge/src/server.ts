@@ -303,7 +303,9 @@ async function readConversationWindow(machine: MachineConfig, id: string, query:
   return { status: 200, body: { ok: true, data: { messages, ...(nextCursor ? { next_cursor: nextCursor } : {}), ...(olderCursor ? { older_cursor: olderCursor } : {}) } } };
 }
 
-export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions = {}): Server {
+export type EdgeServer = Server & { shutdown(): Promise<void> };
+
+export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions = {}): EdgeServer {
   if (config.androidAppLinks?.some(app => !/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/.test(app.packageName)
     || !app.sha256CertFingerprints.length || app.sha256CertFingerprints.some(value => !/^(?:[A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}$/.test(value))))
     throw new Error("Invalid Android app association configuration.");
@@ -700,7 +702,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         res.end();
       }
     });
-  });
+  }) as EdgeServer;
   server.once("close", () => {
     outboxDispatcher?.stop(); outboxStore?.close();
     if (credentialRevocationTimer) clearInterval(credentialRevocationTimer);
@@ -709,7 +711,26 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   if (accessStore) server.once("close", () => accessStore.close());
   if (machinePreferences) server.once("close", () => machinePreferences.close());
   const board = openBoardService(config, options.board);
-  if (board) server.once("close", () => void board.close());
+  let boardClose: Promise<void> | undefined;
+  const closeBoard = () => boardClose ??= board ? board.close() : Promise.resolve();
+  server.once("close", () => { void closeBoard(); });
+  const upgrades = new Set<Duplex>();
+  const established = new Set<Duplex>();
+  let shuttingDown = false;
+  let shutdownPromise: Promise<void> | undefined;
+  server.shutdown = () => shutdownPromise ??= (async () => {
+    shuttingDown = true;
+    outboxDispatcher?.stop();
+    const ingestionStopped = board?.aggregator.stop();
+    const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    for (const socket of upgrades) {
+      if (established.has(socket)) socket.end(Buffer.from([0x88, 0x02, 0x03, 0xe9]));
+      else socket.destroy();
+    }
+    await ingestionStopped;
+    await closed;
+    await closeBoard();
+  })();
   server.requestTimeout = 0;
   server.once("listening", () => outboxDispatcher?.start());
 
@@ -3312,7 +3333,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       socket.destroy();
       return;
     }
+    if (shuttingDown) { socket.destroy(); return; }
     proxyUpgrade(req, socket, head, machine, daemonPath, { health: attachHealth,
+      onEstablished: client => { if (shuttingDown) client.end(Buffer.from([0x88, 0x02, 0x03, 0xe9])); else established.add(client); },
       ...(ticketAuthorized ? { isAuthorized: ticketAuthorized }
         : principal && revocableCredential(principal) ? { isAuthorized: () => credentialStillActive(principal) } : {}) });
   };
@@ -3324,6 +3347,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     // attach an error listener before any write/destroy. The success path installs
     // its own handlers in proxyUpgrade.
     socket.on("error", () => {});
+    if (shuttingDown) { socket.destroy(); return; }
+    upgrades.add(socket);
+    socket.once("close", () => { upgrades.delete(socket); established.delete(socket); });
     const url = new URL(req.url ?? "/", "http://edge.local");
     const shellTarget = requireParams(matchPath("/api/shells/:machine/:incarnation/attach", url.pathname), ["machine", "incarnation"]);
     if (shellTarget) {

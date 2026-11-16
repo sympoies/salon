@@ -48,25 +48,23 @@ import { existsSync } from 'node:fs';
 globalThis.fetch = async () => new Response("", { status: existsSync(${JSON.stringify(join(root, "ready"))}) ? 200 : 503 });
 `);
   await writeFile(join(root, "apps/workspace/src/server.ts"), `
-import { createServer } from 'node:http';
+import { startEdge } from ${JSON.stringify(new URL("../packages/edge/src/start.ts", import.meta.url).href)};
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-export function startWorkspaceEdge({ daemonToken, clientToken }) {
+export function startWorkspaceEdge({ daemonToken, clientToken, onShutdown }) {
  const root = ${JSON.stringify(root)};
  const daemon = existsSync(root + '/daemon.json') ? JSON.parse(readFileSync(root + '/daemon.json', 'utf8')) : {};
  writeFileSync(root + '/edge.json', JSON.stringify({
   ready: existsSync(root + '/ready'), daemonMatches: daemonToken === daemon.token,
   distinct: daemonToken !== clientToken, clientToken,
  }));
- const server = createServer((req, res) => res.end('fixture'));
- server.listen(0, '127.0.0.1');
- return server;
+ return startEdge({ AGENT_CONSOLE_TOKEN: clientToken, AGENT_CONSOLE_EDGE_PORT: '0' }, {}, onShutdown);
 }
 `);
   const home = join(root, "home");
   const env = {
     PATH: bin + ":/usr/bin:/bin", HOME: home, CODEX_HOME: join(home, ".codex"),
     XDG_STATE_HOME: join(home, ".local/state"), XDG_RUNTIME_DIR: join(root, "run"),
-    NODE_OPTIONS: `--import=${join(root, "readiness.mjs")}`,
+    NODE_OPTIONS: `--conditions=source --import=${join(root, "readiness.mjs")}`,
     AGENT_SESSION_TOKEN: "fixture-inherited-daemon-credential",
     AGENT_CONSOLE_TOKEN: "fixture-inherited-browser-credential",
     AGENT_CONSOLE_MACHINES: "fixture-inherited-upstream-credential",
