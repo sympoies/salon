@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { get } from "node:http";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,3 +71,21 @@ test('a second signal interrupts a slow shutdown', { timeout: 12_000 }, async ()
     assert.ok(Date.now() - started < 2000);
   } finally { socket.destroy(); child.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true }); }
 });
+
+for (const path of ['/api/resources/events?resources=sessions', '/api/activity/events']) {
+  test(`SIGTERM ends ${path} and exits successfully`, { timeout: 12_000 }, async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'edge-shutdown-'));
+    const { child, port } = await start(join(dir, 'state.sqlite'));
+    const request = get({ host: '127.0.0.1', port, path, headers: { authorization: 'Bearer fixture' } });
+    try {
+      const [response] = await once(request, 'response');
+      assert.equal(response.statusCode, 200);
+      await once(response, 'data');
+      const ended = once(response, 'end'); const exited = once(child, 'exit');
+      const started = Date.now(); child.kill('SIGTERM');
+      await ended;
+      const [code, signal] = await exited;
+      assert.equal(signal, null); assert.equal(code, 0); assert.ok(Date.now() - started < 10_000);
+    } finally { request.destroy(); child.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true }); }
+  });
+}

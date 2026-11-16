@@ -716,13 +716,27 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   server.once("close", () => { void closeBoard(); });
   const upgrades = new Set<Duplex>();
   const established = new Set<Duplex>();
+  const eventResponses = new Set<ServerResponse>();
   let shuttingDown = false;
+  const trackEventResponse = (res: ServerResponse): boolean => {
+    if (shuttingDown) { res.writeHead(503); res.end(); return false; }
+    eventResponses.add(res);
+    res.once("close", () => eventResponses.delete(res));
+    return true;
+  };
   let shutdownPromise: Promise<void> | undefined;
   server.shutdown = () => shutdownPromise ??= (async () => {
     shuttingDown = true;
     outboxDispatcher?.stop();
     const ingestionStopped = board?.aggregator.stop();
     const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    resourceWatches.close();
+    activityStreams.close();
+    for (const response of eventResponses) if (!response.writableEnded) {
+      const socket = response.socket;
+      response.once("finish", () => socket?.end());
+      response.end();
+    }
     for (const socket of upgrades) {
       if (established.has(socket)) socket.end(Buffer.from([0x88, 0x02, 0x03, 0xe9]));
       else socket.destroy();
@@ -1756,6 +1770,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           sendJson(res, 503, { ok: false, error: { message: "resource watch capacity reached" } });
           return;
         }
+        if (!trackEventResponse(res)) return;
         clearRequestDeadline(req);
         res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store",
           connection: "keep-alive", "x-accel-buffering": "no" });
@@ -1818,6 +1833,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       }
 
       case "activity-events": {
+        if (!trackEventResponse(res)) return;
         clearRequestDeadline(req);
         const permitted = config.multiUser
           ? config.machines.filter((machine) => principalCanAccessMachine(_principal, machine.name))
