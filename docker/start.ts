@@ -10,27 +10,30 @@ let daemon: ChildProcessByStdio<Writable, null, null> | undefined;
 let edge: ReturnType<typeof import("../apps/workspace/src/server.ts").startWorkspaceEdge> | undefined;
 let stopping = false;
 
-async function shutdown(code: number) {
-  if (stopping) return;
-  stopping = true;
-  edge?.closeAllConnections();
-  edge?.close();
+async function stopDaemon() {
   if (daemon && daemon.exitCode === null && daemon.signalCode === null) {
     const exited = once(daemon, "exit");
     daemon.kill("SIGTERM");
     const deadline = setTimeout(() => {
       daemon!.kill("SIGKILL");
-      process.exit(code);
+      process.exit(1);
     }, 5000);
     deadline.unref();
     await exited;
     clearTimeout(deadline);
   }
+}
+
+async function shutdown(code: number) {
+  if (stopping) return;
+  stopping = true;
+  await Promise.all([edge?.shutdown(), stopDaemon()]);
   process.exit(code);
 }
 
-process.once("SIGTERM", () => void shutdown(0));
-process.once("SIGINT", () => void shutdown(0));
+const startupSignal = () => { if (stopping) process.exit(1); void shutdown(0); };
+process.on("SIGTERM", startupSignal);
+process.on("SIGINT", startupSignal);
 
 try {
   const state = join(process.env.XDG_STATE_HOME!, "salon");
@@ -79,7 +82,9 @@ try {
   }
   if (!ready) throw new Error("Daemon readiness timed out");
   const { startWorkspaceEdge } = await import("../apps/workspace/src/server.ts");
-  edge = startWorkspaceEdge({ daemonToken, clientToken });
+  process.off("SIGTERM", startupSignal);
+  process.off("SIGINT", startupSignal);
+  edge = startWorkspaceEdge({ daemonToken, clientToken, onShutdown: async () => { stopping = true; await stopDaemon(); } });
   edge.once("error", () => void shutdown(1));
   edge.once("close", () => { if (!stopping) void shutdown(1); });
 } catch {

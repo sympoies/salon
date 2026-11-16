@@ -41,7 +41,7 @@ export async function stopBrowser(child: ChildProcess, profile: string): Promise
     child.kill("SIGKILL");
     await gone;
   }
-  rmSync(profile, { recursive: true, force: true });
+  rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
 export async function launchPage(options: LaunchOptions = {}): Promise<Page> {

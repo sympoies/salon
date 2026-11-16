@@ -98,6 +98,7 @@ export interface ProxyUpgradeOptions {
   readonly isAuthorized?: () => boolean;
   readonly connectTimeoutMs?: number;
   readonly connect?: (target: UpstreamTarget, onConnect: () => void) => net.Socket;
+  readonly onEstablished?: (socket: Duplex) => void;
 }
 
 // An HTTPS machine (for example, a laptop behind a TLS reverse proxy)
@@ -169,13 +170,8 @@ export function proxyUpgrade(
       upstream.write(head);
     }
 
-    if (!echoProto) {
-      // Browser cookie path: byte-transparent relay (unchanged).
-      relay();
-      return;
-    }
-
-    // Device path: buffer the 101 head, echo the token subprotocol, then relay.
+    // Buffer the response head so shutdown only sends WebSocket frames after
+    // the upstream has actually accepted the upgrade.
     let buf = Buffer.alloc(0);
     const onData = (chunk: Buffer) => {
       if (options.isAuthorized && !options.isAuthorized()) { teardown(); return; }
@@ -189,8 +185,10 @@ export function proxyUpgrade(
       }
       upstream.off("data", onData);
       const headEnd = sep + 4;
-      const rewritten = injectResponseSubprotocol(buf.subarray(0, headEnd).toString("latin1"), echoProto);
+      const responseHead = buf.subarray(0, headEnd).toString("latin1");
+      const rewritten = echoProto ? injectResponseSubprotocol(responseHead, echoProto) : responseHead;
       clientSocket.write(Buffer.from(rewritten, "latin1"));
+      if (/^HTTP\/1\.1 101/i.test(responseHead)) options.onEstablished?.(clientSocket);
       const rest = buf.subarray(headEnd);
       if (rest.length > 0) {
         clientSocket.write(rest);

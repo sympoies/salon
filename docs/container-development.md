@@ -73,6 +73,12 @@ to verify conversation continuity. A new browser login may require the same Salo
 
 ### Check restart persistence
 
+On SIGTERM or SIGINT, the edge stops accepting connections, closes WebSocket
+attachments and checkpoints its SQLite stores before exiting. Shutdown is
+bounded to 10 seconds; a second signal or a timeout exits unsuccessfully. Set
+the container stop grace period to at least 10 seconds; the supplied Compose
+configuration uses 15 seconds.
+
 ```bash
 docker compose stop
 docker compose up -d
