@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
+import { hasBrowserExited, stopBrowser } from "../../packages/ui/test/support/browserProfile.ts";
 
 /** Headless Chrome driven over the DevTools protocol for previews and UI fixtures. */
 export interface Page {
@@ -29,34 +29,6 @@ export function chromeBinary(): string {
   return process.env.CHROME_BIN || "google-chrome";
 }
 
-const hasExited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
-
-/**
- * Kill a browser, wait until it is gone, then remove its profile directory.
- * Safe to call more than once and for a child that has already exited, whose
- * exit event will not fire again.
- */
-export async function stopBrowser(child: ChildProcess, profile: string): Promise<void> {
-  if (child.pid !== undefined && !hasExited(child)) {
-    const gone = once(child, "exit", { signal: AbortSignal.timeout(5_000) });
-    child.kill("SIGKILL");
-    await gone;
-  }
-
-  // Chrome's subprocesses can still finish profile writes after the main process exits.
-  const maxRetries = 5;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      rmSync(profile, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (attempt === maxRetries || (code !== "ENOTEMPTY" && code !== "EBUSY")) throw error;
-      await sleep((attempt + 1) * 100);
-    }
-  }
-}
-
 export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
   // Chrome's profile directory must have a short path: it holds a unix socket.
   const profile = mkdtempSync("/tmp/salon-preview-");
@@ -73,7 +45,7 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
     let port: number | undefined;
     for (let attempt = 0; attempt < attempts && port === undefined; attempt++) {
       if (spawnError) throw spawnError;
-      if (hasExited(child)) throw new Error("Chrome exited before it exposed a DevTools port");
+      if (hasBrowserExited(child)) throw new Error("Chrome exited before it exposed a DevTools port");
       try { port = Number(readFileSync(`${profile}/DevToolsActivePort`, "utf8").split("\n")[0]); }
       catch { await sleep(100); }
     }

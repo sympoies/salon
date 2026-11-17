@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
-import { stopBrowser } from "../../../scripts/readme-previews/chrome.ts";
+import { stopBrowser } from "./support/browserProfile.ts";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
 test("phone Open action visibly focuses its preview and native Enter/Space open exactly once", async (t) => {
