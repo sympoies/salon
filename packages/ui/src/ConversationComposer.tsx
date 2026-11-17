@@ -1,5 +1,5 @@
 import { CONVERSATION_IMAGE_TYPES } from "@agent-console/shared/conversation-images";
-import { uploadedFilePaths, type OutgoingAttachment } from "./attachmentPaths.ts";
+import { linkUploadedFiles, type OutgoingAttachment } from "./attachmentPaths.ts";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ClipboardEvent, DragEvent } from "react";
@@ -12,6 +12,7 @@ import { plainVoiceOnlyMessage } from "./voicePrompt.ts";
 import { isMacTauri } from "./runtime.ts";
 import { filesFromTerminalClipboardData, terminalClipboardActionErrorMessage, terminalPasteEventAction } from "./terminalClipboard.ts";
 import { isMacosFilePasteCandidate, readMacosClipboardFiles } from "./terminalNativeClipboard.ts";
+import { ComposerAttachment } from "./ComposerAttachment.tsx";
 import { SpeechComposer } from "./SpeechComposer.tsx";
 import { parseTurnStateV1 } from "./sessionActivity.ts";
 import { isSessionResumeAvailable, sessionLabel } from "./format.ts";
@@ -58,8 +59,9 @@ function blockSeparator(text: string): string {
 }
 
 function publishDraft(drafts: ConversationReplyDrafts, key: string, draft: ConversationReplyDraft) {
-  const becameEmpty = Boolean(drafts.get(key)?.text) && !draft.text;
-  if (!draft.text && !draft.error && !draft.outcomeUnknown && !draft.sending) drafts.delete(key);
+  const previous = drafts.get(key);
+  const becameEmpty = Boolean(previous?.text || previous?.attachments?.length) && !draft.text && !draft.attachments?.length;
+  if (!draft.text && !draft.attachments?.length && !draft.error && !draft.outcomeUnknown && !draft.sending) drafts.delete(key);
   else drafts.set(key, draft);
   for (const listener of draftListeners.get(drafts)?.get(key) ?? []) listener();
   if (becameEmpty) conversationOutbox().wake();
@@ -163,8 +165,10 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   };
   const restoreSavedDraft = () => {
     if (savedText === null || sending) return;
-    if (readDraft().text && !window.confirm("Replace the current composer text with this saved draft?")) return;
-    updateReply({ text: savedText, attachments: [], incarnation: session.session_incarnation, error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
+    if ((readDraft().text || readDraft().attachments?.length) && !window.confirm("Replace the current composer text with this saved draft?")) return;
+    const linked = linkUploadedFiles(savedText, session.id);
+    const text = linked.files.length ? linked.text.replace(/\[file\]\(#salon-attachment-\d+\)/g, "").replace(/^\n+/, "") : savedText;
+    updateReply({ text, attachments: linked.files.map(({ path }) => ({ path })), incarnation: session.session_incarnation, error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
     savedRequest.current++; setSavedOpen(false); setSavedText(null);
   };
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -183,15 +187,6 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     observer.observe(textarea);
     return () => observer.disconnect();
   }, [draft, hidden]);
-  // After an upload the caret waits on the empty line below the paths (#963).
-  const caretToEnd = useRef(false);
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!caretToEnd.current || !textarea) return;
-    caretToEnd.current = false;
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  }, [draft]);
   // A reply is its own bubble in the conversation, so no "Sent" notice (#969).
   const [voiceToken, setVoiceToken] = useState(0);
   const [uploading, setUploading] = useState("");
@@ -207,7 +202,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
 
   const state = parseTurnStateV1(session.turn_state);
   const provider = session.provider_resume?.provider ?? session.agent;
-  const restarted = Boolean(draft) && draftIncarnation !== session.session_incarnation;
+  const restarted = Boolean(draft || reply.attachments?.length) && draftIncarnation !== session.session_incarnation;
   const hint = restarted ? "This session restarted. Discard this draft before replying to the new session."
     : !machineReachable || session.status !== "running" ? "This session is unavailable. Return to the terminal to check it."
     : !session.session_incarnation ? "This session cannot confirm a safe reply target. Use the terminal."
@@ -254,8 +249,8 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     return () => clearTimeout(timer);
   }, [hint, state?.phase, lastActivityAt, now]);
   // The resend waits for any tracked reply and for the draft, as a typed reply would.
-  const resendAction = stuck?.action && queued.length === 0 && !sharedPending && !draft && !sending && !resending ? stuck.action : undefined;
-  const canSend = (!hint || hint === BUSY_REPLY_HINT) && !sending && !uploading && !outcomeUnknown && Boolean(draft.trim());
+  const resendAction = stuck?.action && queued.length === 0 && !sharedPending && !draft && !reply.attachments?.length && !sending && !resending ? stuck.action : undefined;
+  const canSend = (!hint || hint === BUSY_REPLY_HINT) && !sending && !uploading && !outcomeUnknown && Boolean(draft.trim() || reply.attachments?.length);
   const deliveryTarget = useRef({ session, machineReachable });
   deliveryTarget.current = { session, machineReachable };
   useEffect(() => {
@@ -267,22 +262,20 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
       const draft = readDraft();
       return sessionKey(current.session) === key && current.session.session_incarnation === session.session_incarnation
         && queuedReplyTargetAllowed(current.session, current.machineReachable) && queuedReplyDeliverablePhase(current.session)
-        && !draft.text && !draft.sending && !draft.outcomeUnknown;
+        && !draft.text && !draft.attachments?.length && !draft.sending && !draft.outcomeUnknown;
     }).catch(() => {});
-  }, [outbox, outboxVersion, session, machineReachable, readDraft, draft]);
+  }, [outbox, outboxVersion, session, machineReachable, readDraft, draft, reply.attachments]);
 
   const updateDraft = (text: string) => {
-    updateReply({ text, attachments: readDraft().attachments?.filter(file => uploadedFilePaths(text, session.id).includes(file.path)), incarnation: draft ? draftIncarnation : session.session_incarnation, error: outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
+    updateReply({ text, incarnation: draft || readDraft().attachments?.length ? draftIncarnation : session.session_incarnation, error: outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
   };
-  // Files go to the session's host; their quoted paths join the draft, as the
-  // terminal's Upload does, and are sent with the next reply (#942).
+  // Files go to the session host; their paths are added when the reply is sent.
   // An uncertain earlier reply keeps its notice, as typing and voice do.
   const failed = (message: string) => updateReply({ error: readDraft().outcomeUnknown ? `${message} ${UNKNOWN_REPLY_OUTCOME}` : message });
   const attach = async (files: readonly File[]) => {
     if (files.length === 0) return;
     setUploading(files.length === 1 ? "Uploading file…" : `Uploading ${files.length} files…`);
     updateReply({ error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
-    const paths: string[] = [];
     const attachments: OutgoingAttachment[] = [];
     try {
       for (const file of files) {
@@ -291,17 +284,13 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
           failed(result.error ?? `Upload failed: ${file.name}`);
           return;
         }
-        paths.push(result.path);
         attachments.push({ path: result.path, original_name: result.original_name, bytes: result.bytes,
           ...(CONVERSATION_IMAGE_TYPES.some(type => type === file.type) ? { preview: file } : {}) });
       }
-      // One path per line, then an empty line where the message goes (#963).
       const current = readDraft();
-      const separator = current.text && !current.text.endsWith("\n") ? "\n" : "";
-      caretToEnd.current = true;
-      updateReply({ text: `${current.text}${separator}${paths.map(shellQuotePathForTerminal).join("\n")}\n`,
-        attachments: [...(current.attachments ?? []), ...attachments],
-        incarnation: current.text ? current.incarnation : session.session_incarnation });
+      updateReply({ attachments: [...(current.attachments ?? []), ...attachments],
+        incarnation: current.text || current.attachments?.length ? current.incarnation : session.session_incarnation });
+      textareaRef.current?.focus();
     } catch {
       failed(files.length === 1 ? "Upload failed" : "Some uploads failed");
     } finally {
@@ -337,7 +326,9 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   };
   const send = async (replyText?: string, expectedIncarnation?: string): Promise<boolean> => {
     const currentDraft = readDraft();
-    const content = replyText ?? currentDraft.text;
+    const text = replyText ?? currentDraft.text;
+    const paths = (currentDraft.attachments ?? []).map(file => shellQuotePathForTerminal(file.path)).join("\n");
+    const content = paths ? `${paths}${text.trim() ? `\n${text}` : ""}` : text;
     const allowed = (!hint || hint === BUSY_REPLY_HINT)
       && (expectedIncarnation === undefined || expectedIncarnation === session.session_incarnation)
       && !sending && !uploading && !outcomeUnknown
@@ -391,6 +382,12 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
         <span className="conversation-stuck-text">{stuck.text}</span>
         {resendAction ? <button type="button" className="btn ghost" onClick={() => void resend(resendAction.text)}>{resendAction.label}</button> : null}
       </div> : null}
+      {reply.attachments?.length ? <div className="composer-attachments" aria-label="Attachments">
+        {reply.attachments.map((attachment, index) => <ComposerAttachment key={`${attachment.path}:${index}`} attachment={attachment} disabled={sending} onRemove={() => {
+          updateReply({ attachments: readDraft().attachments?.filter((_, position) => position !== index) });
+          textareaRef.current?.focus();
+        }} />)}
+      </div> : null}
       <div className="conversation-composer-row">
         <button type="button" className="conversation-attach" aria-label="Attach files" title="Attach files"
           disabled={attachBlocked}
@@ -413,10 +410,10 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
         <button type="button" className="conversation-voice" aria-label="Voice" title="Voice"
           disabled={restarted || !session.session_incarnation}
           onClick={() => {
-            if (!draft) updateReply({ incarnation: session.session_incarnation });
+            if (!draft && !readDraft().attachments?.length) updateReply({ incarnation: session.session_incarnation });
             setVoiceToken((token) => token + 1);
           }}><ConversationMicIcon /></button>
-        {draft.trim() || sending ? <button type="button" className="conversation-send" aria-label="Send reply" title={sending ? "Sending…" : "Send reply"}
+        {draft.trim() || reply.attachments?.length || sending ? <button type="button" className="conversation-send" aria-label="Send reply" title={sending ? "Sending…" : "Send reply"}
           aria-busy={sending} disabled={!canSend} onClick={() => void send()}>
           <ConversationSendIcon />
         </button> : null}

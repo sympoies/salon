@@ -7853,3 +7853,10 @@ textarea {
 .device-list li { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between; padding: 1rem 0; border-bottom: 1px solid var(--border); }
 .device-list span { display: block; font-size: var(--text-md); margin-top: .3rem; }
 .device-actions { display: flex; align-items: center; flex-wrap: wrap; }
+
+.composer-attachments { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
+.composer-attachment { display:flex; align-items:center; gap:8px; min-width:0; max-width:100%; padding:6px 8px; border-radius:var(--r-md); background:var(--conversation-user-bubble); }
+.composer-attachment img { width:36px; height:36px; object-fit:cover; border-radius:var(--r-xs); }
+.composer-attachment-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.composer-attachment-name small { display:block; opacity:.8; }
+.composer-attachment button { flex:none; border:0; background:transparent; color:inherit; cursor:pointer; font:inherit; font-size:var(--text-xl); }
