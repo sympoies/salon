@@ -56,7 +56,7 @@ async function fixture() {
     } };
 }
 
-test("grouped pairing links normalize and malformed groups are rejected", async () => {
+test("browser landing keeps both code forms while native import rejects grouped URLs", async () => {
   const f = await fixture();
   try {
     const grouped = code.match(/.{4}/g)!.join("-");
@@ -66,8 +66,10 @@ test("grouped pairing links normalize and malformed groups are rejected", async 
       landing.capturePairingLanding(f.window as unknown as Window);
       assert.equal(landing.landingPairingCode(), value);
       f.window.location.href = "http://tauri.localhost";
-      f.runtime.importPairingLink(link.replace(code, value));
-      assert.equal(f.runtime.pendingPairingLink()?.code, code);
+      if (value === code) {
+        f.runtime.importPairingLink(link.replace(code, value));
+        assert.equal(f.runtime.pendingPairingLink()?.code, code);
+      } else assert.throws(() => f.runtime.importPairingLink(link.replace(code, value)), { message: "Invalid pairing link." });
     }
     for (const value of [grouped.replace("-", ""), grouped + "-", grouped.replace("-", "--"),
       grouped.toLowerCase(), grouped.replace("A", "I"), grouped.replace("ABCD-", "ABC-D")]) {

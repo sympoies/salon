@@ -36,10 +36,10 @@ export function clearPairingLink(expected = importedPairingLink): void {
 export function parsePairingLink(raw: string): { origin: string; code: string } {
   try {
     if (typeof raw !== "string" || raw.length > 2048 || /[\s\\]/u.test(raw)
-      || !/^https:\/\/[^/?#]+\/#pair=(?:[A-HJ-NP-Z2-9]{20}|(?:[A-HJ-NP-Z2-9]{4}-){4}[A-HJ-NP-Z2-9]{4})$/.test(raw)) throw new Error();
+      || !/^https:\/\/[^/?#]+\/#pair=[A-HJ-NP-Z2-9]{20}$/.test(raw)) throw new Error();
     const url = new URL(raw);
     if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search) throw new Error();
-    return { origin: url.origin, code: url.hash.slice(6).replaceAll("-", "") };
+    return { origin: url.origin, code: url.hash.slice(6) };
   } catch { throw new Error("Invalid pairing link."); }
 }
 
