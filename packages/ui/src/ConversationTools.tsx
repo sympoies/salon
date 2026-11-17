@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SelectChevronIcon } from "./icons.tsx";
 import type { HistoryToolPart } from "@agent-console/shared/resources";
 import type { HistoryMessage } from "./types.ts";
@@ -82,6 +82,15 @@ export function ConversationToolGroup({ rows, timestamps, growing, children }: {
   readonly growing: boolean; readonly children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const previousCount = useRef(rows.length);
+  const focused = useRef(false);
+  const singleExpanded = useRef(false);
+  const keepOpen = previousCount.current === 1 && rows.length > 1 && (focused.current || singleExpanded.current);
+  const expanded = open || keepOpen;
+  useLayoutEffect(() => {
+    if (keepOpen) setOpen(true);
+    previousCount.current = rows.length;
+  }, [keepOpen, rows.length]);
   const id = useId();
   const counts = new Map<string, number>();
   for (const row of rows) {
@@ -101,12 +110,19 @@ export function ConversationToolGroup({ rows, timestamps, growing, children }: {
   const latest = rows[rows.length - 1];
   const preview = readableToolInput(latest?.call?.owner_input_summary ?? latest?.call?.input_summary).primary
     ?? latest?.result?.owner_summary ?? latest?.result?.summary;
-  return <div className={`conversation-tool-group${errors ? " is-error" : ""}`}>
-    <button type="button" className="conversation-tool-group-toggle" aria-label={`${summary} · ${errors} ${errors === 1 ? "error" : "errors"}`} aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>
+  return <div className={`conversation-tool-group${rows.length === 1 ? " is-single" : ""}${errors ? " is-error" : ""}`}
+    onFocusCapture={() => { focused.current = true; }}
+    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) focused.current = false; }}
+    onClickCapture={event => {
+      if (rows.length !== 1 || !(event.target instanceof Element)) return;
+      const toggle = event.target.closest(".conversation-tool-toggle");
+      if (toggle) singleExpanded.current = toggle.getAttribute("aria-expanded") !== "true";
+    }}>
+    {rows.length > 1 ? <button key="summary" type="button" className="conversation-tool-group-toggle" aria-label={`${summary} · ${errors} ${errors === 1 ? "error" : "errors"}`} aria-expanded={expanded} aria-controls={id} onClick={() => setOpen(value => !value)}>
       <SelectChevronIcon className="conversation-tool-chevron" /><span className="conversation-tool-group-summary">{summary}</span>
       {errors ? <span className="conversation-tool-group-error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
       {growing && preview ? <span className="conversation-tool-group-preview">{preview.split("\n")[0]}</span> : null}
-    </button>
-    <div id={id} hidden={!open}>{children}</div>
+    </button> : null}
+    <div key="content" id={id} className="conversation-tool-group-content" hidden={rows.length > 1 && !expanded}>{children}</div>
   </div>;
 }

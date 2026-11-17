@@ -7855,6 +7855,8 @@ textarea {
 .device-actions { display: flex; align-items: center; flex-wrap: wrap; }
 
 .conversation-tool-group { min-width: 0; margin: 4px 0; border: 1px solid var(--border-default); border-radius: var(--r-sm); }
+.conversation-tool-group.is-single, .conversation-tool-group-content { display: contents; }
+.conversation-tool-group-content[hidden] { display: none; }
 .conversation-tool-group.is-error { border-color: var(--danger); }
 .conversation-tool-group-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; width: 100%; min-width: 0; padding: 6px 8px; border: 0; background: var(--surface-overlay); color: var(--conversation-agent-text); text-align: left; cursor: pointer; font: inherit; font-size: var(--text-xs); overflow-wrap: anywhere; }
 .conversation-tool-group-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

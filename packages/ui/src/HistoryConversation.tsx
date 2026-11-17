@@ -476,7 +476,7 @@ export function HistoryConversationView({
     if (isToolOnly(first)) while (end + 1 < rows.length && isToolOnly(rows[end + 1]!)) end++;
     const run = rows.slice(index, end + 1);
     const tools = run.flatMap(row => row.tools);
-    if (tools.length >= 2 && isToolOnly(first)) {
+    if (isToolOnly(first)) {
       const date = messageDate(first.message.timestamp);
       const previousDate = messageDate(rows[index - 1]?.message.timestamp);
       const newDay = Boolean(date && date.toDateString() !== previousDate?.toDateString());
