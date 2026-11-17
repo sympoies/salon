@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { Window } from "happy-dom";
+import { DeviceCredentialStore } from "../../edge/src/deviceCredentials.ts";
 import { act, createElement, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Plugin } from "vite";
@@ -10,7 +11,7 @@ const code = "ABCDEFGHJKLMNPQRSTUV";
 const link = `https://pairing.example.test:9443/#pair=${code}`;
 type Runtime = typeof import("../src/runtime.ts") & { importPairingLink(url: string): void };
 
-async function fixture() {
+async function fixture(ownerPair?: { id: string; code: string; expires_at: number }) {
   const window = new Window({ url: "http://tauri.localhost" });
   const globals = { window, document: window.document, navigator: window.navigator, localStorage: window.localStorage,
     Element: window.Element, HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement,
@@ -35,10 +36,14 @@ async function fixture() {
   Object.assign(globalThis, { __pairingLinkFetch: transport });
   const boundary: Plugin = { name: "pairing-link-transport", enforce: "pre",
     resolveId(id) {
+      if (ownerPair && id.endsWith("deviceSignIn.ts")) return "\0pairing-owner";
+      if (ownerPair && id.endsWith("terminalClipboard.ts")) return "\0pairing-clipboard";
       if (id === "@tauri-apps/plugin-http") return "\0pairing-link-http";
       if (id.endsWith("TerminalPane.tsx")) return "\0pairing-link-terminal";
     },
     load(id) {
+      if (id === "\0pairing-owner") return `export const pairingOrigin=()=>"https://pairing.example.test:9443"; export async function deviceRequest(route){if(route==="devices")return {can_manage:true,devices:[]}; if(route==="pairings")return ${JSON.stringify(ownerPair)}; return {challenge:null};}`;
+      if (id === "\0pairing-clipboard") return "export async function writeTerminalClipboardText(text){globalThis.__ownerLink=text}";
       if (id === "\0pairing-link-http") return "export const fetch=(url,init)=>globalThis.__pairingLinkFetch(url,init);";
       if (id === "\0pairing-link-terminal") return "export function TerminalPane(){return null}";
     },
@@ -52,9 +57,48 @@ async function fixture() {
     async close() {
       release(); await act(async () => root.unmount()); await harness.close();
       for (const [key, descriptor] of previous) descriptor ? Object.defineProperty(globalThis, key, descriptor) : Reflect.deleteProperty(globalThis, key);
-      Reflect.deleteProperty(globalThis, "__pairingLinkFetch"); await window.happyDOM.close();
+      Reflect.deleteProperty(globalThis, "__ownerLink"); Reflect.deleteProperty(globalThis, "__pairingLinkFetch"); await window.happyDOM.close();
     } };
 }
+
+test("owner link from a real pairing response round trips through native import", async () => {
+  const store = new DeviceCredentialStore(":memory:", () => "main-fixture", () => true);
+  const pair = store.create("owner", "main-fixture", undefined, 300_000);
+  store.close();
+  const f = await fixture(pair);
+  try {
+    const { DeviceSettings } = await f.harness.loadModule<typeof import("../src/DeviceSettings.tsx")>("/src/DeviceSettings.tsx");
+    await act(async () => { f.root.render(createElement(DeviceSettings, { onSignedOut() {} })); await new Promise(resolve => setTimeout(resolve, 20)); });
+    const button = (label: RegExp) => Array.from(f.container.querySelectorAll("button")).find(b => label.test(b.textContent ?? ""))!;
+    await act(async () => { button(/Sign in another device/).click(); await new Promise(resolve => setTimeout(resolve, 20)); });
+    assert.equal(f.container.querySelector(".pairing-code")?.textContent, pair.code);
+    await act(async () => { button(/Copy sign-in link/).click(); await new Promise(resolve => setTimeout(resolve, 20)); });
+    const ownerLink = (globalThis as typeof globalThis & { __ownerLink: string }).__ownerLink;
+    f.runtime.importPairingLink(ownerLink);
+    assert.equal(ownerLink, `https://pairing.example.test:9443/#pair=${pair.code.replaceAll("-", "")}`);
+    assert.equal(f.runtime.pendingPairingLink()?.code, pair.code.replaceAll("-", ""));
+  } finally { await f.close(); }
+});
+
+test("grouped pairing links normalize and malformed groups are rejected", async () => {
+  const f = await fixture();
+  try {
+    const grouped = code.match(/.{4}/g)!.join("-");
+    const landing = await f.harness.loadModule<typeof import("../src/pairingLanding.ts")>("/src/pairingLanding.ts");
+    for (const value of [code, grouped]) {
+      f.window.location.href = `https://pairing.example.test/#pair=${value}`;
+      landing.capturePairingLanding(f.window as unknown as Window);
+      assert.equal(landing.landingPairingCode(), value);
+      f.window.location.href = "http://tauri.localhost";
+      f.runtime.importPairingLink(link.replace(code, value));
+      assert.equal(f.runtime.pendingPairingLink()?.code, code);
+    }
+    for (const value of [grouped.replace("-", ""), grouped + "-", grouped.replace("-", "--"),
+      grouped.toLowerCase(), grouped.replace("A", "I"), grouped.replace("ABCD-", "ABC-D")]) {
+      assert.throws(() => f.runtime.importPairingLink(link.replace(code, value)), { message: "Invalid pairing link." });
+    }
+  } finally { await f.close(); }
+});
 
 test("native pairing imports reject malformed and non-fragment links with a fixed secret-free error", async () => {
   const f = await fixture();

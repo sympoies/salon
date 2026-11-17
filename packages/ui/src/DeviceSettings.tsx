@@ -44,7 +44,7 @@ export function DeviceSettings({ onSignedOut }: { readonly onSignedOut: () => vo
     setError(null); setNotice(null);
     try { await work(); } catch { setError("Device action unavailable. Sign in with your main access token to manage devices."); }
   };
-  const link = pair ? `${pairingOrigin()}/#pair=${encodeURIComponent(pair.code)}` : "";
+  const link = pair ? `${pairingOrigin()}/#pair=${encodeURIComponent(pair.code.replaceAll("-", ""))}` : "";
   if (!list) return null;
   return <section className="settings-section device-pairing" aria-label="Signed-in devices">
     <h2 className="settings-section-title">Devices</h2>

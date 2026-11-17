@@ -56,8 +56,9 @@ their existing authentication behavior. The configured single-token principal ma
 Consumers call `importPairingLink(url)` from `@agent-console/ui/pairing` for OS link delivery or a QR scan.
 Call it after the native runtime is available, before or after `mountApp`. It accepts only
 `https://<host>[:port]/#pair=<code>`, at most 2048 characters, with the current 20-character uppercase
-pairing alphabet. The path must be `/`; whitespace, backslashes, user information, queries, additional
-fragment fields and encoded or grouped codes are refused. A custom-scheme envelope belongs to the shell;
+pairing alphabet. A code grouped into five groups of four with hyphens is also accepted and normalized.
+The path must be `/`; whitespace, backslashes, user information, queries, additional fragment fields and
+encoded codes are refused. A custom-scheme envelope belongs to the shell;
 extract its HTTPS payload before calling the API. Never log or persist the envelope or payload.
 
 The import throws `Invalid pairing link.` for malformed input, or
