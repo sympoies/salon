@@ -380,6 +380,7 @@ export function HistoryConversationView({
     loading,
   } = conversation;
   const showToolCalls = useShowToolCalls();
+  const [expandedToolGroups, setExpandedToolGroups] = useState<ReadonlySet<string>>(() => new Set());
   const toolRows = conversationToolRows(messages);
   const rows = messages.map((message, index) => ({ message, tools: showToolCalls ? toolRows[index]! : [] }))
     .filter(({ message, tools }) => !message.tool_parts?.length || tools.length || message.text || message.images?.length);
@@ -413,7 +414,7 @@ export function HistoryConversationView({
       viewport.scrollTop = viewport.scrollHeight;
     }
   }, [showWorking, conversation.viewportRef]);
-  const renderRow = ({ message, tools }: typeof rows[number], index: number, suppressDay = false) => {
+  const renderRow = ({ message, tools }: typeof rows[number], index: number, suppressDay = false, followsCollapsedGroup = false) => {
           const notice = message.row_class === "notice" || (!message.row_class && message.role === "notice") ? parseSessionNotice(message.text) : null;
           const runtime = message.row_class === "runtime_command"
             ? { title: parseRuntimeCommand(message.text)?.title ?? "Runtime command", text: message.text }
@@ -431,7 +432,7 @@ export function HistoryConversationView({
             : user ? present({ kind: "user", role: message.role, text: message.text }) : undefined);
           const userPresentation = !notice && !plainNotice && user && presentation && "label" in presentation ? presentation : undefined;
           const noticePresentation = (notice || plainNotice) && presentation && "summary" in presentation ? presentation : undefined;
-          const showAvatar = !user && (newDay || previous?.role !== message.role);
+          const showAvatar = !user && (followsCollapsedGroup || newDay || previous?.role !== message.role);
           const originalCaption = imageCaption(userPresentation?.text ?? message.text, message.images?.length ?? 0);
           const caption = user ? hideUploadedImages(originalCaption, uploadSessionId, (message.images ?? []).filter(image => image.origin !== "tool_result").length) : originalCaption;
           const { bubble: bubbleImages, reread, tool: toolImages } = split[index]!;
@@ -469,6 +470,7 @@ export function HistoryConversationView({
           );
   };
   const rendered: ReactNode[] = [];
+  let followsCollapsedGroup = false;
   for (let index = 0; index < rows.length;) {
     const first = rows[index]!;
     const isToolOnly = (row: typeof first) => row.tools.length > 0 && !row.message.text && !row.message.images?.length;
@@ -480,13 +482,34 @@ export function HistoryConversationView({
       const date = messageDate(first.message.timestamp);
       const previousDate = messageDate(rows[index - 1]?.message.timestamp);
       const newDay = Boolean(date && date.toDateString() !== previousDate?.toDateString());
-      rendered.push(<Fragment key={`${session?.machine}/${session?.id}/${first.message.id}`}>
+      const key = `${session?.machine}/${session?.id}/${first.message.id}`;
+      const expanded = expandedToolGroups.has(key);
+      const showAvatar = newDay || rows[index - 1]?.message.role !== first.message.role;
+      const last = run[run.length - 1]!.message;
+      const endTime = messageTimeLabel(messageDate(last.timestamp));
+      rendered.push(<Fragment key={key}>
         {newDay && date ? <div className="history-day-separator"><span>{messageDayLabel(date)}</span></div> : null}
-        <ConversationToolGroup rows={tools} timestamps={run.flatMap(row => row.tools.map(() => row.message.timestamp))} growing={working && end === rows.length - 1}>
+        <ConversationToolGroup rows={tools} timestamps={run.flatMap(row => row.tools.map(() => row.message.timestamp))} growing={working && end === rows.length - 1}
+          open={expanded} onOpenChange={open => setExpandedToolGroups(current => {
+            if (current.has(key) === open) return current;
+            const next = new Set(current);
+            if (open) next.add(key); else next.delete(key);
+            return next;
+          })}
+          renderSummary={toggle => <article aria-label={session?.provider ?? "Agent"}
+            className={`history-message is-${first.message.role}${showAvatar ? "" : " is-continuation"}`}>
+            {showAvatar ? <AgentBadge agent={session?.provider ?? "unknown"} decorative /> : null}
+            {toggle}
+            {endTime ? <time dateTime={last.timestamp}>{endTime}</time> : null}
+          </article>}>
           {run.map((row, offset) => renderRow(row, index + offset, offset === 0))}
         </ConversationToolGroup>
       </Fragment>);
-    } else rendered.push(renderRow(first, index));
+      followsCollapsedGroup = tools.length > 1 && !expanded;
+    } else {
+      rendered.push(renderRow(first, index, false, followsCollapsedGroup));
+      followsCollapsedGroup = false;
+    }
     index = end + 1;
   }
   return (<>
