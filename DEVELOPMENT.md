@@ -13,6 +13,9 @@ Use Git, Bash, Python 3.11 or newer, ShellCheck and the `devlog` CLI from
 
 The UI regression suite uses isolated headless Chrome fixtures. Install `google-chrome` or
 set the existing `CHROME_BIN` override. Browser fixture temporary files use `/tmp`.
+The notice layout fixtures pin Liberation Sans and wait for it to load before measuring;
+install `fonts-liberation` on Linux, or install Liberation Sans on other platforms.
+A missing font fails with an installation message. Other fixtures retain the UI's system font stack.
 
 Install with `pnpm install --frozen-lockfile`.
 

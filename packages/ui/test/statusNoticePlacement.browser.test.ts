@@ -1,4 +1,4 @@
-import { phoneTierScript } from "./support/browserLayout.ts";
+import { noticeFixtureFontScript, phoneTierScript } from "./support/browserLayout.ts";
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -59,10 +59,11 @@ for (const kind of ["host-offline", "attention", "info"] as const) {
   }
 }
 
-test("short phone host notice shows its full message beside enabled counts without reflow", async () => {
+test("short phone host notice shows its full message beside enabled counts without reflow", async t => {
   const markup = await renderNoticeSurface("dashboard", 360, { restore: false, focused: true,
     machine: "fixture", error: "fixture: offline" });
   const m = measure(markup, 360, false, "host-short");
+  t.diagnostic(JSON.stringify(m.environment));
   assert.equal(m.fullVisible, true, "phone shows the full status message");
   assert.equal(m.fullMessage, "fixture: offline");
   assert.equal(m.countsVisible, true);
@@ -75,6 +76,7 @@ function measure(markup: string, width: number, native: boolean, name: string) {
   const evidence = process.env.AGENT_CONSOLE_UI_SCREENSHOT_DIR;
   try {
     const frame = `<!doctype html><meta charset="utf-8"><html ${native ? 'data-mac-titlebar="true"' : ""}><style>${css}</style>${phoneTierScript}${markup}<script>
+      (async()=>{try {${noticeFixtureFontScript}
       const pill=document.querySelector('.connection-notice'),layer=pill?.parentElement;
       const row=pill?.closest('${native ? ".mac-titlebar" : width <= 760 ? ".slot-focus-strip, .session-filter-status-row" : ".session-filter-trigger-row, .slot-head"}');
       const p=pill?.getBoundingClientRect(),r=row?.getBoundingClientRect();
@@ -83,7 +85,7 @@ function measure(markup: string, width: number, native: boolean, name: string) {
       const rowHeight=r?.height; if(layer)layer.style.display='none';
       const clearRowHeight=row?.getBoundingClientRect().height; if(layer)layer.style.display='';
       const full=pill?.querySelector('.connection-notice-message-full'),fullStyle=full&&getComputedStyle(full);
-      const result={fullVisible:!!fullStyle&&fullStyle.display!=='none'&&fullStyle.clipPath==='none'&&full.getBoundingClientRect().width>1,fullMessage:full?.textContent,notices:document.querySelectorAll('.connection-notice').length,
+      const result={environment:noticeFontEnvironment,fullVisible:!!fullStyle&&fullStyle.display!=='none'&&fullStyle.clipPath==='none'&&full.getBoundingClientRect().width>1,fullMessage:full?.textContent,notices:document.querySelectorAll('.connection-notice').length,
         extraRows:document.querySelectorAll('.slot-connection-row, .dash > p[role="status"]').length,
         inRow:!!r&&p.top>=r.top&&p.bottom<=r.bottom,
         floating:!row||getComputedStyle(layer).position==='fixed',
@@ -98,6 +100,7 @@ function measure(markup: string, width: number, native: boolean, name: string) {
         dismissClickable:!!dismiss&&(hit===dismiss||dismiss.contains(hit)),role:pill?.getAttribute('role'),
         overflow:document.documentElement.scrollWidth>innerWidth};
       parent.document.querySelector('#measurement').textContent=JSON.stringify(result);
+      } catch(error) { parent.document.querySelector('#measurement').textContent=JSON.stringify({error:String(error)}); }})();
     </script></html>`;
     const path = join(temp, "fixture.html");
     writeFileSync(path, `<!doctype html><meta charset="utf-8"><style>body{margin:0}iframe{display:block;border:0}</style><iframe width="${width}" height="800"></iframe><pre id="measurement" hidden></pre><script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<", "\\u003c")}</script>`);
@@ -109,6 +112,8 @@ function measure(markup: string, width: number, native: boolean, name: string) {
     const json = browser.stdout.match(/<pre id="measurement"[^>]*>(.+?)<\/pre>/s)?.[1];
     assert.ok(json, "browser reports measurements");
     const m = JSON.parse(json.replaceAll("&quot;", '"').replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">"));
+    assert.equal(m.error, undefined, m.error ?? "browser measurement script completes");
+    assert.equal(m.environment.viewportWidth, width, "layout uses the named viewport width");
     if (evidence) writeFileSync(join(evidence, `${name}.json`), JSON.stringify(m, null, 2));
     return m;
   } finally { rmSync(temp, { recursive: true, force: true }); }
