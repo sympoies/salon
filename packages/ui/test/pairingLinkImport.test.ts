@@ -56,6 +56,28 @@ async function fixture() {
     } };
 }
 
+test("browser landing keeps both code forms while native import rejects grouped URLs", async () => {
+  const f = await fixture();
+  try {
+    const grouped = code.match(/.{4}/g)!.join("-");
+    const landing = await f.harness.loadModule<typeof import("../src/pairingLanding.ts")>("/src/pairingLanding.ts");
+    for (const value of [code, grouped]) {
+      f.window.location.href = `https://pairing.example.test/#pair=${value}`;
+      landing.capturePairingLanding(f.window as unknown as Window);
+      assert.equal(landing.landingPairingCode(), value);
+      f.window.location.href = "http://tauri.localhost";
+      if (value === code) {
+        f.runtime.importPairingLink(link.replace(code, value));
+        assert.equal(f.runtime.pendingPairingLink()?.code, code);
+      } else assert.throws(() => f.runtime.importPairingLink(link.replace(code, value)), { message: "Invalid pairing link." });
+    }
+    for (const value of [grouped.replace("-", ""), grouped + "-", grouped.replace("-", "--"),
+      grouped.toLowerCase(), grouped.replace("A", "I"), grouped.replace("ABCD-", "ABC-D")]) {
+      assert.throws(() => f.runtime.importPairingLink(link.replace(code, value)), { message: "Invalid pairing link." });
+    }
+  } finally { await f.close(); }
+});
+
 test("native pairing imports reject malformed and non-fragment links with a fixed secret-free error", async () => {
   const f = await fixture();
   try {
