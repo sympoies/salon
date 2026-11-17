@@ -154,7 +154,7 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     ...(roles !== undefined && rolesNarrowed ? [{ key: "roles", ...dimension("Roles", roleChoices.filter(role => filters.roles!.includes(role)).map(role => role ?? "No role")), reset: { roles: null } }] : []),
     ...(filters.harnesses !== null && restrictedHarnesses > 0 ? [{ key: "harnesses", ...dimension("Harness", [...harnessIds.filter(id => filters.harnesses!.includes(id)), ...filters.harnesses!.filter(id => !harnessIds.includes(id))].map(harnessLabel)), reset: { harnesses: null } }] : []),
     ...(filters.repo ? [{ key: "repo", ...single(`Repository: ${filters.repo}`), reset: { repo: "" } }] : []),
-    ...(filters.statusGroup ? [{ key: "status", ...single(`Status: ${SESSION_STATUS_LABELS[filters.statusGroup][0]}`), reset: { statusGroup: null } }] : []),
+    ...(filters.statusGroup ? [{ key: "status", ...single(`Status: ${SESSION_STATUS_LABELS[filters.statusGroup]}`), reset: { statusGroup: null } }] : []),
   ];
   const summaryEntries = [
     filters.hosts === null ? "All machines" : `${machines.length - restrictedHosts} of ${machines.length} machines`,
@@ -199,7 +199,7 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     {migrationNotice ? <div className="session-filter-notice" role="status"><span>All permitted hosts are now shown; choose Hosts in Filters to narrow them.</span>
       <button className="btn ghost" type="button" onClick={onDismissMigration}>Dismiss host notice</button></div> : null}
   </>;
-  const statusCountsElement = <SessionStatusCountButtons offlineCountMachines={offlineCountMachines} compactHeader={compactHeader}
+  const statusCountsElement = <SessionStatusCountButtons offlineCountMachines={offlineCountMachines}
     activeGroup={filters.statusGroup} onToggle={toggleStatus}
     counts={records === undefined && countsAvailable ? statusCounts
       : sessionStatusCountValues(snapshot, open ? draft : filters, countsAvailable, roleOf)} />;

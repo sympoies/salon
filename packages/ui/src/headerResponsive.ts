@@ -10,20 +10,19 @@ export function chooseHeaderCompactStage(fits: (stage: HeaderCompactStage) => bo
  * Measure the same controls that CSS compacts, including headers without Usage.
  * The phone layout (Dashboard's single-column tier: up to 760px, or a touch
  * pointer up to 1024px, or the Android app) keeps the two-row header without the layout picker;
- * its status counts take the longest label that fits: full, short, then none
- * (#968). Narrow macOS windows keep the measured desktop row (title-bar counts).
+ * its status counts keep a fixed dot-and-number form. Narrow macOS windows keep
+ * the measured desktop row (title-bar counts).
  */
 export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage | null {
-  // The phone header gives the quota strip what the logo, New, More and the counts leave over (#238):
-  // all accounts first, then fewer accounts, then one account without names and countdowns, and it is
-  // hidden only when no room remains. Nested so the serialized function in test fixtures is complete.
+  // Give quota the room left by the logo, New, More and number-only counts:
+  // fewer accounts, then one without names or countdowns, then stacked percentages. Nested so the serialized function in test fixtures is complete.
   const fitQuota = (): void => {
     const usage = header.querySelector<HTMLElement>(".header-usage");
     if (!usage) return;
     const total = usage.querySelectorAll(".hu-provider").length;
-    const steps: Array<readonly [number, "full" | "compact"]> = [];
+    const steps: Array<readonly [number, "full" | "compact" | "percent"]> = [];
     for (let accounts = total; accounts >= 1; accounts--) steps.push([accounts, "full"]);
-    if (total > 0) steps.push([1, "compact"]);
+    if (total > 0) steps.push([1, "compact"], [1, "percent"]);
     const fits = () => {
       const rect = usage.getBoundingClientRect(), bounds = header.getBoundingClientRect();
       return rect.width > 0 && usage.scrollWidth <= usage.clientWidth + 1 && rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
@@ -40,29 +39,9 @@ export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage 
   if (document.documentElement.dataset.phoneHeader === "true"
     && document.documentElement.dataset.macTitlebar !== "true") {
     header.removeAttribute("data-header-compact");
-    // Count buttons shrink and clip before they overlap, so both are checked.
-    const labelsFit = () => {
-      const buttons = [...header.querySelectorAll<HTMLElement>(".session-status-count")];
-      if (!buttons.length) return true;
-      const rects = buttons.map(button => button.getBoundingClientRect());
-      const left = Math.min(...rects.map(rect => rect.left)), right = Math.max(...rects.map(rect => rect.right));
-      const top = Math.min(...rects.map(rect => rect.top)), bottom = Math.max(...rects.map(rect => rect.bottom));
-      const bounds = header.getBoundingClientRect();
-      return left >= bounds.left - 1 && right <= bounds.right + 1
-        && buttons.every(button => button.scrollWidth <= button.clientWidth + 1)
-        && [...header.querySelectorAll<HTMLElement>(".brand-title-mark,.header-menu-trigger,.dashboard-new-session")].every(control => {
-          const rect = control.getBoundingClientRect();
-          return !rect.width || rect.bottom <= top || rect.top >= bottom || rect.right <= left + 1 || rect.left >= right - 1;
-        });
-    };
-    header.dataset.countLabels = (["full", "short", "none"] as const).find(form => {
-      header.dataset.countLabels = form;
-      return labelsFit();
-    }) ?? "none";
     fitQuota();
     return null;
   }
-  header.removeAttribute("data-count-labels");
   header.removeAttribute("data-quota-accounts");
   header.removeAttribute("data-quota-detail");
   const stage = chooseHeaderCompactStage(value => {

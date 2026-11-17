@@ -1,21 +1,15 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { hasHeadlessChrome, measureUiMarkup } from "./support/browserLayout.ts";
-import { headerFixture, headerMeasure, measureHeaderMarkup } from "./support/headerFixture.ts";
+import { headerFixture, measureHeaderMarkup } from "./support/headerFixture.ts";
 import { uiSource, uiStyles } from "./support/source.ts";
 import { isPhoneWidth } from "../src/phoneTier.ts";
 
-// #968: the header follows the phone layout tier that Dashboard uses (width up
-// to 760px, or a touch pointer up to 1024px). The layout button is hidden
-// exactly when the phone layout is active, and phone count labels take the
-// longest form that fits: full, then short, then the dot and number only.
-type LabelMode = "full" | "short" | "none";
+// The header follows the shared phone tier while counts stay number-only.
 interface TierMeasure {
   readonly coarse: boolean;
   readonly stage: string | null;
   readonly picker: boolean;
-  readonly mode: LabelMode;
-  readonly fits: Record<LabelMode, boolean>;
   readonly labels: string[];
   readonly overlap: boolean;
   readonly overflow: number;
@@ -25,8 +19,6 @@ const COARSE = ["--blink-settings=primaryPointerType=2,availablePointerTypes=2"]
 const OWNER_COUNTS = { working: 3, waiting: 11, attention: 0, unknown: 0, stopped: 0 };
 const BUSY_COUNTS = { working: 40, waiting: 50, attention: 10, unknown: 0, stopped: 20 };
 
-// The fit of each label form is forced with inline styles, independent of how
-// production picks one, then cleared before the chosen form is read.
 const measure = `
   const header=document.querySelector('.workspace-head');
   const visible=e=>!!e&&e.getBoundingClientRect().width>0&&e.getBoundingClientRect().height>0;
@@ -39,16 +31,9 @@ const measure = `
     return row.filter(visible).every(e=>{const r=e.getBoundingClientRect();
       return r.bottom<=c.top||r.top>=c.bottom||r.right<=c.left+1||r.left>=c.right-1;})&&c.left>=h.left-1&&c.right<=h.right+1
       &&[...header.querySelectorAll('.session-status-count')].every(e=>e.scrollWidth<=e.clientWidth+1);};
-  const force=mode=>{for(const e of header.querySelectorAll('.session-status-count-label'))e.style.display=mode==='full'?'inline':'none';
-    for(const e of header.querySelectorAll('.session-status-count-short-label'))e.style.display=mode==='short'?'inline':'none';};
-  const fits={};
-  for(const mode of ['full','short','none']){force(mode);fits[mode]=separate();}
-  for(const e of header.querySelectorAll('.session-status-count-label,.session-status-count-short-label'))e.style.removeProperty('display');
-  const shown=s=>[...header.querySelectorAll(s)].filter(visible);
-  const full=shown('.session-status-count-label'),short=shown('.session-status-count-short-label');
   const result={coarse:matchMedia('(pointer: coarse)').matches,stage:header.getAttribute('data-header-compact'),
     picker:[...header.querySelectorAll('.layout-picker,.layout-picker *')].some(visible),
-    mode:full.length?'full':short.length?'short':'none',fits,labels:[...full,...short].map(e=>e.textContent),
+    labels:[...header.querySelectorAll('.session-status-count span[aria-hidden="true"]')].map(e=>e.textContent),
     overlap:!separate(),overflow:document.documentElement.scrollWidth-innerWidth};
 `;
 
@@ -75,16 +60,15 @@ for (const { name, width, coarse, counts } of phoneCases) test(`${name} (${width
   assert.equal(m.coarse, coarse, `the pointer type is emulated: ${detail}`);
   assert.equal(m.picker, false, `no layout button in the phone layout: ${detail}`);
   assert.equal(m.stage, null, `the phone header is not the desktop row: ${detail}`);
-  const longest = (["full", "short", "none"] as const).find(mode => m.fits[mode]) ?? "none";
-  assert.equal(m.mode, longest, `count labels take the longest form that fits: ${detail}`);
+  assert.ok(m.labels.every(label => /^\d+$/.test(label)), `counts stay number-only: ${detail}`);
   assert.equal(m.overlap, false, `counts clear the brand and actions: ${detail}`);
   assert.ok(m.overflow <= 1, `no horizontal overflow: ${detail}`);
 });
 
-test("phone landscape shows the full count labels the owner expects", async t => {
+test("phone landscape keeps number-only count labels", async t => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
   const m = await measureTier(780, true, OWNER_COUNTS);
-  assert.deepEqual(m.labels, ["Working", "Waiting", "Attention", "Stop"], JSON.stringify(m));
+  assert.deepEqual(m.labels, ["3", "11", "0", "0"], JSON.stringify(m));
 });
 
 for (const [width, coarse] of [[761, false], [1024, false], [1025, true], [1500, false]] as const) {
@@ -94,7 +78,7 @@ for (const [width, coarse] of [[761, false], [1024, false], [1025, true], [1500,
     const detail = JSON.stringify(m);
     assert.equal(m.picker, true, `the layout button stays: ${detail}`);
     assert.notEqual(m.stage, null, `the desktop row is measured: ${detail}`);
-    assert.equal(m.mode, "none", `the desktop row keeps dot and number counts: ${detail}`);
+    assert.ok(m.labels.every(label => /^\d+$/.test(label)), `desktop keeps number-only counts: ${detail}`);
     assert.ok(m.overflow <= 1, `no horizontal overflow: ${detail}`);
   });
 }
@@ -113,7 +97,7 @@ test("the header CSS and measurement share Dashboard's phone tier", () => {
   };
   assert.doesNotMatch(css, /@media[^{]*\(pointer: coarse\) and \(max-width: 1024px\)/, "no media query repeats the phone tier");
   hasRule(':where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"]))', ".workspace-head .layout-picker { display: none; }");
-  hasRule(desktop, ".workspace-head .session-status-count-label");
+  hasRule(desktop, ".workspace-head .session-status-count");
 });
 
 // The Android app reports a fine pointer with a stylus; it publishes the phone

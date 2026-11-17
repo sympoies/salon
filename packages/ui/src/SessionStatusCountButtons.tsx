@@ -17,15 +17,14 @@ export interface SessionStatusCountButtonsProps {
   readonly counts: SessionStatusCountValues;
   readonly activeGroup: SessionStatusGroup | null | undefined;
   readonly offlineCountMachines: readonly OfflineCountMachine[];
-  readonly compactHeader?: boolean;
   readonly onToggle: (group: SessionStatusGroup) => void;
 }
 
 /** The title bar's status count buttons, shared by the session list and the single-session view (#938). */
-export function SessionStatusCountButtons({ counts, activeGroup, offlineCountMachines, compactHeader = false, onToggle }: SessionStatusCountButtonsProps) {
+export function SessionStatusCountButtons({ counts, activeGroup, offlineCountMachines, onToggle }: SessionStatusCountButtonsProps) {
   return <div className="session-status-counts" role="group" aria-label="Session status counts">
     {SESSION_STATUS_GROUPS.map(group => {
-      const [label, compactLabel, shortLabel] = SESSION_STATUS_LABELS[group];
+      const label = SESSION_STATUS_LABELS[group];
       const count = counts[group];
       const accessibleName = `${label}: ${count} ${count === 1 ? "session" : "sessions"}${offlineCountMachines.length ? " (partial counts)" : ""}`;
       // State unknown is exceptional: shown only while a session is in it or
@@ -37,8 +36,6 @@ export function SessionStatusCountButtons({ counts, activeGroup, offlineCountMac
         aria-label={accessibleName}
         aria-pressed={activeGroup === group} onClick={() => onToggle(group)}>
         <CardStatusIcon state={iconState} dot /><span aria-hidden="true">{count}</span>
-        {compactHeader ? <><span className="session-status-count-label" aria-hidden="true">{compactLabel}</span>
-          <span className="session-status-count-short-label" aria-hidden="true">{shortLabel}</span></> : null}
         <span className="sr-only">{accessibleName}</span>
       </button>;
     })}<HeaderCountsNotice machines={offlineCountMachines} />
