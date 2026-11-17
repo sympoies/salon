@@ -11,7 +11,7 @@ import { makeSession } from "./support/fixtures.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 
 declare global {
-  var __agentConsoleStatusSubmit: (() => Promise<{ ok: boolean; queued?: boolean; error?: string }>) | undefined;
+  var __agentConsoleStatusSubmit: ((machine: string, id: string, body: { text: string }) => Promise<{ ok: boolean; queued?: boolean; error?: string }>) | undefined;
   var __agentConsoleStatusUpload: ((machine: string, id: string, file: File) => Promise<{ ok: boolean; path?: string; error?: string }>) | undefined;
   var __agentConsoleStatusMac: boolean | undefined;
   var __agentConsoleStatusNativeFiles: (() => Promise<File[]>) | undefined;
@@ -36,10 +36,10 @@ const boundaries: Plugin = {
 };
 async function mount() {
   const window = new Window({ url: "http://localhost" });
-  const globals = { window, document: window.document, HTMLElement: window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true };
+  const globals = { window, document: window.document, HTMLElement: window.HTMLElement, URL: window.URL, IS_REACT_ACT_ENVIRONMENT: true };
   const previous = new Map(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
-  let now = 0, nextId = 0, calls = 0;
+  let now = 0, nextId = 0, calls = 0, sent = "";
   const timers = new Map<number, { at: number; run: () => void }>();
   window.setTimeout = ((callback: () => void, delay = 0) => {
     const id = ++nextId; timers.set(id, { at: now + delay, run: callback }); return id;
@@ -52,7 +52,7 @@ async function mount() {
   // Real admission and native-receipt behavior are tested separately.
   let session: Session = makeSession({ machine: "fixture", id: "status", agent: "claude", provider_resume: { provider: "claude", session_id: "fixture-thread" }, session_incarnation: "inc-1" });
   let response = { ok: true } as { ok: boolean; queued?: boolean; error?: string };
-  globalThis.__agentConsoleStatusSubmit = async () => { calls++; return response; };
+  globalThis.__agentConsoleStatusSubmit = async (_machine, _id, body) => { calls++; sent = body.text; return response; };
   const textarea = () => container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Reply to session"]')!;
   const sendButton = () => container.querySelector<HTMLButtonElement>('[aria-label="Send reply"]')!;
   const lines = () => [...container.querySelectorAll('.conversation-composer [role="status"], .conversation-composer [role="alert"]')].map(node => node.textContent);
@@ -61,7 +61,7 @@ async function mount() {
       phase_changed_at: "2030-01-01T00:00:00Z", ...(phase === "working" || phase === "starting" ? { current_turn: { started_at: "2030-01-01T00:00:00Z" } } : {}), source: { kind: "provider_hook", provider: "codex", confidence: "authoritative" } } as Session["turn_state"] };
     await act(async () => root.render(createElement(ConversationComposer, { session, machineReachable: true, onBusyChange() {}, onVoiceOpenChange() {} })));
   };
-  return { window, container, textarea, sendButton, lines, render, timers, calls: () => calls,
+  return { window, container, textarea, sendButton, lines, render, timers, calls: () => calls, sent: () => sent,
     response(value: typeof response) { response = value; },
     async write(text: string) {
       const node = textarea();
@@ -154,7 +154,7 @@ test("#942 an empty composer shows the paperclip and the mic; text adds send bes
     assert.equal(button(h.container, "Send reply"), null, "blank text counts as empty");
   } finally { await h.close(); }
 });
-test("#942 attaching files uploads them to the session host and adds their quoted paths to the draft", async () => {
+test("#942 attaching files uploads them to the session host and adds chips to the draft", async () => {
   const h = await mount();
   const uploads: string[] = [];
   globalThis.__agentConsoleStatusUpload = async (_machine, _id, file) => { uploads.push(file.name); return { ok: true, path: `/uploads/${file.name}` }; };
@@ -167,11 +167,13 @@ test("#942 attaching files uploads them to the session host and adds their quote
     Object.defineProperty(input, "files", { configurable: true, value: files });
     await act(async () => { input.dispatchEvent(new h.window.Event("change", { bubbles: true })); await new Promise(resolve => setImmediate(resolve)); });
     assert.deepEqual(uploads, ["report one.pdf", "log.txt"]);
-    // #963: one path per line, then an empty line with the caret for the message.
-    assert.equal(h.textarea().value, "see\n'/uploads/report one.pdf'\n'/uploads/log.txt'\n");
+    assert.equal(h.textarea().value, "see");
+    assert.ok(button(h.container, "Remove report one.pdf"));
+    assert.ok(button(h.container, "Remove log.txt"));
     assertActiveElement(h.window, h.textarea(), "the caret is in the draft");
-    assert.equal(h.textarea().selectionStart, h.textarea().value.length, "the caret is on the empty line");
     assert.equal(h.calls(), 0, "attaching never sends on its own");
+    await h.send();
+    assert.equal(h.sent(), "'/uploads/report one.pdf'\n'/uploads/log.txt'\nsee");
   } finally { delete globalThis.__agentConsoleStatusUpload; await h.close(); }
 });
 test("#942 a failed upload keeps the draft and says why", async () => {
@@ -200,8 +202,10 @@ test("#942 review F2: send waits for an upload in flight, so the path is not lef
     await h.send();
     assert.equal(h.calls(), 0);
     await act(async () => { finish({ ok: true, path: "/u/a.txt" }); await new Promise(resolve => setImmediate(resolve)); });
-    assert.equal(h.textarea().value, "see this\n'/u/a.txt'\n");
+    assert.equal(h.textarea().value, "see this");
+    assert.ok(button(h.container, "Remove a.txt"));
     assert.equal(h.sendButton().disabled, false);
+    await h.send(); assert.equal(h.sent(), "'/u/a.txt'\nsee this");
   } finally { delete globalThis.__agentConsoleStatusUpload; await h.close(); }
 });
 
@@ -220,13 +224,15 @@ for (const [agent, provider] of providers) {
       const event = await h.dispatch("paste", clipboardWith([screenshot], "/Users/runner/ScreenShot/Screenshot 1.png"));
       assert.equal(event.defaultPrevented, true, "the path text is not pasted beside the upload");
       assert.deepEqual(uploads, [["fixture", "status", "Screenshot 1.png"]]);
-      assert.equal(h.textarea().value, "'/host/uploads/Screenshot 1.png'\n");
+      assert.equal(h.textarea().value, "");
+      assert.ok(button(h.container, "Remove Screenshot 1.png"));
       assert.ok(!h.textarea().value.includes("/Users/"), "no client-local path reaches the draft");
       assert.equal(h.calls(), 0, "pasting never sends on its own");
       h.response({ ok: true });
       await h.send();
       assert.equal(h.calls(), 1);
-      assert.equal(h.textarea().value, "", "the host path is what gets sent");
+      assert.equal(h.sent(), "'/host/uploads/Screenshot 1.png'");
+      assert.equal(h.textarea().value, "");
     } finally { delete globalThis.__agentConsoleStatusUpload; await h.close(); }
   });
 }
@@ -244,7 +250,8 @@ test("#1067 one image that Chromium lists in files and in items uploads once", a
     });
     assert.equal(event.defaultPrevented, true);
     assert.deepEqual(uploads, ["image.png"]);
-    assert.equal(h.textarea().value, "'/host/uploads/image.png'\n");
+    assert.equal(h.textarea().value, "");
+    assert.ok(button(h.container, "Remove image.png"));
   } finally { delete globalThis.__agentConsoleStatusUpload; await h.close(); }
 });
 test("#1049 plain-text paste stays with the browser and uploads nothing", async () => {
@@ -270,7 +277,8 @@ test("#1049 dropped files upload the same way and the browser does not navigate 
     const drop = await h.dispatch("drop", { files, items: [], types: ["Files"] });
     assert.equal(drop.defaultPrevented, true);
     assert.deepEqual(uploads, ["a.png", "b.txt"]);
-    assert.equal(h.textarea().value, "see\n'/host/a.png'\n'/host/b.txt'\n");
+    assert.equal(h.textarea().value, "see");
+    assert.ok(button(h.container, "Remove a.png")); assert.ok(button(h.container, "Remove b.txt"));
     assert.equal((await h.dispatch("drop", { files: [], items: [], types: ["text/plain"] })).defaultPrevented, false, "text drops stay with the browser");
   } finally { delete globalThis.__agentConsoleStatusUpload; await h.close(); }
 });
@@ -285,7 +293,8 @@ test("#1049 the macOS shell reads clipboard files natively when the paste carrie
     const event = await h.dispatch("paste", clipboardWith([], "file:///Users/runner/ScreenShot/Screenshot%202.png", ["public.file-url", "text/plain"]));
     assert.equal(event.defaultPrevented, true);
     assert.deepEqual(uploads, ["Screenshot 2.png"]);
-    assert.equal(h.textarea().value, "'/host/Screenshot 2.png'\n");
+    assert.equal(h.textarea().value, "");
+    assert.ok(button(h.container, "Remove Screenshot 2.png"));
     assert.ok(!h.textarea().value.includes("/Users/"));
     // Plain text is still left to the browser in the macOS shell.
     assert.equal((await h.dispatch("paste", clipboardWith([], "just words"))).defaultPrevented, false);

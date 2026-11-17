@@ -9,7 +9,7 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const INDENTED = /^(?: {4}|\t)/;
 
 /** Apply `edit` to each quoted token that is not in fenced, indented or inline code. */
-function editOutsideCode(text: string, edit: (quoted: string, whole: string) => string): string {
+function editOutsideCode(text: string, edit: (quoted: string, whole: string) => string, removeUploadLines = false): string {
   let fence: { readonly char: string; readonly size: number } | undefined;
   let afterBlank = true;
   let inIndented = false;
@@ -33,9 +33,15 @@ function editOutsideCode(text: string, edit: (quoted: string, whole: string) => 
     if (blank) { afterBlank = true; return line; }
     inIndented = false;
     afterBlank = false;
-    return line.replace(INLINE_CODE_OR_QUOTED, (whole: string, code: string | undefined, quoted: string | undefined) =>
-      code !== undefined || quoted === undefined ? whole : edit(quoted, whole));
-  }).join("\n");
+    let removedLine = false;
+    const result = line.replace(INLINE_CODE_OR_QUOTED, (whole: string, code: string | undefined, quoted: string | undefined) => {
+      if (code !== undefined || quoted === undefined) return whole;
+      const replacement = edit(quoted, whole);
+      if (removeUploadLines && replacement === "" && line.trim() === whole) removedLine = true;
+      return replacement;
+    });
+    return removedLine ? null : result;
+  }).filter((line): line is string => line !== null).join("\n");
 }
 
 /** Browser-local upload display data; the provider prompt still contains only the path. */
@@ -71,6 +77,18 @@ export function linkUploadedFiles(text: string, owner: string | undefined): { re
     return `[file](#salon-attachment-${files.length - 1})`;
   });
   return { text: linked, files };
+}
+
+/** Extract owned uploads from a draft without rewriting other user text. */
+export function extractUploadedFiles(text: string, owner: string): { readonly text: string; readonly files: readonly UploadedFile[] } {
+  const files: UploadedFile[] = [];
+  const remaining = editOutsideCode(text, (quoted, whole) => {
+    const file = uploadedFile(quoted, owner);
+    if (!file) return whole;
+    files.push(file);
+    return "";
+  }, true);
+  return { text: remaining, files };
 }
 
 /** Keep image tokens inline; file cards follow the message's literal text. */

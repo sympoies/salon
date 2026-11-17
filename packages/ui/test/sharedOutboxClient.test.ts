@@ -1013,8 +1013,9 @@ test("composer uploads retain original names and local previews through admissio
   let restored: InstanceType<typeof h.module.SharedOutboxClient> | undefined;
   try {
     await h.attach(new File([new Uint8Array([1, 2, 3])], "Design draft.png", { type: "image/png" }));
-    assert.match(h.editor().value, /stored\.png/);
-    await h.send(h.editor().value);
+    assert.equal(h.editor().value, "");
+    assert.ok(h.container.querySelector('[aria-label="Remove Design draft.png"]'));
+    await h.send("");
     await h.client.sync(h.target); await h.client.sync(h.target);
     await h.showReplies();
     assert.equal(h.container.querySelector(".attachment-chip")?.textContent, "Design draft.png");
