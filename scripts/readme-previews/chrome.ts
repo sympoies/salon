@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -36,12 +37,24 @@ const hasExited = (child: ChildProcess) => child.exitCode !== null || child.sign
  * exit event will not fire again.
  */
 export async function stopBrowser(child: ChildProcess, profile: string): Promise<void> {
-  if (!hasExited(child)) {
-    const gone = new Promise<void>(resolve => child.once("exit", () => resolve()));
+  if (child.pid !== undefined && !hasExited(child)) {
+    const gone = once(child, "exit", { signal: AbortSignal.timeout(5_000) });
     child.kill("SIGKILL");
     await gone;
   }
-  rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+
+  // Chrome's subprocesses can still finish profile writes after the main process exits.
+  const maxRetries = 5;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(profile, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (attempt === maxRetries || (code !== "ENOTEMPTY" && code !== "EBUSY")) throw error;
+      await sleep((attempt + 1) * 100);
+    }
+  }
 }
 
 export async function launchPage(options: LaunchOptions = {}): Promise<Page> {

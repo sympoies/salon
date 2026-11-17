@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { Duplex } from "node:stream";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -83,6 +84,32 @@ test("stopping a live browser kills and reaps it before removing the profile", a
   assert.equal(child.signalCode, "SIGKILL");
   assert.equal(alive(child.pid!), false);
   assert.equal(existsSync(profile), false);
+});
+
+test("profile cleanup retries after a late write during removal", async t => {
+  const profile = mkdtempSync(join(directory, "profile-"));
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+  const remove = fs.rmSync;
+  let lateWrite = false;
+  const removal = t.mock.method(fs, "rmSync", (path, options) => {
+    if (path === profile && !lateWrite) {
+      assert.equal(alive(child.pid!), false, "the browser is reaped before profile removal");
+      lateWrite = true;
+      // A writer creates a file after the directory has been scanned.
+      writeFileSync(join(profile, "late"), "");
+      fs.rmdirSync(profile);
+    }
+    return remove(path, options);
+  });
+  syncBuiltinESMExports();
+  try {
+    await chrome.stopBrowser(child, profile);
+    assert.equal(lateWrite, true);
+    assert.equal(existsSync(profile), false);
+  } finally {
+    removal.mock.restore();
+    syncBuiltinESMExports();
+  }
 });
 
 /** The smallest DevTools stand-in: one page target and a WebSocket that answers every command with an undefined result. */

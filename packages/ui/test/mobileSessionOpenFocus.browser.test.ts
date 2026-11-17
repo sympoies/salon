@@ -1,11 +1,12 @@
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
+import { stopBrowser } from "../../../scripts/readme-previews/chrome.ts";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
 test("phone Open action visibly focuses its preview and native Enter/Space open exactly once", async (t) => {
@@ -150,9 +151,6 @@ test("phone Open action visibly focuses its preview and native Enter/Space open 
     }
   } finally {
     socket?.close();
-    const exited = new Promise<void>(resolve => browser.once("exit",()=>resolve()));
-    browser.kill();
-    await exited;
-    rmSync(temp,{recursive:true,force:true});
+    await stopBrowser(browser, temp);
   }
 });
