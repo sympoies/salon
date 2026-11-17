@@ -119,6 +119,10 @@ test("tool chevrons toggle with pointer input in live and saved conversations", 
         await page.send("Emulation.setTouchEmulationEnabled", { enabled: input === "touch", maxTouchPoints: 1 });
         await page.navigate(`file://${file}?${width}-${input}#${live ? "live" : "saved"}`);
         await until(`document.querySelectorAll('.conversation-tool-toggle').length===3`);
+        // The first two calls form a collapsed group; reveal the original rows
+        // before testing each individual chevron with native pointer input.
+        await page.evaluate(`document.querySelector('.conversation-tool-group-toggle').click()`);
+        await until(`document.querySelector('.conversation-tool-group-toggle').getAttribute('aria-expanded')==='true'`);
         const name = `${live ? "live" : "saved"}-${width}-${input}`;
         for (const id of ["first", "continuation", "mixed"]) {
           const selector = `[data-history-message-id="${id}"] .conversation-tool-toggle`;

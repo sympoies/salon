@@ -1,11 +1,11 @@
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SelectChevronIcon } from "./icons.tsx";
 import type { HistoryToolPart } from "@agent-console/shared/resources";
 import type { HistoryMessage } from "./types.ts";
 
 type Call = Extract<HistoryToolPart, { kind: "tool_call" }>;
 type Result = Extract<HistoryToolPart, { kind: "tool_result" }>;
-interface ToolRow { readonly call?: Call; readonly result?: Result }
+export interface ToolRow { readonly call?: Call; readonly result?: Result }
 
 /** Results may follow the call in a separate textless provider row. */
 export function conversationToolRows(messages: readonly HistoryMessage[]): ToolRow[][] {
@@ -74,4 +74,55 @@ function ToolDisclosure({ call, result }: ToolRow) {
 
 export function ConversationTools({ rows }: { readonly rows: readonly ToolRow[] }) {
   return <div className="conversation-tools">{rows.map((row, index) => <ToolDisclosure key={`${row.call?.id ?? row.result?.id}-${row.call?.call_id ?? index}`} {...row} />)}</div>;
+}
+
+/** A run is keyed by its first message so adding live rows preserves disclosure state. */
+export function ConversationToolGroup({ rows, timestamps, growing, children }: {
+  readonly rows: readonly ToolRow[]; readonly timestamps: readonly (string | undefined)[];
+  readonly growing: boolean; readonly children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const previousCount = useRef(rows.length);
+  const focused = useRef(false);
+  const singleExpanded = useRef(false);
+  const keepOpen = previousCount.current === 1 && rows.length > 1 && (focused.current || singleExpanded.current);
+  const expanded = open || keepOpen;
+  useLayoutEffect(() => {
+    if (keepOpen) setOpen(true);
+    previousCount.current = rows.length;
+  }, [keepOpen, rows.length]);
+  const id = useId();
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const name = row.call?.name ?? "Tool result";
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const errors = rows.filter(row => row.result?.status === "error" || row.call?.status === "error").length;
+  const time = (value: string | undefined) => {
+    if (!value) return undefined;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? [date.getHours(), date.getMinutes()].map(n => String(n).padStart(2, "0")).join(":") : undefined;
+  };
+  const start = time(timestamps[0]);
+  const end = time(timestamps[timestamps.length - 1]);
+  const summary = [`${rows.length} tool calls`, ...[...counts].map(([name, count]) => `${name} ${count}`),
+    ...(start && end ? [start === end ? start : `${start}–${end}`] : [])].join(" · ");
+  const latest = rows[rows.length - 1];
+  const preview = readableToolInput(latest?.call?.owner_input_summary ?? latest?.call?.input_summary).primary
+    ?? latest?.result?.owner_summary ?? latest?.result?.summary;
+  return <div className={`conversation-tool-group${rows.length === 1 ? " is-single" : ""}${errors ? " is-error" : ""}`}
+    onFocusCapture={() => { focused.current = true; }}
+    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) focused.current = false; }}
+    onClickCapture={event => {
+      if (rows.length !== 1 || !(event.target instanceof Element)) return;
+      const toggle = event.target.closest(".conversation-tool-toggle");
+      if (toggle) singleExpanded.current = toggle.getAttribute("aria-expanded") !== "true";
+    }}>
+    {rows.length > 1 ? <button key="summary" type="button" className="conversation-tool-group-toggle" aria-label={`${summary} · ${errors} ${errors === 1 ? "error" : "errors"}`} aria-expanded={expanded} aria-controls={id} onClick={() => setOpen(value => !value)}>
+      <SelectChevronIcon className="conversation-tool-chevron" /><span className="conversation-tool-group-summary">{summary}</span>
+      {errors ? <span className="conversation-tool-group-error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+      {growing && preview ? <span className="conversation-tool-group-preview">{preview.split("\n")[0]}</span> : null}
+    </button> : null}
+    <div key="content" id={id} className="conversation-tool-group-content" hidden={rows.length > 1 && !expanded}>{children}</div>
+  </div>;
 }
