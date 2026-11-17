@@ -7810,13 +7810,13 @@ textarea {
 .history-bubble:has(.attachment-file-list):not(:has(.conversation-images,.attachment-chip)) { max-width:min(320px,100%); }
 
 /* Reserve the avatar column and keep tool timestamps beside their content. */
-.history-message:has(> .conversation-tools) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
-.history-message:has(> .conversation-tools):has(> .agent-badge) { grid-template-columns: 28px minmax(0, 1fr) auto; }
-.history-message:has(> .conversation-tools) > .history-bubble { grid-column: -3; grid-row: 1; justify-self: start; }
-.history-message > .conversation-tools { grid-column: -3; grid-row: 1; }
-.history-message:has(> .conversation-tools) > time { grid-column: -2; grid-row: 1; }
-.history-message:has(> .conversation-tools):has(> .history-bubble) > :is(.conversation-tools, time) { grid-row: 2; }
-.history-message:has(> .conversation-tools) > .history-tool-output { grid-column: -3; }
+.history-message:has(> :is(.conversation-tools, .conversation-tool-group-toggle)) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.history-message:has(> :is(.conversation-tools, .conversation-tool-group-toggle)):has(> .agent-badge) { grid-template-columns: 28px minmax(0, 1fr) auto; }
+.history-message:has(> :is(.conversation-tools, .conversation-tool-group-toggle)) > .history-bubble { grid-column: -3; grid-row: 1; justify-self: start; }
+.history-message > :is(.conversation-tools, .conversation-tool-group-toggle) { grid-column: -3; grid-row: 1; }
+.history-message:has(> :is(.conversation-tools, .conversation-tool-group-toggle)) > time { grid-column: -2; grid-row: 1; }
+.history-message:has(> :is(.conversation-tools, .conversation-tool-group-toggle)):has(> .history-bubble) > :is(.conversation-tools, time) { grid-row: 2; }
+.history-message:has(> :is(.conversation-tools, .conversation-tool-group-toggle)) > .history-tool-output { grid-column: -3; }
 .conversation-tools { min-width: 0; max-width: 100%; font-size: var(--text-xs); }
 .conversation-tool { margin-top: 4px; border: 1px solid var(--border-default); border-radius: var(--r-sm); overflow: hidden; }
 .conversation-tool-toggle { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; padding: 6px 8px; border: 0; background: var(--surface-overlay); color: var(--conversation-agent-text); text-align: left; cursor: pointer; font: inherit; }
@@ -7854,11 +7854,11 @@ textarea {
 .device-list span { display: block; font-size: var(--text-md); margin-top: .3rem; }
 .device-actions { display: flex; align-items: center; flex-wrap: wrap; }
 
-.conversation-tool-group { min-width: 0; margin: 4px 0; border: 1px solid var(--border-default); border-radius: var(--r-sm); }
-.conversation-tool-group.is-single, .conversation-tool-group-content { display: contents; }
+.conversation-tool-group { display: contents; }
+.conversation-tool-group-content { display: contents; }
 .conversation-tool-group-content[hidden] { display: none; }
-.conversation-tool-group.is-error { border-color: var(--danger); }
-.conversation-tool-group-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; width: 100%; min-width: 0; padding: 6px 8px; border: 0; background: var(--surface-overlay); color: var(--conversation-agent-text); text-align: left; cursor: pointer; font: inherit; font-size: var(--text-xs); overflow-wrap: anywhere; }
+.conversation-tool-group.is-error > .history-message > .conversation-tool-group-toggle { border-color: var(--danger); }
+.conversation-tool-group-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--border-default); border-radius: var(--r-sm); background: var(--surface-overlay); color: var(--conversation-agent-text); text-align: left; cursor: pointer; font: inherit; font-size: var(--text-xs); overflow-wrap: anywhere; }
 .conversation-tool-group-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .conversation-tool-group-toggle[aria-expanded="true"] > .conversation-tool-chevron { transform: none; }
 .conversation-tool-group-summary { flex: 1 1 0; min-width: 0; }

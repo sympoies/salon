@@ -77,9 +77,10 @@ export function ConversationTools({ rows }: { readonly rows: readonly ToolRow[] 
 }
 
 /** A run is keyed by its first message so adding live rows preserves disclosure state. */
-export function ConversationToolGroup({ rows, timestamps, growing, children }: {
+export function ConversationToolGroup({ rows, timestamps, growing, renderSummary, children }: {
   readonly rows: readonly ToolRow[]; readonly timestamps: readonly (string | undefined)[];
-  readonly growing: boolean; readonly children: ReactNode;
+  readonly growing: boolean;
+  readonly renderSummary: (toggle: ReactNode) => ReactNode; readonly children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const previousCount = useRef(rows.length);
@@ -118,11 +119,11 @@ export function ConversationToolGroup({ rows, timestamps, growing, children }: {
       const toggle = event.target.closest(".conversation-tool-toggle");
       if (toggle) singleExpanded.current = toggle.getAttribute("aria-expanded") !== "true";
     }}>
-    {rows.length > 1 ? <button key="summary" type="button" className="conversation-tool-group-toggle" aria-label={`${summary} · ${errors} ${errors === 1 ? "error" : "errors"}`} aria-expanded={expanded} aria-controls={id} onClick={() => setOpen(value => !value)}>
+    {rows.length > 1 ? renderSummary(<button key="summary" type="button" className="conversation-tool-group-toggle" aria-label={`${summary} · ${errors} ${errors === 1 ? "error" : "errors"}`} aria-expanded={expanded} aria-controls={id} onClick={() => setOpen(value => !value)}>
       <SelectChevronIcon className="conversation-tool-chevron" /><span className="conversation-tool-group-summary">{summary}</span>
       {errors ? <span className="conversation-tool-group-error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
       {growing && preview ? <span className="conversation-tool-group-preview">{preview.split("\n")[0]}</span> : null}
-    </button> : null}
+    </button>) : null}
     <div key="content" id={id} className="conversation-tool-group-content" hidden={rows.length > 1 && !expanded}>{children}</div>
   </div>;
 }
