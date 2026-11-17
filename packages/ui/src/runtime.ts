@@ -10,6 +10,12 @@ const SERVER_KEY = "ac:server-url";
 const TOKEN_KEY = "ac:token";
 const WS_TOKEN_PROTO_B64_PREFIX = "ac-token-b64.";
 let connectionConfigGeneration = 0;
+const authenticationRejectedListeners = new Set<() => void>();
+export function subscribeAuthenticationRejected(listener: () => void): () => void {
+  authenticationRejectedListeners.add(listener);
+  return () => { authenticationRejectedListeners.delete(listener); };
+}
+
 let authenticatedConnection: { generation: number; principal: string | null } | undefined;
 
 export interface ImportedPairingLink {
@@ -199,17 +205,32 @@ export function apiBase(): string {
 // cookie in the browser; the configured server + a bearer token via plugin-http
 // (which bypasses the WebView's CORS) in native apps.
 export async function appFetch(path: string, init?: RequestInit): Promise<Response> {
-  if (isTauri()) {
-    const generation = nativeConnectionConfigGeneration();
+  const generation = nativeConnectionConfigGeneration();
+  const authenticated = authenticatedConnection;
+  const native = isTauri();
+  let response: Response;
+  if (native) {
     const base = apiBase();
     const headers = new Headers(init?.headers);
     const token = loadToken();
     const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
     if (generation !== nativeConnectionConfigGeneration()) throw new DOMException("Connection settings changed", "AbortError");
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    return tauriFetch(`${base}${path}`, { ...init, headers });
+    response = await tauriFetch(`${base}${path}`, { ...init, headers });
+  } else {
+    response = await fetch(path, { credentials: "include", ...init });
   }
-  return fetch(path, { credentials: "include", ...init });
+  // Only an authoritative refusal of the active signed-in connection ends it.
+  // Network errors, 403 permission denials and stale native requests retain it.
+  if (response.status === 401 && authenticated && authenticated === authenticatedConnection
+    && authenticated.generation === generation && generation === nativeConnectionConfigGeneration()
+    && !/^\/api\/auth\/(?:login|logout|status|pairings)(?:[/?]|$)/.test(path)) {
+    authenticatedConnection = undefined;
+    if (native) saveToken("");
+    else void fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
+    for (const listener of authenticationRejectedListeners) listener();
+  }
+  return response;
 }
 
 // WebSocket URL for a path: same-origin in the browser, the configured server

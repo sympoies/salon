@@ -45,6 +45,7 @@ export interface SettingsProps {
   // "connect" is the native first-run onboarding screen (connection form only).
   // "manage" is the settings hub reached from the header gear (all sections).
   readonly variant?: "connect" | "manage";
+  readonly signedOutReason?: string;
   readonly startupFailure?: AuthStatus["startupFailure"];
   readonly startupTimeoutElapsedMs?: number | null;
   readonly startupRecoveryElapsedMs?: number | null;
@@ -93,6 +94,7 @@ export function Settings({
   onCancel,
   variant = "manage",
   startupFailure,
+  signedOutReason,
   startupTimeoutElapsedMs = null,
   startupRecoveryElapsedMs = null,
   machines,
@@ -222,6 +224,7 @@ export function Settings({
           }}
         >
           <BrandTitle />
+          {signedOutReason ? <p role="status">{signedOutReason}</p> : null}
           <p className="sub">Connect to your server.</p>
           {startupFailure ? (
             <p className="err" role="alert">

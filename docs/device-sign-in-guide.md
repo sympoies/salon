@@ -40,7 +40,12 @@ Renewal is recorded in the server audit. It cannot restore a credential that the
 device has already deleted.
 
 Choose **Revoke** to stop one device's access, including its live connections.
-Other devices keep working. Revoking the current device signs it out;
+Other devices keep working. When a signed-in client receives an authentication
+refusal, it returns to sign-in or Connect with “This device was signed out.”
+Native clients clear the saved credential and keep the server URL. A temporary
+network failure keeps the credential and shows an unavailable state.
+
+Revoking the current device signs it out;
 signing out a paired browser also revokes its device sign-in. Native sign-out clears
 the locally saved credential; use **Revoke** to end that device authorization. Only a main-token
 sign-in can pair or Renew devices. A paired device can view the list and revoke
