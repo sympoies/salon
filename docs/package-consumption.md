@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.78 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.79 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,16 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.78`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.79`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.78
+### Changes retained in SDK 0.1.79
+
+The coordination relay advances an existing owner's grant on a proven clear/restart continuity chain
+(#530). The edge shuts down gracefully on SIGTERM and SIGINT and closes SQLite (#532).
+
+Composer uploads appear as removable attachment chips while delivered text remains unchanged (#535).
+Consecutive tool calls are grouped into one summary row, and Load older fills visible rows when tools
+are hidden (#536).
 
 The coordination relay adds an `excluded` array to its remote-peers response (#523). A policy-visible
 running recipient whose incarnation and provider conversation changed is reported with the typed,
