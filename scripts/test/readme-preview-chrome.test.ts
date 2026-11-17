@@ -91,7 +91,7 @@ test("profile cleanup retries after a late write during removal", async t => {
   const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
   const remove = fs.rmSync;
   let lateWrite = false;
-  const removal = t.mock.method(fs, "rmSync", (path, options) => {
+  const removal = t.mock.method(fs, "rmSync", (path: fs.PathLike, options?: fs.RmOptions) => {
     if (path === profile && !lateWrite) {
       assert.equal(alive(child.pid!), false, "the browser is reaped before profile removal");
       lateWrite = true;
