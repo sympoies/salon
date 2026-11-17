@@ -8,8 +8,7 @@ import { SESSION_STATUS_GROUPS, SESSION_STATUS_LABELS } from "../src/sessionStat
 const ssr = createUiSsrHarness();
 after(async () => ssr.close());
 
-for (const mode of ["list", "header", "compact header"] as const) {
-  const compactHeader = mode !== "header";
+for (const mode of ["list", "header"] as const) {
   for (const count of [1, 2, "–"] as const) {
     for (const partial of [false, true]) {
       test(`status chips retain complete name text in ${mode}, count=${count}, partial=${partial}`, async () => {
@@ -26,12 +25,12 @@ for (const mode of ["list", "header", "compact header"] as const) {
               mobile: true, page: 1, pageCount: 1, onPageChange() {}, onChange() {},
             })
             : renderComponent(SessionStatusCountButtons, {
-              counts, activeGroup: "unknown", offlineCountMachines, compactHeader, onToggle() {},
+              counts, activeGroup: "unknown", offlineCountMachines, onToggle() {},
             });
           for (const group of SESSION_STATUS_GROUPS) {
             const button = window.document.querySelector(`[data-status-group="${group}"]`);
             assert.ok(button, `${group} chip exists`);
-            const name = `${SESSION_STATUS_LABELS[group][0]}: ${count} ${count === 1 ? "session" : "sessions"}${partial ? " (partial counts)" : ""}`;
+            const name = `${SESSION_STATUS_LABELS[group]}: ${count} ${count === 1 ? "session" : "sessions"}${partial ? " (partial counts)" : ""}`;
             assert.equal(button.getAttribute("aria-label"), name, "desktop name stays unchanged");
             assert.equal(button.getAttribute("title"), name, "tooltip stays unchanged");
             assert.equal(button.getAttribute("aria-pressed"), String(group === "unknown"), "toggle state stays unchanged");
@@ -45,10 +44,7 @@ for (const mode of ["list", "header", "compact header"] as const) {
               assert.equal(part.getAttribute("aria-hidden"), "true",
                 "visible count, labels and icon are excluded from accessibility so the button is read once");
             }
-            assert.equal(button.querySelector(".session-status-count-label")?.textContent,
-              compactHeader ? SESSION_STATUS_LABELS[group][1] : undefined, "visible label stays unchanged");
-            assert.equal(button.querySelector(".session-status-count-short-label")?.textContent,
-              compactHeader ? SESSION_STATUS_LABELS[group][2] : undefined, "short label stays unchanged");
+            assert.equal(button.querySelectorAll("span[aria-hidden='true']").length, 1, "only the count is visible text");
           }
         } finally { await window.happyDOM.close(); }
       });

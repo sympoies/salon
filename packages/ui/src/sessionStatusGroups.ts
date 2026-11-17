@@ -1,12 +1,12 @@
 export const SESSION_STATUS_GROUPS = ["working", "waiting", "attention", "unknown", "stopped"] as const;
 export type SessionStatusGroup = typeof SESSION_STATUS_GROUPS[number];
-/** Full, compact and narrow labels for each group, in that order. */
-export const SESSION_STATUS_LABELS: Readonly<Record<SessionStatusGroup, readonly [string, string, string]>> = {
-  working: ["Working", "Working", "Work"],
-  waiting: ["Waiting", "Waiting", "Wait"],
-  attention: ["Needs attention", "Attention", "Attn"],
-  unknown: ["State unknown", "Unknown", "Unkn"],
-  stopped: ["Stopped", "Stop", "Stop"],
+/** Full names shared by status controls and filter summaries. */
+export const SESSION_STATUS_LABELS: Readonly<Record<SessionStatusGroup, string>> = {
+  working: "Working",
+  waiting: "Waiting",
+  attention: "Needs attention",
+  unknown: "State unknown",
+  stopped: "Stopped",
 };
 
 export interface SessionStatusEvidence {
