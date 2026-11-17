@@ -77,20 +77,21 @@ export function ConversationTools({ rows }: { readonly rows: readonly ToolRow[] 
 }
 
 /** A run is keyed by its first message so adding live rows preserves disclosure state. */
-export function ConversationToolGroup({ rows, timestamps, growing, open, onOpenChange, renderSummary, children }: {
+export function ConversationToolGroup({ rows, timestamps, growing, renderSummary, children }: {
   readonly rows: readonly ToolRow[]; readonly timestamps: readonly (string | undefined)[];
-  readonly growing: boolean; readonly open: boolean; readonly onOpenChange: (open: boolean) => void;
+  readonly growing: boolean;
   readonly renderSummary: (toggle: ReactNode) => ReactNode; readonly children: ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
   const previousCount = useRef(rows.length);
   const focused = useRef(false);
   const singleExpanded = useRef(false);
   const keepOpen = previousCount.current === 1 && rows.length > 1 && (focused.current || singleExpanded.current);
   const expanded = open || keepOpen;
   useLayoutEffect(() => {
-    if (keepOpen) onOpenChange(true);
+    if (keepOpen) setOpen(true);
     previousCount.current = rows.length;
-  }, [keepOpen, rows.length, onOpenChange]);
+  }, [keepOpen, rows.length]);
   const id = useId();
   const counts = new Map<string, number>();
   for (const row of rows) {
@@ -118,7 +119,7 @@ export function ConversationToolGroup({ rows, timestamps, growing, open, onOpenC
       const toggle = event.target.closest(".conversation-tool-toggle");
       if (toggle) singleExpanded.current = toggle.getAttribute("aria-expanded") !== "true";
     }}>
-    {rows.length > 1 ? renderSummary(<button key="summary" type="button" className="conversation-tool-group-toggle" aria-label={`${summary} · ${errors} ${errors === 1 ? "error" : "errors"}`} aria-expanded={expanded} aria-controls={id} onClick={() => onOpenChange(!expanded)}>
+    {rows.length > 1 ? renderSummary(<button key="summary" type="button" className="conversation-tool-group-toggle" aria-label={`${summary} · ${errors} ${errors === 1 ? "error" : "errors"}`} aria-expanded={expanded} aria-controls={id} onClick={() => setOpen(value => !value)}>
       <SelectChevronIcon className="conversation-tool-chevron" /><span className="conversation-tool-group-summary">{summary}</span>
       {errors ? <span className="conversation-tool-group-error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
       {growing && preview ? <span className="conversation-tool-group-preview">{preview.split("\n")[0]}</span> : null}

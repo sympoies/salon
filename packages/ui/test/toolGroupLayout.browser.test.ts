@@ -110,14 +110,14 @@ test("tool group rows preserve agent columns, visible avatars, timestamp insets 
             assert.equal(group.end, "2026-01-01T12:02:00"); assert.equal(group.avatar, index === 0, "summary keeps the avatar gutter and starts a new agent run with its avatar");
           }
           assert.equal(measured.single.content.left, measured.reference.content.left, "single tool keeps its content column");
-          if (expanded) assert.deepEqual(measured.expandedRows.map((row: any) => row.avatar), [true, false, false, false], "expanded rows retain their avatar rule");
+          if (expanded) assert.deepEqual(measured.expandedRows.map((row: any) => row.avatar), [false, false, false, false], "the summary owns the run avatar, so expanded rows remain continuations");
           if (expanded) for (const row of measured.expandedRows) {
             assert.equal(row.content.left, measured.single.content.left, "expanded tools keep the single-row content column");
             assert.equal(row.time.left, measured.single.time.left, "expanded tools keep their timestamp column");
           }
         });
         await t.test(`${name} following avatar`, () => {
-          assert.deepEqual(measured.after, expanded ? [false, false] : [true, true], "visible text after collapsed tools starts with its avatar");
+          assert.deepEqual(measured.after, [false, false], "the summary is the first visible agent row, so following text remains a continuation");
         });
         await t.test(`${name} timestamp inset`, () => {
           const inset = measured.edge - measured.reference.time.right;
