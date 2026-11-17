@@ -3,6 +3,7 @@ import { IconButton } from "./IconButton.tsx";
 import { SessionModelBadge } from "./SessionModelBadge.tsx";
 import {
   useCallback,
+  useContext,
   useId,
   useRef,
   useState,
@@ -46,6 +47,7 @@ import {
 } from "./terminalFocus.ts";
 import type { TerminalRenderMode } from "./terminalRenderMode.ts";
 import { openExternalTerminalUrl } from "./terminalLinks.ts";
+import { TransientNoticeContext } from "./transientNotice.ts";
 import type { DashboardSession, Session } from "./types.ts";
 import { useDismissOnOutside } from "./useDismissOnOutside.ts";
 import { useMenuFocus } from "./useMenuFocus.ts";
@@ -118,23 +120,6 @@ function preopenBrowserRepoTab(): Window | null {
   return opened;
 }
 
-async function openSessionRepo(session: Session, preopened: Window | null): Promise<void> {
-  const url = await fetchRepoRemoteUrl(session.machine, session.cwd);
-  if (!url) {
-    preopened?.close();
-    return;
-  }
-  if (preopened) {
-    try {
-      preopened.location.replace(url);
-      return;
-    } catch {
-      preopened.close();
-    }
-  }
-  void openExternalTerminalUrl(url);
-}
-
 export function RepoBadgeLink({
   label,
   session,
@@ -146,14 +131,34 @@ export function RepoBadgeLink({
   readonly machineColors: MachineColorMap;
   readonly singleLine?: boolean;
 }) {
+  const { show } = useContext(TransientNoticeContext);
   if (!session.cwd?.trim()) {
     return <RepoBadge label={label} machine={session.machine} machineColors={machineColors} singleLine={singleLine} />;
   }
+
+  const openRepository = async () => {
+    const preopened = preopenBrowserRepoTab();
+    const url = await fetchRepoRemoteUrl(session.machine, session.cwd);
+    if (!url) {
+      preopened?.close();
+      show({ kind: "repository-unavailable", message: "Repository link unavailable" });
+      return;
+    }
+    if (preopened) {
+      try {
+        preopened.location.replace(url);
+        return;
+      } catch {
+        preopened.close();
+      }
+    }
+    void openExternalTerminalUrl(url);
+  };
   const openLabel = `Open ${label} repository`;
   const open = (event: ReactMouseEvent<HTMLSpanElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    void openSessionRepo(session, preopenBrowserRepoTab());
+    void openRepository();
   };
   const keyOpen = (event: ReactKeyboardEvent<HTMLSpanElement>) => {
     if (event.key !== "Enter" && event.key !== " ") {
@@ -161,7 +166,7 @@ export function RepoBadgeLink({
     }
     event.preventDefault();
     event.stopPropagation();
-    void openSessionRepo(session, preopenBrowserRepoTab());
+    void openRepository();
   };
   return (
     <span

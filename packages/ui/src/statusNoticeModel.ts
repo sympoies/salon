@@ -1,4 +1,4 @@
-export type StatusNoticeKind = "unreachable" | "restored" | "attention" | "host-offline" | "info" | "transient";
+export type StatusNoticeKind = "unreachable" | "restored" | "attention" | "host-offline" | "info" | "transient" | "repository-unavailable";
 
 /** A host-offline toast clears itself after this delay even while the host stays down. */
 export const HOST_OFFLINE_DISMISS_MS = 8_000;

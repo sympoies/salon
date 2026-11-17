@@ -1147,9 +1147,10 @@ export function Dashboard({
   // Hook notices have higher severity than the phone history fallback (info).
   const visibleStatusNotice = statusNotice ?? resultNotice ?? (viewport.mobile && phoneConversationNotice
     ? { kind: "info" as const, message: phoneConversationNotice } : null);
-  const connectionNotice = visibleStatusNotice !== null;
+  const repositoryNotice = visibleStatusNotice?.kind === "repository-unavailable";
+  const connectionNotice = visibleStatusNotice !== null && !repositoryNotice;
   const statusNoticeElement = visibleStatusNotice ? <StatusNotice notice={visibleStatusNotice}
-    onDismiss={statusNotice ? dismissStatusNotice : resultNotice ? dismissResults : () => setPhoneConversationNotice(undefined)} surface="dashboard" inline /> : null;
+    onDismiss={statusNotice ? dismissStatusNotice : resultNotice ? dismissResults : () => setPhoneConversationNotice(undefined)} surface="dashboard" inline={!repositoryNotice} /> : null;
   const openPhoneTerminal = useCallback((session: Session, unavailable = false) => {
     if (conversationBusy) return;
     setConversationKey(null);
@@ -3022,6 +3023,7 @@ export function Dashboard({
               onClick={() => openConversation(sessionsByKey.get(focusedKey)!)}>Conversation</button>
           )
         ) : null}
+        {repositoryNotice ? statusNoticeElement : null}
       </header>
 
       {unknownCreateOutcomePending ? (
