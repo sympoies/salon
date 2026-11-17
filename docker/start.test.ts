@@ -53,11 +53,13 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 export function startWorkspaceEdge({ daemonToken, clientToken, onShutdown }) {
  const root = ${JSON.stringify(root)};
  const daemon = existsSync(root + '/daemon.json') ? JSON.parse(readFileSync(root + '/daemon.json', 'utf8')) : {};
- writeFileSync(root + '/edge.json', JSON.stringify({
+ const edge = startEdge({ AGENT_CONSOLE_TOKEN: clientToken, AGENT_CONSOLE_EDGE_PORT: '0' }, {}, onShutdown);
+ // Signal readiness only after edge shutdown handlers are installed and listening.
+ edge.once('listening', () => writeFileSync(root + '/edge.json', JSON.stringify({
   ready: existsSync(root + '/ready'), daemonMatches: daemonToken === daemon.token,
   distinct: daemonToken !== clientToken, clientToken,
- }));
- return startEdge({ AGENT_CONSOLE_TOKEN: clientToken, AGENT_CONSOLE_EDGE_PORT: '0' }, {}, onShutdown);
+ })));
+ return edge;
 }
 `);
   const home = join(root, "home");
