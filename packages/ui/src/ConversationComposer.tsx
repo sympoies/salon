@@ -1,5 +1,5 @@
 import { CONVERSATION_IMAGE_TYPES } from "@agent-console/shared/conversation-images";
-import { linkUploadedFiles, type OutgoingAttachment } from "./attachmentPaths.ts";
+import { extractUploadedFiles, type OutgoingAttachment } from "./attachmentPaths.ts";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ClipboardEvent, DragEvent } from "react";
@@ -166,8 +166,8 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const restoreSavedDraft = () => {
     if (savedText === null || sending) return;
     if ((readDraft().text || readDraft().attachments?.length) && !window.confirm("Replace the current composer text with this saved draft?")) return;
-    const linked = linkUploadedFiles(savedText, session.id);
-    const text = linked.files.length ? linked.text.replace(/\[file\]\(#salon-attachment-\d+\)/g, "").replace(/^\n+/, "") : savedText;
+    const linked = extractUploadedFiles(savedText, session.id);
+    const text = linked.text;
     updateReply({ text, attachments: linked.files.map(({ path }) => ({ path })), incarnation: session.session_incarnation, error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
     savedRequest.current++; setSavedOpen(false); setSavedText(null);
   };

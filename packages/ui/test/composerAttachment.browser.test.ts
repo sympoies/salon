@@ -37,7 +37,7 @@ test("composer attachments preserve the delivered text and restore as chips", as
       document.querySelector('footer').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:dropTransfer}));await wait(()=>button('Remove document.txt'));
       result.drop=!!button('Remove document.txt');result.size=document.querySelector('[aria-label="Attachment document.txt"]')?.textContent.includes('8 B');
       button('Remove image.png')?.click();button('Remove document.txt')?.click();
-      textButton('Saved drafts').click();await wait(()=>document.querySelector('[aria-label="Saved drafts"] button'));document.querySelector('[aria-label="Saved drafts"] button').click();await wait(()=>textButton('Restore'));textButton('Restore').click();await new Promise(r=>setTimeout(r,100));result.restored=!!button('Remove saved.txt');result.restoreText=document.querySelector('textarea').value;
+      textButton('Saved drafts').click();await wait(()=>document.querySelector('[aria-label="Saved drafts"] button'));document.querySelector('[aria-label="Saved drafts"] button').click();await wait(()=>textButton('Restore'));textButton('Restore').click();await new Promise(r=>setTimeout(r,100));result.restored=!!button('Remove saved.txt')&&!!button('Remove second.txt')&&!button('Remove preserved.txt');result.restoreText=document.querySelector('textarea').value;
       parent.document.querySelector('#result').textContent=JSON.stringify(result);
     }catch(e){parent.document.querySelector('#result').textContent=JSON.stringify({error:String(e)});}})();
   `;
@@ -50,7 +50,7 @@ test("composer attachments preserve the delivered text and restore as chips", as
       if (id === "\0saved-api") return `export * from "/src/api.ts?saved-original";
         export const uploadAttachment=async(_machine,id,file)=>{return {ok:true,path:'/state/sessions/'+id+'/attachments/'+file.name,original_name:file.name,bytes:file.size}};
         export const fetchSavedDrafts=async()=>[{draft_id:'draft-1',saved_at:'2026-11-01T12:00:00Z',bytes:12}];
-        export const fetchSavedDraftText=async()=>"'/state/sessions/session-1/attachments/saved.txt'\\n\\nhello";
+        export const fetchSavedDraftText=async()=>"'/state/sessions/session-1/attachments/saved.txt'\\n'/state/sessions/session-1/attachments/second.txt'\\n\\nkeep [file](#salon-attachment-0)\\n\`[file](#salon-attachment-1)\`\\n\`\`\`\\n[file](#salon-attachment-9)\\n'/state/sessions/session-1/attachments/preserved.txt'\\n\`\`\`";
         export const discardSavedDraft=async()=>null;`;
     },
   }, { name: "saved-fixture", resolveId(id) { if (id.endsWith("saved-fixture")) return "\0saved-fixture"; }, load(id) { if (id === "\0saved-fixture") return fixture; } }],
@@ -147,7 +147,7 @@ test("composer attachments preserve the delivered text and restore as chips", as
       assert.deepEqual(result, {
         uploadChip: true, uploadText: "", sent: "'/state/sessions/session-1/attachments/example.txt'\nhello",
         focus: true, removed: "remaining", only: "'/state/sessions/session-1/attachments/only.txt'",
-        thumbnail: true, drop: true, size: true, restored: true, restoreText: "hello",
+        thumbnail: true, drop: true, size: true, restored: true, restoreText: "\nkeep [file](#salon-attachment-0)\n`[file](#salon-attachment-1)`\n```\n[file](#salon-attachment-9)\n'/state/sessions/session-1/attachments/preserved.txt'\n```",
       }, `${width} ${theme}`);
     }
 
