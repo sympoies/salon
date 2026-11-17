@@ -14,6 +14,22 @@ export function hasHeadlessChrome(): boolean {
 /** Publishes the tier the way the app does (phoneTier.ts), for pages that load styles.css directly. */
 export const phoneTierScript = `<script>const tier=String((${isPhoneWidth.toString()})(innerWidth,matchMedia('(pointer: coarse)').matches,false));document.documentElement.dataset.phoneTier=tier;document.documentElement.dataset.phoneHeader=tier;</script>`;
 
+/** Notice fixtures need stable proportional metrics, independent of system-ui fallback. */
+export const noticeFixtureFontScript = `
+  const context=document.createElement('canvas').getContext('2d');
+  context.font='16px system-ui';
+  const noticeFontEnvironment={dpr:devicePixelRatio,viewportWidth:innerWidth,
+    systemUiNarrow:context.measureText('iiiiiiii').width,systemUiWide:context.measureText('WWWWWWWW').width,
+    systemUiMessage:context.measureText('fixture: offline').width};
+  try {
+    const font = new FontFace('Notice Fixture Sans', 'local("Liberation Sans")');
+    document.fonts.add(await font.load());
+    document.body.style.fontFamily = '"Notice Fixture Sans"';
+  } catch {
+    throw new Error('Notice layout fixtures require Liberation Sans. Install fonts-liberation on Linux or install the Liberation Sans font on your platform.');
+  }
+`;
+
 /** Chrome clamps its window width; an iframe gives phone tests the exact viewport. */
 export function measureUiMarkup<T>(markup: string, width: number, script: string, reducedMotion = false, height = 800, chromeArgs: readonly string[] = [], hideScrollbars = true): T {
   const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
@@ -22,8 +38,8 @@ export function measureUiMarkup<T>(markup: string, width: number, script: string
     const path = join(temp, "layout.html");
     const frameHtml = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>
       <style>:root{--ac-safe-area-top:24px}</style>${phoneTierScript}${markup}<script>
-        try {${script};result.viewportWidth=innerWidth;parent.document.querySelector('#measurement').textContent=JSON.stringify(result);}
-        catch(error){parent.document.querySelector('#measurement').textContent=JSON.stringify({error:String(error)});}
+        (async()=>{try {${script};result.viewportWidth=innerWidth;parent.document.querySelector('#measurement').textContent=JSON.stringify(result);}
+        catch(error){parent.document.querySelector('#measurement').textContent=JSON.stringify({error:String(error)});}})();
       </script>`;
     writeFileSync(path, `<!doctype html><pre id="measurement"></pre><script>
       const frame=document.createElement('iframe');frame.style.cssText='display:block;border:0;width:${width}px;height:${height}px';
@@ -36,7 +52,7 @@ export function measureUiMarkup<T>(markup: string, width: number, script: string
     const json = result.stdout.match(/<pre id="measurement">(.+?)<\/pre>/s)?.[1];
     assert.ok(json, "Chrome returns measurements of production markup");
     const measured = JSON.parse(json.replaceAll("&quot;", '"').replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">"));
-    assert.equal(measured.error, undefined, "browser measurement script completes");
+    assert.equal(measured.error, undefined, measured.error ?? "browser measurement script completes");
     assert.equal(measured.viewportWidth, width, "layout uses the named viewport width");
     return measured as T;
   } finally { rmSync(temp, { recursive: true, force: true }); }
