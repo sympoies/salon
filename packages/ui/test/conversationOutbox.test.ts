@@ -8,6 +8,7 @@ import { act, createElement, Fragment } from "react";
 import { createRoot } from "react-dom/client";
 import type { Plugin } from "vite";
 import type { HistoryMessagesResponse, Session } from "../src/types.ts";
+import { sessionKey } from "../src/layout.ts";
 import type { ConversationReplyDrafts } from "../src/ConversationComposer.tsx";
 import { assertNoElement } from "./support/domAssert.ts";
 import { makeSession } from "./support/fixtures.ts";
@@ -129,7 +130,7 @@ async function mount(factory = new IDBFactory()) {
     await act(async()=>window.dispatchEvent(new window.Event("focus")));
     await settle();
   };
-  return {factory,container,requests,lookups,inputs,editor,button,render,renderLivePanel,renderLiveView,refreshLiveHistory,settle,queueModule,
+  return {factory,container,requests,lookups,inputs,editor,button,drafts,render,renderLivePanel,renderLiveView,refreshLiveHistory,settle,queueModule,
     lookup(value:typeof lookup){lookup=value;},session:()=>latestSession,
     replyViews(count:number){replyViews=count;},
     recovery(value:typeof recovery){recovery=value;},
@@ -243,6 +244,15 @@ test("#908 FIFO sends one per idle transition and waits for an empty composer",a
     await h.write("");await h.settle();assert.equal(h.requests.length,1);assert.match(h.queued(),/second/);
     await h.render("idle",2);assert.equal(h.requests.length,1);await h.render("working",3);assert.equal(h.requests.length,1);
     await h.render("idle",4);assert.equal(h.requests.length,2);assert.equal(h.queued(),"");
+  }finally{await h.close();}
+});
+test("attachment-only drafts hold background queue delivery",async()=>{
+  const h=await mount();try{
+    await h.render("working");await h.write("queued");await h.reply();
+    h.drafts.set(sessionKey(h.session()),{text:"",attachments:[{path:"/state/sessions/outbox/attachments/file.txt"}],incarnation:"inc-1",error:"",outcomeUnknown:false});
+    await h.render("idle",2,{},true);assert.equal(h.requests.length,0);
+    h.drafts.delete(sessionKey(h.session()));await act(async()=>h.queueModule.conversationOutbox().wake());await h.settle();
+    assert.equal(h.requests.length,1);
   }finally{await h.close();}
 });
 test("#908 replacement incarnation retains the queued item and refuses dispatch",async()=>{

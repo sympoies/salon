@@ -712,7 +712,7 @@ export function useConversationOutboxDelivery(sessions: readonly Session[], reac
           || !queuedReplyTargetAllowed(target, current.reachable.has(target.machine))
           || !queuedReplyDeliverablePhase(target)) return false;
         const draft = current.drafts.get(sessionKey(session));
-        return !draft?.text && !draft?.sending && !draft?.outcomeUnknown;
+        return !draft?.text && !draft?.attachments?.length && !draft?.sending && !draft?.outcomeUnknown;
       }).catch(() => {});
     }
   }, [store, version, sessions, reachable, drafts]);
