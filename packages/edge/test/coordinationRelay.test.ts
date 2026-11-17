@@ -10,6 +10,9 @@ import { claimSessionOwner } from "../scripts/import-owner.ts";
 import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
+const SERVICE_ORIGIN = { machine: "summit", service_id: "monitor.service", service_generation: "generation-1" };
+const SERVICE_QUERY = { source_service_id: SERVICE_ORIGIN.service_id, source_service_generation: SERVICE_ORIGIN.service_generation };
+
 async function fixture(allowedMachines?: string[], machineNames = { source: "summit", destination: "cedar" }, bindDestination = true) {
   const sourceName = machineNames.source;
   const destinationName = machineNames.destination;
@@ -64,6 +67,8 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
       { id: "tess", token: "browser-tess", machines: allowedMachines ?? [sourceName, destinationName], permissions: ["debug"] },
       { id: "dana", token: "browser-dana", machines: [destinationName], permissions: [] },
     ],
+    consoleStartServices: [{ relay_machine: SERVICE_ORIGIN.machine, service_id: SERVICE_ORIGIN.service_id,
+      service_generation: SERVICE_ORIGIN.service_generation, owners: ["tess"], machines: ["cedar"] }],
     machines: [ { name: sourceName, url: srcAddr.base, token: "source-operator" }, { name: destinationName, url: dstAddr.base, token: "dest-operator" } ],
     ...{ coordinationRelays: [ { machine: sourceName, token: "source-relay", ingress_token: "source-ingress" }, { machine: destinationName, token: "dest-relay", ingress_token: "dest-ingress" } ] },
   });
@@ -108,6 +113,89 @@ async function discover(f: Awaited<ReturnType<typeof fixture>>) {
   return fetch(`${f.base}/api/coordination/peers/v1?source_session_id=source&source_incarnation=${f.envelope.from.session_incarnation}`,
     { headers: { authorization: "Bearer source-relay" } });
 }
+
+async function discoverService(base: string, query: Record<string, string> = SERVICE_QUERY, token = "source-relay") {
+  return fetch(`${base}/api/coordination/peers/v1?${new URLSearchParams(query)}`,
+    { headers: { authorization: `Bearer ${token}` } });
+}
+
+test("admitted service peer discovery uses the admission's owner and machine scope", async () => {
+  const f = await fixture();
+  try {
+    const response = await discoverService(f.base);
+    assert.equal(response.status, 200);
+    const body = await response.json() as { schema_version: string; peers: unknown[] };
+    assert.equal(body.schema_version, "agent-session.remote-peers.v1");
+    assert.deepEqual(body.peers, [
+      { ...f.envelope.to, runtime_status: "running", messaging_supported: true, messaging_unavailable_reason: null },
+    ]);
+  } finally { await f.cleanup(); }
+});
+
+test("stale, unknown, and wrong-relay services are refused in discovery and delivery", async () => {
+  const f = await fixture();
+  try {
+    for (const [from, token] of [
+      [{ ...SERVICE_ORIGIN, service_generation: "generation-0" }, "source-relay"],
+      [{ ...SERVICE_ORIGIN, service_id: "unknown.service" }, "source-relay"],
+      [{ ...SERVICE_ORIGIN, machine: "cedar" }, "dest-relay"],
+    ] as const) {
+      const response = await discoverService(f.base, {
+        source_service_id: from.service_id, source_service_generation: from.service_generation,
+      }, token);
+      assert.equal(response.status, 403);
+      assert.equal((await response.json() as { error: { code: string } }).error.code, "coordination-unauthorized");
+      const sent = await send(f.base, { ...f.envelope, schema_version: "agent-session.remote-service-message.v1", from }, token);
+      assert.equal(sent.status, 403);
+      assert.equal((sent.body.error as { code: string }).code, "coordination-unauthorized");
+    }
+    assert.equal(f.state.writes, 0);
+  } finally { await f.cleanup(); }
+});
+
+test("service schemas preserve the origin through authenticated ingress and its delivery receipt", async () => {
+  const f = await fixture();
+  try {
+    for (const fields of [
+      { schema_version: "agent-session.remote-service-message.v1" },
+      { schema_version: "agent-session.remote-service-message.v2", category: "progress" },
+    ]) {
+      const packet = { ...f.envelope, ...fields, from: SERVICE_ORIGIN, reply_to: null };
+      const result = await send(f.base, packet);
+      assert.equal(result.status, 200);
+      assert.equal(result.body.state, "delivered");
+      assert.deepEqual(result.body.recipient, packet.to);
+      assert.deepEqual(f.state.seen, packet);
+    }
+    assert.equal(f.state.writes, 2);
+  } finally { await f.cleanup(); }
+});
+
+test("service relay admission fences owner, machine, and identity type", async () => {
+  const f = await fixture();
+  try {
+    const packet = { ...f.envelope, schema_version: "agent-session.remote-service-message.v1", from: SERVICE_ORIGIN };
+    for (const to of [
+      { ...packet.to, session_id: "other-user", session_incarnation: "other-inc" },
+      f.envelope.from,
+    ]) {
+      const denied = await send(f.base, { ...packet, to });
+      assert.equal(denied.status, 403);
+      assert.equal((denied.body.error as { code: string }).code, "principal-forbidden");
+    }
+    const wrongRelay = await send(f.base, packet, "dest-relay");
+    assert.equal(wrongRelay.status, 403);
+    assert.equal((wrongRelay.body.error as { code: string }).code, "origin-forbidden");
+    for (const invalid of [
+      { ...packet, from: f.envelope.from },
+      { ...packet, from: { ...SERVICE_ORIGIN, session_id: "source", session_incarnation: "src-inc" } },
+      { ...packet, schema_version: f.envelope.schema_version },
+    ]) assert.equal((await send(f.base, invalid)).status, 400);
+    const mixed = await discoverService(f.base, { ...SERVICE_QUERY, source_session_id: "source", source_incarnation: "src-inc" });
+    assert.equal(mixed.status, 400);
+    assert.equal(f.state.writes, 0);
+  } finally { await f.cleanup(); }
+});
 
 for (const via of ["relay", "discovery"] as const) {
   for (const side of ["source", "destination"] as const) {

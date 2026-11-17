@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { OUTSIDE_COORDINATOR_TREE, type AccessStore, type SessionStartMark } from "./accessStore.ts";
 import { bearerToken, timingSafeEqualStr } from "./auth.ts";
-import type { CrossOwnerMessagingRule, EdgeConfig, MachineConfig, MessagingSelector, PrincipalConfig } from "./config.ts";
+import type { ConsoleStartServiceConfig, CrossOwnerMessagingRule, EdgeConfig, MachineConfig, MessagingSelector, PrincipalConfig } from "./config.ts";
 import { readJsonBody, sendJson } from "./http.ts";
 import { BoardQueryError, type BoardView } from "./board/query.ts";
 import { boardViewForRequest } from "./board/routes.ts";
@@ -13,6 +13,9 @@ import type { BoardService } from "./board/service.ts";
 
 const MESSAGE_SCHEMA_V1 = "agent-session.remote-message.v1";
 const MESSAGE_SCHEMA_V2 = "agent-session.remote-message.v2";
+const SERVICE_MESSAGE_SCHEMA_V1 = "agent-session.remote-service-message.v1";
+const SERVICE_MESSAGE_SCHEMA_V2 = "agent-session.remote-service-message.v2";
+const SERVICE_SELECTOR = /^[A-Za-z0-9._-]{1,128}$/;
 const CATEGORIES = new Set(["uncategorized", "progress", "handoff", "blocker", "decision", "report"]);
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const MAX_FORWARD_HOPS = 8;
@@ -22,10 +25,11 @@ const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_TTL_SECONDS = 7 * 24 * 3600;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 interface Identity { machine: string; session_id: string; session_incarnation: string }
+interface ServiceOrigin { machine: string; service_id: string; service_generation: string }
 interface Envelope {
-  schema_version: typeof MESSAGE_SCHEMA_V1 | typeof MESSAGE_SCHEMA_V2;
+  schema_version: typeof MESSAGE_SCHEMA_V1 | typeof MESSAGE_SCHEMA_V2 | typeof SERVICE_MESSAGE_SCHEMA_V1 | typeof SERVICE_MESSAGE_SCHEMA_V2;
   message_id: string;
-  from: Identity;
+  from: Identity | ServiceOrigin;
   to: Identity;
   body: string;
   body_sha256: string;
@@ -57,11 +61,11 @@ function sameIdentity(left: Identity, right: Identity): boolean {
 function epoch(value: unknown): value is number {
   return Number.isSafeInteger(value);
 }
-function serviceOrigin(value: unknown): boolean {
+function serviceOrigin(value: unknown): value is ServiceOrigin {
   const origin = object(value);
   return !!origin && exactKeys(origin, ["machine", "service_id", "service_generation"])
     && typeof origin.machine === "string" && origin.machine.length > 0 && Buffer.byteLength(origin.machine) <= 128
-    && [origin.service_id, origin.service_generation].every(value => typeof value === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(value));
+    && [origin.service_id, origin.service_generation].every(value => typeof value === "string" && SERVICE_SELECTOR.test(value));
 }
 // Historical identities are untrusted daemon-attested provenance. Only the
 // immediate envelope sender/recipient participate in ownership and live checks.
@@ -136,13 +140,15 @@ function validForwarding(value: unknown, entry: Record<string, unknown>, now: nu
 function envelope(value: unknown): Envelope | null {
   const entry = object(value);
   if (!entry) return null;
-  const v2 = entry.schema_version === MESSAGE_SCHEMA_V2;
+  const service = entry.schema_version === SERVICE_MESSAGE_SCHEMA_V1 || entry.schema_version === SERVICE_MESSAGE_SCHEMA_V2;
+  const v2 = entry.schema_version === MESSAGE_SCHEMA_V2 || entry.schema_version === SERVICE_MESSAGE_SCHEMA_V2;
   const keys = ["schema_version", "message_id", "from", "to", "body", "body_sha256", "created_at_epoch", "expires_at_epoch", "reply_to", "reply_depth", "reply_by_epoch"];
   if (v2) keys.push("category", "forwarding");
   if (Object.keys(entry).some(key => !keys.includes(key))) return null;
   const now = Math.floor(Date.now() / 1000);
-  if ((entry.schema_version !== MESSAGE_SCHEMA_V1 && !v2) || typeof entry.message_id !== "string" || !UUID.test(entry.message_id)
-    || !identity(entry.from) || !identity(entry.to)
+  if ((entry.schema_version !== MESSAGE_SCHEMA_V1 && !v2 && !service) || typeof entry.message_id !== "string" || !UUID.test(entry.message_id)
+    || !(service ? serviceOrigin(entry.from) : identity(entry.from)) || !identity(entry.to)
+    || (service && (entry.reply_to != null || entry.reply_depth !== 0 || entry.forwarding != null))
     || typeof entry.body !== "string" || Buffer.byteLength(entry.body) > MAX_BODY_BYTES || entry.body.length === 0
     || typeof entry.body_sha256 !== "string" || createHash("sha256").update(entry.body).digest("hex") !== entry.body_sha256
     || !Number.isSafeInteger(entry.created_at_epoch) || !Number.isSafeInteger(entry.expires_at_epoch)
@@ -315,6 +321,11 @@ async function ownedSnapshot(config: EdgeConfig, store: AccessStore, target: Ide
   return snapshot(machine);
 }
 
+async function ownedRelaySender(config: EdgeConfig, store: AccessStore, from: Identity, machine: MachineConfig) {
+  const state = await ownedSnapshot(config, store, from, machine);
+  return { from, state, principal: principalFor(config, store, from, state) };
+}
+
 // This policy belongs only to mailbox discovery/delivery. Never use it for
 // browser access, board visibility, session creation, or transcript access.
 function matchesMessagingSelectors(selectors: readonly MessagingSelector[], consoleRole: "coordinator" | null, session: Record<string, unknown>): boolean {
@@ -424,10 +435,10 @@ function relayedLineage(session: Record<string, unknown>, caller: Identity): Rec
 const CREATE_REQUEST_KEYS = ["source_session_id", "source_incarnation", "machine", "session"];
 const SERVICE_CREATE_KEYS = ["source_service_id", "source_service_generation", "owner", "machine", "session"];
 const SERVICE_BOARD_KEYS = ["source_service_id", "source_service_generation", "owner"];
+const SERVICE_PEER_KEYS = ["source_service_id", "source_service_generation"];
 // The daemon sets `lineage`; everything else a service may set in `session`.
 const SERVICE_SESSION_KEYS = ["agent", "cwd", "workspace", "launch_env", "title_mode", "title", "prompt", "agent_args",
   "agent_profile", "codex_account", "claude_account", "account", "lineage", "notice_kind", "notice_source", "notice_id"];
-const SERVICE_SELECTOR = /^[A-Za-z0-9._-]{1,128}$/;
 const MACHINE_NAME = /^[\x21-\x7e]{1,128}$/;
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 interface ServiceSelectors { serviceId: string; generation: string; owner: string; machine: string }
@@ -438,19 +449,35 @@ function serviceSelectors(serviceId: unknown, generation: unknown, owner: unknow
   return { serviceId, generation, owner, machine } as ServiceSelectors;
 }
 
+function findServiceAdmission(config: EdgeConfig, relayMachine: string, serviceId: string, generation: string): ConsoleStartServiceConfig | undefined {
+  return config.consoleStartServices?.find(entry => entry.relay_machine === relayMachine
+    && entry.service_id === serviceId && entry.service_generation === generation);
+}
+
+function serviceMachineAllowed(admission: ConsoleStartServiceConfig, principal: PrincipalConfig, machine: string): boolean {
+  return admission.machines.includes(machine) && principal.machines.includes(machine);
+}
+
 // Binds the selectors to an explicit admission for the authenticated relay
-// machine. Every create and board scan passes here before any other effect.
-// Refusals are content-free. The unauthorized code stays off HTTP 401, which the
-// daemon reserves for a rejected relay credential.
+// machine. Keep service refusals off 401, reserved for rejected relay credentials.
 function serviceAdmission(config: EdgeConfig, relayMachine: string, selectors: ServiceSelectors): { principal: PrincipalConfig; machine: MachineConfig; consoleRole?: "coordinator" } {
-  const admission = config.consoleStartServices?.find(entry => entry.relay_machine === relayMachine
-    && entry.service_id === selectors.serviceId && entry.service_generation === selectors.generation);
+  const admission = findServiceAdmission(config, relayMachine, selectors.serviceId, selectors.generation);
   if (!admission) return fail(403, "console-start-service-unauthorized", "the service is not admitted");
   const principal = config.principals.find(p => p.id === selectors.owner);
   if (!principal || !admission.owners.includes(principal.id)) return fail(422, "console-start-service-owner-denied", "the owner is not admitted for this service");
   const machine = config.machines.find(m => m.name === selectors.machine);
-  if (!machine || !admission.machines.includes(machine.name) || !principal.machines.includes(machine.name)) return fail(422, "console-start-service-target-denied", "the machine is not admitted for this service");
+  if (!machine || !serviceMachineAllowed(admission, principal, machine.name)) return fail(422, "console-start-service-target-denied", "the machine is not admitted for this service");
   return { principal, machine, ...(admission.console_role ? { consoleRole: admission.console_role } : {}) };
+}
+
+function relayServiceAdmission(config: EdgeConfig, origin: ServiceOrigin): ConsoleStartServiceConfig {
+  return findServiceAdmission(config, origin.machine, origin.service_id, origin.service_generation)
+    ?? fail(403, "coordination-unauthorized", "the service is not admitted");
+}
+
+function serviceRecipientOwners(config: EdgeConfig, admission: ConsoleStartServiceConfig, machine: string): string[] {
+  return config.principals.filter(principal => admission.owners.includes(principal.id)
+    && serviceMachineAllowed(admission, principal, machine)).map(principal => principal.id);
 }
 
 // A service session is always a console root; the target daemon validates the
@@ -556,23 +583,43 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
     const source = config.machines.find(m => m.name === relay.machine);
     if (!source) return fail(403, "machine-forbidden", "machine is not permitted");
     if (req.method === "GET" && url.pathname === "/api/coordination/peers/v1") {
-      if ([...url.searchParams.keys()].some(key => !["source_session_id", "source_incarnation"].includes(key))) return fail(400, "invalid-request", "invalid peer query");
-      const from = identity({ machine: relay.machine, session_id: url.searchParams.get("source_session_id"), session_incarnation: url.searchParams.get("source_incarnation") });
-      if (!from) return fail(400, "invalid-request", "source identity required");
-      const sourceSnapshot = await ownedSnapshot(config, store, from, source);
-      const principal = principalFor(config, store, from, sourceSnapshot);
-      const sourceSession = current(sourceSnapshot, from);
-      const recipientOwners = new Set([principal.id, ...rulesForSender(config, store, principal, from, sourceSession).map(r => r.to)]);
-      const candidates = config.machines.filter(m => config.principals.some(p => recipientOwners.has(p.id) && p.machines.includes(m.name))
-        && config.coordinationRelays?.some(r => r.machine === m.name));
+      const params = url.searchParams;
+      let sourceSnapshot: Snapshot | undefined;
+      let sessionOwners: ReadonlySet<string> | undefined;
+      let ownersOnMachine: (machine: string) => readonly string[];
+      let visible: (target: Identity, session: Record<string, unknown>) => boolean;
+      if (SERVICE_PEER_KEYS.some(key => params.has(key))) {
+        if ([...params.keys()].length !== SERVICE_PEER_KEYS.length) return fail(400, "invalid-request", "invalid peer query");
+        const origin = { machine: relay.machine, service_id: params.get("source_service_id"), service_generation: params.get("source_service_generation") };
+        if (!serviceOrigin(origin)) return fail(400, "invalid-request", "service identity required");
+        const admission = relayServiceAdmission(config, origin);
+        ownersOnMachine = machine => serviceRecipientOwners(config, admission, machine);
+        visible = target => ownersOnMachine(target.machine).includes(store.sessionGrant(target.machine, target.session_id)?.principalId ?? "");
+      } else {
+        if ([...params.keys()].some(key => !["source_session_id", "source_incarnation"].includes(key))) return fail(400, "invalid-request", "invalid peer query");
+        const from = identity({ machine: relay.machine, session_id: params.get("source_session_id"), session_incarnation: params.get("source_incarnation") });
+        if (!from) return fail(400, "invalid-request", "source identity required");
+        const { state, principal } = await ownedRelaySender(config, store, from, source);
+        sourceSnapshot = state;
+        const sourceSession = current(state, from);
+        const recipientOwners = new Set([principal.id, ...rulesForSender(config, store, principal, from, sourceSession).map(r => r.to)]);
+        sessionOwners = recipientOwners;
+        ownersOnMachine = machine => config.principals.filter(p => recipientOwners.has(p.id) && p.machines.includes(machine)).map(p => p.id);
+        visible = (target, session) => mayMessage(config, store, principal, from, sourceSession, target, session);
+      }
+      const candidates = config.machines.flatMap(machine => {
+        if (!config.coordinationRelays?.some(r => r.machine === machine.name)) return [];
+        const owners = ownersOnMachine(machine.name);
+        return owners.length ? [{ machine, owners: sessionOwners ?? new Set(owners) }] : [];
+      });
       const excluded: Array<{ machine: string; session_id: string; reason: "ownership-binding-stale" }> = [];
-      const peers = (await Promise.all(candidates.map(async machine => {
+      const peers = (await Promise.all(candidates.map(async ({ machine, owners }) => {
         let state: Snapshot;
-        try { state = machine.name === source.name ? sourceSnapshot : await snapshot(machine); }
+        try { state = machine.name === source.name && sourceSnapshot ? sourceSnapshot : await snapshot(machine); }
         catch { return []; }
         return state.sessions.flatMap(session => {
           const target = identity({ machine: machine.name, session_id: session.id, session_incarnation: session.session_incarnation });
-          if (!target || !recipientOwners.has(store.sessionGrant(target.machine, target.session_id)?.principalId ?? "")) return [];
+          if (!target || !owners.has(store.sessionGrant(target.machine, target.session_id)?.principalId ?? "")) return [];
           try { grant(store, target, state); }
           catch (error) {
             if (!(error instanceof RelayError)) throw error;
@@ -586,13 +633,12 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
               && (resume.provider !== ownership.provider || resume.session_id !== ownership.providerSessionId)
               // Check visibility using the durable grant only. This never
               // authorizes the replacement incarnation or repairs its binding.
-              && mayMessage(config, store, principal, from, sourceSession,
-                { ...target, session_incarnation: ownership.incarnation }, session)) {
+              && visible({ ...target, session_incarnation: ownership.incarnation }, session)) {
               excluded.push({ machine: target.machine, session_id: target.session_id, reason: "ownership-binding-stale" });
             }
             return [];
           }
-          if (!mayMessage(config, store, principal, from, sourceSession, target, session)) return [];
+          if (!visible(target, session)) return [];
           return [{ ...target, ...peerDiagnostics(state, session) }];
         });
       }))).flat();
@@ -717,34 +763,49 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
     if (!payload) return fail(400, "remote-message-invalid", "invalid remote message envelope");
     if (payload.from.machine !== relay.machine) return fail(403, "origin-forbidden", "source machine does not match relay identity");
     if (payload.expires_at_epoch <= Math.floor(Date.now() / 1000)) return fail(410, "message-expired", "remote message expired");
-    const sourceState = await ownedSnapshot(config, store, payload.from, source);
-    const principal = principalFor(config, store, payload.from, sourceState);
-    const destination = config.machines.find(m => m.name === payload.to.machine);
-    const ingress = config.coordinationRelays?.find(r => r.machine === payload.to.machine);
+    const from = payload.from;
+    const to = payload.to;
+    const sender = "service_id" in from
+      ? { admission: relayServiceAdmission(config, from) }
+      : await ownedRelaySender(config, store, from, source);
+    const destination = config.machines.find(m => m.name === to.machine);
+    const ingress = config.coordinationRelays?.find(r => r.machine === to.machine);
     if (!destination || !ingress) return fail(403, "machine-forbidden", "destination machine is not permitted");
-    const sourceSession = current(sourceState, payload.from);
-    const recipientOwners = new Set([principal.id, ...rulesForSender(config, store, principal, payload.from, sourceSession).map(r => r.to)]);
+
+    let recipientOwners: ReadonlySet<string>;
+    let recipientAllowed: (session: Record<string, unknown>) => boolean;
+    let sourceStillOwned = () => true;
+    if ("admission" in sender) {
+      recipientOwners = new Set(serviceRecipientOwners(config, sender.admission, to.machine));
+      recipientAllowed = () => recipientOwners.has(store.sessionGrant(to.machine, to.session_id)?.principalId ?? "");
+    } else {
+      const { from, state, principal } = sender;
+      const sourceSession = current(state, from);
+      recipientOwners = new Set([principal.id, ...rulesForSender(config, store, principal, from, sourceSession).map(r => r.to)]);
+      recipientAllowed = session => mayMessage(config, store, principal, from, sourceSession, to, session);
+      sourceStillOwned = () => principalFor(config, store, from).id === principal.id;
+    }
     // Admit the sender before foreign incarnation diagnostics or destination
     // I/O. An unknown target is eligible only on an allowed owner's machine.
-    const targetGrant = store.sessionGrant(payload.to.machine, payload.to.session_id);
+    const targetGrant = store.sessionGrant(to.machine, to.session_id);
     if (targetGrant ? !recipientOwners.has(targetGrant.principalId)
-      : !config.principals.some(p => recipientOwners.has(p.id) && p.machines.includes(payload.to.machine))) {
+      : !config.principals.some(p => recipientOwners.has(p.id) && p.machines.includes(to.machine))) {
       return fail(403, "principal-forbidden", "recipient is not permitted");
     }
-    const destinationState = destination.name === source.name ? sourceState : await snapshot(destination);
-    const recipientPrincipal = principalFor(config, store, payload.to, destinationState);
+    const destinationState = destination.name === source.name && "state" in sender ? sender.state : await snapshot(destination);
+    // Reject a changed service target owner before inspecting its live identity.
+    const currentOwner = "admission" in sender ? store.sessionGrant(to.machine, to.session_id)?.principalId : undefined;
+    if (currentOwner && !recipientOwners.has(currentOwner)) return fail(403, "principal-forbidden", "recipient is not permitted");
+    const recipientPrincipal = principalFor(config, store, to, destinationState);
     // Admit the recipient selector before exposing any foreign lifecycle
     // diagnostics. An unselected repository stays hidden even when unavailable.
-    const candidate = destinationState.sessions.find(s => s.id === payload.to.session_id) ?? {};
-    if (!mayMessage(config, store, principal, payload.from, sourceSession, payload.to, candidate)) {
-      return fail(403, "principal-forbidden", "recipient is not permitted");
-    }
-    const recipientSession = current(destinationState, payload.to);
+    const candidate = destinationState.sessions.find(s => s.id === to.session_id) ?? {};
+    if (!recipientAllowed(candidate)) return fail(403, "principal-forbidden", "recipient is not permitted");
+    const recipientSession = current(destinationState, to);
     // Ownership can change during asynchronous probes. Recheck immediately
     // before submission; destination independently fences its live incarnation.
-    if (principalFor(config, store, payload.from).id !== principal.id
-      || grant(store, payload.to) !== recipientPrincipal.id
-      || !mayMessage(config, store, principal, payload.from, sourceSession, payload.to, recipientSession)) return fail(403, "principal-forbidden", "recipient is not permitted");
+    if (!sourceStillOwned() || grant(store, to) !== recipientPrincipal.id
+      || !recipientAllowed(recipientSession)) return fail(403, "principal-forbidden", "recipient is not permitted");
     let result: { status: number; body: unknown };
     try { result = await requestJson(destination, "/coordination/messages/receive/v1", payload, ingress.ingress_token); }
     catch { return fail(502, "delivery-unknown", "remote delivery result is unknown"); }
