@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 import { getAuthStatus, listMachineNames, type AuthStatus, type ConnectFailure } from "./api.ts";
 import { capturePairingLanding, landingPairingCode } from "./pairingLanding.ts";
 import { PairingRecipient } from "./PairingRecipient.tsx";
-import { clearPairingLink, pendingPairingLink, subscribePairingLink } from "./runtime.ts";
+import { clearPairingLink, pendingPairingLink, subscribePairingLink, subscribeAuthenticationRejected, recordNativeAuthentication, nativeConnectionConfigGeneration } from "./runtime.ts";
 import { Login } from "./Login.tsx";
 import { Settings } from "./Settings.tsx";
 import { loadPhoneSessionOpen, savePhoneSessionOpen } from "./phoneSessionOpen.ts";
@@ -77,6 +77,7 @@ export default function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+  const [signedOutReason, setSignedOutReason] = useState<string>();
   const [openAccess, setOpenAccess] = useState(false);
   const [startupFailure, setStartupFailure] = useState<AuthStatus["startupFailure"]>();
   const [startupTimingVisible, setStartupTimingVisible] = useState(false);
@@ -281,6 +282,7 @@ export default function App() {
     setAuthed(status.authenticated);
     setOpenAccess(status.openAccess);
     if (status.authenticated) {
+      setSignedOutReason(undefined);
       conversationImageCache.reloadVisible();
       setHostMigrationNotice(hostVisibilityMigrationPending());
       setMachineColors(loadMachineColors(undefined, machineColorDefaults));
@@ -322,13 +324,21 @@ export default function App() {
     void recheck();
   };
 
-  const onSignedOut = () => {
+  const onSignedOut = useCallback(() => {
+    recordNativeAuthentication(nativeConnectionConfigGeneration(), false, null);
     conversationImageCache.clear();
     activatePrincipalStorage(null);
     setPrincipal(null);
     setAuthed(false);
     setView({ kind: "dashboard" });
-  };
+  }, []);
+
+  useEffect(() => subscribeAuthenticationRejected(() => {
+    onSignedOut();
+    setLandingPairing(undefined);
+    clearPairingLink();
+    setSignedOutReason("This device was signed out.");
+  }), [onSignedOut]);
 
   if (importedPairing) return <PairingRecipient key={importedPairing.revision} imported={importedPairing}
     onSignedIn={onSignedIn} onCancel={() => clearPairingLink(importedPairing)} />;
@@ -342,6 +352,7 @@ export default function App() {
     return (
       <Settings
         variant="connect"
+        signedOutReason={signedOutReason}
         startupFailure={startupFailure}
         startupTimeoutElapsedMs={startupTimeoutElapsedMs}
         startupRecoveryElapsedMs={startupRecoveryElapsedMs}
@@ -379,7 +390,7 @@ export default function App() {
     );
   }
   if (!authed) {
-    return <Login onSignedIn={onSignedIn} />;
+    return <Login onSignedIn={onSignedIn} signedOutReason={signedOutReason} />;
   }
 
   const dashboardActive = view.kind === "dashboard";

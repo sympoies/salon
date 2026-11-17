@@ -19,9 +19,9 @@ before(async () => {
   const previous = process.env.NODE_ENV;
   try {
     const result = await build({ root: fileURLToPath(new URL("../../packages/ui/", import.meta.url)), configFile: false, logLevel: "silent", resolve: { conditions: ["source"] },
-      plugins: [react(), { name: "pairing-app-entry",
-        resolveId(id: string) { if (id.endsWith("pairing-app-entry")) return "\0pairing-app-entry"; },
-        load(id: string) { if (id === "\0pairing-app-entry") return 'import {mountApp} from "/src/mountApp.tsx"; mountApp(document.querySelector("#root"),{appName:"Example Console"});'; },
+      plugins: [react(), { name: "pairing-app-entry", enforce: "pre",
+        resolveId(id: string) { if (id === "@tauri-apps/plugin-http") return "\0pairing-native-http"; if (id.endsWith("pairing-app-entry")) return "\0pairing-app-entry"; },
+        load(id: string) { if (id === "\0pairing-native-http") return 'export const fetch=(url,init)=>window.fetch(url,{...init,credentials:"omit"})'; if (id === "\0pairing-app-entry") return 'import {mountApp} from "/src/mountApp.tsx"; import {appFetch} from "/src/runtime.ts"; window.authFixtureRequest=async(path)=>(await appFetch(path)).status; mountApp(document.querySelector("#root"),{appName:"Example Console"});'; },
       }], define: { "process.env.NODE_ENV": JSON.stringify("production"), __AGENT_CONSOLE_APP_VERSION__: JSON.stringify("0.0.0"), __AGENT_CONSOLE_BUILD_SHA__: JSON.stringify("fixture") },
       build: { write: false, target: "esnext", lib: { entry: "pairing-app-entry", name: "PairingApp", formats: ["iife"] } },
     });
@@ -64,12 +64,25 @@ async function capture(page: Page, name: string, selector: string): Promise<void
   }
 }
 
-for (const width of [390, 1280]) test(`two browsers pair, confirm, renew and revoke through the real edge at ${width}px`, async () => {
+for (const native of [false, true]) for (const width of [390, 1280]) test(`${native ? "native adapter" : "two browsers"} pair, confirm, renew and revoke through the real edge at ${width}px`, async () => {
   let now = Date.now();
   const edge = createEdgeServer(loadConfig({ AGENT_CONSOLE_INSECURE_COOKIE: "1", AGENT_CONSOLE_UI_DIR: dir,
-    AGENT_CONSOLE_STATE_DB: join(dir, `state-${width}.sqlite`), AGENT_CONSOLE_PRINCIPALS: JSON.stringify([
+    AGENT_CONSOLE_STATE_DB: join(dir, `state-${native}-${width}.sqlite`), AGENT_CONSOLE_PRINCIPALS: JSON.stringify([
       { id: "example-principal", token: "main-fixture", machines: [], permissions: [] },
     ]) }), { authNow: () => now });
+  // Capture only the synthetic device cookie in memory so the same issued credential
+  // can exercise the native bearer adapter without weakening HTTPS pairing rules.
+  let deviceCredential = "";
+  edge.prependListener("request", (_req, res) => {
+    const setHeader = res.setHeader.bind(res);
+    res.setHeader = (name, value) => {
+      if (name.toLowerCase() === "set-cookie" && typeof value === "string") {
+        const match = /^ac_session=(salon_device_[A-Za-z0-9_-]+)/.exec(value);
+        if (match) deviceCredential = match[1]!;
+      }
+      return setHeader(name, value);
+    };
+  });
   const { base } = await listenOnLoopback(edge);
   const sender = await launchPage();
   const recipient = await launchPage();
@@ -91,7 +104,7 @@ for (const width of [390, 1280]) test(`two browsers pair, confirm, renew and rev
     assert.equal(await sender.evaluate("document.querySelectorAll('.pairing-qr path').length"), 1);
     await capture(sender, `sender-code-${width}`, ".device-pairing");
 
-    if (width === 390) {
+    if (width === 390 && !native) {
       await recipient.navigate(base);
       await until(recipient, "document.querySelector('[data-testid=console-sign-in]')", "existing new-device login page");
       await recipient.evaluate(`location.hash=${JSON.stringify(`pair=${encodeURIComponent(code)}`)}`);
@@ -115,7 +128,24 @@ for (const width of [390, 1280]) test(`two browsers pair, confirm, renew and rev
     assert.equal(await recipient.evaluate("fetch('/api/auth/status').then(response=>response.json()).then(value=>value.authenticated)"), false);
     await click(recipient, "Sign in as example-principal");
     await until(recipient, "!document.querySelector('[aria-label=\"New device sign-in\"]')", "recipient sign-in completion");
-    assert.equal(await recipient.evaluate("fetch('/api/auth/status').then(response=>response.json()).then(value=>value.authenticated)"), true);
+    assert.equal(await recipient.evaluate(`fetch('/api/auth/status',{headers:localStorage.getItem('ac:token') ? {Authorization:'Bearer '+localStorage.getItem('ac:token')}: {}}).then(response=>response.json()).then(value=>value.authenticated)`), true);
+    await until(recipient, "!document.querySelector('.login-card')", "authenticated dashboard");
+    if (native) {
+      assert.ok(deviceCredential, "real pairing issued a synthetic device credential");
+      await recipient.addInitScript(`window.__TAURI_INTERNALS__={};`);
+      await recipient.evaluate(`localStorage.setItem('ac:server-url',location.origin);localStorage.setItem('ac:token',${JSON.stringify(deviceCredential)});`);
+      await recipient.navigate(base);
+      await until(recipient, "!document.querySelector('.login-card') && document.querySelector('header')", "native authenticated dashboard");
+    }
+    // Fail real dashboard polling without replacing the credential or reloading the App.
+    await recipient.evaluate(`window.savedCredential=localStorage.getItem('ac:token');window.transportDown=true;
+      const transport=window.fetch;window.fetch=(input,init)=>window.transportDown && String(input).includes('/api/sessions')
+        ? Promise.reject(new TypeError('Synthetic offline transport')):transport(input,init);window.dispatchEvent(new Event('offline'));window.dispatchEvent(new Event('online'));`);
+    await until(recipient, "document.body.textContent.includes('Console server is unreachable')", "temporary network failure");
+    assert.equal(await recipient.evaluate("Boolean(document.querySelector('.login-card'))"), false);
+    assert.equal(await recipient.evaluate("localStorage.getItem('ac:token') === window.savedCredential"), true, "network failure retains credential");
+    await recipient.evaluate("window.transportDown=false;window.dispatchEvent(new Event('offline'));window.dispatchEvent(new Event('online'))");
+    await until(recipient, "!document.body.textContent.includes('Console server is unreachable')", "network recovery");
     assert.equal(await recipient.evaluate("document.cookie.includes('ac_session')"), false, "device secret is HttpOnly");
     await until(sender, "document.querySelectorAll('.device-list li').length === 1", "device list refresh");
     await capture(sender, `device-list-${width}`, ".device-pairing");
@@ -128,7 +158,22 @@ for (const width of [390, 1280]) test(`two browsers pair, confirm, renew and rev
     assert.equal(await sender.evaluate("fetch('/api/auth/devices').then(response=>response.json()).then(value=>value.data.devices[0].expires_at)"), expiry + 86_400_000);
     await click(sender, "Revoke");
     await until(sender, "document.querySelector('.device-list').textContent.includes('Revoked')", "revocation metadata");
+    const statuses = await recipient.evaluate<Record<string, number>>(`Promise.all(
+      ['/api/sessions','/api/machines','/api/auth/devices','/api/auth/status'].map(async path=>
+        [path,(await fetch(path,{headers:localStorage.getItem('ac:token') ? {Authorization:'Bearer '+localStorage.getItem('ac:token')}: {}})).status])).then(Object.fromEntries)`);
+    assert.equal(statuses['/api/sessions'], 401);
+    assert.equal(statuses['/api/machines'], 401);
+    assert.equal(statuses['/api/auth/devices'], 401);
     assert.equal(await recipient.evaluate("fetch('/api/auth/status').then(response=>response.json()).then(value=>value.authenticated)"), false);
+    await until(recipient, "document.body.textContent.includes('Session list unavailable') || document.querySelector('.login-card')", "revocation outcome");
+    console.log(JSON.stringify({ native, width, statuses, unavailable: await recipient.evaluate("document.body.textContent.includes('Session list unavailable')"), login: await recipient.evaluate("Boolean(document.querySelector('.login-card'))") }));
+    if (process.env.SALON_UI_EVIDENCE_DIR) writeFileSync(join(process.env.SALON_UI_EVIDENCE_DIR, `revoked-${native ? "native" : "browser"}-${width}.png`), await recipient.screenshot());
+    await until(recipient, "document.querySelector('.login-card') && document.body.textContent.includes('This device was signed out')", "revoked device returns to sign-in with a reason");
+    if (native) {
+      assert.equal(await recipient.evaluate("localStorage.getItem('ac:token') || ''"), "", "revoked credential is cleared");
+      assert.equal(await recipient.evaluate("localStorage.getItem('ac:server-url')"), base, "server URL is retained");
+    }
+    if (process.env.SALON_UI_EVIDENCE_DIR) writeFileSync(join(process.env.SALON_UI_EVIDENCE_DIR, `signed-out-${native ? "native" : "browser"}-${width}.png`), await recipient.screenshot());
   } finally {
     const browsers = await Promise.allSettled([recipient.close(), sender.close()]);
     edge.closeAllConnections();
@@ -174,5 +219,77 @@ test("browser pairing refuses redirects before forwarding its claim body", async
     assert.equal(await page.evaluate("Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes('Sign in as'))"), false);
   } finally {
     await page.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
+
+for (const native of [false, true]) test(`upstream 401 keeps a valid ${native ? "native bearer" : "browser cookie"} signed in`, async () => {
+  const daemon = createServer((_req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.statusCode = _req.url?.startsWith("/workdirs") ? 401 : 200;
+    res.end(JSON.stringify(res.statusCode === 401 ? { ok: false, error: { message: "upstream refused" } }
+      : { ok: true, data: { sessions: [] } }));
+  });
+  const upstream = await listenOnLoopback(daemon);
+  const edge = createEdgeServer(loadConfig({ AGENT_CONSOLE_TOKEN: "main-fixture", AGENT_CONSOLE_UI_DIR: dir,
+    AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: "fixture", url: upstream.base, token: "upstream-fixture" }]) }));
+  const { base } = await listenOnLoopback(edge);
+  const page = await launchPage();
+  try {
+    await page.setViewport(1280, 1000, 1);
+    if (native) await page.addInitScript(`window.__TAURI_INTERNALS__={};localStorage.setItem('ac:server-url',location.origin);localStorage.setItem('ac:token','main-fixture');`);
+    await page.navigate(base);
+    if (!native) {
+      assert.equal(await page.evaluate(`fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'main-fixture'})}).then(response=>response.status)`), 200);
+      await page.navigate(base);
+    }
+    await until(page, "document.querySelector('header')", "authenticated dashboard");
+    assert.equal(await page.evaluate("window.authFixtureRequest('/api/machines/fixture/workdirs')"), 401);
+    assert.equal(await page.evaluate("Boolean(document.querySelector('.login-card'))"), false, "upstream refusal does not end edge authentication");
+    if (native) assert.equal(await page.evaluate("localStorage.getItem('ac:token')"), "main-fixture");
+    assert.equal(await page.evaluate(`fetch('/api/auth/status',{headers:${native ? "{Authorization:'Bearer main-fixture'}" : "{}"}}).then(response=>response.json()).then(value=>value.authenticated)`), true);
+  } finally {
+    await page.close();
+    for (const server of [edge, daemon]) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  }
+});
+
+test("delayed browser logout cannot overwrite a replacement login cookie", { timeout: 30_000 }, async () => {
+  let now = Date.now();
+  const edge = createEdgeServer(loadConfig({ AGENT_CONSOLE_TOKEN: "main-fixture", AGENT_CONSOLE_UI_DIR: dir }), { authNow: () => now });
+  let releaseLogout = () => {};
+  let received!: () => void;
+  const logoutReceived = new Promise<void>(resolve => { received = resolve; });
+  edge.prependListener("request", (req, res) => {
+    if (req.url !== "/api/auth/logout") return;
+    const end = res.end;
+    res.end = (...args: any[]) => {
+      releaseLogout = () => { Reflect.apply(end, res, args); };
+      received(); return res;
+    };
+  });
+  const { base } = await listenOnLoopback(edge);
+  const page = await launchPage();
+  try {
+    await page.navigate(base);
+    assert.equal(await page.evaluate(`fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'main-fixture'})}).then(response=>response.status)`), 200);
+    await page.navigate(base);
+    await until(page, "document.querySelector('header')", "authenticated dashboard");
+    await page.evaluate(`window.replacementRequests=0;const transport=window.fetch;window.fetch=(path,init)=>{
+      if(String(path)==='/api/auth/login')window.replacementRequests++;return transport(path,init);};`);
+    now += 13 * 3_600_000;
+    assert.equal(await page.evaluate("window.authFixtureRequest('/api/machines')"), 401);
+    await until(page, "document.querySelector('.login-card')", "private UI cleared before cleanup completes");
+    await logoutReceived;
+    await page.evaluate(`const input=document.querySelector('[data-testid=console-access-token]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'main-fixture');
+      input.dispatchEvent(new Event('input',{bubbles:true}));`);
+    await click(page, "Sign in");
+    assert.equal(await page.evaluate("window.replacementRequests"), 0, "replacement login waits for old cookie cleanup");
+    releaseLogout();
+    await until(page, "document.querySelector('header') && !document.querySelector('.login-card')", "replacement authenticated dashboard");
+    assert.equal(await page.evaluate("fetch('/api/auth/status').then(response=>response.json()).then(value=>value.authenticated)"), true, "replacement cookie remains authorized");
+  } finally {
+    releaseLogout(); await page.close(); edge.closeAllConnections(); await new Promise<void>(resolve => edge.close(() => resolve()));
   }
 });

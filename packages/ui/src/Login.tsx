@@ -5,10 +5,11 @@ import { AsyncButton } from "./AsyncButton.tsx";
 import { BrandTitle } from "./BrandTitle.tsx";
 
 export interface LoginProps {
+  readonly signedOutReason?: string;
   readonly onSignedIn: () => void;
 }
 
-export function Login({ onSignedIn }: LoginProps) {
+export function Login({ onSignedIn, signedOutReason }: LoginProps) {
   const [pairing, setPairing] = useState(false);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -42,6 +43,7 @@ export function Login({ onSignedIn }: LoginProps) {
         }}
       >
         <BrandTitle />
+        {signedOutReason ? <p role="status">{signedOutReason}</p> : null}
         <p className="sub">Enter the console access token.</p>
         <input
           data-testid="console-access-token"
