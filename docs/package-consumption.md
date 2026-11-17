@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.80 versions; upstream
+transfer. The three package metadata adaptation hashes reflect the final 0.1.81 versions; upstream
 hashes and historical/input identities remain unchanged.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,14 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.80`; its release is a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.81`; its release is a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.80
+### Changes retained in SDK 0.1.81
+
+Grouped tool-call rows use the conversation row layout again (#545): avatar gutters and bubble edges align,
+group end times appear in the timestamp column, and expanded timestamps keep their clearance.
+Only the first visible row of an agent run shows an avatar, and rounded outlines stay continuous.
+This UI change leaves history APIs and message data unchanged.
 
 The owner pairing link carries the canonical 20-character code so native shells can import tapped
 and scanned links (#541). The native importer remains strict.
