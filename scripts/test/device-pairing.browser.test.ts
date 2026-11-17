@@ -21,7 +21,7 @@ before(async () => {
     const result = await build({ root: fileURLToPath(new URL("../../packages/ui/", import.meta.url)), configFile: false, logLevel: "silent", resolve: { conditions: ["source"] },
       plugins: [react(), { name: "pairing-app-entry", enforce: "pre",
         resolveId(id: string) { if (id === "@tauri-apps/plugin-http") return "\0pairing-native-http"; if (id.endsWith("pairing-app-entry")) return "\0pairing-app-entry"; },
-        load(id: string) { if (id === "\0pairing-native-http") return 'export const fetch=(url,init)=>window.fetch(url,{...init,credentials:"omit"})'; if (id === "\0pairing-app-entry") return 'import {mountApp} from "/src/mountApp.tsx"; mountApp(document.querySelector("#root"),{appName:"Example Console"});'; },
+        load(id: string) { if (id === "\0pairing-native-http") return 'export const fetch=(url,init)=>window.fetch(url,{...init,credentials:"omit"})'; if (id === "\0pairing-app-entry") return 'import {mountApp} from "/src/mountApp.tsx"; import {appFetch} from "/src/runtime.ts"; window.authFixtureRequest=async(path)=>(await appFetch(path)).status; mountApp(document.querySelector("#root"),{appName:"Example Console"});'; },
       }], define: { "process.env.NODE_ENV": JSON.stringify("production"), __AGENT_CONSOLE_APP_VERSION__: JSON.stringify("0.0.0"), __AGENT_CONSOLE_BUILD_SHA__: JSON.stringify("fixture") },
       build: { write: false, target: "esnext", lib: { entry: "pairing-app-entry", name: "PairingApp", formats: ["iife"] } },
     });
@@ -219,5 +219,77 @@ test("browser pairing refuses redirects before forwarding its claim body", async
     assert.equal(await page.evaluate("Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes('Sign in as'))"), false);
   } finally {
     await page.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
+
+for (const native of [false, true]) test(`upstream 401 keeps a valid ${native ? "native bearer" : "browser cookie"} signed in`, async () => {
+  const daemon = createServer((_req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.statusCode = _req.url?.startsWith("/workdirs") ? 401 : 200;
+    res.end(JSON.stringify(res.statusCode === 401 ? { ok: false, error: { message: "upstream refused" } }
+      : { ok: true, data: { sessions: [] } }));
+  });
+  const upstream = await listenOnLoopback(daemon);
+  const edge = createEdgeServer(loadConfig({ AGENT_CONSOLE_TOKEN: "main-fixture", AGENT_CONSOLE_UI_DIR: dir,
+    AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: "fixture", url: upstream.base, token: "upstream-fixture" }]) }));
+  const { base } = await listenOnLoopback(edge);
+  const page = await launchPage();
+  try {
+    await page.setViewport(1280, 1000, 1);
+    if (native) await page.addInitScript(`window.__TAURI_INTERNALS__={};localStorage.setItem('ac:server-url',location.origin);localStorage.setItem('ac:token','main-fixture');`);
+    await page.navigate(base);
+    if (!native) {
+      assert.equal(await page.evaluate(`fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'main-fixture'})}).then(response=>response.status)`), 200);
+      await page.navigate(base);
+    }
+    await until(page, "document.querySelector('header')", "authenticated dashboard");
+    assert.equal(await page.evaluate("window.authFixtureRequest('/api/machines/fixture/workdirs')"), 401);
+    assert.equal(await page.evaluate("Boolean(document.querySelector('.login-card'))"), false, "upstream refusal does not end edge authentication");
+    if (native) assert.equal(await page.evaluate("localStorage.getItem('ac:token')"), "main-fixture");
+    assert.equal(await page.evaluate(`fetch('/api/auth/status',{headers:${native ? "{Authorization:'Bearer main-fixture'}" : "{}"}}).then(response=>response.json()).then(value=>value.authenticated)`), true);
+  } finally {
+    await page.close();
+    for (const server of [edge, daemon]) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  }
+});
+
+test("delayed browser logout cannot overwrite a replacement login cookie", { timeout: 30_000 }, async () => {
+  let now = Date.now();
+  const edge = createEdgeServer(loadConfig({ AGENT_CONSOLE_TOKEN: "main-fixture", AGENT_CONSOLE_UI_DIR: dir }), { authNow: () => now });
+  let releaseLogout = () => {};
+  let received!: () => void;
+  const logoutReceived = new Promise<void>(resolve => { received = resolve; });
+  edge.prependListener("request", (req, res) => {
+    if (req.url !== "/api/auth/logout") return;
+    const end = res.end;
+    res.end = (...args: any[]) => {
+      releaseLogout = () => { Reflect.apply(end, res, args); };
+      received(); return res;
+    };
+  });
+  const { base } = await listenOnLoopback(edge);
+  const page = await launchPage();
+  try {
+    await page.navigate(base);
+    assert.equal(await page.evaluate(`fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'main-fixture'})}).then(response=>response.status)`), 200);
+    await page.navigate(base);
+    await until(page, "document.querySelector('header')", "authenticated dashboard");
+    await page.evaluate(`window.replacementRequests=0;const transport=window.fetch;window.fetch=(path,init)=>{
+      if(String(path)==='/api/auth/login')window.replacementRequests++;return transport(path,init);};`);
+    now += 13 * 3_600_000;
+    assert.equal(await page.evaluate("window.authFixtureRequest('/api/machines')"), 401);
+    await until(page, "document.querySelector('.login-card')", "private UI cleared before cleanup completes");
+    await logoutReceived;
+    await page.evaluate(`const input=document.querySelector('[data-testid=console-access-token]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'main-fixture');
+      input.dispatchEvent(new Event('input',{bubbles:true}));`);
+    await click(page, "Sign in");
+    assert.equal(await page.evaluate("window.replacementRequests"), 0, "replacement login waits for old cookie cleanup");
+    releaseLogout();
+    await until(page, "document.querySelector('header') && !document.querySelector('.login-card')", "replacement authenticated dashboard");
+    assert.equal(await page.evaluate("fetch('/api/auth/status').then(response=>response.json()).then(value=>value.authenticated)"), true, "replacement cookie remains authorized");
+  } finally {
+    releaseLogout(); await page.close(); edge.closeAllConnections(); await new Promise<void>(resolve => edge.close(() => resolve()));
   }
 });

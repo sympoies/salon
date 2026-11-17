@@ -5,10 +5,16 @@
 import { isTauri as isTauriRuntime } from "@tauri-apps/api/core";
 import { getPrincipalStorageNamespace, unscopedLocalStorageGetItem, unscopedLocalStorageSetItem } from "./storage.ts";
 import { conversationImageCache } from "./conversationImageCache.ts";
+import { withRequestDeadline } from "./requestDeadline.ts";
 
 const SERVER_KEY = "ac:server-url";
 const TOKEN_KEY = "ac:token";
 const WS_TOKEN_PROTO_B64_PREFIX = "ac-token-b64.";
+const AUTH_TRANSITION_TIMEOUT_MS = 8_000;
+let browserCookieCleanup: Promise<void> = Promise.resolve();
+export function waitForBrowserCookieCleanup(): Promise<void> {
+  return browserCookieCleanup;
+}
 let connectionConfigGeneration = 0;
 const authenticationRejectedListeners = new Set<() => void>();
 export function subscribeAuthenticationRejected(listener: () => void): () => void {
@@ -209,6 +215,7 @@ export async function appFetch(path: string, init?: RequestInit): Promise<Respon
   const authenticated = authenticatedConnection;
   const native = isTauri();
   let response: Response;
+  if (!native && path === "/api/auth/login") await waitForBrowserCookieCleanup();
   if (native) {
     const base = apiBase();
     const headers = new Headers(init?.headers);
@@ -225,9 +232,20 @@ export async function appFetch(path: string, init?: RequestInit): Promise<Respon
   if (response.status === 401 && authenticated && authenticated === authenticatedConnection
     && authenticated.generation === generation && generation === nativeConnectionConfigGeneration()
     && !/^\/api\/auth\/(?:login|logout|status|pairings)(?:[/?]|$)/.test(path)) {
+    // Supported operation routes can forward a daemon's 401 while edge auth is valid.
+    const rejected = await withRequestDeadline(async signal => {
+      const status = await appFetch("/api/auth/status", { signal });
+      if (!status.ok) return false;
+      const body = await status.json() as { ok?: boolean; authenticated?: boolean };
+      return body.ok === true && body.authenticated === false;
+    }, AUTH_TRANSITION_TIMEOUT_MS).catch(() => false);
+    if (!rejected || authenticated !== authenticatedConnection
+      || generation !== nativeConnectionConfigGeneration()) return response;
     authenticatedConnection = undefined;
     if (native) saveToken("");
-    else void fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
+    else browserCookieCleanup = withRequestDeadline(signal =>
+      fetch("/api/auth/logout", { method: "POST", credentials: "include", signal }),
+    AUTH_TRANSITION_TIMEOUT_MS).then(() => {}, () => {});
     for (const listener of authenticationRejectedListeners) listener();
   }
   return response;

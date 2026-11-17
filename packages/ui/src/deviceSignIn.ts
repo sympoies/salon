@@ -1,4 +1,4 @@
-import { isTauri, loadServerUrl, loadToken, nativeConnectionConfigGeneration, saveServerUrl, saveToken } from "./runtime.ts";
+import { isTauri, loadServerUrl, loadToken, nativeConnectionConfigGeneration, saveServerUrl, saveToken, waitForBrowserCookieCleanup } from "./runtime.ts";
 
 export interface PairingCreated { readonly id: string; readonly code: string; readonly expires_at: number; }
 export interface PairingStatus {
@@ -59,7 +59,10 @@ export async function deviceRequest<T>(route: string, body?: unknown, method = b
       const { fetch: nativeFetch } = await import("@tauri-apps/plugin-http");
       if (!pairingConnectionCurrent(target)) throw new DeviceSignInError(0);
       response = await nativeFetch(`${target.origin}/api/auth/${route}`, { ...init, maxRedirections: 0 });
-    } else response = await fetch(`/api/auth/${route}`, init);
+    } else {
+      if (route === "pairings/exchange") await waitForBrowserCookieCleanup();
+      response = await fetch(`/api/auth/${route}`, init);
+    }
     if (!pairingConnectionCurrent(target)) throw new DeviceSignInError(0);
     if (response.url && new URL(response.url).origin !== target.origin) throw new DeviceSignInError(0);
   } catch { throw new DeviceSignInError(0); }
