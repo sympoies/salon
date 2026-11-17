@@ -1740,3 +1740,29 @@ for (const view of ["panel", "tile", "phone"] as const) test(`${view} discloses 
   assert.equal(button.getAttribute("aria-expanded"), "false");
   assert.equal(mounted.container.textContent?.includes("12 tests passed"), false);
 });
+
+test("hidden tool paging stops at exhaustion or five older windows", async () => {
+  for (const limit of [2, 5]) {
+    const mounted = installDom();
+    cleanups.push(mounted.cleanup);
+    mounted.window.localStorage.setItem("ac.showToolCalls", "0");
+    const ssr = createUiSsrHarness([conversationApiMockPlugin()]);
+    cleanups.push(ssr.close);
+    let reads = 0;
+    globalThis.__agentConsoleConversationApiMock = {
+      listHistorySessions: async () => ({ ok: true, truncated: false, latestMessagePaging: true, sessions: [historyEntry()] }),
+      listHistoryMessages: async (_machine, _id, options) => {
+        if (options?.direction !== "older") return { ok: true, messages: [{ id: "latest", role: "user", text: "Latest" }], olderCursor: "1" };
+        reads++;
+        return { ok: true, messages: [{ id: `tool-${reads}`, role: "assistant", text: "", tool_parts: [{ kind: "tool_call", id: `call-${reads}`, name: "Read" }] }],
+          ...(limit === 5 || reads < limit ? { olderCursor: String(reads + 1) } : {}) };
+      },
+    };
+    const { LiveConversationPanel } = await ssr.loadModule<typeof import("../src/LiveConversationPanel.tsx")>("/src/LiveConversationPanel.tsx");
+    await act(async () => { mounted.root.render(createElement(LiveConversationPanel, { session: liveSession(), onClose() {} })); await flush(); });
+    await act(async () => { findButton(mounted.container, "Load older").click(); await flush(); });
+    assert.equal(reads, limit);
+    await cleanups.pop()?.();
+    await cleanups.pop()?.();
+  }
+});

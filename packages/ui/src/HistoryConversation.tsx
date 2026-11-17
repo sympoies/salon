@@ -1,5 +1,5 @@
 import { useShowToolCalls } from "./toolCallPreference.ts";
-import { ConversationTools, conversationToolRows } from "./ConversationTools.tsx";
+import { ConversationTools, ConversationToolGroup, conversationToolRows } from "./ConversationTools.tsx";
 import { imageCaption } from "./providerImageLabels.ts";
 import { ConversationImages } from "./ConversationImages.tsx";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, Fragment, type ReactNode, type RefObject } from "react";
@@ -91,6 +91,7 @@ export interface HistoryConversation {
  * panel share it; each owner reports errors through its own banner.
  */
 export function useHistoryConversation(onError: (message: string | undefined) => void): HistoryConversation {
+  const showToolCalls = useShowToolCalls();
   const [session, setSession] = useState<HistorySession>();
   const [latestMessagePaging, setLatestMessagePaging] = useState(false);
   const [messages, setMessages] = useState<HistoryMessage[]>([]);
@@ -199,25 +200,34 @@ export function useHistoryConversation(onError: (message: string | undefined) =>
         .find((element) => element.dataset.historyMessageId === anchorMessage.id)
       : undefined;
     onError(undefined);
-    const result = await fetchMessages(session, { direction: "older", cursor: olderCursor });
-    if (!result) return;
-    setLoading(false);
-    if (!result.ok) {
-      onError(result.error ?? "Older conversation messages could not be loaded");
-      return;
+    let cursor: string | undefined = olderCursor;
+    let merged = [...messages];
+    const originalIds = new Set(messages.map(message => message.id));
+    for (let window = 0; cursor && window < (showToolCalls ? 1 : 5); window++) {
+      const result = await fetchMessages(session, { direction: "older", cursor });
+      if (!result) return;
+      if (!result.ok) {
+        setLoading(false);
+        onError(result.error ?? "Older conversation messages could not be loaded");
+        return;
+      }
+      merged = mergeOlderHistoryMessages(merged, result.messages, HISTORY_MESSAGE_WINDOW);
+      cursor = result.olderCursor;
+      const visible = merged.filter(message => !originalIds.has(message.id)
+        && (!message.tool_parts?.length || message.text || message.images?.length)).length;
+      if (showToolCalls || visible >= 20) break;
     }
+    setLoading(false);
     if (anchorMessage && anchorElement) {
       scrollAdjustmentRef.current = {
-        kind: "anchor",
-        messageId: anchorMessage.id,
-        top: anchorElement.getBoundingClientRect().top,
+        kind: "anchor", messageId: anchorMessage.id, top: anchorElement.getBoundingClientRect().top,
       };
     }
     setMessagesLoaded(true);
-    setMessages((current) => mergeOlderHistoryMessages(current, result.messages, HISTORY_MESSAGE_WINDOW));
-    setOlderCursor(result.olderCursor);
+    setMessages(merged);
+    setOlderCursor(cursor);
     setBrowsingOlder(true);
-  }, [fetchMessages, loading, messages, olderCursor, onError, session]);
+  }, [fetchMessages, loading, messages, olderCursor, onError, session, showToolCalls]);
 
   const loadPage = useCallback(async (
     cursor: string | undefined,
@@ -403,15 +413,7 @@ export function HistoryConversationView({
       viewport.scrollTop = viewport.scrollHeight;
     }
   }, [showWorking, conversation.viewportRef]);
-  return (
-    <>
-      <div className="history-messages" ref={conversation.viewportRef}>
-        {latestMessagePaging && olderCursor ? (
-          <button className="btn ghost history-load-older" type="button" disabled={loading} onClick={() => void conversation.loadOlder()}>
-            {loading ? "Loading…" : "Load older"}
-          </button>
-        ) : null}
-        {rows.map(({ message, tools }, index) => {
+  const renderRow = ({ message, tools }: typeof rows[number], index: number, suppressDay = false) => {
           const notice = message.row_class === "notice" || (!message.row_class && message.role === "notice") ? parseSessionNotice(message.text) : null;
           const runtime = message.row_class === "runtime_command"
             ? { title: parseRuntimeCommand(message.text)?.title ?? "Runtime command", text: message.text }
@@ -438,7 +440,7 @@ export function HistoryConversationView({
           const time = sentAt ? <time dateTime={message.timestamp}>{sentAt}</time> : null;
           return (
             <Fragment key={message.id}>
-              {newDay && date ? <div className="history-day-separator"><span>{messageDayLabel(date)}</span></div> : null}
+              {newDay && date && !suppressDay ? <div className="history-day-separator"><span>{messageDayLabel(date)}</span></div> : null}
               <article data-history-message-id={message.id}
                 aria-label={compaction ? "Context compaction" : runtime ? "Runtime command" : notice || plainNotice ? message.mailbox ? "Mailbox read" : "System notice" : user ? "You" : message.role === "goal" ? "Goal" : session?.provider ?? "Agent"}
                 className={notice || plainNotice || runtime || compaction ? "history-message is-notice" : `history-message is-${message.role}${!user && !showAvatar ? " is-continuation" : ""}`}>
@@ -465,7 +467,32 @@ export function HistoryConversationView({
               </article>
             </Fragment>
           );
-        })}
+  };
+  const rendered: ReactNode[] = [];
+  for (let index = 0; index < rows.length;) {
+    const first = rows[index]!;
+    const isToolOnly = (row: typeof first) => row.tools.length > 0 && !row.message.text && !row.message.images?.length;
+    let end = index;
+    if (isToolOnly(first)) while (end + 1 < rows.length && isToolOnly(rows[end + 1]!)) end++;
+    const run = rows.slice(index, end + 1);
+    const tools = run.flatMap(row => row.tools);
+    if (tools.length >= 2 && isToolOnly(first)) {
+      const date = messageDate(first.message.timestamp);
+      const previousDate = messageDate(rows[index - 1]?.message.timestamp);
+      const newDay = Boolean(date && date.toDateString() !== previousDate?.toDateString());
+      rendered.push(<Fragment key={`${session?.machine}/${session?.id}/${first.message.id}`}>
+        {newDay && date ? <div className="history-day-separator"><span>{messageDayLabel(date)}</span></div> : null}
+        <ConversationToolGroup rows={tools} timestamps={run.flatMap(row => row.tools.map(() => row.message.timestamp))} growing={working && end === rows.length - 1}>
+          {run.map((row, offset) => renderRow(row, index + offset, offset === 0))}
+        </ConversationToolGroup>
+      </Fragment>);
+    } else rendered.push(renderRow(first, index));
+    index = end + 1;
+  }
+  return (<>
+    <div className="history-messages" ref={conversation.viewportRef}>
+      {latestMessagePaging && olderCursor ? <button className="btn ghost history-load-older" type="button" disabled={loading} onClick={() => void conversation.loadOlder()}>{loading ? "Loading…" : "Load older"}</button> : null}
+      {rendered}
         {loading && messages.length === 0 ? <p>Loading conversation…</p> : null}
         {browsingOlder ? null : outgoing}
         {showWorking ? <p className="history-working" role="status">

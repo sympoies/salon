@@ -46,7 +46,6 @@ test("HistoryPanel exposes metadata-only discovery, transcript browsing, and res
     source,
     /setSessions\(\(current\) => applyHistoryStar\(current, session\.id, result\.starredAt\)\)/,
   );
-  assert.match(conversation, /setMessages\(\(current\) => mergeOlderHistoryMessages\(current, result\.messages, HISTORY_MESSAGE_WINDOW\)\)/);
   assert.match(source, />Resume<|"Resuming…" : "Resume"/);
   assert.match(
     source,
