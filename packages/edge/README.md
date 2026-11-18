@@ -60,9 +60,19 @@ polling and acknowledgement, and owner-scoped producer ingress from a session re
 
 ## Speech synthesis v1
 
-Enable synthesis for a speech provider by setting `"synthesis": true` on its
-entry in `AGENT_CONSOLE_SPEECH_PROVIDERS`. The configured origin and bearer
+Enable synthesis by adding a `synthesis` object to a provider entry in
+`AGENT_CONSOLE_SPEECH_PROVIDERS`. Set `voices` to the IDs supported by that
+provider and choose one as `default_voice`. The configured origin and bearer
 token also serve the provider's `POST /v1/syntheses` endpoint.
+
+```json
+{"synthesis":{"voices":[{"id":"marin","label":"Marin"},{"id":"coral"}],"default_voice":"marin"}}
+```
+
+Each voice ID is case-sensitive and must be unique within its provider. Use 1 to
+64 ASCII letters, digits, periods, underscores or hyphens, beginning with a
+letter or digit. An optional `label` supplies a public display name of up to
+80 UTF-16 code units.
 
 Send `POST /api/speech/v1/:provider/syntheses` with `Content-Type: application/json`
 and a speech-authorized owner or paired device credential. Machine access and
@@ -70,12 +80,14 @@ the speech routes' cross-origin checks apply. Synthesis is available on edges
 that require authentication.
 
 ```json
-{"text":"The timer is ready.","format":"pcm_s16le","sample_rate":8000,"channels":1}
+{"text":"The timer is ready.","format":"pcm_s16le","sample_rate":8000,"channels":1,"voice":"coral"}
 ```
 
-All four fields are required. Text must contain a non-whitespace character
-and fit within 1,000 UTF-16 code units. The JSON body limit is 8,192 bytes.
-The edge sends those four fields to the provider. Both the provider and edge
+The `text`, `format`, `sample_rate` and `channels` fields are required. Text must
+contain a non-whitespace character and fit within 1,000 UTF-16 code units. The
+JSON body limit is 8,192 bytes. The optional `voice` must match an advertised ID.
+If omitted, the edge uses `default_voice`. The edge sends the selected ID as
+`voice` along with the four required fields. Both the provider and edge
 return HTTP 200 with `Content-Type: audio/pcm; rate=8000; channels=1` and raw
 signed 16-bit little-endian samples. Audio is mono and has no container header.
 Responses are limited to 30 seconds (480,000 bytes). The edge validates the
@@ -86,7 +98,9 @@ media type, size and sample alignment before returning audio with
 on authenticated edges.
 It exposes `formats: ["pcm_s16le"]`, `sample_rates: [8000]`, `channels: 1`,
 `max_text_length: 1000`, `max_duration_seconds: 30` and `max_bytes: 480000`.
-Providers without that object offer transcription only.
+It also exposes `voices` (each with an `id` and optional `label`) and
+`default_voice` (an ID from that list). Providers without a `synthesis` object
+offer transcription only.
 
 Synthesis errors use the edge JSON error envelope. Route errors include an
 `error.code` as listed below. Ordinary authentication, cross-origin and
@@ -95,6 +109,7 @@ request timeout errors use the shared edge responses.
 | HTTP status | Code | Meaning |
 | --- | --- | --- |
 | 400 | `invalid-synthesis-request` | Malformed JSON or missing or blank text. |
+| 400 | `unsupported-synthesis-voice` | The supplied voice is not an advertised ID for the selected provider. |
 | 404 | `speech-provider-not-found` | The provider is unknown or outside the principal's machine grants. |
 | 404 | `synthesis-not-offered` | The provider is configured for transcription only. |
 | 413 | `synthesis-input-too-large` | JSON or text exceeds the input limit. |
@@ -104,5 +119,5 @@ request timeout errors use the shared edge responses.
 | 502 | `invalid-provider-audio` | Provider audio is missing, malformed or over the limit. |
 | 503 | `speech-provider-unavailable` | The provider is unreachable, timed out or reported unavailability. |
 
-Provider credentials, headers and error bodies stay on the server.
+Provider URLs, credentials, headers and error bodies stay on the server.
 The edge does not log synthesis text or audio.
