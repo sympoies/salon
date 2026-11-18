@@ -52,3 +52,8 @@ insecure-cookie opt-in permits only loopback HTTP development pairing.
 
 See the [device sign-in protocol](../../docs/device-sign-in.md) for the endpoint flow,
 recipient confirmation, cookie behavior, metadata call, audit and threat model.
+
+## Companion inbox
+
+The [companion inbox v1 protocol](../../docs/companion-inbox.md) defines paired-device
+polling and acknowledgement, and owner-scoped producer ingress from a session relay.
