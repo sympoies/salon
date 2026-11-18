@@ -14,6 +14,7 @@ export interface Page {
   addInitScript(source: string): Promise<void>;
   /** Fix the time zone and the language the page sees, so the images do not depend on the machine. */
   setEnvironment(timezoneId: string, locale: string): Promise<void>;
+  throttleNetwork(urlPattern: string, latency: number, bytesPerSecond: number): Promise<void>;
   screenshot(): Promise<Buffer>;
   close(): Promise<void>;
 }
@@ -128,6 +129,12 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
       async setEnvironment(timezoneId, locale) {
         await send("Emulation.setTimezoneOverride", { timezoneId });
         await send("Emulation.setLocaleOverride", { locale });
+      },
+      async throttleNetwork(urlPattern, latency, bytesPerSecond) {
+        await send("Network.enable");
+        await send("Network.emulateNetworkConditionsByRule", { offline: false, matchedNetworkConditions: [
+          { urlPattern, latency, downloadThroughput: bytesPerSecond, uploadThroughput: bytesPerSecond },
+        ] });
       },
       async screenshot() {
         const { data } = await send<{ data: string }>("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });

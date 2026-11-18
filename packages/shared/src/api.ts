@@ -12,6 +12,8 @@ import {
 import { normalizeSessionTitleState, type SessionTitleState } from "./title.ts";
 import type { SessionRetitleV3Receipts } from "./sessionRetitle.ts";
 
+export const SESSION_LIST_REVISION_HEADER = "x-agent-console-session-list-revision";
+
 export type TitleSummarySource = "summarizer" | "fallback";
 
 export const AGENT_CONSOLE_PERMISSIONS = [

@@ -18,8 +18,8 @@ import { outboxCredentialGeneration, SharedOutboxDispatcher } from "./sharedOutb
 import { TestCredentialStore, testCredentialHash } from "./testCredentials.ts";
 import { normalizeEmergencyShell } from "@agent-console/shared/shell";
 import { SharedActivityStreams } from "./sharedActivity.ts";
-import { ResourceWatchRegistry } from "./resourceWatch.ts";
-import { resourceKey, type ResourceSubscription } from "@agent-console/shared/resources";
+import { ResourceWatchRegistry, resourceFingerprint } from "./resourceWatch.ts";
+import { normalizeConversationSnapshot, resourceKey, type ResourceSubscription } from "@agent-console/shared/resources";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
@@ -62,6 +62,7 @@ import { summarizeTitleWithDiagnostics } from "./titleSummary.ts";
 import {
   ACCOUNT_PROVIDERS,
   ACCOUNT_SWITCH_TIMEOUT_MS,
+  SESSION_LIST_REVISION_HEADER,
   TITLE_SUMMARY_PHASES,
   createSessionTimeoutMs,
   isAccountProvider,
@@ -1600,33 +1601,44 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           const event = snapshots.get(session.machine)?.get(JSON.stringify([session.id, session.created_at]));
           return event ? { ...session, stale_draft: event } : session;
         });
-        sendJson(res, 200, {
-          ok: true,
-          data: {
-            ...metadata,
-            ...aggregate,
-            sessions,
-            capabilities: {
-              // Extension flags first, so a core flag of the same name wins.
-              ...extensions.sessionCapabilities({
-                principal: { id: _principal.id, permissions: _principal.permissions },
-                can: (permission) => !_principal.managedCredential
-                  && (!config.multiUser || (_principal.permissions as readonly string[]).includes(permission)),
-              }),
-              auto_resume_control: true,
-              profile_resume_import: true,
-              managed_resume_command: true,
-              resume_blocked_reason: true,
-              last_prompt: true,
-              last_message: true,
-              history: true,
-              archive: true,
-              session_retitle_v2: true,
-              session_retitle_v3: true,
-              ...(board ? { session_board: true } : {}),
-            },
+        const data = {
+          ...metadata,
+          ...aggregate,
+          sessions,
+          capabilities: {
+            // Extension flags first, so a core flag of the same name wins.
+            ...extensions.sessionCapabilities({
+              principal: { id: _principal.id, permissions: _principal.permissions },
+              can: (permission) => !_principal.managedCredential
+                && (!config.multiUser || (_principal.permissions as readonly string[]).includes(permission)),
+            }),
+            auto_resume_control: true,
+            profile_resume_import: true,
+            managed_resume_command: true,
+            resume_blocked_reason: true,
+            last_prompt: true,
+            last_message: true,
+            history: true,
+            archive: true,
+            session_retitle_v2: true,
+            session_retitle_v3: true,
+            ...(board ? { session_board: true } : {}),
           },
+        };
+        const knownRevision = req.headers[SESSION_LIST_REVISION_HEADER];
+        if (typeof knownRevision !== "string") {
+          sendJson(res, 200, { ok: true, data });
+          return;
+        }
+        const revision = resourceFingerprint({ ...data,
+          machines: aggregate.machines.map(machine => ({ ...machine, observed_at: undefined })),
+          sessions: sessions.map(session => ({ ...session, activity_observed_at: undefined })),
         });
+        // A poll can re-anchor the daemon clock without retransmitting any
+        // session rows. The revision covers the full authorized projection.
+        const response = knownRevision === revision ? { machines: aggregate.machines } : data;
+        res.setHeader(SESSION_LIST_REVISION_HEADER, revision);
+        sendJson(res, 200, { ok: true, data: response });
         return;
       }
 
@@ -1882,6 +1894,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
               if (!data) throw new Error("conversation unavailable");
               return data;
             };
+            let lastAvailable: boolean | undefined;
+            let lastWriteAt = 0;
+            let conversationBase: { revision: number; rows: readonly string[] } | undefined;
             dispose.push(resourceWatches.subscribe(key, load,
               subscription.resource === "conversation" ? 3000 : subscription.resource === "sessions" ? 4000 : 5000,
               (observation) => {
@@ -1890,19 +1905,40 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 // read is pending. Authorize this response at delivery, never
                 // bind the principal-scoped producer to one subscriber's cookie.
                 if (principalForRequest(req)?.id !== _principal.id) { res.end(); return; }
+                const now = performance.now();
+                if (!observation.changed && observation.available === lastAvailable && now - lastWriteAt < 15_000) return;
+                lastAvailable = observation.available;
+                lastWriteAt = now;
                 // Never let a slow subscriber stall another principal or build
                 // an unbounded queue. Reconnect obtains a fresh observation.
                 if (res.writableLength > 64 * 1024) { res.destroy(); return; }
                 const type = !observation.available ? "unavailable" : observation.changed ? "changed" : "heartbeat";
                 const event = { schema_version: "agent-console.resource-event.v1", type, resource, revision: observation.revision };
                 const metadata = `event: ${type}\ndata: ${JSON.stringify(event)}\n\n`;
-                const snapshot = subscription.resource === "conversation"
+                const snapshot = subscription.resource === "conversation" && observation.value
                   && !canReadOwnerHistory(_principal, subscription.machine, subscription.id)
-                  ? stripOwnerHistoryFields(observation.value) : observation.value;
-                let frame = snapshot ? `event: ${type}\ndata: ${JSON.stringify({ ...event, conversation: snapshot })}\n\n` : metadata;
-                // Snapshot bursts share the response's byte budget. Congestion
-                // falls back to HTTP instead of reconnecting and replaying them.
-                if (res.writableLength + Buffer.byteLength(frame) > 64 * 1024) frame = metadata;
+                  ? normalizeConversationSnapshot(stripOwnerHistoryFields(observation.value)) : observation.value;
+                let frame = metadata;
+                if (snapshot) {
+                  const rows = snapshot.messages.map(resourceFingerprint);
+                  const previous = conversationBase;
+                  let retained = 0;
+                  if (previous && previous.revision < observation.revision) {
+                    while (retained < rows.length && rows[retained] === previous.rows[retained]) retained += 1;
+                  }
+                  const payload = previous && retained > 0
+                    ? { ...event, conversation: { ...snapshot, messages: snapshot.messages.slice(retained) },
+                      conversation_delta: { base_revision: previous.revision, retained } }
+                    : { ...event, conversation: snapshot };
+                  const page = `event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`;
+                  // A subscriber that missed a page may reconcile through HTTP.
+                  // Only a page actually sent on this stream can seed a delta.
+                  if (res.writableLength + Buffer.byteLength(page) <= 64 * 1024) {
+                    frame = page;
+                    conversationBase = { revision: observation.revision, rows };
+                  }
+                }
+                if (frame === metadata && type !== "heartbeat") conversationBase = undefined;
                 if (res.writableLength + Buffer.byteLength(frame) > 64 * 1024) { res.destroy(); return; }
                 res.write(frame);
               }, subscription.resource === "conversation" && url.searchParams.get("conversation_snapshots") === "1"));
@@ -1929,6 +1965,14 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           "x-accel-buffering": "no",
         });
         res.write(": agent-console.activity-stream.v1\n\n");
+        // The daemon stream may be unsupported. Keep the edge stream open in
+        // polling mode instead of replaying its initial list on each idle timeout.
+        const keepAlive = setInterval(() => {
+          if (principalForRequest(req)?.id !== _principal.id) { res.end(); return; }
+          if (res.writableNeedDrain) return;
+          res.write(": keep-alive\n\n");
+        }, 15_000);
+        keepAlive.unref();
         const running = new Map<string, { controller: AbortController; promise: Promise<void> }>();
         const enabledForReader = (machine: MachineConfig) =>
           sessionMachinesForReader(_principal, [machine]).some(candidate => candidate.active !== false);
@@ -1993,6 +2037,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             await new Promise<void>(resolve => controller.signal.addEventListener("abort", () => resolve(), { once: true }));
           }
         } finally {
+          clearInterval(keepAlive);
           if (preferenceTimer) clearInterval(preferenceTimer);
           const pending = [...running.values()];
           for (const stream of pending) stream.controller.abort();

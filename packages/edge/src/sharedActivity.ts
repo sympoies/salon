@@ -16,6 +16,7 @@ export class SharedActivityStreams {
           type: "delivery", machine: machine.name, observed_at: initial.observed_at, state: "polling" }))) await options.waitForDrain?.();
       }
       const decoder = new ActivityFeedSseDecoder();
+      let previous: { streamId: string; sequence: number; sessions: Map<string, string> } | undefined;
       for await (const chunk of this.#streams.subscribe(machine.name, (signal, emit) =>
         streamActivityEvents([machine], { signal, write: (frame) => { emit(frame); return true; } }), options.signal, options.onDisconnect)) {
         for (const event of decoder.push(chunk)) {
@@ -23,7 +24,27 @@ export class SharedActivityStreams {
           // producer normalization. Delivery-only metadata needs no projection.
           const filtered = event.type === "delivery" ? event : options.filterEvent ? await options.filterEvent(event) : event;
           if (options.signal.aborted) return;
-          const serialized = filtered.type === "delivery" ? serializeActivityDeliverySseEvent(filtered) : serializeActivitySseEvent(filtered);
+          let outgoing = filtered;
+          if (filtered.type === "snapshot" || (filtered.type === "reset" && filtered.sessions)) {
+            const { sessions, ...metadata } = filtered;
+            const current = new Map(sessions.map(session => [session.id, JSON.stringify(session.turn_state)]));
+            // Keep the full baseline on a stream reset, sequence gap or membership
+            // change. The UI uses those to reconcile its session catalog.
+            const baseline = previous;
+            if (filtered.type === "snapshot" && baseline?.streamId === filtered.stream_id
+              && baseline.sequence + 1 === filtered.sequence && baseline.sessions.size === current.size
+              && sessions.every(session => baseline.sessions.has(session.id))) {
+              const changes = sessions.filter(session => baseline.sessions.get(session.id) !== current.get(session.id));
+              outgoing = changes.length ? { ...metadata, type: "delta", sessions: changes } : { ...metadata, type: "heartbeat" };
+            }
+            previous = { streamId: filtered.stream_id, sequence: filtered.sequence, sessions: current };
+          } else if (filtered.type === "heartbeat" && previous?.streamId === filtered.stream_id
+            && previous.sequence + 1 === filtered.sequence) {
+            previous.sequence = filtered.sequence;
+          } else {
+            previous = undefined;
+          }
+          const serialized = outgoing.type === "delivery" ? serializeActivityDeliverySseEvent(outgoing) : serializeActivitySseEvent(outgoing);
           if (!options.write(serialized)) await options.waitForDrain?.();
         }
       }

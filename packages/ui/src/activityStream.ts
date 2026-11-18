@@ -205,7 +205,7 @@ export function applyActivityStreamEvent(
       transport: "stream",
     });
   });
-  const missingProjection = projectionById !== null &&
+  const missingProjection = projectionById !== null && input.event.type !== "delta" &&
     [...currentMachineIds].some((id) => !projectionById.has(id));
 
   return {
@@ -214,7 +214,7 @@ export function applyActivityStreamEvent(
     decision: "applied",
     needsReconcile:
       input.event.type === "reset" || streamChanged || sequenceGap ||
-      (previousCursor === undefined && input.event.type === "heartbeat") ||
+      (previousCursor === undefined && (input.event.type === "heartbeat" || input.event.type === "delta")) ||
       unknownProjection || missingProjection || regressedRevision,
   };
 }

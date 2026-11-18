@@ -97,7 +97,7 @@ export function createAsyncPoller<TimerHandle = DefaultTimerHandle>({
   };
 }
 
-export function useAsyncPoll(task: AsyncPollTask, delayMs: number, onError?: (error: unknown) => void): void {
+export function useAsyncPoll(task: AsyncPollTask, delayMs: number | (() => number), onError?: (error: unknown) => void): void {
   useEffect(() => {
     const poller = createAsyncPoller({ task, delayMs, onError });
     poller.start();

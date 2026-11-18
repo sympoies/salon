@@ -1,6 +1,6 @@
 import { resourceKey, ResourceSseDecoder, type ResourceSubscription } from "@agent-console/shared/resources";
 import { runSseStream, type SseStreamOptions } from "./sseStream.ts";
-import type { ResourceEvent } from "@agent-console/shared/resources";
+import type { ConversationSnapshot, ResourceEvent } from "@agent-console/shared/resources";
 
 interface Listener {
   readonly subscription: ResourceSubscription;
@@ -39,18 +39,31 @@ export function createResourceEvents(run: (options: SseStreamOptions<ResourceEve
     }
     const query = new URLSearchParams({ resources: [...resources].sort().join(","),
       machines: [...machines].sort().join(","), conversations: JSON.stringify([...conversations.values()]), conversation_snapshots: "1" });
+    const pages = new Map<string, { revision: number; snapshot: ConversationSnapshot }>();
     void run({ path: `/api/resources/events?${query}`, signal: next.signal, createDecoder: () => new ResourceSseDecoder(),
       onState: (state) => {
         if (next.signal.aborted || state === "connected") return;
+        pages.clear();
         for (const listener of listeners) setHealth(listener, false);
       },
       onEvent: (event) => {
         if (next.signal.aborted) return;
+        const { conversation_delta: delta, conversation, ...metadata } = event;
+        let snapshot = conversation;
+        if (delta && snapshot) {
+          const prior = pages.get(event.resource);
+          snapshot = prior?.revision === delta.base_revision && prior.snapshot.messages.length >= delta.retained
+            ? { ...snapshot, messages: [...prior.snapshot.messages.slice(0, delta.retained), ...snapshot.messages] }
+            : undefined;
+        }
+        if (snapshot) pages.set(event.resource, { revision: event.revision, snapshot });
+        else if (event.type !== "heartbeat") pages.delete(event.resource);
+        const observation = snapshot ? { ...metadata, conversation: snapshot } : metadata;
         for (const listener of listeners) {
           if (resourceKey(listener.subscription) !== event.resource) continue;
           const previouslyHealthy = listener.healthy;
           setHealth(listener, event.type !== "unavailable");
-          if (event.type === "changed" || (previouslyHealthy && event.type === "unavailable")) listener.onChanged(event);
+          if (event.type === "changed" || (previouslyHealthy && event.type === "unavailable")) listener.onChanged(observation);
         }
       },
     }).catch(() => {

@@ -62,3 +62,21 @@ test("conversation multiplex opts in to snapshots and forwards the decoded event
   assert.deepEqual(received, [snapshot]);
   stop(); stream.onEvent(snapshot); assert.equal(received.length, 1, "stale stream cannot redeliver");
 });
+
+test("conversation deltas update the current page and a missing base requests reconciliation", () => {
+  let stream!: SseStreamOptions<ResourceEvent>;
+  const service = createResourceEvents(async options => { stream = options; });
+  const seen: Array<ResourceEvent | undefined> = [];
+  const stop = service.subscribe({ resource: "conversation", machine: "fixture", id: "history" }, value => seen.push(value), () => {});
+  const base = event("conversation/fixture/history");
+  const first = { id: "first", role: "user" as const, text: "Review the sample." };
+  const next = { id: "next", role: "assistant" as const, text: "The review is ready." };
+  stream.onEvent({ ...base, conversation: { messages: [first] } });
+  const delta = { ...base, revision: 2, conversation: { messages: [next] }, conversation_delta: { base_revision: 1, retained: 1 } };
+  stream.onEvent(delta);
+  assert.deepEqual(seen[1]?.conversation?.messages, [first, next]);
+  stream.onState("reconnecting");
+  stream.onEvent(delta);
+  assert.deepEqual(seen[2], { ...base, revision: 2 }, "the subscriber fetches the page after a missing baseline");
+  stop();
+});
