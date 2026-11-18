@@ -231,9 +231,12 @@ test("Android Desktop Auto keeps six conversation tiles usable through width cha
         const option = `.layout-picker-option:nth-child(${count + 1})`;
         const current = `document.querySelector('${picker}')?.getAttribute('aria-label') === "Choose layout, currently ${count} pane${count === 1 ? "" : "s"}"`;
         const countMatches = `document.querySelectorAll('${tile}').length === ${count}`;
+        const persisted = `localStorage.getItem('agent-console.layout.mode') === '${count}'
+          && localStorage.getItem('agent-console.layout.auto') === '0'`;
         await click(browser, picker);
         await click(browser, option);
-        await waitFor(browser, `${current} && ${countMatches}`);
+        // Reload only after the selection effects have written both settings.
+        await waitFor(browser, `${current} && ${countMatches} && ${persisted}`);
         await browser.navigate(fixture);
         await waitFor(browser, `${current} && ${countMatches}`);
         await click(browser, picker);
