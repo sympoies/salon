@@ -1,7 +1,8 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { once } from "node:events";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import react from "@vitejs/plugin-react";
 import { build } from "vite";
@@ -99,7 +100,13 @@ async function waitFor(page: Page, condition: string): Promise<void> {
       if (${condition}) return;
       await new Promise(resolve => setTimeout(resolve, 20));
     }
-    throw Error("Dashboard did not reach: " + ${JSON.stringify(condition)});
+    const observed = {
+      layout: document.querySelector("${picker}")?.getAttribute("aria-label"),
+      tiles: document.querySelectorAll("${tile}").length,
+      savedMode: localStorage.getItem("agent-console.layout.mode"),
+      savedAuto: localStorage.getItem("agent-console.layout.auto"),
+    };
+    throw Error("Dashboard did not reach " + ${JSON.stringify(condition)} + ". Observed " + JSON.stringify(observed));
   })()`);
 }
 
@@ -176,14 +183,21 @@ async function measureGrid(page: Page): Promise<Grid> {
 }
 
 test("Android Desktop Auto keeps six conversation tiles usable through width changes", async t => {
-  const temp = mkdtempSync("/tmp/salon-desktop-auto-");
-  const fixture = pathToFileURL(join(temp, "fixture.html")).href;
+  const html = await dashboardFixture();
+  // Give reloads a stable origin for localStorage.
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    response.end(html);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const fixture = `http://127.0.0.1:${address.port}/`;
   const evidence = process.env.AGENT_CONSOLE_UI_SCREENSHOT_DIR;
-  let page: Page | undefined;
+  const browser = await launchPage();
   try {
-    writeFileSync(new URL(fixture), await dashboardFixture());
-    page = await launchPage();
-    const browser = page;
     await browser.setEnvironment("UTC", "en-US");
     await browser.addInitScript(`
       window.__TAURI__ = {};
@@ -237,8 +251,9 @@ test("Android Desktop Auto keeps six conversation tiles usable through width cha
         await click(browser, option);
         // Reload only after the selection effects have written both settings.
         await waitFor(browser, `${current} && ${countMatches} && ${persisted}`);
+        const previousDocument = await browser.evaluate<number>("performance.timeOrigin");
         await browser.navigate(fixture);
-        await waitFor(browser, `${current} && ${countMatches}`);
+        await waitFor(browser, `performance.timeOrigin !== ${previousDocument} && ${current} && ${countMatches}`);
         await click(browser, picker);
         assert.equal(await browser.evaluate(`document.querySelector('${option}')?.getAttribute('aria-checked')`), "true");
         await click(browser, picker);
@@ -261,7 +276,6 @@ test("Android Desktop Auto keeps six conversation tiles usable through width cha
       await waitFor(browser, `${autoGrid} && ${autoSelected} && !document.querySelector('.phone-conversation-pane')`);
     });
   } finally {
-    await page?.close();
-    rmSync(temp, { recursive: true, force: true });
+    await browser.close();
   }
 });
