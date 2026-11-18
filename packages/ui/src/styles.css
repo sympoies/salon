@@ -4874,7 +4874,7 @@ textarea {
 }
 
 @media (max-width: 960px) {
-  .session-workspace.desktop:not(.android-desktop-auto) .session-activity-text {
+  .session-workspace.desktop:where(:not(.android-desktop-auto)) .session-activity-text {
     display: none;
   }
   .session-workspace.desktop .session-activity-attention-copy {
