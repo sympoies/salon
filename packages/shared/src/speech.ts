@@ -6,7 +6,14 @@ export interface SpeechProviderSummary {
   readonly synthesis?: SpeechSynthesisCapabilities;
 }
 
+export interface SpeechSynthesisVoice {
+  readonly id: string;
+  readonly label?: string;
+}
+
 export interface SpeechSynthesisCapabilities {
+  readonly voices: readonly SpeechSynthesisVoice[];
+  readonly default_voice: string;
   readonly formats: readonly "pcm_s16le"[];
   readonly sample_rates: readonly number[];
   readonly channels: 1;
