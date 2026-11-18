@@ -50,8 +50,9 @@ export interface CrossOwnerSessionAccessRule {
 }
 
 // Lets `service_id` at `service_generation`, submitted through the relay of
-// `relay_machine`, start root sessions for `owners` on `machines`. Never a
-// session identity: it grants no mailbox, delegation, or browser access.
+// `relay_machine`, start root sessions and discover or message admitted owners'
+// sessions on admitted machines. The service has its own origin identity and
+// receives no session, delegation, or browser authority.
 // `console_role` is the only way a service root gets a role; a request never
 // carries one.
 export interface ConsoleStartServiceConfig {

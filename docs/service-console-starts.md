@@ -91,4 +91,22 @@ sessions this service started, under any generation, that are owned by `owner` o
 `machine` and have a lineage with `parent: null`. Session-scoped parameters are refused on
 this query.
 
+## Peer discovery and message delivery
+
+Send `GET /api/coordination/peers/v1` with the relay bearer and the
+`source_service_id` and `source_service_generation` query parameters. The edge
+derives the caller's machine from the bearer. Discovery returns peers owned by
+the service's admitted principals on machines allowed by both the admission and
+the peer's owner.
+
+The relay accepts the runtime's `agent-session.remote-service-message.v1` and
+`agent-session.remote-service-message.v2` envelopes. The edge checks the same
+admission against the source and recipient and preserves the service origin
+through delivery. The recipient remains a session. The current runtime refuses
+replies to a service origin.
+
+An unknown service, stale generation, or admission on another relay returns
+HTTP 403 with `coordination-unauthorized`. An existing recipient outside the
+admitted owner and machine scope returns HTTP 403 with `principal-forbidden`.
+
 [daemon-spec]: https://github.com/sympoies/nils-cli/blob/main/crates/agent-session/docs/specs/session-coordination-v1.md
