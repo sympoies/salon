@@ -61,8 +61,8 @@ token also serve the provider's `POST /v1/syntheses` endpoint.
 
 Send `POST /api/speech/v1/:provider/syntheses` with `Content-Type: application/json`
 and a speech-authorized owner or paired device credential. Machine access and
-the speech routes' cross-origin checks apply. Synthesis requires a credential
-even when the edge allows anonymous browsing.
+the speech routes' cross-origin checks apply. Synthesis is available on edges
+that require authentication.
 
 ```json
 {"text":"The timer is ready.","format":"pcm_s16le","sample_rate":8000,"channels":1}
@@ -77,7 +77,8 @@ Responses are limited to 30 seconds (480,000 bytes). The edge validates the
 media type, size and sample alignment before returning audio with
 `Cache-Control: no-store`.
 
-`GET /api/speech/providers` includes a `synthesis` object for enabled providers.
+`GET /api/speech/providers` includes a `synthesis` object for enabled providers
+on authenticated edges.
 It exposes `formats: ["pcm_s16le"]`, `sample_rates: [8000]`, `channels: 1`,
 `max_text_length: 1000`, `max_duration_seconds: 30` and `max_bytes: 480000`.
 Providers without that object offer transcription only.

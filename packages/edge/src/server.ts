@@ -24,7 +24,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { createHash, randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
-import type { EdgeConfig, MachineConfig, PrincipalConfig, PrincipalPermission } from "./config.ts";
+import type { EdgeConfig, MachineConfig, PrincipalConfig, PrincipalPermission, SpeechProviderConfig } from "./config.ts";
 import { PRINCIPAL_PERMISSIONS, isRootPrincipal, principalCanAccessMachine, principalCanUseTerminal, selectMachines } from "./config.ts";
 import {
   SESSION_COOKIE,
@@ -139,7 +139,11 @@ import { boardViewForRequest } from "./board/routes.ts";
 import { sessionViewerAccess } from "./crossOwnerSessionAccess.ts";
 import { openBoardService, type BoardServiceOptions } from "./board/service.ts";
 import { normalizeActivityTurnState } from "@agent-console/shared/activity";
-import { listSpeechEngines, MAX_SPEECH_BYTES, MAX_SPEECH_DURATION_SECONDS, readSpeechAudio, readSpeechEngine, SpeechRequestError, transcribeSpeech } from "./speech.ts";
+import {
+  listSpeechEngines, MAX_SPEECH_BYTES, MAX_SPEECH_DURATION_SECONDS, readSpeechAudio, readSpeechEngine,
+  readSpeechSynthesis, SPEECH_SYNTHESIS_CAPABILITIES, SPEECH_SYNTHESIS_CONTENT_TYPE, SpeechRequestError,
+  SpeechSynthesisError, synthesizeSpeech, transcribeSpeech,
+} from "./speech.ts";
 import {
   normalizeSessionRetitleRequest,
   normalizeSessionRetitleV3Request,
@@ -640,6 +644,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   };
 
   const csrfExempt = createCsrfExempt(config, (req) => tokenPrincipal(req) !== undefined);
+  const canAccessSpeechProvider = (provider: SpeechProviderConfig, principal: PrincipalConfig): boolean =>
+    !provider.machine || !config.multiUser || principalCanAccessMachine(principal, provider.machine);
 
   const serializeSessionMutation = <T>(
     key: string,
@@ -1285,12 +1291,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           ok: true,
           data: {
             providers: config.speechProviders
-              .filter((provider) => !provider.machine || !config.multiUser || principalCanAccessMachine(_principal, provider.machine))
+              .filter((provider) => canAccessSpeechProvider(provider, _principal))
               .map((provider) => ({
                 id: provider.id,
                 label: provider.label,
                 max_duration_seconds: MAX_SPEECH_DURATION_SECONDS,
                 max_bytes: MAX_SPEECH_BYTES,
+                ...(provider.synthesis && !config.openAccess ? { synthesis: SPEECH_SYNTHESIS_CAPABILITIES } : {}),
               })),
           },
         });
@@ -1298,7 +1305,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
 
       case "speech-engines": {
         const provider = config.speechProviders.find((candidate) => candidate.id === routeParam(route, "provider"));
-        if (!provider || (config.multiUser && provider.machine && !principalCanAccessMachine(_principal, provider.machine))) {
+        if (!provider || !canAccessSpeechProvider(provider, _principal)) {
           sendJson(res, 404, { ok: false, error: { message: "speech provider not found" } });
           return;
         }
@@ -1316,7 +1323,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       case "speech-transcription": {
         if (!csrfExempt(req)) return forbidCrossOrigin(res);
         const provider = config.speechProviders.find((candidate) => candidate.id === routeParam(route, "provider"));
-        if (!provider || (config.multiUser && provider.machine && !principalCanAccessMachine(_principal, provider.machine))) {
+        if (!provider || !canAccessSpeechProvider(provider, _principal)) {
           sendJson(res, 404, { ok: false, error: { message: "speech provider not found" } });
           return;
         }
@@ -1340,6 +1347,44 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         } catch (error) {
           if (!(error instanceof SpeechRequestError)) throw error;
           if (!res.destroyed) sendJson(res, error.status, { ok: false, error: { message: error.message } });
+        }
+        return;
+      }
+
+      case "speech-synthesis": {
+        if (config.openAccess) {
+          sendJson(res, 401, { ok: false, error: { message: "unauthorized" } });
+          return;
+        }
+        if (!csrfExempt(req)) return forbidCrossOrigin(res);
+        const provider = config.speechProviders.find((candidate) => candidate.id === routeParam(route, "provider"));
+        try {
+          if (!provider || !canAccessSpeechProvider(provider, _principal)) {
+            throw new SpeechSynthesisError("speech-provider-not-found");
+          }
+          if (!provider.synthesis) throw new SpeechSynthesisError("synthesis-not-offered");
+          armRequestDeadline(req, res, 15_000);
+          const input = await readSpeechSynthesis(req);
+          assertRequestAuthorized();
+          armRequestDeadline(req, res, 35_000);
+          const disconnect = new AbortController();
+          res.once("close", () => {
+            if (!res.writableEnded) disconnect.abort();
+          });
+          const audio = await synthesizeSpeech(provider, input, disconnect.signal);
+          if (res.destroyed) return;
+          res.writeHead(200, {
+            "content-type": SPEECH_SYNTHESIS_CONTENT_TYPE,
+            "content-length": audio.length,
+            "cache-control": "no-store",
+          });
+          res.end(audio);
+        } catch (error) {
+          if (!(error instanceof SpeechSynthesisError)) throw error;
+          if (!res.destroyed && !res.writableEnded) {
+            if (error.status === 413 && !req.complete) res.setHeader("connection", "close");
+            sendJson(res, error.status, { ok: false, error: { code: error.code, message: error.message } });
+          }
         }
         return;
       }

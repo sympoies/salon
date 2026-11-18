@@ -70,6 +70,7 @@ export interface SpeechProviderConfig {
   readonly url: string;
   readonly token: string;
   readonly machine?: string;
+  readonly synthesis?: boolean;
 }
 
 export const PRINCIPAL_PERMISSIONS = AGENT_CONSOLE_PERMISSIONS;
@@ -397,6 +398,9 @@ export function parseSpeechProviders(raw: string | undefined, machines: readonly
     if (value.machine !== undefined && (typeof value.machine !== "string" || !machineNames.has(value.machine))) {
       throw new Error(`AGENT_CONSOLE_SPEECH_PROVIDERS[${index}].machine is unknown`);
     }
+    if (value.synthesis !== undefined && typeof value.synthesis !== "boolean") {
+      throw new Error(`AGENT_CONSOLE_SPEECH_PROVIDERS[${index}].synthesis must be a boolean`);
+    }
     ids.add(value.id);
     return {
       id: value.id,
@@ -404,6 +408,7 @@ export function parseSpeechProviders(raw: string | undefined, machines: readonly
       url: url.origin,
       token: value.token,
       ...(value.machine === undefined ? {} : { machine: value.machine }),
+      ...(value.synthesis === true ? { synthesis: true } : {}),
     };
   });
 }
