@@ -3207,6 +3207,8 @@ export function Dashboard({
         <ol
           className={`session-workspace mode-${workspaceSlotCount} slots-${workspaceSlotCount} ${
             viewport.mobile ? "mobile" : "desktop"
+          } ${
+            androidTileGrid && autoLayout && !focusedKey ? "android-desktop-auto" : ""
           } ${focusedKey ? "is-focused" : ""} ${
             slotDrag.slotPointerDragIndex !== null ? "is-slot-pointer-dragging" : ""
           }`}

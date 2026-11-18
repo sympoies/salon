@@ -4860,8 +4860,21 @@ textarea {
   }
 }
 
+/* Two tiles need about 272px each after the workspace padding and grid gap. */
+@media (max-width: 576px) {
+  .session-workspace.desktop.android-desktop-auto {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-rows: minmax(240px, 1fr);
+    overflow-y: auto;
+  }
+  .session-workspace.desktop.android-desktop-auto > .terminal-slot:first-child {
+    grid-row: auto;
+  }
+}
+
 @media (max-width: 960px) {
-  .session-workspace.desktop .session-activity-text {
+  .session-workspace.desktop:not(.android-desktop-auto) .session-activity-text {
     display: none;
   }
   .session-workspace.desktop .session-activity-attention-copy {
