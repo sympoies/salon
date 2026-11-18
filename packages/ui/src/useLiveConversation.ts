@@ -91,6 +91,12 @@ export function useLiveConversation(session: Session, {
     };
   }, [label, openConversation, resetConversation, providerSessionId, session.machine]);
 
+  // A panel can first render out of view. Discover history when it is shown,
+  // including for stopped sessions that never start the live poll.
+  useEffect(() => {
+    if (!paused && !conversation.session) void refreshRef.current();
+  }, [paused, conversation.session]);
+
   // A session that stops while waiting for its first history row is no longer expected to appear
   // soon: look once more so the miss is reported (or the row found) without a focus change.
   useEffect(() => {
