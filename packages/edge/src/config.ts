@@ -8,6 +8,7 @@ import {
   AGENT_CONSOLE_PERMISSIONS,
   type AgentConsolePermission,
 } from "@agent-console/shared/api";
+import type { SpeechSynthesisCapabilities, SpeechSynthesisVoice } from "@agent-console/shared/speech";
 import { parseBoardRetention, type BoardRetention } from "./board/record.ts";
 import { parseHostReader, parseHostReaderWithPath, type HostReader } from "./hostReader.ts";
 
@@ -64,13 +65,15 @@ export interface ConsoleStartServiceConfig {
   readonly console_role?: "coordinator";
 }
 
+export type SpeechSynthesisVoiceConfig = Pick<SpeechSynthesisCapabilities, "voices" | "default_voice">;
+
 export interface SpeechProviderConfig {
   readonly id: string;
   readonly label: string;
   readonly url: string;
   readonly token: string;
   readonly machine?: string;
-  readonly synthesis?: boolean;
+  readonly synthesis?: SpeechSynthesisVoiceConfig;
 }
 
 export const PRINCIPAL_PERMISSIONS = AGENT_CONSOLE_PERMISSIONS;
@@ -360,6 +363,38 @@ export function parseMachines(raw: string | undefined): MachineConfig[] {
   });
 }
 
+const SYNTHESIS_VOICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+function parseSpeechSynthesis(value: unknown, path: string): SpeechSynthesisVoiceConfig {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${path} must be an object`);
+  }
+  const { voices, default_voice } = value as Record<string, unknown>;
+  if (!Array.isArray(voices) || voices.length === 0) {
+    throw new Error(`${path}.voices must be a non-empty array`);
+  }
+  const ids = new Set<string>();
+  const parsedVoices = voices.map((voice: unknown, index): SpeechSynthesisVoice => {
+    const voicePath = `${path}.voices[${index}]`;
+    if (!voice || typeof voice !== "object" || Array.isArray(voice)) {
+      throw new Error(`${voicePath} must be an object`);
+    }
+    const { id, label } = voice as Record<string, unknown>;
+    if (typeof id !== "string" || !SYNTHESIS_VOICE_ID.test(id) || ids.has(id)) {
+      throw new Error(`${voicePath}.id is invalid or duplicate`);
+    }
+    if (label !== undefined && (!isNonEmptyString(label) || label.length > 80)) {
+      throw new Error(`${voicePath}.label must be a non-empty string of at most 80 code units`);
+    }
+    ids.add(id);
+    return { id, ...(label === undefined ? {} : { label }) };
+  });
+  if (typeof default_voice !== "string" || !ids.has(default_voice)) {
+    throw new Error(`${path}.default_voice must match a configured voice ID`);
+  }
+  return { voices: parsedVoices, default_voice };
+}
+
 export function parseSpeechProviders(raw: string | undefined, machines: readonly MachineConfig[]): SpeechProviderConfig[] {
   if (raw === undefined || raw.trim() === "") return [];
   let parsed: unknown;
@@ -398,9 +433,9 @@ export function parseSpeechProviders(raw: string | undefined, machines: readonly
     if (value.machine !== undefined && (typeof value.machine !== "string" || !machineNames.has(value.machine))) {
       throw new Error(`AGENT_CONSOLE_SPEECH_PROVIDERS[${index}].machine is unknown`);
     }
-    if (value.synthesis !== undefined && typeof value.synthesis !== "boolean") {
-      throw new Error(`AGENT_CONSOLE_SPEECH_PROVIDERS[${index}].synthesis must be a boolean`);
-    }
+    const synthesis = value.synthesis === undefined
+      ? undefined
+      : parseSpeechSynthesis(value.synthesis, `AGENT_CONSOLE_SPEECH_PROVIDERS[${index}].synthesis`);
     ids.add(value.id);
     return {
       id: value.id,
@@ -408,7 +443,7 @@ export function parseSpeechProviders(raw: string | undefined, machines: readonly
       url: url.origin,
       token: value.token,
       ...(value.machine === undefined ? {} : { machine: value.machine }),
-      ...(value.synthesis === true ? { synthesis: true } : {}),
+      ...(synthesis === undefined ? {} : { synthesis }),
     };
   });
 }

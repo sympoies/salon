@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import { MIMEType } from "node:util";
 import type { SpeechSynthesisCapabilities } from "@agent-console/shared/speech";
-import type { SpeechProviderConfig } from "./config.ts";
+import type { SpeechProviderConfig, SpeechSynthesisVoiceConfig } from "./config.ts";
 import { authedFetch } from "./http.ts";
 
 export const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
@@ -188,11 +188,12 @@ export const SPEECH_SYNTHESIS_CAPABILITIES = {
   max_text_length: 1000,
   max_duration_seconds: MAX_SYNTHESIS_DURATION_SECONDS,
   max_bytes: MAX_SYNTHESIS_DURATION_SECONDS * SYNTHESIS_SAMPLE_RATE * SYNTHESIS_CHANNELS * SYNTHESIS_BYTES_PER_SAMPLE,
-} satisfies SpeechSynthesisCapabilities;
+} satisfies Omit<SpeechSynthesisCapabilities, keyof SpeechSynthesisVoiceConfig>;
 export const SPEECH_SYNTHESIS_CONTENT_TYPE = `audio/pcm; rate=${SYNTHESIS_SAMPLE_RATE}; channels=${SYNTHESIS_CHANNELS}`;
 
 const SYNTHESIS_ERRORS = {
   "invalid-synthesis-request": [400, "valid synthesis text and JSON are required"],
+  "unsupported-synthesis-voice": [400, "unsupported synthesis voice"],
   "speech-provider-not-found": [404, "speech provider not found"],
   "synthesis-not-offered": [404, "speech synthesis is not offered"],
   "synthesis-input-too-large": [413, "synthesis input exceeds the limit"],
@@ -217,9 +218,13 @@ interface SpeechSynthesisRequest {
   readonly format: typeof SYNTHESIS_FORMAT;
   readonly sample_rate: typeof SYNTHESIS_SAMPLE_RATE;
   readonly channels: typeof SYNTHESIS_CHANNELS;
+  readonly voice: string;
 }
 
-export async function readSpeechSynthesis(req: IncomingMessage): Promise<SpeechSynthesisRequest> {
+export async function readSpeechSynthesis(
+  req: IncomingMessage,
+  { voices, default_voice }: SpeechSynthesisVoiceConfig,
+): Promise<SpeechSynthesisRequest> {
   if (req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
     throw new SpeechSynthesisError("unsupported-synthesis-format");
   }
@@ -244,12 +249,15 @@ export async function readSpeechSynthesis(req: IncomingMessage): Promise<SpeechS
   if (!body || typeof body.text !== "string" || !body.text.trim()) {
     throw new SpeechSynthesisError("invalid-synthesis-request");
   }
-  const { text, format, sample_rate, channels } = body;
+  const { text, format, sample_rate, channels, voice = default_voice } = body;
   if (text.length > SPEECH_SYNTHESIS_CAPABILITIES.max_text_length) throw new SpeechSynthesisError("synthesis-input-too-large");
   if (format !== SYNTHESIS_FORMAT || sample_rate !== SYNTHESIS_SAMPLE_RATE || channels !== SYNTHESIS_CHANNELS) {
     throw new SpeechSynthesisError("unsupported-synthesis-format");
   }
-  return { text, format, sample_rate, channels };
+  if (!voices.some(({ id }) => id === voice)) {
+    throw new SpeechSynthesisError("unsupported-synthesis-voice");
+  }
+  return { text, format, sample_rate, channels, voice };
 }
 
 export async function synthesizeSpeech(

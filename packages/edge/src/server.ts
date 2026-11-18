@@ -1333,7 +1333,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
                 label: provider.label,
                 max_duration_seconds: MAX_SPEECH_DURATION_SECONDS,
                 max_bytes: MAX_SPEECH_BYTES,
-                ...(provider.synthesis && !config.openAccess ? { synthesis: SPEECH_SYNTHESIS_CAPABILITIES } : {}),
+                ...(provider.synthesis && !config.openAccess ? {
+                  synthesis: {
+                    ...SPEECH_SYNTHESIS_CAPABILITIES,
+                    voices: provider.synthesis.voices,
+                    default_voice: provider.synthesis.default_voice,
+                  },
+                } : {}),
               })),
           },
         });
@@ -1400,7 +1406,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           }
           if (!provider.synthesis) throw new SpeechSynthesisError("synthesis-not-offered");
           armRequestDeadline(req, res, 15_000);
-          const input = await readSpeechSynthesis(req);
+          const input = await readSpeechSynthesis(req, provider.synthesis);
           assertRequestAuthorized();
           armRequestDeadline(req, res, 35_000);
           const disconnect = new AbortController();

@@ -9,6 +9,9 @@ import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 const providerToken = "synthesis-provider-fixture";
 const owner = { authorization: "Bearer speech-owner-fixture" };
 const input = { text: "The timer is ready.", format: "pcm_s16le", sample_rate: 8000, channels: 1 };
+const selectedInput = { ...input, voice: "coral" };
+const primarySynthesis = { voices: [{ id: "marin", label: "Marin" }, { id: "coral" }], default_voice: "marin" };
+const secondarySynthesis = { voices: [{ id: "nova" }], default_voice: "nova" };
 const mediaType = "audio/pcm; rate=8000; channels=1";
 const audio = Buffer.from("pcm-fixture!");
 const maxBytes = 480_000;
@@ -52,10 +55,11 @@ before(async () => {
       { id: "owner", token: "speech-owner-fixture", machines: ["speech-machine"], permissions: ["debug"] },
       { id: "other", token: "speech-other-fixture", machines: [], permissions: [] },
     ],
-    speechProviders: parseSpeechProviders(JSON.stringify([
-      { id: "primary", label: "Speech", url: providerBase, token: providerToken, machine: "speech-machine", synthesis: true },
+    speechProviders: [
+      { id: "primary", label: "Speech", url: providerBase, token: providerToken, machine: "speech-machine", synthesis: primarySynthesis },
+      { id: "secondary", label: "Alternate", url: providerBase, token: providerToken, machine: "speech-machine", synthesis: secondarySynthesis },
       { id: "transcription", label: "Transcription", url: providerBase, token: providerToken },
-    ]), machines),
+    ],
   });
   edge = createEdgeServer(config);
   edgeBase = (await listenOnLoopback(edge)).base;
@@ -67,6 +71,7 @@ after(() => {
 });
 
 const path = "/api/speech/v1/primary/syntheses";
+const secondaryPath = "/api/speech/v1/secondary/syntheses";
 function synthesize(body: unknown, auth: Record<string, string> = owner, url = `${edgeBase}${path}`) {
   return fetch(url, { method: "POST", headers: { "content-type": "application/json", ...auth }, body: JSON.stringify(body) });
 }
@@ -78,9 +83,26 @@ async function assertError(response: Response, status: number, code: string) {
   assert.equal(body.error.code, code);
 }
 
+test("speech provider config requires unique voices and an advertised default", () => {
+  const provider = { id: "primary", label: "Speech", url: "https://speech.example.test", token: providerToken };
+  const parse = (synthesis: unknown) => parseSpeechProviders(JSON.stringify([{ ...provider, synthesis }]), []);
+  for (const unsupported of [
+    true,
+    { voices: [], default_voice: "marin" },
+    { ...primarySynthesis, default_voice: "nova" },
+    { ...primarySynthesis, voices: [{ id: "marin" }, { id: "marin" }] },
+    { ...primarySynthesis, voices: [{ id: "bad voice" }, { id: "marin" }] },
+    { ...primarySynthesis, voices: [{ id: "marin", label: "" }] },
+  ]) {
+    assert.throws(() => parse(unsupported), /synthesis/);
+  }
+  const extraFields = { ...primarySynthesis, voices: [{ id: "marin", label: "Marin", token: providerToken }, { id: "coral" }] };
+  assert.deepEqual(parse(extraFields), [{ ...provider, synthesis: primarySynthesis }]);
+});
+
 test("synthesis requires an active paired device or owner credential", async () => {
   const count = calls.length;
-  assert.equal((await synthesize(input, {})).status, 401);
+  assert.equal((await synthesize(selectedInput, {})).status, 401);
   assert.equal(calls.length, count);
 
   async function pair(route: string, body: unknown, status: number, auth = {}) {
@@ -98,11 +120,11 @@ test("synthesis requires an active paired device or owner credential", async () 
   await pair(`/${pairingId}/approve`, { code, challenge }, 200, owner);
   const { id, credential } = await pair("/exchange", { ...proof, principal, verifier, origin: edgeBase, confirmed: true }, 200);
   const device = { authorization: `Bearer ${credential}` };
-  const successful = await synthesize(input, device);
+  const successful = await synthesize(selectedInput, device);
   assert.equal(successful.status, 200);
   assert.deepEqual(Buffer.from(await successful.arrayBuffer()), audio);
   assert.equal((await fetch(`${edgeBase}/api/auth/devices/${id}`, { method: "DELETE", headers: owner })).status, 200);
-  assert.equal((await synthesize(input, device)).status, 401);
+  assert.equal((await synthesize(selectedInput, device)).status, 401);
   assert.equal(calls.length, count + 1);
 });
 
@@ -111,7 +133,7 @@ test("synthesis requires a credential on an open edge", async () => {
   try {
     const { base } = await listenOnLoopback(openEdge);
     const count = calls.length;
-    assert.equal((await synthesize(input, {}, `${base}${path}`)).status, 401);
+    assert.equal((await synthesize(selectedInput, {}, `${base}${path}`)).status, 401);
     assert.equal(calls.length, count);
   } finally {
     openEdge.close();
@@ -125,38 +147,65 @@ test("speech discovery advertises synthesis only for enabled and accessible prov
     return (await response.json()).data.providers;
   };
   const transcription = { id: "transcription", label: "Transcription", max_duration_seconds: 90, max_bytes: 8388608 };
+  const limits = {
+    formats: ["pcm_s16le"], sample_rates: [8000], channels: 1,
+    max_text_length: 1000, max_duration_seconds: 30, max_bytes: maxBytes,
+  };
   assert.deepEqual(await list(owner), [
-    { id: "primary", label: "Speech", max_duration_seconds: 90, max_bytes: 8388608, synthesis: {
-      formats: ["pcm_s16le"], sample_rates: [8000], channels: 1,
-      max_text_length: 1000, max_duration_seconds: 30, max_bytes: maxBytes,
-    } },
+    { id: "primary", label: "Speech", max_duration_seconds: 90, max_bytes: 8388608, synthesis: { ...limits, ...primarySynthesis } },
+    { id: "secondary", label: "Alternate", max_duration_seconds: 90, max_bytes: 8388608, synthesis: { ...limits, ...secondarySynthesis } },
     transcription,
   ]);
   const other = { authorization: "Bearer speech-other-fixture" };
   assert.deepEqual(await list(other), [transcription]);
-  await assertError(await synthesize(input, other), 404, "speech-provider-not-found");
+  await assertError(await synthesize(selectedInput, other), 404, "speech-provider-not-found");
   await assertError(await synthesize(input, owner, `${edgeBase}/api/speech/v1/transcription/syntheses`), 404, "synthesis-not-offered");
+});
+
+test("synthesis forwards an explicit voice or the configured default for its provider", async () => {
+  const count = calls.length;
+  for (const [body, url, voice] of [
+    [selectedInput, `${edgeBase}${path}`, "coral"],
+    [input, `${edgeBase}${path}`, "marin"],
+    [input, `${edgeBase}${secondaryPath}`, "nova"],
+  ] as const) {
+    const response = await synthesize(body, owner, url);
+    assert.equal(response.status, 200);
+    await response.arrayBuffer();
+    assert.deepEqual(JSON.parse(calls.at(-1)!.body), { ...input, voice });
+  }
+  assert.equal(calls.length, count + 3);
+});
+
+test("synthesis refuses any supplied voice outside the selected provider's advertised IDs", async () => {
+  const count = calls.length;
+  for (const voice of ["unknown", "nova", "CORAL", "", null, 7]) {
+    await assertError(await synthesize({ ...input, voice }), 400, "unsupported-synthesis-voice");
+  }
+  assert.equal(calls.length, count);
 });
 
 test("synthesis negotiates mono 8 kHz PCM16 and returns only audio", async () => {
   const count = calls.length;
   for (const unsupported of [{ format: "wav" }, { sample_rate: 16000 }, { channels: 2 }]) {
-    await assertError(await synthesize({ ...input, ...unsupported }), 415, "unsupported-synthesis-format");
+    await assertError(await synthesize({ ...selectedInput, ...unsupported }), 415, "unsupported-synthesis-format");
   }
-  await assertError(await synthesize(input, { ...owner, "content-type": "text/plain" }), 415, "unsupported-synthesis-format");
-  await assertError(await synthesize({ ...input, text: "  " }), 400, "invalid-synthesis-request");
+  await assertError(await synthesize(selectedInput, { ...owner, "content-type": "text/plain" }), 415, "unsupported-synthesis-format");
+  await assertError(await synthesize({ ...selectedInput, text: "  " }), 400, "invalid-synthesis-request");
   const response = await synthesize(input);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-type"), mediaType);
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), audio);
-  assert.deepEqual(calls.slice(count), [{ path: "/v1/syntheses", authorization: `Bearer ${providerToken}`, body: JSON.stringify(input) }]);
+  assert.equal(calls.length, count + 1);
+  assert.equal(calls.at(-1)?.path, "/v1/syntheses");
+  assert.equal(calls.at(-1)?.authorization, `Bearer ${providerToken}`);
 });
 
 test("synthesis bounds text, both request body framing modes, and provider duration", async () => {
   const count = calls.length;
-  await assertError(await synthesize({ ...input, text: "a".repeat(1001) }), 413, "synthesis-input-too-large");
-  await assertError(await synthesize({ ...input, text: "a".repeat(8193) }), 413, "synthesis-input-too-large");
+  await assertError(await synthesize({ ...selectedInput, text: "a".repeat(1001) }), 413, "synthesis-input-too-large");
+  await assertError(await synthesize({ ...selectedInput, text: "a".repeat(8193) }), 413, "synthesis-input-too-large");
   const chunked = await new Promise<number | undefined>((resolve, reject) => {
     const req = httpRequest(`${edgeBase}${path}`, {
       method: "POST", headers: { ...owner, "content-type": "application/json" },
@@ -193,7 +242,13 @@ test("synthesis maps provider errors without leaking credentials or media into e
   const count = calls.length;
   const observed: string[] = [];
   try {
-    const success = await synthesize(input);
+    const discovery = await fetch(`${edgeBase}/api/speech/providers`, { headers: owner });
+    assert.equal(discovery.status, 200);
+    observed.push(await discovery.text(), JSON.stringify([...discovery.headers]));
+    const refused = await synthesize({ ...input, voice: providerToken });
+    observed.push(await refused.clone().text(), JSON.stringify([...refused.headers]));
+    await assertError(refused, 400, "unsupported-synthesis-voice");
+    const success = await synthesize(selectedInput);
     assert.equal(success.status, 200);
     observed.push(JSON.stringify([...success.headers]));
     await success.arrayBuffer();
@@ -204,7 +259,7 @@ test("synthesis maps provider errors without leaking credentials or media into e
       [503, 503, "speech-provider-unavailable"],
     ] as const) {
       providerStatus = upstreamStatus;
-      const response = await synthesize(input);
+      const response = await synthesize(selectedInput);
       observed.push(await response.clone().text(), JSON.stringify([...response.headers]));
       await assertError(response, status, code);
     }
