@@ -2,25 +2,24 @@ import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
 import { after, before, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { build } from "vite";
-import { createEdgeServer } from "../../edge/src/server.ts";
-import { listenOnLoopback, loginCookie, makeEdgeConfig } from "../../edge/test/support.ts";
-import { launchPage, type Page } from "../../../scripts/readme-previews/chrome.ts";
-import { consoleViteConfig } from "../vite.shared.ts";
-import { hasHeadlessChrome } from "./support/browserLayout.ts";
+import { createEdgeServer } from "../../packages/edge/src/server.ts";
+import { listenOnLoopback, loginCookie, makeEdgeConfig } from "../../packages/edge/test/support.ts";
+import { launchPage, type Page } from "../readme-previews/chrome.ts";
+import { consoleViteConfig } from "../../packages/ui/vite.shared.ts";
 
-const chromeAvailable = hasHeadlessChrome();
+const uiRequire = createRequire(new URL("../../packages/ui/package.json", import.meta.url));
+const { build } = await import(uiRequire.resolve("vite"));
 let uiDir: string;
 before(async () => {
-  if (!chromeAvailable) return;
   uiDir = mkdtempSync(join(tmpdir(), "salon-idle-link-"));
-  await build({ ...consoleViteConfig({ root: fileURLToPath(new URL("..", import.meta.url)), outDir: uiDir }),
+  await build({ ...consoleViteConfig({ root: fileURLToPath(new URL("../../packages/ui/", import.meta.url)), outDir: uiDir }),
     configFile: false, logLevel: "error", resolve: { conditions: ["source"] } });
 });
 after(() => { if (uiDir) rmSync(uiDir, { recursive: true, force: true }); });
@@ -143,7 +142,7 @@ async function until(page: Page, expression: string, message: string, ms = 5_000
   assert.fail(message);
 }
 
-test("a signed-in idle focused client stays within its downstream byte budget", { skip: !chromeAvailable, timeout: 95_000 }, async t => {
+test("a signed-in idle focused client stays within its downstream byte budget", { timeout: 95_000 }, async t => {
   const fixture = await startFixture(6, true);
   const page = await launchPage();
   try {
@@ -172,7 +171,7 @@ test("a signed-in idle focused client stays within its downstream byte budget", 
   }
 });
 
-test("the signed-in session list loads and receives live updates on a throttled link", { skip: !chromeAvailable, timeout: 65_000 }, async t => {
+test("the signed-in session list loads and receives live updates on a throttled link", { timeout: 65_000 }, async t => {
   const fixture = await startFixture(140);
   const page = await launchPage();
   try {
@@ -193,7 +192,7 @@ test("the signed-in session list loads and receives live updates on a throttled 
       card.querySelector(".mobile-session-card-open-action")?.getAttribute("aria-label") === ${JSON.stringify(label)}
       && card.querySelector(".activity-working"))`,
       "the live activity update did not arrive on a slow link", 14_000);
-    t.diagnostic(`Throttled browser loaded the list and applied a live activity update`);
+    t.diagnostic("Throttled browser loaded the list and applied a live activity update");
   } finally {
     await page.close();
     await fixture.close();
