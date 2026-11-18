@@ -13,7 +13,7 @@ Main credentials, managed tester credentials and no-auth mode cannot use the
 inbox. Expiry, revocation and main credential changes follow the
 [device sign-in protocol](device-sign-in.md).
 
-A successful response is HTTP 200:
+A successful response uses HTTP 200.
 
 ```json
 {
@@ -64,7 +64,7 @@ ingress returns HTTP 429 until space becomes available.
 ## Acknowledge a message
 
 Send `POST /api/prompter/v1/messages/<id>/ack` with the same device authentication
-and an `application/json` body:
+and the following `application/json` body.
 
 ```json
 {
@@ -92,7 +92,7 @@ request body limit is 1 KiB.
 ## Submit from an owned session
 
 The producer's daemon sends `POST /api/coordination/prompter/v1/messages` with
-its configured relay bearer and an `application/json` body:
+its configured relay bearer and the following `application/json` body.
 
 ```json
 {

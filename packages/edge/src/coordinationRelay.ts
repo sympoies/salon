@@ -7,6 +7,8 @@ import { OUTSIDE_COORDINATOR_TREE, type AccessStore, type SessionStartMark } fro
 import { bearerToken, timingSafeEqualStr } from "./auth.ts";
 import type { ConsoleStartServiceConfig, CrossOwnerMessagingRule, EdgeConfig, MachineConfig, MessagingSelector, PrincipalConfig } from "./config.ts";
 import { readJsonBody, sendJson } from "./http.ts";
+import { handleInboxRequest, readInboxJson } from "./companionInbox.ts";
+import { InboxError, type CompanionInboxStore } from "./companionInboxStore.ts";
 import { BoardQueryError, type BoardView } from "./board/query.ts";
 import { boardViewForRequest } from "./board/routes.ts";
 import type { BoardService } from "./board/service.ts";
@@ -573,11 +575,61 @@ export function assertResumeOwnership(store: AccessStore, principal: PrincipalCo
   }
 }
 
+function relayForRequest(config: EdgeConfig, req: IncomingMessage) {
+  const token = bearerToken(req.headers.authorization);
+  return token ? config.coordinationRelays?.find(relay => timingSafeEqualStr(relay.token, token)) : undefined;
+}
+
+const INBOX_SUBMISSION_FIELDS = new Set(["source_session_id", "source_incarnation", "body", "color", "urgent"]);
+
+export function handleCompanionIngress(config: EdgeConfig, access: AccessStore | null, inbox: CompanionInboxStore,
+  req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  return handleInboxRequest(res, async () => {
+    const relay = relayForRequest(config, req);
+    if (!relay) throw new InboxError("unauthorized");
+    if (!access || !config.multiUser || config.openAccess) throw new InboxError("source-unavailable");
+    if (req.method !== "POST") throw new InboxError("method-not-allowed");
+    if (url.search) throw new InboxError("invalid-request");
+    const machine = config.machines.find(candidate => candidate.name === relay.machine);
+    if (!machine || machine.active === false) throw new InboxError("source-forbidden");
+    const input = await readInboxJson(req, res, 32 * 1024);
+    const from = identity({ machine: machine.name, session_id: input.source_session_id,
+      session_incarnation: input.source_incarnation });
+    const { body, color, urgent } = input;
+    if (!from || Object.keys(input).some(key => !INBOX_SUBMISSION_FIELDS.has(key)) || typeof body !== "string"
+      || (color !== undefined && (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)))
+      || (urgent !== undefined && typeof urgent !== "boolean")) throw new InboxError("invalid-request");
+    if (Buffer.byteLength(body) > 4096) throw new InboxError("body-too-large");
+    if (!body.trim() || /\p{Cs}/u.test(body)) throw new InboxError("invalid-request");
+
+    // An exact existing grant is required. Inbox submission never claims or
+    // advances ownership, even for a coordinator or an admitted service.
+    const grantedOwner = (expectedOwner?: string) => {
+      const grant = access.sessionGrant(from.machine, from.session_id);
+      if (!grant || (expectedOwner !== undefined && grant.principalId !== expectedOwner)
+        || !config.principals.some(principal => principal.id === grant.principalId && !principal.managedCredential
+          && principal.machines.includes(from.machine))) throw new InboxError("source-forbidden");
+      if (grant.incarnation !== from.session_incarnation) throw new InboxError("session-incarnation-conflict");
+      return grant.principalId;
+    };
+    const owner = grantedOwner();
+    const state = await snapshot(machine).catch(() => { throw new InboxError("source-unavailable"); });
+    const session = state.sessions.find(candidate => candidate.id === from.session_id);
+    if (!session) throw new InboxError("source-forbidden");
+    if (session.session_incarnation !== from.session_incarnation) throw new InboxError("session-incarnation-conflict");
+    if (session.status !== "running" || !supports(state, session)) throw new InboxError("source-forbidden");
+    if (res.writableEnded || res.destroyed) return;
+    const data = inbox.enqueue(owner, { body, color, urgent,
+      target: { machine: from.machine, session_id: from.session_id, incarnation: from.session_incarnation } },
+    () => { grantedOwner(owner); });
+    sendJson(res, 201, { ok: true, data });
+  });
+}
+
 export function isCoordinationRoute(path: string): boolean { return path.startsWith("/api/coordination/"); }
 export async function handleCoordinationRelay(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse, url: URL, board: BoardService | null = null, createSession: OwnedSessionCreator | null = null, disabledMachines: (principal: PrincipalConfig) => ReadonlySet<string> = () => new Set(), decorateBoard: (principal: PrincipalConfig, view: import("./board/query.ts").BoardView) => import("./board/query.ts").BoardView = (_principal, view) => view): Promise<void> {
   try {
-    const token = bearerToken(req.headers.authorization);
-    const relay = token ? config.coordinationRelays?.find(r => timingSafeEqualStr(r.token, token)) : undefined;
+    const relay = relayForRequest(config, req);
     if (!relay) return fail(401, "unauthorized", "daemon relay authentication required");
     if (!store || !config.multiUser) return fail(503, "federation-disabled", "remote messaging is disabled");
     const source = config.machines.find(m => m.name === relay.machine);

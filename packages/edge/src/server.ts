@@ -132,7 +132,9 @@ import {
   publicDispatchedBy,
   type SessionStartMark,
 } from "./accessStore.ts";
-import { handleCoordinationRelay, isCoordinationRoute, assertResumeOwnership, resumeFailure, resumeRefusal } from "./coordinationRelay.ts";
+import { handleCompanionIngress, handleCoordinationRelay, isCoordinationRoute, assertResumeOwnership, resumeFailure, resumeRefusal } from "./coordinationRelay.ts";
+import { COMPANION_INGRESS_PATH, handleDeviceInbox, handleInboxRequest, isDeviceInboxRoute } from "./companionInbox.ts";
+import { CompanionInboxStore } from "./companionInboxStore.ts";
 import { BoardQueryError } from "./board/query.ts";
 import { BOARD_RECORD_SCHEMA, BOARD_SNAPSHOT_SCHEMA } from "./board/record.ts";
 import { boardViewForRequest } from "./board/routes.ts";
@@ -326,6 +328,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     const principal = config.multiUser ? principalById(id) : id === "legacy" ? legacyPrincipal : undefined;
     return principal && !principal.managedCredential ? principal.token : undefined;
   }, (hash, owner) => store.activeReference(hash, owner), options.authNow);
+  const companionInbox = new CompanionInboxStore(config.accessDbPath ?? ":memory:", options.authNow);
   // Preserve the authenticating credential across awaited body parsing and upstream writes.
   const requestAuthorization = new AsyncLocalStorage<() => boolean>();
   const assertRequestAuthorized = (): void => {
@@ -706,7 +709,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   server.once("close", () => {
     outboxDispatcher?.stop(); outboxStore?.close();
     if (credentialRevocationTimer) clearInterval(credentialRevocationTimer);
-    store.close(); testCredentials?.close(); deviceCredentials.close();
+    store.close(); testCredentials?.close(); deviceCredentials.close(); companionInbox.close();
   });
   if (accessStore) server.once("close", () => accessStore.close());
   if (machinePreferences) server.once("close", () => machinePreferences.close());
@@ -769,6 +772,27 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
 
     if (method === "GET" && path === "/healthz") {
       sendJson(res, 200, { ok: true, service: "agent-console-edge" });
+      return;
+    }
+
+    if (path === COMPANION_INGRESS_PATH) {
+      await handleCompanionIngress(config, accessStore, companionInbox, req, res, url);
+      return;
+    }
+    if (isDeviceInboxRoute(path)) {
+      await handleInboxRequest(res, async () => {
+        const hasExplicitHeaders = req.headers.authorization !== undefined
+          || req.headers["sec-websocket-protocol"] !== undefined;
+        const principal = hasExplicitHeaders && !config.openAccess
+          ? principalForToken(bearerToken(req.headers.authorization)) : principalForRequest(req);
+        const device = principal && devicePrincipals.get(principal);
+        await handleDeviceInbox(req, res, url, companionInbox, {
+          authenticated: principal !== undefined,
+          owner: device?.principal,
+          live: () => principal !== undefined && credentialStillActive(principal),
+          csrfExempt: () => csrfExempt(req),
+        });
+      });
       return;
     }
 
