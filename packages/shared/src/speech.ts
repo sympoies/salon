@@ -3,6 +3,16 @@ export interface SpeechProviderSummary {
   readonly label: string;
   readonly max_duration_seconds: number;
   readonly max_bytes: number;
+  readonly synthesis?: SpeechSynthesisCapabilities;
+}
+
+export interface SpeechSynthesisCapabilities {
+  readonly formats: readonly "pcm_s16le"[];
+  readonly sample_rates: readonly number[];
+  readonly channels: 1;
+  readonly max_text_length: number;
+  readonly max_duration_seconds: number;
+  readonly max_bytes: number;
 }
 
 export interface SpeechTranscription {

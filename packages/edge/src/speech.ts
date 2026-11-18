@@ -1,5 +1,8 @@
 import type { IncomingMessage } from "node:http";
+import { MIMEType } from "node:util";
+import type { SpeechSynthesisCapabilities } from "@agent-console/shared/speech";
 import type { SpeechProviderConfig } from "./config.ts";
+import { authedFetch } from "./http.ts";
 
 export const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 export const MAX_SPEECH_DURATION_SECONDS = 90;
@@ -48,22 +51,30 @@ export function readSpeechEngine(req: IncomingMessage): string | undefined {
   return raw;
 }
 
-async function readBoundedJson(response: Response): Promise<unknown> {
+async function readBoundedBody(response: Response, limit: number): Promise<Buffer> {
   const reader = response.body?.getReader();
   if (!reader) throw new Error("no body");
   const chunks: Uint8Array[] = [];
   let size = 0;
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > MAX_RESPONSE_BYTES) {
-      await reader.cancel();
-      throw new Error("oversized");
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        await reader.cancel();
+        throw new Error("oversized");
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+    return Buffer.concat(chunks, size);
+  } finally {
+    reader.releaseLock();
   }
-  return JSON.parse(Buffer.concat(chunks, size).toString("utf8"));
+}
+
+async function readBoundedJson(response: Response): Promise<unknown> {
+  return JSON.parse((await readBoundedBody(response, MAX_RESPONSE_BYTES)).toString("utf8"));
 }
 
 export interface SpeechEngineList {
@@ -161,5 +172,124 @@ export async function transcribeSpeech(
     };
   } catch {
     throw new SpeechRequestError(502, "speech service returned an invalid response");
+  }
+}
+
+const SYNTHESIS_FORMAT = "pcm_s16le";
+const SYNTHESIS_SAMPLE_RATE = 8000;
+const SYNTHESIS_CHANNELS = 1;
+const SYNTHESIS_BYTES_PER_SAMPLE = 2;
+const MAX_SYNTHESIS_DURATION_SECONDS = 30;
+const MAX_SYNTHESIS_REQUEST_BYTES = 8192;
+export const SPEECH_SYNTHESIS_CAPABILITIES = {
+  formats: [SYNTHESIS_FORMAT],
+  sample_rates: [SYNTHESIS_SAMPLE_RATE],
+  channels: SYNTHESIS_CHANNELS,
+  max_text_length: 1000,
+  max_duration_seconds: MAX_SYNTHESIS_DURATION_SECONDS,
+  max_bytes: MAX_SYNTHESIS_DURATION_SECONDS * SYNTHESIS_SAMPLE_RATE * SYNTHESIS_CHANNELS * SYNTHESIS_BYTES_PER_SAMPLE,
+} satisfies SpeechSynthesisCapabilities;
+export const SPEECH_SYNTHESIS_CONTENT_TYPE = `audio/pcm; rate=${SYNTHESIS_SAMPLE_RATE}; channels=${SYNTHESIS_CHANNELS}`;
+
+const SYNTHESIS_ERRORS = {
+  "invalid-synthesis-request": [400, "valid synthesis text and JSON are required"],
+  "speech-provider-not-found": [404, "speech provider not found"],
+  "synthesis-not-offered": [404, "speech synthesis is not offered"],
+  "synthesis-input-too-large": [413, "synthesis input exceeds the limit"],
+  "unsupported-synthesis-format": [415, "unsupported synthesis format"],
+  "speech-provider-busy": [429, "speech service is busy"],
+  "speech-provider-rejected": [502, "speech service rejected synthesis"],
+  "invalid-provider-audio": [502, "speech service returned invalid audio"],
+  "speech-provider-unavailable": [503, "speech service unavailable"],
+} as const;
+
+export class SpeechSynthesisError extends SpeechRequestError {
+  readonly code: keyof typeof SYNTHESIS_ERRORS;
+  constructor(code: keyof typeof SYNTHESIS_ERRORS) {
+    const [status, message] = SYNTHESIS_ERRORS[code];
+    super(status, message);
+    this.code = code;
+  }
+}
+
+interface SpeechSynthesisRequest {
+  readonly text: string;
+  readonly format: typeof SYNTHESIS_FORMAT;
+  readonly sample_rate: typeof SYNTHESIS_SAMPLE_RATE;
+  readonly channels: typeof SYNTHESIS_CHANNELS;
+}
+
+export async function readSpeechSynthesis(req: IncomingMessage): Promise<SpeechSynthesisRequest> {
+  if (req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
+    throw new SpeechSynthesisError("unsupported-synthesis-format");
+  }
+  if (Number(req.headers["content-length"]) > MAX_SYNTHESIS_REQUEST_BYTES) {
+    throw new SpeechSynthesisError("synthesis-input-too-large");
+  }
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let body: Partial<SpeechSynthesisRequest> | null;
+  try {
+    // Preserve the socket so an oversized chunked request receives a 413.
+    for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+      size += chunk.length;
+      if (size > MAX_SYNTHESIS_REQUEST_BYTES) throw new SpeechSynthesisError("synthesis-input-too-large");
+      chunks.push(chunk);
+    }
+    body = JSON.parse(Buffer.concat(chunks, size).toString("utf8"));
+  } catch (error) {
+    if (error instanceof SpeechSynthesisError) throw error;
+    throw new SpeechSynthesisError("invalid-synthesis-request");
+  }
+  if (!body || typeof body.text !== "string" || !body.text.trim()) {
+    throw new SpeechSynthesisError("invalid-synthesis-request");
+  }
+  const { text, format, sample_rate, channels } = body;
+  if (text.length > SPEECH_SYNTHESIS_CAPABILITIES.max_text_length) throw new SpeechSynthesisError("synthesis-input-too-large");
+  if (format !== SYNTHESIS_FORMAT || sample_rate !== SYNTHESIS_SAMPLE_RATE || channels !== SYNTHESIS_CHANNELS) {
+    throw new SpeechSynthesisError("unsupported-synthesis-format");
+  }
+  return { text, format, sample_rate, channels };
+}
+
+export async function synthesizeSpeech(
+  provider: SpeechProviderConfig,
+  input: SpeechSynthesisRequest,
+  signal: AbortSignal,
+): Promise<Buffer> {
+  try {
+    return await authedFetch(`${provider.url}/v1/syntheses`, async (response) => {
+      try {
+        if (response.status === 429) throw new SpeechSynthesisError("speech-provider-busy");
+        if (response.status === 503) throw new SpeechSynthesisError("speech-provider-unavailable");
+        if (response.status !== 200) throw new SpeechSynthesisError("speech-provider-rejected");
+        const type = new MIMEType(response.headers.get("content-type") ?? "");
+        const maxBytes = SPEECH_SYNTHESIS_CAPABILITIES.max_bytes;
+        if (type.essence !== "audio/pcm" || type.params.get("rate") !== String(input.sample_rate)
+          || type.params.get("channels") !== String(input.channels) || Number(response.headers.get("content-length")) > maxBytes) {
+          throw new SpeechSynthesisError("invalid-provider-audio");
+        }
+        const audio = await readBoundedBody(response, maxBytes);
+        if (!audio.length || audio.length % SYNTHESIS_BYTES_PER_SAMPLE !== 0) {
+          throw new SpeechSynthesisError("invalid-provider-audio");
+        }
+        return audio;
+      } catch (error) {
+        await response.body?.cancel().catch(() => {});
+        if (error instanceof SpeechSynthesisError || (error instanceof Error && error.name === "AbortError")) throw error;
+        throw new SpeechSynthesisError("invalid-provider-audio");
+      }
+    }, {
+      token: provider.token,
+      method: "POST",
+      contentType: "application/json",
+      body: JSON.stringify(input),
+      timeoutMs: 30_000,
+      redirect: "manual",
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof SpeechSynthesisError) throw error;
+    throw new SpeechSynthesisError("speech-provider-unavailable");
   }
 }
