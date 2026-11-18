@@ -20,6 +20,7 @@ const API_ROUTES = [
   { id: "speech-providers", pattern: "/api/speech/providers", methods: ["GET"], params: [] },
   { id: "speech-engines", pattern: "/api/speech/:provider/engines", methods: ["GET"], params: ["provider"] },
   { id: "speech-transcription", pattern: "/api/speech/:provider/transcriptions", methods: ["POST"], params: ["provider"] },
+  { id: "speech-synthesis", pattern: "/api/speech/v1/:provider/syntheses", methods: ["POST"], params: ["provider"] },
   { id: "title-summary", pattern: "/api/title-summary", methods: ["POST"], params: [] },
   {
     id: "retitle-readiness",
