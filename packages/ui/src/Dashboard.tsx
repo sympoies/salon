@@ -13,6 +13,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -206,6 +207,11 @@ import {
 } from "./activityStream.ts";
 
 const POLL_MS = 4000;
+const MAX_SESSION_POLL_BACKOFF_MS = 30_000;
+const SLOW_SESSION_READ_MS = 2_000;
+const SLOW_SESSION_REFRESH_MS = 8_000;
+const SLOW_SESSION_OBSERVATION_MS = 60_000;
+const SESSION_CHANGE_COALESCE_MS = 250;
 // Covers the edge's 15 s probe-breaker cooldown plus a few polls.
 const ALL = "__all__";
 // Sentinel option value for "create a new session" in a slot's session picker.
@@ -277,6 +283,15 @@ function readSlots(): SlotKey[] {
   } catch {
     return [];
   }
+}
+
+function subscribeDocumentVisibility(changed: () => void): () => void {
+  document.addEventListener("visibilitychange", changed);
+  return () => document.removeEventListener("visibilitychange", changed);
+}
+
+function documentIsVisible(): boolean {
+  return typeof document === "undefined" || document.visibilityState !== "hidden";
 }
 
 function currentViewport(): Viewport {
@@ -831,6 +846,8 @@ export function Dashboard({
   const lastFocusedKeyRef = useRef<string | null>(null);
   const enabledMachinesRef = useRef<readonly string[]>(pollingMachines);
   const enabledMachinesGenerationRef = useRef(0);
+  const sessionPollPace = useRef({ failures: 0, delayMs: POLL_MS, nextChangeAt: 0, slowUntil: 0 });
+  const sessionChangeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const immediateRefreshRef = useRef<{ key: string; promise: Promise<void> } | null>(null);
   const sessionsRef = useRef(sessions);
   const slotsRef = useRef(slots);
@@ -1526,9 +1543,25 @@ export function Dashboard({
       !generation?.signal.aborted;
     const targetMachines = generation?.machines ?? enabledMachinesRef.current;
     const requestSequence = ++listRequestSequenceRef.current;
+    const startedAt = performance.now();
+    const recordPoll = (ok: boolean) => {
+      if (mode === "fresh") return;
+      const completedAt = performance.now();
+      const failures = ok ? 0 : sessionPollPace.current.failures + 1;
+      const slowUntil = ok && completedAt - startedAt >= SLOW_SESSION_READ_MS
+        ? completedAt + SLOW_SESSION_OBSERVATION_MS : sessionPollPace.current.slowUntil;
+      const slow = completedAt < slowUntil;
+      const delayMs = failures
+        ? Math.min(POLL_MS * 2 ** failures, MAX_SESSION_POLL_BACKOFF_MS)
+        : slow ? SLOW_SESSION_REFRESH_MS : POLL_MS;
+      sessionPollPace.current = {
+        failures, delayMs, slowUntil, nextChangeAt: completedAt + (failures || slow ? delayMs : SESSION_CHANGE_COALESCE_MS),
+      };
+    };
     try {
       const res = await listSessions(targetMachines, generation?.signal ?? tick?.signal, mode);
       if (!isCurrent()) return;
+      recordPoll(res.ok);
       setUnsubmittedCreatePrompts((current) => reconcileUnknownCreateRecoveries(current, requestSequence, res.machines));
       if (res.ok) {
         const captureStart = loadPerformanceCapture()?.started_at;
@@ -1541,6 +1574,7 @@ export function Dashboard({
     } catch (err) {
       if (!isCurrent()) return;
       if (err instanceof DOMException && err.name === "AbortError") return;
+      recordPoll(false);
       const applied = applyLiveSessionList(
         unavailableSessionList(targetMachines, err instanceof Error ? err.message : undefined, machineMetadataRef.current),
       );
@@ -1571,6 +1605,7 @@ export function Dashboard({
     const controller = new AbortController();
     enabledMachinesGenerationRef.current += 1;
     enabledMachinesRef.current = pollingMachines;
+    sessionPollPace.current = { failures: 0, delayMs: POLL_MS, nextChangeAt: 0, slowUntil: 0 };
     invalidateCounts();
     setMachineFilter((f) => (f === ALL || enabledMachines.includes(f) ? f : ALL));
     const pending = {
@@ -1581,7 +1616,11 @@ export function Dashboard({
     void pending.promise.finally(() => {
       if (immediateRefreshRef.current === pending) immediateRefreshRef.current = null;
     });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      clearTimeout(sessionChangeTimer.current);
+      sessionChangeTimer.current = undefined;
+    };
   }, [pollingMachines, refresh, invalidateCounts]);
 
   const pollRefresh = useCallback(async (tick: AsyncPollTick) => {
@@ -1592,10 +1631,26 @@ export function Dashboard({
     }
     await refresh(tick);
   }, [refresh]);
-  const sessionsResourceHealthy = useResourceEvents({ resource: "sessions", machines: pollingMachines }, () => {
-    void refreshRef.current?.(undefined, undefined, "poll");
-  });
-  useAsyncPoll(pollRefresh, sessionsResourceHealthy ? RESOURCE_RECONCILE_MS : POLL_MS);
+  const refreshSessionChanges = useCallback(() => {
+    if (sessionChangeTimer.current !== undefined) return;
+    // Coalesce invalidations while waiting for the next allowed read. The
+    // callback fetches the latest list, so it need not replay each event.
+    const refreshLatest = () => {
+      const remaining = sessionPollPace.current.nextChangeAt - performance.now();
+      if (remaining > 0) {
+        sessionChangeTimer.current = setTimeout(refreshLatest, remaining);
+        return;
+      }
+      sessionChangeTimer.current = undefined;
+      void refreshRef.current?.(undefined, undefined, "poll");
+    };
+    sessionChangeTimer.current = setTimeout(refreshLatest, SESSION_CHANGE_COALESCE_MS);
+  }, []);
+  const sessionsResourceHealthy = useResourceEvents({ resource: "sessions", machines: pollingMachines }, refreshSessionChanges);
+  const sessionPollDelay = useCallback(() => sessionsResourceHealthy
+    ? RESOURCE_RECONCILE_MS
+    : sessionPollPace.current.delayMs, [sessionsResourceHealthy]);
+  useAsyncPoll(pollRefresh, sessionPollDelay);
 
   useEffect(() => {
     let offlineObserved = navigator.onLine === false;
@@ -2806,6 +2861,8 @@ export function Dashboard({
       : null;
   }, [focusedKey, overviewPage.sessionKeys, promptTargetKey]);
   const terminalDisplay = resolveDashboardTerminalDisplay({ focusedKey });
+  const visibleDocument = useSyncExternalStore(subscribeDocumentVisibility, documentIsVisible, documentIsVisible);
+  const paneContentVisible = visibleDocument && active && !showHistory && !showCreate;
   const hiddenFocusedSlot = focusedKey && !focusedGridSlots.includes(focusedKey) ? focusedKey : null;
   const overviewDesktopSlots: SlotKey[] = [
     ...overviewPage.sessionKeys,
@@ -3205,7 +3262,8 @@ export function Dashboard({
                   machineColors,
                   focused,
                   sessionListDisplay: tileListDisplay,
-                  conversationActive: active && conversationKey === null,
+                  conversationActive: conversationKey === null,
+                  contentVisible: paneContentVisible && (!focusedKey || focused) && (!conversationKey || viewport.width >= 1100),
                   phoneConversation: Boolean(focused && viewport.mobile && phoneConversationMode && s
                     && historyMachineNames.has(s.machine)),
                   conversationReplyDrafts: conversationReplyDrafts.current,
@@ -3360,6 +3418,7 @@ export function Dashboard({
         <LiveConversationPanel
           key={conversationKey}
           session={conversationSession}
+          active={paneContentVisible}
           docked={viewport.width >= 1100}
           showComposer={viewport.mobile}
           onTerminal={viewport.mobile ? () => openPhoneTerminal(conversationSession) : undefined}

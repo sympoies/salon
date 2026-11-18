@@ -4,7 +4,6 @@ import { findHistoryEntry, type HistoryEntryResolution } from "./historyResumeBy
 import { useHistoryConversation } from "./HistoryConversation.tsx";
 import { createAsyncPoller } from "./useAsyncPoll.ts";
 import { useResourceEvents } from "./useResourceEvents.ts";
-import { RESOURCE_RECONCILE_MS } from "./resourceEvents.ts";
 import { resourceKey } from "@agent-console/shared/resources";
 import type { Session } from "./types.ts";
 
@@ -37,6 +36,8 @@ export function useLiveConversation(session: Session, {
   const latestRef = useRef(conversation.refreshLatest);
   latestRef.current = conversation.refreshLatest;
   const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   useEffect(() => {
     resetConversation();
@@ -51,7 +52,7 @@ export function useLiveConversation(session: Session, {
     // The first transcript may appear after this view opens. Reuse ordinary
     // refresh triggers for discovery until bound, then only refresh messages.
     const refresh = async () => {
-      if (cancelled) return;
+      if (cancelled || pausedRef.current) return;
       if (bound) return latestRef.current();
       if (searching) return;
       searching = true;
@@ -90,6 +91,12 @@ export function useLiveConversation(session: Session, {
     };
   }, [label, openConversation, resetConversation, providerSessionId, session.machine]);
 
+  // A panel can first render out of view. Discover history when it is shown,
+  // including for stopped sessions that never start the live poll.
+  useEffect(() => {
+    if (!paused && !conversation.session) void refreshRef.current();
+  }, [paused, conversation.session]);
+
   // A session that stops while waiting for its first history row is no longer expected to appear
   // soon: look once more so the miss is reported (or the row found) without a focus change.
   useEffect(() => {
@@ -118,12 +125,12 @@ export function useLiveConversation(session: Session, {
     },
   );
   useEffect(() => {
-    if (!machineReachable || session.status !== "running" || paused) return;
+    if (!machineReachable || session.status !== "running" || paused || conversationHealthy) return;
     const refresh = async () => {
       if (document.visibilityState !== "visible" || pollingPausedRef.current) return;
       await refreshRef.current();
     };
-    const poller = createAsyncPoller({ delayMs: conversationHealthy ? RESOURCE_RECONCILE_MS : 3000, task: refresh,
+    const poller = createAsyncPoller({ delayMs: 3000, task: refresh,
       setTimeout: (callback, delay) => window.setTimeout(callback, delay),
       clearTimeout: (timer) => window.clearTimeout(timer) });
     poller.start();
@@ -139,8 +146,8 @@ export function useLiveConversation(session: Session, {
   useEffect(() => {
     if (seenCompletedAtRef.current === completedAt) return;
     seenCompletedAtRef.current = completedAt;
-    void refreshRef.current();
-  }, [completedAt]);
+    if (!conversationHealthy) void refreshRef.current();
+  }, [completedAt, conversationHealthy]);
 
   return { conversation, providerSessionId, label, error, resolving: resolving || waiting };
 }

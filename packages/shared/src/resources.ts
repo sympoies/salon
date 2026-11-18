@@ -74,6 +74,7 @@ export interface ResourceEvent {
   readonly resource: string;
   readonly revision: number;
   readonly conversation?: ConversationSnapshot;
+  readonly conversation_delta?: { readonly base_revision: number; readonly retained: number };
 }
 export function normalizeResourceEvent(value: unknown): ResourceEvent | null {
   if (!value || typeof value !== "object") return null;
@@ -83,10 +84,18 @@ export function normalizeResourceEvent(value: unknown): ResourceEvent | null {
     || typeof row.resource !== "string" || row.resource.length > 1024
     || !/^(sessions|layout|conversation\/[^/]+\/[^/]+)$/.test(row.resource)
     || !Number.isSafeInteger(row.revision) || Number(row.revision) < 0) return null;
+  const metadata = { schema_version: "agent-console.resource-event.v1" as const, type: row.type as ResourceEvent["type"],
+    resource: row.resource, revision: Number(row.revision) };
   const conversation = row.type === "changed" && row.resource.startsWith("conversation/")
     ? normalizeConversationSnapshot(row.conversation) : undefined;
-  return { schema_version: "agent-console.resource-event.v1", type: row.type as ResourceEvent["type"],
-    resource: row.resource, revision: Number(row.revision), ...(conversation ? { conversation } : {}) };
+  if (!conversation) return metadata;
+  if (row.conversation_delta === undefined) return { ...metadata, conversation };
+  const delta = row.conversation_delta as Partial<NonNullable<ResourceEvent["conversation_delta"]>> | null;
+  if (!delta || !Number.isSafeInteger(delta.base_revision) || typeof delta.base_revision !== "number"
+    || delta.base_revision < 1 || delta.base_revision >= metadata.revision
+    || !Number.isSafeInteger(delta.retained) || typeof delta.retained !== "number"
+    || delta.retained < 1 || delta.retained + conversation.messages.length > 300) return metadata;
+  return { ...metadata, conversation, conversation_delta: { base_revision: delta.base_revision, retained: delta.retained } };
 }
 export class ResourceSseDecoder extends NormalizedSseDecoder<ResourceEvent> {
   constructor() { super(normalizeResourceEvent); }

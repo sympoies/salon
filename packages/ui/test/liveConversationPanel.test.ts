@@ -1766,3 +1766,32 @@ test("hidden tool paging stops at exhaustion or five older windows", async () =>
     await cleanups.pop()?.();
   }
 });
+
+test("a stopped conversation discovers its history when first shown", async () => {
+  const mounted = installDom();
+  cleanups.push(mounted.cleanup);
+  const ssr = createUiSsrHarness([conversationApiMockPlugin()]);
+  cleanups.push(ssr.close);
+  let historyReads = 0;
+  globalThis.__agentConsoleConversationApiMock = {
+    async listHistorySessions() {
+      historyReads += 1;
+      return { ok: true, truncated: false, latestMessagePaging: true, sessions: [historyEntry()] };
+    },
+    async listHistoryMessages() {
+      return { ok: true, messages: [{ id: "answer", role: "assistant", text: "Retained stopped transcript" }] };
+    },
+  };
+  const { LiveConversationPanel } = await loadPanel(ssr);
+  const session = liveSession({ status: "stopped" });
+  const render = (active: boolean) => act(async () => {
+    mounted.root.render(createElement(LiveConversationPanel, { session, active, onClose() {} }));
+    await flush();
+  });
+
+  await render(false);
+  assert.equal(historyReads, 0, "the hidden panel defers history discovery");
+  await render(true);
+  assert.match(mounted.container.textContent ?? "", /Retained stopped transcript/);
+  assert.equal(historyReads, 1, "the first visible render discovers the stopped session");
+});
