@@ -11,7 +11,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { createEdgeServer } from "../../packages/edge/src/server.ts";
 import { listenOnLoopback, loginCookie, makeEdgeConfig } from "../../packages/edge/test/support.ts";
-import { launchPage, type Page } from "../readme-previews/chrome.ts";
+import { launchPage, type Page } from "../../packages/ui/test/support/browserPage.ts";
 import { consoleViteConfig } from "../../packages/ui/vite.shared.ts";
 
 const uiRequire = createRequire(new URL("../../packages/ui/package.json", import.meta.url));

@@ -15,7 +15,7 @@ import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { startEdge } from "../../packages/edge/src/start.ts";
 import { startFakeDaemon } from "./daemon.ts";
-import { launchPage, type Page } from "./chrome.ts";
+import { launchPage, type Page } from "../../packages/ui/test/support/browserPage.ts";
 import { MACHINE, NOW } from "./fixture.ts";
 
 const root = new URL("../../", import.meta.url);

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { stopBrowser } from "../../packages/ui/test/support/browserProfile.ts";
-import * as chrome from "../readme-previews/chrome.ts";
+import * as chrome from "../../packages/ui/test/support/browserPage.ts";
 
 // The preview capture owns a headless Chrome and its profile directory. These
 // tests use a stand-in executable and short-lived children, so no browser runs.

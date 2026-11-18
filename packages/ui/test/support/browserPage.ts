@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
-import { hasBrowserExited, stopBrowser } from "../../packages/ui/test/support/browserProfile.ts";
+import { hasBrowserExited, stopBrowser } from "./browserProfile.ts";
 
 /** Headless Chrome driven over the DevTools protocol for previews and UI fixtures. */
 export interface Page {
