@@ -3,10 +3,12 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { Duplex } from "node:stream";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { stopBrowser } from "../../packages/ui/test/support/browserProfile.ts";
 import * as chrome from "../readme-previews/chrome.ts";
 
 // The preview capture owns a headless Chrome and its profile directory. These
@@ -71,18 +73,44 @@ test("stopping a browser that has already exited finishes, and stopping twice is
   const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
   await new Promise(resolve => child.once("exit", resolve));
   const finished = (promise: Promise<void>) => Promise.race([promise.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 2000))]);
-  assert.equal(await finished(chrome.stopBrowser(child, profile)), true, "does not wait for an exit event that already happened");
+  assert.equal(await finished(stopBrowser(child, profile)), true, "does not wait for an exit event that already happened");
   assert.equal(existsSync(profile), false);
-  assert.equal(await finished(chrome.stopBrowser(child, profile)), true);
+  assert.equal(await finished(stopBrowser(child, profile)), true);
 });
 
 test("stopping a live browser kills and reaps it before removing the profile", async () => {
   const profile = mkdtempSync(join(directory, "profile-"));
   const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
-  await chrome.stopBrowser(child, profile);
+  await stopBrowser(child, profile);
   assert.equal(child.signalCode, "SIGKILL");
   assert.equal(alive(child.pid!), false);
   assert.equal(existsSync(profile), false);
+});
+
+test("profile cleanup retries after a late write during removal", async t => {
+  const profile = mkdtempSync(join(directory, "profile-"));
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+  const remove = fs.rmSync;
+  let lateWrite = false;
+  const removal = t.mock.method(fs, "rmSync", (path: fs.PathLike, options?: fs.RmOptions) => {
+    if (path === profile && !lateWrite) {
+      assert.equal(alive(child.pid!), false, "the browser is reaped before profile removal");
+      lateWrite = true;
+      // A writer creates a file after the directory has been scanned.
+      writeFileSync(join(profile, "late"), "");
+      fs.rmdirSync(profile);
+    }
+    return remove(path, options);
+  });
+  syncBuiltinESMExports();
+  try {
+    await stopBrowser(child, profile);
+    assert.equal(lateWrite, true);
+    assert.equal(existsSync(profile), false);
+  } finally {
+    removal.mock.restore();
+    syncBuiltinESMExports();
+  }
 });
 
 /** The smallest DevTools stand-in: one page target and a WebSocket that answers every command with an undefined result. */
