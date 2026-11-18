@@ -29,15 +29,28 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
       void client.confirmSubmitted(row.target, messages).catch(() => {});
     }
   }, [client, rows, messages, session.session_incarnation]);
-  const count = visibleRows.reduce((total, row) => total + row.admissions.length + row.items.length, 0);
+  let count = 0;
+  let newestRefused = false;
+  for (const { admissions, items } of visibleRows) {
+    count += admissions.length + items.length;
+    if (admissions.length || items.length) newestRefused = items.at(-1)?.state === "refused";
+  }
   useLayoutEffect(() => {
     const viewport = section.current?.closest<HTMLElement>(".history-messages");
     if (!viewport) return;
-    if (following.current) viewport.scrollTop = viewport.scrollHeight;
+    const followBottom = () => { if (following.current) viewport.scrollTop = viewport.scrollHeight; };
+    followBottom();
+    // A refusal expands the existing row. Keep its actions visible when the
+    // composer grows and gives the message viewport less room.
+    const observer = newestRefused && typeof ResizeObserver !== "undefined" ? new ResizeObserver(followBottom) : undefined;
+    observer?.observe(viewport);
     const onScroll = () => { following.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 48; };
     viewport.addEventListener("scroll", onScroll);
-    return () => viewport.removeEventListener("scroll", onScroll);
-  }, [count]);
+    return () => {
+      observer?.disconnect();
+      viewport.removeEventListener("scroll", onScroll);
+    };
+  }, [count, newestRefused]);
   if (!usesSharedOutbox(session) || (count === 0 && retainedEdits.length === 0 && rows.every(row => !client.error(row.target)))) return null;
   return <section ref={section} className="history-outgoing history-shared-outgoing" aria-label="Shared replies">
     {retainedEdits.map(draft => <div key={draft.id} className="history-outgoing-body">
