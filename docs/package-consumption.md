@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.84 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.85 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,7 +183,17 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.84`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.85`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.85
+
+Speech synthesis providers advertise their available voices and a default voice. Requests can
+name a voice, and the edge returns a typed error for an unknown voice. A synthesis provider setting
+must be an object, and invalid types fail at startup. Providers without synthesis remain
+transcription-only (#574).
+
+On Android, Desktop Auto uses one column at phone widths and two at wider widths.
+The Desktop picker stays visible and Auto stays selected (#576).
 
 ### Changes retained in SDK 0.1.84
 
