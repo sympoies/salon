@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { strict as assert } from "node:assert";
 import { readFile } from "node:fs/promises";
 import { test, afterEach } from "node:test";
+import { SESSION_LIST_REVISION_HEADER } from "@agent-console/shared/api";
 import { normalizeActivityStreamEvent } from "@agent-console/shared/activity";
 import type { SessionTitleState } from "@agent-console/shared/title";
 import {
@@ -160,12 +161,25 @@ test("concurrent native attaches obtain distinct one-time tickets", async () => 
   });
 });
 
-test("capture records a native request still pending after the caller deadline", async () => {
-  await withNativeHttp(async () => new Promise(() => {}), async () => {
+test("a stalled session-list request gets past eight seconds and reports a bounded deadline", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let requestStarted!: () => void;
+  const started = new Promise<void>(resolve => { requestStarted = resolve; });
+  await withNativeHttp(() => {
+    requestStarted();
+    return new Promise<never>(() => {});
+  }, async () => {
     const storage = (globalThis as { localStorage: Storage }).localStorage;
     startPerformanceCapture("slow-network", storage);
     try {
-      await assert.rejects(listSessions(["maple"]), { name: "TimeoutError" });
+      const request = listSessions(["maple"]);
+      const deadline = assert.rejects(request, { name: "TimeoutError" });
+      await started;
+      t.mock.timers.tick(23_999);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      assert.equal(debugEvents().some(row => row.phase === "deadline_timeout"), false);
+      t.mock.timers.tick(1);
+      await deadline;
       const rows = debugEvents().filter((row) => row.source === "client" &&
         (row.route === "/api/sessions" || row.route === "/performance/session-list"));
       assert.equal(rows.filter((row) => row.phase === "request_start").length, 1);
@@ -177,13 +191,23 @@ test("capture records a native request still pending after the caller deadline",
   });
 });
 
-test("capture separates admission rejection from elapsed native poll deadlines", async () => {
-  await withNativeHttp(async () => new Promise(() => {}), async () => {
+test("capture separates admission rejection from elapsed native poll deadlines", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let requestStarted!: () => void;
+  await withNativeHttp(() => {
+    requestStarted();
+    return new Promise<never>(() => {});
+  }, async () => {
     const storage = (globalThis as { localStorage: Storage }).localStorage;
     startPerformanceCapture("slow-network", storage);
     try {
-      await assert.rejects(listSessions(["maple"], undefined, "poll"), { name: "TimeoutError" });
-      await assert.rejects(listSessions(["maple"], undefined, "poll"), { name: "TimeoutError" });
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const started = new Promise<void>(resolve => { requestStarted = resolve; });
+        const deadline = assert.rejects(listSessions(["maple"], undefined, "poll"), { name: "TimeoutError" });
+        await started;
+        t.mock.timers.tick(24_000);
+        await deadline;
+      }
       await assert.rejects(listSessions(["maple"], undefined, "poll"), { name: "TimeoutError" });
       const rows = debugEvents().filter((row) => row.source === "client");
       assert.equal(rows.filter((row) => row.phase === "request_start").length, 2);
@@ -242,6 +266,28 @@ test("a post-mutation fresh list does not join a pending poll snapshot", async (
   resetSessionPollRequests();
   releasePoll();
   await assert.rejects(poll, { name: "AbortError" });
+});
+
+test("an unchanged session list retains rows and refreshes their machine clocks", async () => {
+  resetSessionPollRequests();
+  const observed = ["2026-01-01T00:00:00Z", "2026-01-01T00:00:04Z"];
+  let reads = 0;
+  setFetchMock(async (_url, init) => {
+    const index = reads++;
+    const revision = new Headers(init?.headers).get(SESSION_LIST_REVISION_HEADER);
+    assert.equal(revision, index === 0 ? "" : "fixture-revision");
+    const observedAt = observed[index]!;
+    return jsonResponse({ ok: true, data: {
+      machines: [{ name: "fixture", ok: true, observed_at: observedAt }],
+      ...(index === 0 ? { sessions: [{ id: "sample", machine: "fixture", title: "Sample", activity_observed_at: observedAt }] } : {}),
+    } }, { headers: { [SESSION_LIST_REVISION_HEADER]: "fixture-revision" } });
+  });
+  try {
+    const first = await listSessions(["fixture"], undefined, "poll");
+    const unchanged = await listSessions(["fixture"], undefined, "poll");
+    assert.deepEqual(unchanged.sessions, first.sessions.map(row => ({ ...row, activity_observed_at: observed[1] })));
+    assert.equal(unchanged.machines[0]?.observed_at, observed[1]);
+  } finally { resetSessionPollRequests(); }
 });
 
 test("session-list debug events distinguish automatic polls from fresh reads", async () => {

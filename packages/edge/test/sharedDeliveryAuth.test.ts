@@ -40,9 +40,21 @@ async function fixture() {
     principals: ["a", "b"].map(id => ({ id, token: `token-${id}`, machines: ["host"], permissions: [] })),
     machines: [{ name: "host", url: upstream.base, token: "daemon-fixture" }] }));
   const { base } = await listenOnLoopback(edge);
-  const emit = () => {
+  const revisions = new Map<string, number>();
+  const emit = (changed?: string) => {
+    if (changed) revisions.set(changed, (revisions.get(changed) ?? 0) + 1);
     sequence += 1;
-    for (const res of sources) res.write(`event: snapshot\ndata: ${JSON.stringify({ schema_version: "agent-session.activity-stream.event.v1", type: "snapshot", stream_id: "shared-boot", sequence, machine: "host", observed_at: new Date().toISOString(), sessions: ["a", "b"].map(id => ({ id, turn_state: null })) })}\n\n`);
+    const sessions = ["a", "b"].map(id => ({
+      id,
+      turn_state: revisions.has(id) ? {
+        schema_version: "agent-session.turn-state.v1", phase: "idle", revision: revisions.get(id),
+        phase_changed_at: "2026-01-01T00:00:00Z",
+        source: { kind: "provider_hook", provider: "codex", confidence: "authoritative" },
+      } : null,
+    }));
+    const event = { schema_version: "agent-session.activity-stream.event.v1", type: "snapshot",
+      stream_id: "shared-boot", sequence, machine: "host", observed_at: new Date().toISOString(), sessions };
+    for (const res of sources) res.write(`event: snapshot\ndata: ${JSON.stringify(event)}\n\n`);
   };
   return { base, emit, connected: connected.promise, counts: () => ({ connections, historyReads, active: sources.size }), async close() {
     edge.closeAllConnections(); daemon.closeAllConnections();
@@ -102,9 +114,18 @@ test("concurrent principals share a daemon activity connection and retain indepe
     assert.deepEqual((await readA).sessions?.map(session => session.id), ["a"]);
     assert.deepEqual((await readB).sessions?.map(session => session.id), ["b"]);
     assert.equal(f.counts().connections, 1);
+    const changeA = first.readShared(); const unchangedB = second.readShared(); f.emit("a");
+    const deltaA = await changeA;
+    assert.equal(deltaA.type, "delta");
+    assert.deepEqual(deltaA.sessions?.map(session => session.id), ["a"]);
+    const heartbeatB = await unchangedB;
+    assert.equal(heartbeatB.type, "heartbeat");
+    assert.equal(heartbeatB.sessions, undefined);
     a.abort(); await first.reader.cancel().catch(() => {});
-    const next = second.readShared(); f.emit();
-    assert.deepEqual((await next).sessions?.map(session => session.id), ["b"]);
+    const next = second.readShared(); f.emit("b");
+    const deltaB = await next;
+    assert.equal(deltaB.type, "delta");
+    assert.deepEqual(deltaB.sessions?.map(session => session.id), ["b"]);
     assert.equal(f.counts().connections, 1);
     await second.reader.cancel();
   } finally { a.abort(); b.abort(); await f.close(); }

@@ -17,12 +17,13 @@ import type { Session } from "./types.ts";
  * The user/assistant record of a live session, read from its provider history.
  * Tool calls and bounded results share the same disclosures as archived history.
  */
-export function LiveConversationPanel({ session, onClose, machineReachable = true, onBusyChange, replyDrafts, recovery, docked = false, showComposer = false, onTerminal, pinned = false, onTogglePin }: {
+export function LiveConversationPanel({ session, onClose, machineReachable = true, active = true, onBusyChange, replyDrafts, recovery, docked = false, showComposer = false, onTerminal, pinned = false, onTogglePin }: {
   readonly session: Session;
   /** The Dashboard's resume of this session, for a stopped one (#921). */
   readonly recovery?: ConversationRecovery;
   readonly onClose: () => void;
   readonly machineReachable?: boolean;
+  readonly active?: boolean;
   readonly onBusyChange?: (busy: boolean) => void;
   readonly replyDrafts?: ConversationReplyDrafts;
   readonly docked?: boolean;
@@ -62,7 +63,7 @@ export function LiveConversationPanel({ session, onClose, machineReachable = tru
     if (!sending && !voiceOpen) onClose();
   }, [onClose, sending, voiceOpen]);
   const { conversation, providerSessionId, label, error, resolving } = useLiveConversation(session, {
-    machineReachable, paused: voiceOpen,
+    machineReachable, paused: !active || voiceOpen,
   });
   const openConversation = conversation.open;
   const refreshRef = useRef(conversation.refreshLatest);

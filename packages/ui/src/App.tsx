@@ -2,7 +2,7 @@ import { ShellPage } from "./ShellPage.tsx";
 import { resolveDashboardShortcutAction } from "./dashboardShortcuts.ts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
-import { getAuthStatus, listMachineNames, type AuthStatus, type ConnectFailure } from "./api.ts";
+import { getAuthStatus, listMachineNames, resetSessionPollRequests, type AuthStatus, type ConnectFailure } from "./api.ts";
 import { capturePairingLanding, landingPairingCode } from "./pairingLanding.ts";
 import { PairingRecipient } from "./PairingRecipient.tsx";
 import { clearPairingLink, pendingPairingLink, subscribePairingLink, subscribeAuthenticationRejected, recordNativeAuthentication, nativeConnectionConfigGeneration } from "./runtime.ts";
@@ -56,7 +56,10 @@ function overlayLabel(view: View): string {
 }
 
 function activatePrincipalStorage(principalId: string | null): void {
-  if (getPrincipalStorageNamespace() !== principalId) conversationImageCache.clear();
+  if (getPrincipalStorageNamespace() !== principalId) {
+    conversationImageCache.clear();
+    resetSessionPollRequests();
+  }
   flushDebugEvents();
   setPrincipalStorageNamespace(principalId);
   hydrateDebugEventsFromStorage();

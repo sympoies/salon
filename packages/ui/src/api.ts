@@ -33,6 +33,7 @@ import type {
 import {
   ACCOUNT_PROVIDER_LABELS,
   ACCOUNT_SWITCH_TIMEOUT_MS,
+  SESSION_LIST_REVISION_HEADER,
   CLAUDE_LIMIT_RESET_OUTCOMES,
   CODEX_ACCOUNT_READINESS_SCHEMA_VERSION,
   TITLE_SUMMARY_DIAGNOSTIC_REASONS,
@@ -117,16 +118,38 @@ import type { SpeechEngineList, SpeechProviderSummary, SpeechTranscription } fro
 // Classify a rejected or aborted switch only after the edge had time to return
 // its authoritative outcome.
 const ACCOUNT_SWITCH_REQUEST_TIMEOUT_MS = ACCOUNT_SWITCH_TIMEOUT_MS + 5_000;
-const SESSION_LIST_REQUEST_TIMEOUT_MS = 8_000;
+const SESSION_LIST_REQUEST_TIMEOUT_MS = 24_000;
 const AUTH_STATUS_REQUEST_TIMEOUT_MS = 8_000;
 const ATTACH_TICKET_REQUEST_TIMEOUT_MS = 8_000;
 let sessionPollEpoch = 0;
-const readSessionList = createBoundedSingleFlight((key: string, signal) =>
-  req(key.slice(key.indexOf("\0") + 1), { signal }, "poll"));
+type SessionListPayload = Partial<SessionsResponse> & { readonly sessions: SessionsResponse["sessions"] };
+let sessionPollSnapshot: { key: string; revision: string; data: SessionListPayload } | undefined;
+const readSessionList = createBoundedSingleFlight(async (key: string, signal) => {
+  const previous = sessionPollSnapshot?.key === key ? sessionPollSnapshot : undefined;
+  const result = await req(key.slice(key.indexOf("\0") + 1), {
+    signal, headers: { [SESSION_LIST_REVISION_HEADER]: previous?.revision ?? "" },
+  }, "poll");
+  const body = result.body as { ok?: boolean; data?: Partial<SessionListPayload> } | undefined;
+  const revision = result.sessionListRevision;
+  const data = body?.data;
+  if (result.status !== 200 || body?.ok !== true || !data || !revision || signal.aborted) return result;
+  if (Array.isArray(data.sessions)) {
+    sessionPollSnapshot = { key, revision, data: { ...data, sessions: data.sessions } };
+    return result;
+  }
+  if (previous?.revision !== revision || !Array.isArray(data.machines)) {
+    throw new Error("Session list response has no matching revision");
+  }
+  const observations = new Map(data.machines.map(machine => [machine.name, machine.observed_at]));
+  return { ...result, body: { ...body, data: { ...previous.data, machines: data.machines,
+    sessions: previous.data.sessions.map(session => ({ ...session, activity_observed_at: observations.get(session.machine) })),
+  } } };
+});
 const readAttachTicket = createBoundedRequestGate((key: string, signal) =>
   postJson(key.slice(key.indexOf("\0") + 1), {}, signal));
 export function resetSessionPollRequests(): void {
   sessionPollEpoch += 1;
+  sessionPollSnapshot = undefined;
   readSessionList.reset();
 }
 export type { SessionRetitleV3Receipt, SessionRetitleV3Receipts };
@@ -233,6 +256,7 @@ interface Json {
   readonly status: number;
   readonly body: unknown;
   readonly malformed?: boolean;
+  readonly sessionListRevision?: string;
 }
 
 async function req(path: string, init?: RequestInit, provenance?: "poll" | "fresh"): Promise<Json> {
@@ -272,7 +296,9 @@ async function req(path: string, init?: RequestInit, provenance?: "poll" | "fres
       error: envelope?.ok === false ? envelope.error?.message : undefined,
       errorEnvelope: body,
     });
-    return { status: res.status, body, ...(malformed ? { malformed: true } : {}) };
+    const sessionListRevision = provenance === "poll" ? res.headers.get(SESSION_LIST_REVISION_HEADER) : null;
+    return { status: res.status, body, ...(malformed ? { malformed: true } : {}),
+      ...(sessionListRevision ? { sessionListRevision } : {}) };
   } catch (err) {
     recordDebugEvent({
       source: "client",

@@ -6,7 +6,7 @@ const RFC3339_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.
 const PROVIDER_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const SSE_LINE_CONTROL = /[\u0000-\u001F\u007F]/;
 
-type ActivityStreamEventType = "snapshot" | "heartbeat" | "reset";
+type ActivityStreamEventType = "snapshot" | "delta" | "heartbeat" | "reset";
 
 interface ActivityTurnSource {
   readonly kind: "provider_hook" | "console_observation" | "terminal_heuristic" | "runtime";
@@ -99,7 +99,7 @@ interface ActivityStreamEventBase {
 }
 
 interface ActivityStreamProjectionEvent extends ActivityStreamEventBase {
-  readonly type: "snapshot" | "reset";
+  readonly type: "snapshot" | "delta" | "reset";
   readonly sessions: readonly ActivitySessionProjection[];
   readonly reason?: never;
 }
@@ -368,7 +368,7 @@ function normalizeProjection(value: unknown): ActivitySessionProjection | null {
 export function normalizeActivityStreamEvent(value: unknown, configuredMachine?: string): ActivityStreamEvent | null {
   const event = object(value);
   if (!event || event.schema_version !== ACTIVITY_STREAM_EVENT_SCHEMA) return null;
-  if (!(["snapshot", "heartbeat", "reset"] as const).includes(event.type as never)) return null;
+  if (!(["snapshot", "delta", "heartbeat", "reset"] as const).includes(event.type as never)) return null;
   const streamId = safeString(event.stream_id, 256);
   const machine = safeString(configuredMachine ?? event.machine, 256);
   const observedAt = timestamp(event.observed_at);
@@ -398,7 +398,7 @@ export function normalizeActivityStreamEvent(value: unknown, configuredMachine?:
     if (!projection) return null;
     sessions.push(projection);
   }
-  return { ...base, type: event.type as "snapshot" | "reset", sessions };
+  return { ...base, type: event.type as ActivityStreamProjectionEvent["type"], sessions };
 }
 
 export function normalizeActivityDeliveryEvent(value: unknown, configuredMachine?: string): ActivityDeliveryEvent | null {

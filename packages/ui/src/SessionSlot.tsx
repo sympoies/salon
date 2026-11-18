@@ -350,6 +350,7 @@ interface SessionSlotView {
   readonly focused: boolean;
   readonly sessionListDisplay?: SessionListDisplay;
   readonly conversationActive?: boolean;
+  readonly contentVisible?: boolean;
   /** A focused phone session shows its Conversation instead of the terminal. */
   readonly phoneConversation?: boolean;
   readonly conversationReplyDrafts?: ConversationReplyDrafts;
@@ -486,6 +487,7 @@ export function SessionSlot({
     focused,
     sessionListDisplay = "terminal",
     conversationActive = true,
+    contentVisible = true,
     phoneConversation = false,
     conversationReplyDrafts,
     connectionStatusNotice,
@@ -1000,7 +1002,7 @@ export function SessionSlot({
 
 
       {s ? <AuthQuarantineNotice session={s} onReverify={onReverify} /> : null}
-      {s ? (
+      {s && contentVisible ? (
         showPhoneConversation ? (
           <PhoneConversationPane key={`${sessionKey(s)}:${s.provider_resume?.session_id ?? ""}`}
             session={s} machineReachable={machineReachable} replyDrafts={conversationReplyDrafts} recovery={conversationRecovery}

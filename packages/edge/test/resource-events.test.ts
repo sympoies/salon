@@ -266,3 +266,43 @@ test("conversation snapshots fill sparse visible pages from older history", asyn
     await Promise.all([edge, upstream].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
   }
 });
+
+test("a live conversation update sends the changed suffix after the initial page", { timeout: 10_000 }, async () => {
+  const { jsonReader } = await import("./support.ts");
+  const { ResourceSseDecoder } = await import("@agent-console/shared/resources");
+  const first = { id: "first", role: "user", text: "Review the sample changes." };
+  const next = { id: "next", role: "assistant", text: "The sample is ready." };
+  let messages = [first];
+  const daemon = jsonReader(() => ({ status: 200, body: { ok: true, data: { messages } } }));
+  const upstream = await listenOnLoopback(daemon);
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: upstream.base, token: "fixture" }] }));
+  const { base } = await listenOnLoopback(edge);
+  const controller = new AbortController();
+  try {
+    const query = new URLSearchParams({ conversation_snapshots: "1", conversations: JSON.stringify([{ machine: "fixture", id: "history" }]) });
+    const response = await fetch(`${base}/api/resources/events?${query}`, { signal: controller.signal });
+    const reader = response.body!.getReader();
+    const decoder = new ResourceSseDecoder();
+    const text = new TextDecoder();
+    const changedPage = async () => {
+      for (;;) {
+        const chunk = await reader.read();
+        assert.equal(chunk.done, false);
+        const changed = decoder.push(text.decode(chunk.value, { stream: true })).find(event => event.type === "changed");
+        if (changed) return changed;
+      }
+    };
+    const initial = await changedPage();
+    assert.deepEqual(initial.conversation?.messages, [first]);
+    messages = [first, next];
+    const changed = await changedPage();
+    assert.deepEqual(changed.conversation?.messages, [next]);
+    assert.deepEqual(changed.conversation_delta, { base_revision: initial.revision, retained: 1 });
+  } finally {
+    controller.abort();
+    await Promise.all([edge, daemon].map(server => {
+      server.closeAllConnections();
+      return new Promise<void>(resolve => server.close(() => resolve()));
+    }));
+  }
+});
