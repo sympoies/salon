@@ -18,13 +18,14 @@ test("the newest refused reply stays above the composer while following the conv
     import React from "react";
     import { createRoot } from "react-dom/client";
     import { PhoneConversationPane } from "/src/PhoneConversationPane.tsx";
-    import { SessionConversationPane } from "/src/SessionConversationPane.tsx";
+    import { SessionSlot } from "/src/SessionSlot.tsx";
     import { LiveConversationPanel } from "/src/LiveConversationPanel.tsx";
-    import { makeSession } from "/test/support/fixtures.ts";
+    import { makeSession, makeSessionSlotProps } from "/test/support/fixtures.ts";
     import { syncPhoneTier } from "/src/phoneTier.ts";
     import { setItems } from "fixture-outbox";
 
-    const session = makeSession({ id: "sample", session_incarnation: "sample-incarnation",
+    const session = makeSession({ id: "sample", machine: "fixture", cwd: "/workspace", repo_name: "sample",
+      session_incarnation: "sample-incarnation",
       title: "Sample conversation", provider_resume: { provider: "codex", session_id: "sample-thread" } });
     const editor = () => document.querySelector(".conversation-composer textarea");
     const viewport = () => document.querySelector(".history-messages");
@@ -57,10 +58,16 @@ test("the newest refused reply stays above the composer while following the conv
     };
     window.runRefusedReplyFixture = async view => {
       syncPhoneTier();
-      const component = view === "phone" ? PhoneConversationPane : view === "tile" ? SessionConversationPane : LiveConversationPanel;
+      const component = view === "phone" ? PhoneConversationPane : LiveConversationPanel;
       const props = { session, machineReachable: true, swipeEnabled: false, onSwipe() {},
         refreshRef: { current: null }, onClose() {}, showComposer: true, docked: view === "dock" };
-      createRoot(document.querySelector("#root")).render(React.createElement(component, props));
+      const tile = makeSessionSlotProps({ session, slot: "fixture/sample", options: [session] });
+      const content = view === "tile"
+        ? React.createElement("ol", { className: "session-workspace desktop mode-2 slots-2" },
+          React.createElement(SessionSlot, { ...tile, view: { ...tile.view, sessionListDisplay: "conversation" } }),
+          React.createElement(SessionSlot, makeSessionSlotProps({ index: 1, slot: null })))
+        : React.createElement(component, props);
+      createRoot(document.querySelector("#root")).render(content);
       await waitFor(() => viewport()?.querySelector('[data-history-message-id="message-23"]'));
       const initial = viewport().scrollTop;
       const items = [{ id: "first", text: "Earlier reply", state: "queued" }];
@@ -83,7 +90,7 @@ test("the newest refused reply stays above the composer while following the conv
       editor().focus();
       changeDraft("First line\\nSecond line\\nThird line");
       await afterLayout();
-      return { ordinary, refused, grown: measure() };
+      return { ordinary, refused, grown: measure(), viewportWidth: viewport().getBoundingClientRect().width };
     };
     window.resizeWhileReadingOlder = async () => {
       viewport().scrollTop = 0;
@@ -107,6 +114,7 @@ test("the newest refused reply stays above the composer while following the conv
         if (id === "./sharedOutboxClient.ts") return "\0fixture-outbox";
         if (id === "./api.ts") return "\0fixture-history";
         if (id === "./resourceEvents.ts") return "\0fixture-resources";
+        if (id === "./TerminalPane.tsx") return "\0fixture-terminal";
       },
       load(id) {
         if (id === "\0refused-reply-fixture") return fixture;
@@ -144,6 +152,7 @@ test("the newest refused reply stays above the composer while following the conv
           export const RESOURCE_RECONCILE_MS = 30000;
           export const resourceEvents = { subscribe() { return () => {}; } };
         `;
+        if (id === "\0fixture-terminal") return 'export function TerminalPane() { throw Error("Fixture opened a terminal"); }';
       },
     }],
     build: { write: false, minify: false, lib: { entry: "refused-reply-fixture", name: "RefusedReplyFixture", formats: ["iife"] } },
@@ -157,16 +166,18 @@ test("the newest refused reply stays above the composer while following the conv
   const page = await launchPage();
   try {
     for (const [view, width] of [
-      ["phone", 384], ["phone", 760], ["drawer", 761], ["drawer", 1099], ["dock", 1100], ["tile", 1280],
+      ["phone", 384], ["phone", 760], ["drawer", 761], ["drawer", 1099], ["dock", 1100], ["tile", 1440],
     ] as const) {
-      await t.test(`${view} at ${width}×832`, async () => {
-        await page.setViewport(width, 832, 1);
+      const height = view === "tile" ? 900 : 832;
+      await t.test(`${view} at ${width}×${height}`, async () => {
+        await page.setViewport(width, height, 1);
         await page.navigate("about:blank");
         await page.evaluate(`document.body.innerHTML = ${JSON.stringify(markup)}`);
         await page.evaluate(code);
-        const result = await page.evaluate<{ ordinary: { advanced: boolean; bottom: boolean }; refused: Measurement; grown: Measurement }>(
+        const result = await page.evaluate<{ ordinary: { advanced: boolean; bottom: boolean }; refused: Measurement; grown: Measurement; viewportWidth: number }>(
           `window.runRefusedReplyFixture("${view}")`);
         if (evidence) writeFileSync(join(evidence, `${view}-${width}.png`), await page.screenshot());
+        if (view === "tile") assert.ok(result.viewportWidth <= width / 2, "the conversation occupies one grid column");
         assert.deepEqual(result.ordinary, { advanced: true, bottom: true }, "ordinary replies still follow the bottom");
         assert.ok(result.grown.composer < result.refused.composer, "multiline draft expands the composer");
         for (const [stage, measured] of [["refusal", result.refused], ["composer growth", result.grown]] as const) {
