@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.83 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.84 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,7 +183,25 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.83`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.84`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.84
+
+The edge exposes an authenticated speech synthesis route through its configured speech providers.
+It bounds input text and output audio and returns typed errors (#565).
+
+Paired devices can list their owner's companion inbox and acknowledge messages idempotently.
+The inbox accepts messages through authenticated producer ingress and persists messages and receipts
+(#566).
+
+Confirmed companion replies use an idempotency key and support receipt lookup. The edge checks the
+target session incarnation before dispatch, and delivered input carries companion provenance
+(#568).
+
+The console unsubscribes hidden terminals and skips redundant updates to cut idle traffic on
+relayed links. The session list recovers on slow links (#570).
+
+The latest refused reply keeps its retry and discard actions above the composer (#571).
 
 ### Changes retained in SDK 0.1.83
 
