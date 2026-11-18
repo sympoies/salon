@@ -12,7 +12,7 @@ const { default: react } = await import(uiRequire.resolve("@vitejs/plugin-react"
 import { createEdgeServer } from "../../packages/edge/src/server.ts";
 import { loadConfig } from "../../packages/edge/src/config.ts";
 import { listenOnLoopback } from "../../packages/edge/test/support.ts";
-import { launchPage, type Page } from "../readme-previews/chrome.ts";
+import { launchPage, type Page } from "../../packages/ui/test/support/browserPage.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "device-pairing-browser-"));
 before(async () => {

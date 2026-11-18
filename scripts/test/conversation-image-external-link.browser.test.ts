@@ -6,7 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { test } from "node:test";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { launchPage } from "../readme-previews/chrome.ts";
+import { launchPage } from "../../packages/ui/test/support/browserPage.ts";
 
 const uiRequire = createRequire(new URL("../../packages/ui/package.json",import.meta.url));
 const { build } = await import(uiRequire.resolve("vite"));

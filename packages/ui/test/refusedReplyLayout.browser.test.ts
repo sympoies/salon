@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import react from "@vitejs/plugin-react";
 import { build } from "vite";
-import { launchPage } from "../../../scripts/readme-previews/chrome.ts";
+import { launchPage } from "./support/browserPage.ts";
 
 interface Measurement {
   readonly composer: number;
