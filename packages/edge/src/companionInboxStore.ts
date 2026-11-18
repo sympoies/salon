@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -6,21 +6,26 @@ import { DatabaseSync } from "node:sqlite";
 const RETENTION_MS = 7 * 86_400_000;
 const MAX_MESSAGES = 1_000;
 const MAX_ACK_KEYS = 64;
+const MAX_REPLY_KEYS = 64;
 
 const errors = {
   "invalid-request": [400, "Invalid request."],
   unauthorized: [401, "Unauthorized."],
   "device-required": [403, "Paired device credential required."],
   "cross-origin": [403, "Cross-origin request refused."],
+  "confirmation-required": [403, "Physical confirmation required."],
   "source-forbidden": [403, "Source session is not permitted."],
   "message-not-found": [404, "Message is unavailable."],
+  "receipt-not-found": [404, "Receipt is unavailable."],
   "method-not-allowed": [405, "Method not allowed."],
-  "idempotency-key-conflict": [409, "Acknowledgement key conflicts with a previous request."],
+  "idempotency-key-conflict": [409, "Idempotency key conflicts with a previous request."],
+  "reply-target-mismatch": [409, "Reply target differs from the message target."],
   "session-incarnation-conflict": [409, "Source session incarnation changed."],
   "cursor-expired": [410, "Cursor has no retained anchor."],
   "body-too-large": [413, "Request body is too large."],
   "inbox-full": [429, "Inbox has reached its retained message limit."],
   "ack-limit": [429, "Message has reached its acknowledgement key limit."],
+  "reply-limit": [429, "Message has reached its reply key limit."],
   "inbox-error": [500, "Inbox operation failed."],
   "source-unavailable": [503, "Producer ingress or source snapshot is unavailable."],
 } as const;
@@ -39,11 +44,29 @@ export class InboxError extends Error {
 
 type AckState = "displayed" | "read";
 
+export interface CompanionTarget {
+  readonly machine: string;
+  readonly session_id: string;
+  readonly incarnation: string;
+}
+
+export interface CompanionReplyRequest {
+  readonly idempotency_key: string;
+  readonly message_id: string;
+  readonly target: CompanionTarget;
+  readonly text: string;
+  readonly confirmation: "physical";
+}
+
+export type CompanionReplyStatus = "sent" | "busy" | "refused" | "uncertain";
+export type CompanionReply = CompanionTarget & { receipt_id: string; status: CompanionReplyStatus };
+export type ReplySelector = { field: "receipt_id" | "idempotency_key"; value: string };
+
 interface MessageInput {
   readonly body: string;
   readonly color?: string;
   readonly urgent?: boolean;
-  readonly target: { machine: string; session_id: string; incarnation: string };
+  readonly target: CompanionTarget;
 }
 interface MessageRow {
   id: string;
@@ -89,6 +112,16 @@ export class CompanionInboxStore {
         PRIMARY KEY (owner, idempotency_key)
       ) STRICT;
       CREATE INDEX IF NOT EXISTS companion_inbox_message_acks ON companion_inbox_acks(message_id);
+      CREATE TABLE IF NOT EXISTS companion_inbox_replies (
+        owner TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        message_id TEXT NOT NULL REFERENCES companion_inbox_messages(id) ON DELETE CASCADE,
+        receipt_id TEXT NOT NULL UNIQUE,
+        fingerprint TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('sent', 'busy', 'refused', 'uncertain')),
+        PRIMARY KEY (owner, idempotency_key)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS companion_inbox_message_replies ON companion_inbox_replies(message_id);
     `);
   }
 
@@ -168,6 +201,61 @@ export class CompanionInboxStore {
       `).run(owner, key, id, requested, state);
       return { id, state };
     });
+  }
+
+  claimReply(owner: string, request: CompanionReplyRequest, isAuthorized: () => boolean) {
+    const { idempotency_key: key, message_id: messageId, target, text, confirmation } = request;
+    const fingerprint = createHash("sha256").update(JSON.stringify([
+      messageId, target.machine, target.session_id, target.incarnation, text, confirmation,
+    ])).digest("hex");
+    return this.#write(() => {
+      if (!isAuthorized()) throw new InboxError("unauthorized");
+      this.#expire(owner, this.#now());
+      const message = this.#db.prepare(`
+        SELECT machine, session_id, incarnation FROM companion_inbox_messages WHERE owner=? AND id=?
+      `).get(owner, messageId) as CompanionTarget | undefined;
+      if (!message) throw new InboxError("message-not-found");
+      const prior = this.#db.prepare(`
+        SELECT receipt_id, status, fingerprint FROM companion_inbox_replies WHERE owner=? AND idempotency_key=?
+      `).get(owner, key) as (Pick<CompanionReply, "receipt_id" | "status"> & { fingerprint: string }) | undefined;
+      if (prior) {
+        if (prior.fingerprint !== fingerprint) throw new InboxError("idempotency-key-conflict");
+        return { claimed: false, reply: { ...message, receipt_id: prior.receipt_id, status: prior.status } };
+      }
+      if (target.machine !== message.machine || target.session_id !== message.session_id
+        || target.incarnation !== message.incarnation) throw new InboxError("reply-target-mismatch");
+      const count = this.#db.prepare("SELECT count(*) AS total FROM companion_inbox_replies WHERE message_id=?")
+        .get(messageId) as { total: number };
+      if (count.total >= MAX_REPLY_KEYS) throw new InboxError("reply-limit");
+      const reply: CompanionReply = { ...message, receipt_id: randomUUID(), status: "uncertain" };
+      this.#db.prepare(`
+        INSERT INTO companion_inbox_replies (owner, idempotency_key, message_id, receipt_id, fingerprint, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(owner, key, messageId, reply.receipt_id, fingerprint, reply.status);
+      return { claimed: true, reply };
+    });
+  }
+
+  lookupReply(owner: string, selector: ReplySelector): CompanionReply {
+    const column = selector.field === "receipt_id" ? "receipt_id" : "idempotency_key";
+    const reply = this.#db.prepare(`
+      SELECT r.receipt_id, r.status, m.machine, m.session_id, m.incarnation
+      FROM companion_inbox_replies r JOIN companion_inbox_messages m ON r.message_id = m.id
+      WHERE r.owner=? AND r.${column}=? AND m.created_at>?
+    `).get(owner, selector.value, this.#now() - RETENTION_MS) as CompanionReply | undefined;
+    if (!reply) throw new InboxError("receipt-not-found");
+    return reply;
+  }
+
+  settleReply(owner: string, id: string, status: CompanionReplyStatus): CompanionReplyStatus {
+    if (status !== "uncertain") {
+      this.#db.prepare(`
+        UPDATE companion_inbox_replies SET status=? WHERE owner=? AND receipt_id=? AND status='uncertain'
+      `).run(status, owner, id);
+    }
+    const settled = this.#db.prepare("SELECT status FROM companion_inbox_replies WHERE owner=? AND receipt_id=?")
+      .get(owner, id) as { status: CompanionReplyStatus } | undefined;
+    return settled?.status ?? status;
   }
 
   #expire(owner: string, now: number): void {

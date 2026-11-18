@@ -797,6 +797,17 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           owner: device?.principal,
           live: () => principal !== undefined && credentialStillActive(principal),
           csrfExempt: () => csrfExempt(req),
+          replyMachine: (target, purpose) => {
+            const machine = byName.get(target.machine);
+            if (!principal || !device || !machine || machine.active === false
+              || !principalCanAccessMachine(principal, machine.name)
+              || machinePreferences?.disabled(device.principal).has(machine.name)
+              || (purpose === "dispatch"
+                && !accessStore?.ownsSession(device.principal, machine.name, target.session_id, target.incarnation))) {
+              return undefined;
+            }
+            return machine;
+          },
         });
       });
       return;

@@ -119,5 +119,5 @@ Responses use the inbox's JSON error envelope and `Cache-Control: no-store`.
 | 429 | `reply-limit` | The message has reached its distinct reply key limit. |
 | 500 | `inbox-error` | The edge could not complete the inbox operation. |
 
-[inbox]: https://github.com/sympoies/salon/blob/c1dcff9c29e8a16aac888351ed1086100e157d81/docs/companion-inbox.md
+[inbox]: companion-inbox.md
 [device-sign-in]: device-sign-in.md
