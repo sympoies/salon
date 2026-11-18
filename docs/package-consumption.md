@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.82 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.83 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,9 +183,17 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.82`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.83`. The publisher creates a GitHub prerelease with `latest=false`.
 
-### Changes retained in SDK 0.1.82
+### Changes retained in SDK 0.1.83
+
+The coordination relay admits service sources for peer discovery and delivers admitted service-origin
+messages with the original service identity intact. The relay returns typed refusals (#560).
+Replies to service origins are out of scope for 0.1.83.
+
+A repository lookup that returns no usable destination shows a visible, accessible notice (#563).
+
+Browser test profile teardown tolerates late writes (#562, test only).
 
 A revoked or signed-out device returns to sign-in with a short reason and clears its credential
 (#549). Network failures, HTTP 403 responses and unconfirmed refusals keep the credential.
