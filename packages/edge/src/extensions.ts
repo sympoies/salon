@@ -5,6 +5,8 @@
 // run only after core authentication, permission, machine-scoping and CSRF
 // checks, and can never shadow a core route.
 import type { BoardView } from "./board/query.ts";
+import type { PromptReceipt } from "@agent-console/shared/prompt-receipt";
+import type { SharedOutboxState } from "@agent-console/shared/shared-outbox";
 import type { ProviderUsage } from "@agent-console/shared/api";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { AGENT_CONSOLE_PERMISSIONS } from "@agent-console/shared/api";
@@ -12,6 +14,66 @@ import { matchApiRoute } from "./apiRoutes.ts";
 import { matchPath } from "./http.ts";
 
 export type EdgeRouteMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+export interface EdgeOutboxTarget {
+  readonly machine: string;
+  readonly sessionId: string;
+  readonly sessionIncarnation: string;
+}
+
+export interface EdgeOutboxSource {
+  readonly channel: string;
+  readonly label: string;
+  /** Trusted adapter text, including any separator. Prepended once on admission. */
+  readonly prefix: string;
+}
+
+export interface EdgeOutboxInputKey {
+  readonly channel: string;
+  readonly inputId: string;
+}
+
+export interface EdgeOutboxInput {
+  readonly inputId: string;
+  readonly target: EdgeOutboxTarget;
+  readonly text: string;
+  readonly source: EdgeOutboxSource;
+}
+
+export interface EdgeOutboxRecord {
+  readonly inputId: string;
+  readonly target: EdgeOutboxTarget;
+  readonly source: EdgeOutboxSource;
+  readonly outboxIntentId: string;
+  readonly state: SharedOutboxState;
+  readonly revision: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly requestId: string | null;
+  readonly receipt: PromptReceipt | null;
+  readonly errorCode: string | null;
+}
+
+export type EdgeOutboxError =
+  | { readonly status: 400; readonly code: "invalid-request" }
+  | { readonly status: 401; readonly code: "unauthenticated" }
+  | { readonly status: 403; readonly code: "forbidden" }
+  | { readonly status: 404; readonly code: "input-not-found" }
+  | { readonly status: 409; readonly code: "input-id-conflict" | "session-changed" | "provider-unsupported" | "lifecycle-pending" }
+  | { readonly status: 413; readonly code: "input-too-large" }
+  | { readonly status: 503; readonly code: "target-unavailable" | "durability-unavailable" }
+  | { readonly status: 507; readonly code: "capacity-exceeded" };
+
+export type EdgeOutboxResult<Status extends 200 | 201> =
+  | { readonly ok: true; readonly status: Status; readonly record: EdgeOutboxRecord }
+  | { readonly ok: false; readonly status: EdgeOutboxError["status"]; readonly error: EdgeOutboxError };
+
+export interface EdgeOutbox {
+  /** Durably enqueue on a write route, or return the existing record for an identical input. */
+  admit(input: EdgeOutboxInput): Promise<EdgeOutboxResult<200 | 201>>;
+  /** Read the input owned by this request's principal and extension. */
+  get(key: EdgeOutboxInputKey): Promise<EdgeOutboxResult<200>>;
+}
 
 export interface EdgeRouteContext {
   readonly req: IncomingMessage;
@@ -21,6 +83,7 @@ export interface EdgeRouteContext {
   readonly params: Readonly<Record<string, string>>;
   readonly principal: { readonly id: string; readonly permissions: readonly string[] };
   readonly requestId: string;
+  readonly outbox: EdgeOutbox;
   sendJson(status: number, body: unknown): void;
   /** Recheck the captured credential immediately before a side effect after an asynchronous operation. */
   assertAuthorized(): void;

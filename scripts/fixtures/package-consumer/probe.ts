@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startEdge } from "@agent-console/edge/start";
-import type { EdgeExtension } from "@agent-console/edge/extensions";
+import type { EdgeExtension, EdgeOutboxInput, EdgeOutboxResult } from "@agent-console/edge/extensions";
 import { normalizeOrder, projectPublicAgentSession } from "@agent-console/shared/api";
 import { normalizeConversationImages, type ConversationImage } from "@agent-console/shared/conversation-images";
 import { normalizeRefusedOutboxAction, type RefusedOutboxAction } from "@agent-console/shared/shared-outbox";
@@ -25,6 +25,12 @@ const image: ConversationImage = { id: `${"a".repeat(16)}.0.u0-0.${"b".repeat(32
 assert.deepEqual(normalizeConversationImages([{ ...image, path: "/workspace/image.png" }, { id: "https://example.invalid/image.png" }]), [image]);
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 const imageCredentials: Array<string | undefined> = [];
+const outboxInput: EdgeOutboxInput = {
+  inputId: "packed-input",
+  target: { machine: "fixture", sessionId: "packed-session", sessionIncarnation: "packed-incarnation" },
+  text: "Example reply",
+  source: { channel: "companion", label: "Companion device", prefix: "(companion) " },
+};
 const upstream = createServer((request, response) => {
   if (request.url?.includes("/images/")) {
     imageCredentials.push(request.headers.authorization);
@@ -32,7 +38,10 @@ const upstream = createServer((request, response) => {
     response.end(png);
   } else {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ sessions: [] }));
+    response.end(JSON.stringify({ ok: true, data: { sessions: [{
+      id: outboxInput.target.sessionId, agent: "codex", status: "stopped",
+      session_incarnation: outboxInput.target.sessionIncarnation,
+    }] } }));
   }
 });
 upstream.listen(0, "127.0.0.1");
@@ -41,12 +50,23 @@ const upstreamAddress = upstream.address();
 assert.ok(upstreamAddress && typeof upstreamAddress !== "string");
 const extension: EdgeExtension = {
   id: "fixture",
-  routes: [{ id: "ping", pattern: "/api/ext/fixture/ping", methods: ["GET"], permission: "debug",
-    handle: context => context.sendJson(200, { fixture: true }) }],
+  routes: [
+    { id: "ping", pattern: "/api/ext/fixture/ping", methods: ["GET"], permission: "debug",
+      handle: context => context.sendJson(200, { fixture: true }) },
+    { id: "input", pattern: "/api/ext/fixture/input", methods: ["PUT", "GET"], permission: "debug",
+      async handle(context) {
+        const result: EdgeOutboxResult<200 | 201> = context.method === "PUT"
+          ? await context.outbox.admit(outboxInput)
+          : await context.outbox.get({ inputId: outboxInput.inputId, channel: outboxInput.source.channel });
+        context.sendJson(result.status, result);
+      } },
+  ],
 };
+const stateDirectory = mkdtempSync(join(tmpdir(), "packed-edge-state-"));
 const server = startEdge({
   AGENT_CONSOLE_EDGE_HOST: "127.0.0.1", AGENT_CONSOLE_EDGE_PORT: "0",
   AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: "fixture", url: `http://127.0.0.1:${upstreamAddress.port}`, token: "fixture-daemon-token" }]),
+  AGENT_CONSOLE_STATE_DB: join(stateDirectory, "state.sqlite"),
   AGENT_CONSOLE_TOKEN: "fixture-token", AGENT_CONSOLE_UI_DIR: fileURLToPath(new URL("./dist", import.meta.url)),
 }, { extensions: [extension] });
 
@@ -236,6 +256,16 @@ try {
   const ping = await fetch(`${base}/api/ext/fixture/ping`, { headers });
   assert.equal(ping.status, 200);
   assert.deepEqual(await ping.json(), { fixture: true });
+  const inputUrl = `${base}/api/ext/fixture/input`;
+  const admitted = await fetch(inputUrl, { method: "PUT", headers });
+  assert.equal(admitted.status, 201);
+  const admission = await admitted.json() as EdgeOutboxResult<200 | 201>;
+  assert.ok(admission.ok);
+  assert.deepEqual(admission.record.source, outboxInput.source);
+  assert.equal(admission.record.state, "queued");
+  const read = await fetch(inputUrl, { headers });
+  assert.equal(read.status, 200);
+  assert.deepEqual(await read.json(), { ok: true, status: 200, record: admission.record });
   const imageUrl = `${base}/api/history/sessions/fixture/history/images/${image.id}`;
   assert.equal((await fetch(imageUrl)).status, 401);
   assert.equal(imageCredentials.length, 0, "unauthenticated image reads never contact upstream");
@@ -277,7 +307,7 @@ try {
   assert.ok(fontsFetched >= 2, "both font assets survive packing and composition");
   await checkSubmittedUi(base);
   assert.ok(imageCredentials.every(credential => credential === "Bearer fixture-daemon-token"), "all image reads use the daemon credential");
-  console.log("packed edge and generic UI: PASS (auth, extension route, shared runtime/refused action, authenticated image bytes, page, JS, CSS, fonts)");
+  console.log("packed edge and generic UI: PASS (auth, extension route and outbox, shared runtime/refused action, authenticated image bytes, page, JS, CSS, fonts)");
 } catch (error) {
   // The server deliberately catches uncaught errors; the probe must still fail.
   process.exitCode = 1;
@@ -287,4 +317,5 @@ try {
   upstream.closeAllConnections();
   await Promise.all([server, upstream].map(server => new Promise<void>((resolve, reject) =>
     server.close(error => error ? reject(error) : resolve()))));
+  rmSync(stateDirectory, { recursive: true, force: true });
 }

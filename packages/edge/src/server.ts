@@ -13,7 +13,7 @@ import { forwardHistoryImage } from "./historyImages.ts";
 import {isPromptRequestId,isPromptIncarnation,type PromptRequestBinding} from "@agent-console/shared/prompt-receipt";
 import {forwardPromptReceipt} from "./promptReceipts.ts";
 import { normalizeOutboxAdmission, normalizeRefusedOutboxAction } from "@agent-console/shared/shared-outbox";
-import { OutboxError, OutboxStore, type OutboxTarget } from "./outboxStore.ts";
+import { OutboxError, OutboxStore, type ExtensionOutboxGrant, type OutboxTarget } from "./outboxStore.ts";
 import { outboxCredentialGeneration, SharedOutboxDispatcher } from "./sharedOutbox.ts";
 import { TestCredentialStore, testCredentialHash } from "./testCredentials.ts";
 import { normalizeEmergencyShell } from "@agent-console/shared/shell";
@@ -89,7 +89,8 @@ import {
 } from "@agent-console/shared/maintenance";
 import { DebugEventBuffer, isDebugRoute, requestIdFromHeader } from "./debugEvents.ts";
 import { matchApiRoute, routeParam } from "./apiRoutes.ts";
-import { createEdgeExtensionRegistry, type EdgeExtension, type EdgeRouteMethod } from "./extensions.ts";
+import { createEdgeExtensionRegistry, type EdgeExtension, type EdgeOutboxError, type EdgeRouteMethod } from "./extensions.ts";
+import { createExtensionOutbox } from "./extensionOutbox.ts";
 import { createCsrfExempt, forbidCrossOrigin, sameOrigin, sameOriginOrNativeApp } from "./csrf.ts";
 import { MachinePreferenceInitializedError, MachinePreferencesStore, applyMachinePreferences, validPreferenceReason } from "./machinePreferences.ts";
 import {
@@ -494,9 +495,15 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         && !principalMayUseSession(principal, target.machine, target.sessionId, target.incarnation))) return null;
     return { principal, machine };
   };
+  const extensionGrantActive = (target: OutboxTarget, grant: ExtensionOutboxGrant, principal: PrincipalConfig): boolean =>
+    extensions.routes.some(route => route.key === grant.routeKey && route.permission === grant.permission
+      && route.methods.some(method => method !== "GET"))
+    && (!config.multiUser || (principal.permissions.includes(grant.permission)
+      && principalMayUseSession(principal, target.machine, target.sessionId, target.incarnation)));
   const outboxDispatcher = outboxStore ? new SharedOutboxDispatcher({
     store: outboxStore, access: outboxAccess, intervalMs: options.outboxPollIntervalMs,
     deviceActive: (id, principal) => deviceCredentials.activeDevice(id, principal),
+    extensionGrantActive,
   }) : null;
   const protectOutboxLifecycle = async (machine: MachineConfig, sessionId: string, incarnation: string | null,
     operation: "archive" | "delete" | "maintenance-delete", action: () => Promise<DaemonResult>) => {
@@ -1015,13 +1022,13 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       sendJson(res, 403, { ok: false, error: { message: "forbidden" } });
       return;
     }
-    const machine = match.params.machine;
+    const params = Object.freeze({ ...match.params });
+    const { machine, id: sessionId } = params;
     if (machine !== undefined) {
       if (!byName.has(machine) || (config.multiUser && !principalCanAccessMachine(principal, machine))) {
         sendJson(res, 404, { ok: false, error: { message: `unknown machine: ${machine}` } });
         return;
       }
-      const sessionId = match.params.id;
       if (config.multiUser && sessionId !== undefined && !(isRootPrincipal(principal)
         ? await currentSessionIncarnation(principal, machine, sessionId, requestId)
         : await ownsCurrentSession(principal, machine, sessionId, requestId))) {
@@ -1035,22 +1042,53 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       if (!credentialStillActive(principal)) throw new RequestAuthorizationError();
     };
     assertAuthorized();
-    await route.handle({
-      req,
-      res,
-      method: method as EdgeRouteMethod,
-      url,
-      params: match.params,
-      principal: { id: principal.id, permissions: principal.permissions },
-      requestId,
-      sendJson: (status, body) => sendJson(res, status, body),
-      assertAuthorized,
-      readJsonBody: async (limitBytes) => {
-        const body = await readJsonBody(req, limitBytes);
-        assertAuthorized();
-        return body;
+    let active = true;
+    const authorizeRequest = (write: boolean): EdgeOutboxError | undefined => {
+      const current = principalForRequest(req);
+      if (config.openAccess || !current || current.id !== principal.id || current.token !== principal.token
+        || devicePrincipals.get(current)?.id !== devicePrincipals.get(principal)?.id) {
+        return { status: 401, code: "unauthenticated" };
+      }
+      if (!active || res.writableEnded || res.destroyed || current.managedCredential
+        || (config.multiUser && !current.permissions.includes(route.permission))
+        || (write && (method === "GET" || !csrfExempt(req)))) return { status: 403, code: "forbidden" };
+      return undefined;
+    };
+    const outbox = createExtensionOutbox({
+      store: outboxStore, principalId: principal.id, extensionId: route.key.split(":")[0]!,
+      grant: { routeKey: route.key, permission: route.permission },
+      authorizeRequest,
+      authorizeTarget(target, grant) {
+        const allowed = outboxAccess(target, "dispatch");
+        if (!allowed || !extensionGrantActive(target, grant, allowed.principal)
+          || (machine !== undefined && machine !== target.machine)
+          || (sessionId !== undefined && sessionId !== target.sessionId)) {
+          return { status: 403, code: "forbidden" } as const;
+        }
+        return { machine: allowed.machine, credentialGeneration: outboxCredentialGeneration(allowed.principal, allowed.machine),
+          deviceId: devicePrincipals.get(principal)?.id ?? null };
       },
+      dispatch: () => { void outboxDispatcher?.tick(); },
     });
+    try {
+      await route.handle({
+        req,
+        res,
+        method: method as EdgeRouteMethod,
+        url,
+        params,
+        principal: { id: principal.id, permissions: Object.freeze([...principal.permissions]) },
+        requestId,
+        outbox,
+        sendJson: (status, body) => sendJson(res, status, body),
+        assertAuthorized,
+        readJsonBody: async (limitBytes) => {
+          const body = await readJsonBody(req, limitBytes);
+          assertAuthorized();
+          return body;
+        },
+      });
+    } finally { active = false; }
   }
 
   async function handleApi(
