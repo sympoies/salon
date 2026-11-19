@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { SHARED_OUTBOX_MAX_ITEMS,
   type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
+import type { EdgeOutboxInputKey, EdgeOutboxSource } from "./extensions.ts";
 import { normalizePromptReceipt, type PromptReceipt } from "@agent-console/shared/prompt-receipt";
 
 export interface OutboxTarget {
@@ -17,11 +18,29 @@ export interface OutboxLifecycle {
   readonly ownerToken: string;
   readonly operation: "archive" | "maintenance-delete" | "delete" | null;
 }
+export interface ExtensionOutboxGrant {
+  readonly routeKey: string;
+  readonly permission: string;
+}
+export interface ExtensionOutboxKey extends EdgeOutboxInputKey {
+  readonly principalId: string;
+  readonly extensionId: string;
+}
+export interface ExtensionOutboxInput {
+  readonly target: OutboxTarget;
+  readonly source: EdgeOutboxSource;
+  readonly grant: ExtensionOutboxGrant;
+}
+interface ExtensionOutboxEntry extends ExtensionOutboxInput {
+  readonly admissionHash: string;
+  readonly item: Omit<SharedOutboxItem, "text" | "edit_hold">;
+}
 export interface OutboxAttempt {
   readonly target: OutboxTarget;
   readonly item: SharedOutboxItem;
   readonly credentialGeneration: string;
   readonly deviceId: string | null;
+  readonly extensionGrant?: ExtensionOutboxGrant;
 }
 interface ItemRow {
   sequence: number;
@@ -74,6 +93,11 @@ export class OutboxStore {
       CREATE TABLE IF NOT EXISTS outbox_cancellations (
         scope TEXT NOT NULL, id TEXT NOT NULL, admission_hash TEXT NOT NULL,
         value TEXT NOT NULL, PRIMARY KEY(scope,id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS outbox_extension_inputs (
+        principal_id TEXT NOT NULL, extension_id TEXT NOT NULL, channel TEXT NOT NULL, input_id TEXT NOT NULL,
+        scope TEXT NOT NULL, intent_id TEXT NOT NULL, admission_hash TEXT NOT NULL, admission TEXT NOT NULL,
+        retired_item TEXT, PRIMARY KEY(principal_id,extension_id,channel,input_id), UNIQUE(scope,intent_id)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS outbox_lifecycle (
         machine TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY(machine,session_id)
@@ -137,7 +161,11 @@ export class OutboxStore {
       SELECT scope,id,admission_hash,value FROM outbox_items
       WHERE ${where} json_extract(value,'$.state') = 'cancelled' AND ${older}`)
       .run(...args);
-    this.#db.prepare(`DELETE FROM outbox_items WHERE ${where} json_extract(value,'$.state') IN ('submitted','command_dispatched','cancelled') AND ${older}`)
+    const terminal = `${where} json_extract(value,'$.state') IN ('submitted','command_dispatched','cancelled') AND ${older}`;
+    this.#db.prepare(`UPDATE outbox_extension_inputs SET retired_item=json_remove(retired.value,'$.text','$.edit_hold')
+      FROM (SELECT scope,id,value FROM outbox_items WHERE ${terminal}) AS retired
+      WHERE outbox_extension_inputs.scope=retired.scope AND intent_id=retired.id`).run(...args);
+    this.#db.prepare(`DELETE FROM outbox_items WHERE ${terminal}`)
       .run(...args);
   }
   #row(target: OutboxTarget, id: string): ItemRow | undefined {
@@ -173,40 +201,70 @@ export class OutboxStore {
       .get(key(target), id) as { value: string } | undefined;
     return cancelled ? JSON.parse(cancelled.value) as SharedOutboxItem : undefined;
   }
-  admit(target: OutboxTarget, id: string, text: string, credentialGeneration: string, deviceId: string | null = null): { created: boolean; item: SharedOutboxItem } {
+  extensionInput(input: ExtensionOutboxKey): ExtensionOutboxEntry | undefined {
+    const row = this.#db.prepare(`SELECT admission, extension.admission_hash, COALESCE(json_remove(items.value,'$.text','$.edit_hold'),retired_item) AS item
+      FROM outbox_extension_inputs AS extension LEFT JOIN outbox_items AS items
+        ON items.scope=extension.scope AND items.id=extension.intent_id
+      WHERE principal_id=? AND extension_id=? AND channel=? AND input_id=?`)
+      .get(input.principalId, input.extensionId, input.channel, input.inputId) as
+      { admission: string; admission_hash: string; item: string } | undefined;
+    if (!row) return undefined;
+    return { ...JSON.parse(row.admission) as ExtensionOutboxInput,
+      admissionHash: row.admission_hash, item: JSON.parse(row.item) as ExtensionOutboxEntry["item"] };
+  }
+  admitExtensionInput(input: ExtensionOutboxKey, admission: ExtensionOutboxInput, originalText: string,
+    credentialGeneration: string, deviceId: string | null): { created: boolean; entry: ExtensionOutboxEntry } {
+    const { target, source } = admission;
+    const admissionHash = fingerprint(JSON.stringify([key(target), originalText, source.label, source.prefix]));
     return this.#transaction(() => {
-      const existing = this.#row(target, id);
+      const existing = this.extensionInput(input);
       if (existing) {
-        if (existing.admission_hash !== fingerprint(text)) throw new OutboxError("outbox-intent-conflict", 409);
-        return { created: false, item: item(existing) };
+        if (existing.admissionHash !== admissionHash) throw new OutboxError("outbox-intent-conflict", 409);
+        return { created: false, entry: existing };
       }
-      const cancelled = this.#db.prepare("SELECT admission_hash,value FROM outbox_cancellations WHERE scope=? AND id=?")
-        .get(key(target), id) as { admission_hash: string; value: string } | undefined;
-      if (cancelled) {
-        if (cancelled.admission_hash !== fingerprint(text)) throw new OutboxError("outbox-intent-conflict", 409);
-        return { created: false, item: JSON.parse(cancelled.value) as SharedOutboxItem };
-      }
-      const pruned = this.#db.prepare("SELECT request_id, payload_hash, receipt FROM outbox_attempts WHERE scope=? AND intent_id=? ORDER BY rowid DESC LIMIT 1")
-        .get(key(target), id) as { request_id: string; payload_hash: string; receipt: string | null } | undefined;
-      if (pruned) {
-        if (pruned.payload_hash !== fingerprint(JSON.stringify([text, false]))) throw new OutboxError("outbox-intent-conflict", 409);
-        const receipt = pruned.receipt ? JSON.parse(pruned.receipt) as PromptReceipt : null;
-        const now = Date.now();
-        return { created: false, item: { id, text, session_incarnation: target.incarnation, state: receipt?.outcome ?? "unknown",
-          revision: 1, created_at: now, updated_at: now, request_id: pruned.request_id, receipt, edit_hold: null, error_code: receipt?.code ?? null } };
-      }
-      if (this.#lifecycleBlocked(target)) throw new OutboxError("outbox-lifecycle-pending", 409);
-      if (this.#rows(target).length >= SHARED_OUTBOX_MAX_ITEMS) this.#prune(key(target), SHARED_OUTBOX_MAX_ITEMS / 2);
-      if (this.#count() >= STORE_MAX_ITEMS) this.#prune(null, STORE_MAX_ITEMS / 2);
-      if (this.#rows(target).length >= SHARED_OUTBOX_MAX_ITEMS || this.#count() >= STORE_MAX_ITEMS) throw new OutboxError("outbox-capacity", 507);
-      this.#ensure(target);
-      const now = Date.now();
-      const value: SharedOutboxItem = { id, text, session_incarnation: target.incarnation, state: "queued", revision: 1,
-        created_at: now, updated_at: now, request_id: null, receipt: null, edit_hold: null, error_code: null };
-      this.#db.prepare("INSERT INTO outbox_items(scope,id,admission_hash,credential_generation,next_attempt_at,value,native_handoff,device_id) VALUES(?,?,?,?,?,?,1,?)")
-        .run(key(target), id, fingerprint(text), credentialGeneration, 0, JSON.stringify(value), deviceId);
-      this.#bump(target); return { created: true, item: value };
+      const intentId = randomUUID();
+      const { item } = this.#admit(target, intentId, source.prefix + originalText, credentialGeneration, deviceId);
+      this.#db.prepare(`INSERT INTO outbox_extension_inputs
+        (principal_id,extension_id,channel,input_id,scope,intent_id,admission_hash,admission) VALUES(?,?,?,?,?,?,?,?)`)
+        .run(input.principalId, input.extensionId, input.channel, input.inputId, key(target), intentId, admissionHash, JSON.stringify(admission));
+      return { created: true, entry: { ...admission, admissionHash, item } };
     });
+  }
+  admit(target: OutboxTarget, id: string, text: string, credentialGeneration: string, deviceId: string | null = null): { created: boolean; item: SharedOutboxItem } {
+    return this.#transaction(() => this.#admit(target, id, text, credentialGeneration, deviceId));
+  }
+  #admit(target: OutboxTarget, id: string, text: string, credentialGeneration: string, deviceId: string | null): { created: boolean; item: SharedOutboxItem } {
+    const existing = this.#row(target, id);
+    if (existing) {
+      if (existing.admission_hash !== fingerprint(text)) throw new OutboxError("outbox-intent-conflict", 409);
+      return { created: false, item: item(existing) };
+    }
+    const cancelled = this.#db.prepare("SELECT admission_hash,value FROM outbox_cancellations WHERE scope=? AND id=?")
+      .get(key(target), id) as { admission_hash: string; value: string } | undefined;
+    if (cancelled) {
+      if (cancelled.admission_hash !== fingerprint(text)) throw new OutboxError("outbox-intent-conflict", 409);
+      return { created: false, item: JSON.parse(cancelled.value) as SharedOutboxItem };
+    }
+    const pruned = this.#db.prepare("SELECT request_id, payload_hash, receipt FROM outbox_attempts WHERE scope=? AND intent_id=? ORDER BY rowid DESC LIMIT 1")
+      .get(key(target), id) as { request_id: string; payload_hash: string; receipt: string | null } | undefined;
+    if (pruned) {
+      if (pruned.payload_hash !== fingerprint(JSON.stringify([text, false]))) throw new OutboxError("outbox-intent-conflict", 409);
+      const receipt = pruned.receipt ? JSON.parse(pruned.receipt) as PromptReceipt : null;
+      const now = Date.now();
+      return { created: false, item: { id, text, session_incarnation: target.incarnation, state: receipt?.outcome ?? "unknown",
+        revision: 1, created_at: now, updated_at: now, request_id: pruned.request_id, receipt, edit_hold: null, error_code: receipt?.code ?? null } };
+    }
+    if (this.#lifecycleBlocked(target)) throw new OutboxError("outbox-lifecycle-pending", 409);
+    if (this.#rows(target).length >= SHARED_OUTBOX_MAX_ITEMS) this.#prune(key(target), SHARED_OUTBOX_MAX_ITEMS / 2);
+    if (this.#count() >= STORE_MAX_ITEMS) this.#prune(null, STORE_MAX_ITEMS / 2);
+    if (this.#rows(target).length >= SHARED_OUTBOX_MAX_ITEMS || this.#count() >= STORE_MAX_ITEMS) throw new OutboxError("outbox-capacity", 507);
+    this.#ensure(target);
+    const now = Date.now();
+    const value: SharedOutboxItem = { id, text, session_incarnation: target.incarnation, state: "queued", revision: 1,
+      created_at: now, updated_at: now, request_id: null, receipt: null, edit_hold: null, error_code: null };
+    this.#db.prepare("INSERT INTO outbox_items(scope,id,admission_hash,credential_generation,next_attempt_at,value,native_handoff,device_id) VALUES(?,?,?,?,?,?,1,?)")
+      .run(key(target), id, fingerprint(text), credentialGeneration, 0, JSON.stringify(value), deviceId);
+    this.#bump(target); return { created: true, item: value };
   }
   actOnRefused(target: OutboxTarget, id: string, action: RefusedOutboxAction, credentialGeneration?: string, deviceId: string | null = null): SharedOutboxItem {
     return this.#transaction(() => {
@@ -236,7 +294,10 @@ export class OutboxStore {
     if (!row) return undefined;
     const value = item(row);
     if (this.#lifecycleBlocked(target)) return undefined;
-    return { target, item: value, credentialGeneration: row.credential_generation, deviceId: row.device_id };
+    const extension = this.#db.prepare("SELECT admission FROM outbox_extension_inputs WHERE scope=? AND intent_id=?")
+      .get(row.scope, row.id) as { admission: string } | undefined;
+    return { target, item: value, credentialGeneration: row.credential_generation, deviceId: row.device_id,
+      ...(extension && { extensionGrant: (JSON.parse(extension.admission) as ExtensionOutboxInput).grant }) };
   }
   claim(candidate: OutboxAttempt, now = Date.now()): OutboxAttempt | undefined {
     return this.#transaction(() => {

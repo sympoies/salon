@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { normalizePromptReceipt, type PromptReceipt } from "@agent-console/shared/prompt-receipt";
 import type { MachineConfig, PrincipalConfig } from "./config.ts";
 import { aggregateSessions, daemonFetch, type DaemonResult } from "./upstream.ts";
-import { OutboxStore, type OutboxAttempt, type OutboxTarget } from "./outboxStore.ts";
+import { OutboxStore, type ExtensionOutboxGrant, type OutboxAttempt, type OutboxTarget } from "./outboxStore.ts";
 
 export function outboxCredentialGeneration(principal: PrincipalConfig, machine: MachineConfig): string {
   // Never persist credentials. A reissued credential or repointed machine must
@@ -36,6 +36,7 @@ export interface OutboxDispatchOptions {
   readonly intervalMs?: number;
   /** A public issuing-device identity is not an authorization credential. */
   readonly deviceActive?: (id: string, principal: string) => boolean;
+  readonly extensionGrantActive?: (target: OutboxTarget, grant: ExtensionOutboxGrant, principal: PrincipalConfig) => boolean;
 }
 
 /** A durable claim is never re-POSTed, even if the process died before POST. */
@@ -50,6 +51,9 @@ export class SharedOutboxDispatcher {
   constructor(options: OutboxDispatchOptions) { this.#options = options; }
   #credentialActive(attempt: OutboxAttempt): boolean {
     return attempt.deviceId === null || this.#options.deviceActive?.(attempt.deviceId, attempt.target.principalId) === true;
+  }
+  #extensionGrantActive(attempt: OutboxAttempt, principal: PrincipalConfig): boolean {
+    return !attempt.extensionGrant || this.#options.extensionGrantActive?.(attempt.target, attempt.extensionGrant, principal) === true;
   }
   start(): void {
     this.#timer = setInterval(() => void this.tick(), this.#options.intervalMs ?? 2_000);
@@ -78,7 +82,10 @@ export class SharedOutboxDispatcher {
         if (this.#stopped) return;
         const candidate = store.candidate(target);
         if (!candidate) continue;
-        if (candidate.credentialGeneration !== generation || !this.#credentialActive(candidate)) { store.refuse(candidate, "outbox-authorization-changed"); continue; }
+        if (candidate.credentialGeneration !== generation || !this.#credentialActive(candidate)
+          || !this.#extensionGrantActive(candidate, allowed.principal)) {
+          store.refuse(candidate, "outbox-authorization-changed"); continue;
+        }
         let observed = observations.get(target.machine);
         if (!observed) {
           observed = await aggregateSessions([allowed.machine]);
@@ -91,7 +98,8 @@ export class SharedOutboxDispatcher {
         const session = observed.sessions.find(session => session.id === target.sessionId);
         if (!session || session.session_incarnation !== target.incarnation) { store.cancelUnconfirmed(target); continue; }
         const current = access(target, "dispatch");
-        if (!current || outboxCredentialGeneration(current.principal, current.machine) !== generation || !this.#credentialActive(candidate)) {
+        if (!current || outboxCredentialGeneration(current.principal, current.machine) !== generation
+          || !this.#credentialActive(candidate) || !this.#extensionGrantActive(candidate, current.principal)) {
           store.refuse(candidate, "outbox-authorization-changed"); continue;
         }
         const provider = (session.provider_resume as { provider?: unknown } | undefined)?.provider ?? session.agent;

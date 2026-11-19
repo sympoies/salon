@@ -51,5 +51,62 @@ closed disclosure. Return nothing to keep the default presentation. The original
 remains available for copy and resend. Errors fall back to the default presentation.
 Extensions are consulted in registration order until one returns a result.
 
+## Extension outbox
+
+An authenticated edge route can enqueue input in Salon's durable outbox through
+`ctx.outbox`. Import `EdgeExtension`, `EdgeOutboxInput`, `EdgeOutboxRecord` and
+`EdgeOutboxError` from `@agent-console/edge/extensions`. An adapter supplies the
+exact target and its own trusted source metadata after checking its channel
+grant and resolving the recipient. For example, a write route can admit:
+
+```ts
+const result = await ctx.outbox.admit({
+  inputId: "example-input",
+  target: {
+    machine: "example",
+    sessionId: "example-session",
+    sessionIncarnation: "example-incarnation",
+  },
+  text: "Example reply",
+  source: { channel: "companion", label: "Companion device", prefix: "(companion) " },
+});
+ctx.sendJson(result.status, result);
+```
+
+The facade requires a persistent edge state database. Admission needs a
+CSRF-checked write route. Every call uses the request's authenticated principal
+and device, the current route permission and the exact target's session grant
+in multi-user mode. The edge rechecks authorization after daemon observation.
+Before provider submission, the shared dispatcher checks the original route
+permission, principal, session and issuing device again. Adapters enforce their
+own channel and recipient policy before calling `admit`.
+
+The input ID is opaque and scoped to the principal, extension and channel. Use
+1–128 letters, digits, periods, underscores or hyphens for the ID and a
+lowercase channel name of up to 64 characters using letters, digits and
+hyphens. A new input returns `201`. The same ID, exact target, text and source
+return the existing record with `200`. Changing the target, text, label or
+prefix for an existing key returns `409 input-id-conflict`.
+
+The record stores `channel`, `label` and `prefix` as structured source fields.
+Salon adds the trusted prefix and its separator once when composing the
+provider prompt. The user bubble then includes the prefix from that prompt.
+Supply the label and prefix from trusted adapter metadata, independent of the
+user text. The complete prompt is limited to 16 KiB of UTF-8.
+
+Call `await ctx.outbox.get({ channel, inputId })` before resolving a target or
+to poll the same admission. An absent key in the caller's namespace returns
+`404 input-not-found`. For an existing key, the edge verifies access to its
+stored exact target before returning the record. Read and replay require the
+target incarnation to be observable. A successful read returns `200` even
+when the delivery state is pending, refused or unknown. The record includes
+the outbox intent ID, state, revision, timestamps in Unix milliseconds and
+the request ID, receipt and delivery error code when available.
+
+Both methods return a discriminated result with `ok` and `status`. On
+success, use `record`. On failure, use the typed `error.code`. An accepted
+input enters the shared dispatcher, where its state and receipt reflect
+provider submission.
+
 See [package consumption](package-consumption.md) for the local producer and isolated
 installed-package check.
