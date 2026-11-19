@@ -43,8 +43,10 @@ function fixtureSessions(count: number) {
   }));
 }
 
-async function startFixture(count: number, terminalTraffic = false) {
-  const sessions = fixtureSessions(count);
+async function startFixture(count: number, terminalTraffic = false, withOutbox = false) {
+  const sessions = fixtureSessions(count).map(session => withOutbox
+    ? { ...session, session_incarnation: "fixture-incarnation" } : session);
+  let outboxReads = 0;
   const bytes = new Map<string, number>();
   const add = (key: string, chunk: string | Uint8Array) =>
     bytes.set(key, (bytes.get(key) ?? 0) + Buffer.byteLength(chunk));
@@ -65,7 +67,7 @@ async function startFixture(count: number, terminalTraffic = false) {
       res.setHeader("content-type", "application/json");
       return res.end(JSON.stringify({ ok: true, data }));
     };
-    if (path === "/sessions") return json({ sessions, capabilities: { last_prompt: true, last_message: true } });
+    if (path === "/sessions") return json({ sessions, capabilities: { history: true, last_prompt: true, last_message: true } });
     if (path === "/activity/events") {
       res.writeHead(200, { "content-type": "text/event-stream" });
       activity.add(res);
@@ -74,6 +76,16 @@ async function startFixture(count: number, terminalTraffic = false) {
       return;
     }
     if (path === "/usage") return json({ providers: [] });
+    if (req.method === "POST" && path === "/sessions/session-0/attachments") {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        const file = Buffer.concat(chunks);
+        add("attachment upload", file);
+        json({ attachment: { path: "/fixture/attachment.txt", original_name: "attachment.txt", bytes: file.length } });
+      });
+      return;
+    }
     res.writeHead(404).end();
   });
   daemon.on("upgrade", (req, socket) => {
@@ -99,6 +111,7 @@ async function startFixture(count: number, terminalTraffic = false) {
   edge.prependListener("request", (req, res) => {
     const path = new URL(req.url!, "http://fixture").pathname;
     if (!path.startsWith("/api/")) return;
+    if (req.method === "GET" && path.endsWith("/outbox")) outboxReads++;
     const observe = (chunk: unknown) => {
       if (typeof chunk !== "string" && !(chunk instanceof Uint8Array)) return;
       const heartbeat = typeof chunk === "string" && (/(?:^|\n)event: heartbeat\n/.test(chunk) || chunk.startsWith(":"));
@@ -113,6 +126,7 @@ async function startFixture(count: number, terminalTraffic = false) {
   const timer = setInterval(snapshot, 1_000);
   return {
     base, bytes, sessions, snapshot, sockets,
+    get outboxReads() { return outboxReads; },
     async close() {
       clearInterval(timer);
       for (const socket of sockets) socket.destroy();
@@ -198,3 +212,73 @@ test("the signed-in session list loads and receives live updates on a throttled 
     await fixture.close();
   }
 });
+
+for (const view of ["conversation", "terminal"] as const) {
+  test(`a picked file reaches the original ${view} input after document visibility changes`, { timeout: 25_000 }, async () => {
+    const fixture = await startFixture(1, false, view === "conversation");
+    const page = await launchPage();
+    const selector = JSON.stringify(`.${view}-file-input`);
+    const fileText = "fixture attachment";
+    const setVisibility = (visibility: "hidden" | "visible") => page.evaluate(`(async () => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "${visibility}" });
+      document.dispatchEvent(new Event("visibilitychange"));
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    })()`);
+    try {
+      await signIn(page, fixture.base);
+      await page.setViewport(390, 850, 1, true);
+      await page.navigate(fixture.base);
+      await until(page, 'document.querySelector(".mobile-session-card-open-action")', "the session card appears");
+      await page.evaluate('document.querySelector(".mobile-session-card-open-action").click()');
+      await until(page, 'document.querySelector(".conversation-file-input")', "the conversation opens");
+      if (view === "terminal") {
+        await page.evaluate(`[...document.querySelectorAll("button")].find(button => button.textContent === "Terminal")?.click()`);
+      }
+      await until(page, `document.querySelector(${selector})`, `the ${view} file input appears`);
+      if (view === "terminal") {
+        const deadline = Date.now() + 5_000;
+        while (!fixture.sockets.size && Date.now() < deadline) await sleep(50);
+        assert.equal(fixture.sockets.size, 1, "the visible terminal streams output");
+      }
+      if (view === "conversation") {
+        const deadline = Date.now() + 5_000;
+        while (!fixture.outboxReads && Date.now() < deadline) await sleep(50);
+        assert.ok(fixture.outboxReads > 0, "the visible composer reads its reply outbox");
+      }
+      await page.evaluate(`void (window.originalFileInput = document.querySelector(${selector}))`);
+
+      await setVisibility("hidden");
+      const connectedWhileHidden = await page.evaluate("window.originalFileInput.isConnected");
+      if (view === "terminal") {
+        const deadline = Date.now() + 5_000;
+        while (fixture.sockets.size && Date.now() < deadline) await sleep(50);
+        assert.equal(fixture.sockets.size, 0, "the hidden terminal stops streaming output");
+      }
+      if (view === "conversation") {
+        const visibleReads = fixture.outboxReads;
+        await sleep(3_300);
+        assert.equal(fixture.outboxReads, visibleReads, "the hidden composer stops polling its reply outbox");
+      }
+      await setVisibility("visible");
+      await until(page, `document.querySelector(${selector})`, `the ${view} file input is visible again`);
+      assert.deepEqual({
+        connectedWhileHidden,
+        sameInputOnReturn: await page.evaluate(`window.originalFileInput === document.querySelector(${selector})`),
+      }, { connectedWhileHidden: true, sameInputOnReturn: true }, "the picker retains its original input");
+
+      await page.evaluate(`(() => {
+        const input = window.originalFileInput;
+        const picked = new DataTransfer();
+        picked.items.add(new File([${JSON.stringify(fileText)}], "attachment.txt", { type: "text/plain" }));
+        input.files = picked.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      })()`);
+      const deadline = Date.now() + 5_000;
+      while (!fixture.bytes.has("attachment upload") && Date.now() < deadline) await sleep(50);
+      assert.equal(fixture.bytes.get("attachment upload"), Buffer.byteLength(fileText), "the original input starts the upload");
+    } finally {
+      await page.close();
+      await fixture.close();
+    }
+  });
+}

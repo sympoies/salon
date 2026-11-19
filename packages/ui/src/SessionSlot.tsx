@@ -351,6 +351,7 @@ interface SessionSlotView {
   readonly sessionListDisplay?: SessionListDisplay;
   readonly conversationActive?: boolean;
   readonly contentVisible?: boolean;
+  readonly contentActive?: boolean;
   /** A focused phone session shows its Conversation instead of the terminal. */
   readonly phoneConversation?: boolean;
   readonly conversationReplyDrafts?: ConversationReplyDrafts;
@@ -488,6 +489,7 @@ export function SessionSlot({
     sessionListDisplay = "terminal",
     conversationActive = true,
     contentVisible = true,
+    contentActive = true,
     phoneConversation = false,
     conversationReplyDrafts,
     connectionStatusNotice,
@@ -1005,13 +1007,13 @@ export function SessionSlot({
       {s && contentVisible ? (
         showPhoneConversation ? (
           <PhoneConversationPane key={`${sessionKey(s)}:${s.provider_resume?.session_id ?? ""}`}
-            session={s} machineReachable={machineReachable} replyDrafts={conversationReplyDrafts} recovery={conversationRecovery}
+            session={s} machineReachable={machineReachable} active={contentActive} replyDrafts={conversationReplyDrafts} recovery={conversationRecovery}
             onTerminal={onTerminal ? () => onTerminal(s) : undefined} swipeEnabled={sessionCount > 1}
             onSwipe={(direction) => (direction === "previous" ? onFocusPrevious() : onFocusNext())}
             onBusyChange={onConversationBusyChange} refreshRef={conversationRefreshRef} />
         ) : conversationTile ? (
           <SessionConversationPane key={`${sessionKey(s)}:${s.provider_resume?.session_id ?? ""}`}
-            session={s} machineReachable={machineReachable} active={conversationActive} replyDrafts={conversationReplyDrafts}
+            session={s} machineReachable={machineReachable} active={contentActive && conversationActive} replyDrafts={conversationReplyDrafts}
             recovery={conversationRecovery} />
         ) : s.status === "running" ? (
           <>
@@ -1035,6 +1037,7 @@ export function SessionSlot({
               id={s.id}
               sessionIncarnation={s.session_incarnation}
               agent={s.agent}
+              active={contentActive}
               authQuarantined={isAuthQuarantined(s)}
               autoFocus={focused || gridFocusTarget || cmdFocusTarget}
               fontSize={fontSize}

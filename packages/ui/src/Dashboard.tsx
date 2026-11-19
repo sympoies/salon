@@ -2862,7 +2862,8 @@ export function Dashboard({
   }, [focusedKey, overviewPage.sessionKeys, promptTargetKey]);
   const terminalDisplay = resolveDashboardTerminalDisplay({ focusedKey });
   const visibleDocument = useSyncExternalStore(subscribeDocumentVisibility, documentIsVisible, documentIsVisible);
-  const paneContentVisible = visibleDocument && active && !showHistory && !showCreate;
+  // The native picker can hide the document while its file input is awaiting a result.
+  const paneContentVisible = active && !showHistory && !showCreate;
   const hiddenFocusedSlot = focusedKey && !focusedGridSlots.includes(focusedKey) ? focusedKey : null;
   const overviewDesktopSlots: SlotKey[] = [
     ...overviewPage.sessionKeys,
@@ -3265,6 +3266,7 @@ export function Dashboard({
                   focused,
                   sessionListDisplay: tileListDisplay,
                   conversationActive: conversationKey === null,
+                  contentActive: visibleDocument,
                   contentVisible: paneContentVisible && (!focusedKey || focused) && (!conversationKey || viewport.width >= 1100),
                   phoneConversation: Boolean(focused && viewport.mobile && phoneConversationMode && s
                     && historyMachineNames.has(s.machine)),
@@ -3420,7 +3422,7 @@ export function Dashboard({
         <LiveConversationPanel
           key={conversationKey}
           session={conversationSession}
-          active={paneContentVisible}
+          active={paneContentVisible && visibleDocument}
           docked={viewport.width >= 1100}
           showComposer={viewport.mobile}
           onTerminal={viewport.mobile ? () => openPhoneTerminal(conversationSession) : undefined}

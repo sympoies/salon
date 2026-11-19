@@ -318,10 +318,13 @@ export class SharedOutboxClient {
     if (!this.active()) return;
     await this.ready;
     await this.reload().catch(() => {});
-    const targets = new Map([...this.watched].map(([key, value]) => [key, value.target]));
+    // Hidden panes retain their inputs. Their watched targets can wait until the
+    // document returns, while queued admissions still need reconciliation.
+    const watched = globalThis.document?.visibilityState === "hidden" ? [] : [...this.watched];
+    const targets = new Map(watched.map(([key, value]) => [key, value.target]));
     for (const row of this.rows.values()) {
       // A replacement view must learn when the server retires its cached echo.
-      const previous = [...this.watched.values()].some(({ target }) => target.machine === row.target.machine
+      const previous = watched.some(([, { target }]) => target.machine === row.target.machine
         && target.id === row.target.id && target.incarnation !== row.target.incarnation);
       if (row.admissions.length || (previous && this.outgoingItems(row).some(item =>
         !["submitted", "command_dispatched", "cancelled"].includes(item.state) && !this.isDismissed(row, item)))) targets.set(row.key, row.target);
@@ -348,7 +351,8 @@ export class SharedOutboxClient {
   watch(target: SharedOutboxTarget): () => void {
     const key = this.key(target), existing = this.watched.get(key);
     this.watched.set(key, { target, count: (existing?.count ?? 0) + 1 });
-    const stop = this.start(); void this.sync(target);
+    const stop = this.start();
+    if (globalThis.document?.visibilityState !== "hidden") void this.sync(target);
     return () => { const current = this.watched.get(key); if (current && current.count > 1) current.count--; else this.watched.delete(key); stop(); };
   }
   observe(sessions: readonly Session[]) { this.currentSessions = sessions; }

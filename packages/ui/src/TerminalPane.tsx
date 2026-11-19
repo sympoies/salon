@@ -74,6 +74,7 @@ export interface TerminalPaneProps {
   readonly autoFocus?: boolean;
   readonly fontSize?: number;
   readonly interactive?: boolean;
+  readonly active?: boolean;
   readonly readableFit?: boolean;
   readonly realtimeOutput?: boolean;
   readonly renderMode?: TerminalRenderMode;
@@ -103,6 +104,7 @@ export function TerminalPane({
   autoFocus = false,
   fontSize = BASE_TERMINAL_FONT_SIZE,
   interactive = true,
+  active = true,
   readableFit = false,
   realtimeOutput,
   renderMode = "realtime",
@@ -516,6 +518,7 @@ export function TerminalPane({
   }, [showKeyBar]);
 
   useEffect(() => {
+    if (!active) return;
     const el = hostRef.current;
     if (!el) {
       return;
@@ -568,7 +571,7 @@ export function TerminalPane({
       setTerminalTouchMenu,
       setSelectionHandles,
     });
-  }, [agent, id, localReconnect, machine, reconnectToken, scrollback, terminalInstanceKey]);
+  }, [active, agent, id, localReconnect, machine, reconnectToken, scrollback, terminalInstanceKey]);
 
   useEffect(() => {
     if (
