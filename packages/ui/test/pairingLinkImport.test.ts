@@ -132,7 +132,7 @@ for (const interruption of ["none", "cancel", "connection", "replacement"]) test
   } finally { await f.close(); }
 });
 
-for (const outcome of ["valid", "cancel", "error", "connection"]) test(`consumer Scan QR hook imports only a current successful scan (${outcome})`, async () => {
+for (const outcome of ["valid", "cancel", "error", "connection", "replacement", "unmount", "invalid"]) test(`consumer Scan QR hook imports only a current successful scan (${outcome})`, async () => {
   const f = await fixture();
   try {
     const { PairingLinkContext, ScanPairingLinkButton } = await f.harness.loadModule<typeof import("../src/PairingLinkActions.tsx")>("/src/PairingLinkActions.tsx");
@@ -142,14 +142,16 @@ for (const outcome of ["valid", "cancel", "error", "connection"]) test(`consumer
     await act(async () => f.root.render(createElement(PairingLinkContext.Provider, { value: { scanPairingLink: () => scanned } }, createElement(ScanPairingLinkButton))));
     await act(async () => f.container.querySelector("button")!.click());
     if (outcome === "connection") f.runtime.saveToken("replacement-synthetic-token");
+    if (outcome === "replacement") f.runtime.importPairingLink(link.replace(code, "A".repeat(20)));
+    if (outcome === "unmount") await act(async () => f.root.render(null));
     await act(async () => {
       if (outcome === "error") reject(new Error(link));
-      else resolve(outcome === "cancel" ? null : link);
+      else resolve(outcome === "cancel" ? null : outcome === "invalid" ? `${link} ` : link);
     });
-    assert.equal(Boolean(f.runtime.pendingPairingLink()), outcome === "valid");
+    assert.equal(f.runtime.pendingPairingLink()?.code, outcome === "valid" ? code : outcome === "replacement" ? "A".repeat(20) : undefined);
     assert.equal(f.calls.length, 0, "scanning hands off input without performing claim or exchange itself");
     assert.equal((f.container.textContent ?? "").includes(code), false);
-    if (outcome === "error") assert.equal(f.container.querySelector('[role="alert"]')?.textContent, "QR scan unavailable. Please try again.");
+    if (outcome === "error" || outcome === "invalid") assert.equal(f.container.querySelector('[role="alert"]')?.textContent, "QR scan unavailable. Please try again.");
   } finally { await f.close(); }
 });
 
@@ -171,5 +173,43 @@ test("browser Open in app hook receives the scrubbed fragment only on an explici
     assert.deepEqual(received, [`https://pairing.example.test/#pair=${code}`]);
     assert.equal(f.calls.length, 0); assert.equal(f.runtime.loadToken(), "previous-synthetic-token");
     assert.equal(f.container.querySelector('[role="alert"]')?.textContent, "App handoff unavailable. Please try again.");
+  } finally { await f.close(); }
+});
+
+
+test("invalid replacement clears the previous import and whitespace is rejected", async () => {
+  const f = await fixture();
+  try {
+    for (const invalid of [` ${link}`, `${link} `, `\t${link}`, `${link}\n`, link.replace("#pair=", "#pair= ")]) {
+      f.runtime.importPairingLink(link);
+      assert.throws(() => f.runtime.importPairingLink(invalid), { message: "Invalid pairing link." });
+      assert.equal(f.runtime.pendingPairingLink(), undefined);
+    }
+  } finally { await f.close(); }
+});
+
+test("adapter actions appear only in their supported environment and reparse handoff links", async () => {
+  const f = await fixture();
+  try {
+    const { PairingLinkContext, ScanPairingLinkButton, OpenPairingLinkInAppButton } = await f.harness.loadModule<typeof import("../src/PairingLinkActions.tsx")>("/src/PairingLinkActions.tsx");
+    const received: string[] = [];
+    const render = async (options: { scanPairingLink?: () => Promise<string | null>; openPairingLinkInApp?: (url: string) => void }, value: string | undefined) => {
+      await act(async () => f.root.render(createElement(PairingLinkContext.Provider, { value: options },
+        createElement(ScanPairingLinkButton), createElement(OpenPairingLinkInAppButton, { code: value, disabled: false }))));
+    };
+    const options = { scanPairingLink: async () => link, openPairingLinkInApp: (url: string) => { received.push(url); } };
+    await render({}, code);
+    assert.equal(f.container.querySelectorAll("button").length, 0);
+    await render(options, code);
+    assert.equal(f.container.textContent, "Scan QR");
+    f.window.location.href = "https://pairing.example.test/";
+    await render({}, code);
+    assert.equal(f.container.querySelectorAll("button").length, 0);
+    await render(options, "invalid");
+    assert.equal(f.container.querySelectorAll("button").length, 0);
+    await render(options, code);
+    assert.equal(f.container.textContent, "Open in app");
+    await act(async () => f.container.querySelector("button")!.click());
+    assert.deepEqual(received, [`https://pairing.example.test/#pair=${code}`]);
   } finally { await f.close(); }
 });
