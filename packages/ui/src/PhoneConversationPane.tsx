@@ -30,13 +30,14 @@ function hasTextSelection(): boolean {
  * The session header stays the focused slot's own, so only history, composer
  * and the horizontal session swipe live here.
  */
-export function PhoneConversationPane({ session, machineReachable, replyDrafts, recovery, onTerminal, swipeEnabled, onSwipe, onBusyChange, refreshRef }: {
+export function PhoneConversationPane({ session, machineReachable, active = true, replyDrafts, recovery, onTerminal, swipeEnabled, onSwipe, onBusyChange, refreshRef }: {
   readonly session: Session;
   /** The Dashboard's resume of this session, for a stopped one (#921). */
   readonly recovery?: ConversationRecovery;
   /** The switch to this session's terminal, for a turn that may be stuck (#921). */
   readonly onTerminal?: () => void;
   readonly machineReachable: boolean;
+  readonly active?: boolean;
   readonly replyDrafts?: ConversationReplyDrafts;
   readonly swipeEnabled: boolean;
   readonly onSwipe: (direction: SessionSwipeDirection) => void;
@@ -52,7 +53,7 @@ export function PhoneConversationPane({ session, machineReachable, replyDrafts, 
   }, [busy, onBusyChange]);
   useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
   const { conversation, providerSessionId, error, resolving } = useLiveConversation(session, {
-    machineReachable, paused: voiceOpen,
+    machineReachable, paused: !active || voiceOpen,
   });
   const { session: historySession, latestMessagePaging, open: openConversation, refreshLatest } = conversation;
   useEffect(() => {
