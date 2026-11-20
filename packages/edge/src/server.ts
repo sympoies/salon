@@ -378,6 +378,21 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   // Attach has its own breaker: a slow session list must not refuse attaches
   // that would connect, and only a stalled attach connect opens this one.
   const attachHealth = options.attachHealth ?? new MachineHealth();
+  // Share only concurrent observations for the same reader and selection. Fresh
+  // requests bypass this map, and one watcher cannot abort another reader's work.
+  const sessionObservations = new Map<string, ReturnType<typeof aggregateSessions>>();
+  const observeSessions = (principal: PrincipalConfig, machines: EdgeConfig["machines"]) => {
+    const key = JSON.stringify([principal.id, machines.map(machine => [machine.name, machine.active])]);
+    const existing = sessionObservations.get(key);
+    if (existing) return existing;
+    const pending = aggregateSessions(machines, machineHealth);
+    sessionObservations.set(key, pending);
+    const clear = () => {
+      if (sessionObservations.get(key) === pending) sessionObservations.delete(key);
+    };
+    void pending.then(clear, clear);
+    return pending;
+  };
   const resourceWatches = new ResourceWatchRegistry();
   const activityStreams = new SharedActivityStreams();
   // A board read must never add latency to the frequently polled session list.
@@ -1633,7 +1648,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           : config.machines;
         const only = selectMachines(permitted, url.searchParams.get("machines"));
         const readableMachines = sessionMachinesForReader(_principal, only);
-        const aggregate = await aggregateSessions(readableMachines, machineHealth, daemonDebug(requestId));
+        const aggregate = typeof req.headers[SESSION_LIST_REVISION_HEADER] === "string"
+          ? await observeSessions(_principal, readableMachines)
+          : await aggregateSessions(readableMachines, machineHealth, daemonDebug(requestId));
         const snapshots = new Map(readableMachines.filter(machine =>
           aggregate.machines.some(status => status.name === machine.name && status.ok)
           && aggregate.sessions.some(session => session.machine === machine.name && typeof session.created_at === "string"))
@@ -1919,7 +1936,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             const key = JSON.stringify([_principal.id, subscription]);
             const load = async (signal: AbortSignal): Promise<unknown> => {
               if (subscription.resource === "sessions") {
-                const aggregate = await aggregateSessions(sessionMachinesForReader(_principal, only), machineHealth, undefined, signal);
+                const aggregate = await observeSessions(_principal, sessionMachinesForReader(_principal, only));
                 const sessions = displaySessionsForReader(_principal, aggregate.sessions);
                 return { machines: aggregate.machines.map((machine) => ({ ...machine, observed_at: undefined })),
                   sessions: sessions.map((session) => ({ ...session, activity_observed_at: undefined })) };
