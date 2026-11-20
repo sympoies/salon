@@ -306,3 +306,121 @@ test("a live conversation update sends the changed suffix after the initial page
     }));
   }
 });
+
+test("session reconciliation joins a pending watcher observation", { timeout: 10_000 }, async () => {
+  const { createServer } = await import("node:http");
+  const { SESSION_LIST_REVISION_HEADER } = await import("@agent-console/shared");
+  let reads = 0;
+  let release!: () => void;
+  let started!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const firstRead = new Promise<void>(resolve => { started = resolve; });
+  const daemon = createServer((_request, response) => {
+    reads++;
+    started();
+    void pending.then(() => response.end(JSON.stringify({ ok: true, data: { observed_at: "2026-07-11T12:00:00Z", sessions: [{ id: "item" }] } })));
+  });
+  const upstream = await listenOnLoopback(daemon);
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: upstream.base, token: "fixture" }] }));
+  const { base } = await listenOnLoopback(edge);
+  const controller = new AbortController();
+  try {
+    const watch = await fetch(`${base}/api/resources/events?resources=sessions`, { signal: controller.signal });
+    await firstRead;
+    const poll = fetch(`${base}/api/sessions`, { headers: { [SESSION_LIST_REVISION_HEADER]: "" } });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const concurrentReads = reads;
+    await watch.body!.cancel();
+    const fresh = fetch(`${base}/api/sessions`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const freshReads = reads;
+    release();
+    const result = await poll;
+    assert.equal(result.status, 200, "canceling the watcher leaves reconciliation alive");
+    const data = (await result.json() as any).data;
+    assert.equal(data.machines[0].observed_at, "2026-07-11T12:00:00Z");
+    assert.equal(data.sessions[0].activity_observed_at, "2026-07-11T12:00:00Z");
+    assert.equal((await fresh).status, 200);
+    assert.equal(concurrentReads, 1, "the reconciliation shares the pending spoke read");
+    assert.equal(freshReads, 2, "an explicit fresh read bypasses the pending observation");
+  } finally {
+    release(); controller.abort(); edge.closeAllConnections(); daemon.closeAllConnections();
+    await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+  }
+});
+
+test("concurrent session reads isolate principals and machine selections", { timeout: 10_000 }, async () => {
+  const { createServer } = await import("node:http");
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { AccessStore } = await import("../src/accessStore.ts");
+  const { SESSION_LIST_REVISION_HEADER } = await import("@agent-console/shared");
+  const directory = mkdtempSync(join(tmpdir(), "session-observation-"));
+  const database = join(directory, "access.sqlite");
+  const access = new AccessStore(database);
+  access.claimSession({ principalId: "alpha", machine: "one", sessionId: "a", incarnation: "a-inc" });
+  access.claimSession({ principalId: "beta", machine: "one", sessionId: "b", incarnation: "b-inc" });
+  access.close();
+  let reads = 0;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const daemon = createServer((_request, response) => {
+    reads++;
+    void pending.then(() => response.end(JSON.stringify({ ok: true, data: { sessions: [
+      { id: "a", session_incarnation: "a-inc" }, { id: "b", session_incarnation: "b-inc" },
+    ] } })));
+  });
+  const upstream = await listenOnLoopback(daemon);
+  const edge = createEdgeServer(makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: database,
+    machines: [{ name: "one", url: upstream.base, token: "fixture" }, { name: "two", url: upstream.base, token: "fixture" }],
+    principals: ["alpha", "beta"].map(id => ({ id, token: id, machines: ["one", "two"], permissions: [] })) }));
+  const { base } = await listenOnLoopback(edge);
+  const controller = new AbortController();
+  try {
+    const headers = (id: string) => ({ authorization: `Bearer ${id}`, [SESSION_LIST_REVISION_HEADER]: "" });
+    const alpha = fetch(`${base}/api/sessions?machines=one`, { headers: headers("alpha") });
+    const beta = fetch(`${base}/api/sessions?machines=one`, { headers: headers("beta") });
+    const filtered = fetch(`${base}/api/sessions?machines=two`, { headers: headers("alpha") });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.equal(reads, 3, "different principals and selections use distinct observations");
+    release();
+    const [a, b, c] = await Promise.all([alpha, beta, filtered].map(async result => (await (await result).json()) as any));
+    assert.deepEqual(a.data.sessions.map((session: any) => session.id), ["a"]);
+    assert.deepEqual(b.data.sessions.map((session: any) => session.id), ["b"]);
+    assert.deepEqual(c.data.machines.map((machine: any) => machine.name), ["two"]);
+  } finally {
+    release(); controller.abort(); edge.closeAllConnections(); daemon.closeAllConnections();
+    await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a failed shared observation is retried after recovery", { timeout: 10_000 }, async () => {
+  const { createServer } = await import("node:http");
+  const { SESSION_LIST_REVISION_HEADER } = await import("@agent-console/shared");
+  let reads = 0;
+  let available = false;
+  const daemon = createServer((_request, response) => {
+    reads++;
+    setTimeout(() => {
+      response.statusCode = available ? 200 : 503;
+      response.end(JSON.stringify({ ok: available, data: { sessions: [] } }));
+    }, 100);
+  });
+  const upstream = await listenOnLoopback(daemon);
+  const edge = createEdgeServer(makeEdgeConfig({ machines: [{ name: "fixture", url: upstream.base, token: "fixture" }] }));
+  const { base } = await listenOnLoopback(edge);
+  try {
+    const poll = async () => (await (await fetch(`${base}/api/sessions`, { headers: { [SESSION_LIST_REVISION_HEADER]: "" } })).json()) as any;
+    const failed = await Promise.all([poll(), poll()]);
+    assert.ok(failed.every(result => result.data.machines[0].ok === false));
+    assert.equal(reads, 1, "concurrent readers share the unavailable spoke result");
+    available = true;
+    assert.equal((await poll()).data.machines[0].ok, true);
+    assert.equal(reads, 2);
+  } finally {
+    edge.closeAllConnections(); daemon.closeAllConnections();
+    await Promise.all([edge, daemon].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+  }
+});
