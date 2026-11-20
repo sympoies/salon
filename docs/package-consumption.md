@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.88 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.89 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,7 +183,13 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.88`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.89`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.89
+
+Snapshot and closed board records retain `last_terminal_activity_at` as a string or null
+(#590). Records stored before the upgrade serve null until re-ingested. No configuration
+change is required.
 
 ### Changes retained in SDK 0.1.88
 
