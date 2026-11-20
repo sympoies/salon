@@ -12,6 +12,7 @@ import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
 const SERVICE_ORIGIN = { machine: "summit", service_id: "monitor.service", service_generation: "generation-1" };
 const SERVICE_QUERY = { source_service_id: SERVICE_ORIGIN.service_id, source_service_generation: SERVICE_ORIGIN.service_generation };
+const START_ONLY_ORIGIN = { ...SERVICE_ORIGIN, service_id: "starter.service" };
 
 async function fixture(allowedMachines?: string[], machineNames = { source: "summit", destination: "cedar" }, bindDestination = true) {
   const sourceName = machineNames.source;
@@ -67,8 +68,12 @@ async function fixture(allowedMachines?: string[], machineNames = { source: "sum
       { id: "tess", token: "browser-tess", machines: allowedMachines ?? [sourceName, destinationName], permissions: ["debug"] },
       { id: "dana", token: "browser-dana", machines: [destinationName], permissions: [] },
     ],
-    consoleStartServices: [{ relay_machine: SERVICE_ORIGIN.machine, service_id: SERVICE_ORIGIN.service_id,
-      service_generation: SERVICE_ORIGIN.service_generation, owners: ["tess"], machines: ["cedar"] }],
+    consoleStartServices: [
+      { relay_machine: SERVICE_ORIGIN.machine, service_id: SERVICE_ORIGIN.service_id,
+        service_generation: SERVICE_ORIGIN.service_generation, capabilities: ["message"], owners: ["tess"], machines: ["cedar"] },
+      { relay_machine: START_ONLY_ORIGIN.machine, service_id: START_ONLY_ORIGIN.service_id,
+        service_generation: START_ONLY_ORIGIN.service_generation, capabilities: ["console-start"], owners: ["tess"], machines: ["cedar"] },
+    ],
     machines: [ { name: sourceName, url: srcAddr.base, token: "source-operator" }, { name: destinationName, url: dstAddr.base, token: "dest-operator" } ],
     ...{ coordinationRelays: [ { machine: sourceName, token: "source-relay", ingress_token: "source-ingress" }, { machine: destinationName, token: "dest-relay", ingress_token: "dest-ingress" } ] },
   });
@@ -146,6 +151,24 @@ test("stale, unknown, and wrong-relay services are refused in discovery and deli
       assert.equal(response.status, 403);
       assert.equal((await response.json() as { error: { code: string } }).error.code, "coordination-unauthorized");
       const sent = await send(f.base, { ...f.envelope, schema_version: "agent-session.remote-service-message.v1", from }, token);
+      assert.equal(sent.status, 403);
+      assert.equal((sent.body.error as { code: string }).code, "coordination-unauthorized");
+    }
+    assert.equal(f.state.writes, 0);
+  } finally { await f.cleanup(); }
+});
+
+test("a console-start-only service cannot discover peers or relay messages", async () => {
+  const f = await fixture();
+  try {
+    const response = await discoverService(f.base, { ...SERVICE_QUERY, source_service_id: START_ONLY_ORIGIN.service_id });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json() as { error: { code: string } }).error.code, "coordination-unauthorized");
+    for (const fields of [
+      { schema_version: "agent-session.remote-service-message.v1" },
+      { schema_version: "agent-session.remote-service-message.v2", category: "progress" },
+    ]) {
+      const sent = await send(f.base, { ...f.envelope, ...fields, from: START_ONLY_ORIGIN, reply_to: null });
       assert.equal(sent.status, 403);
       assert.equal((sent.body.error as { code: string }).code, "coordination-unauthorized");
     }

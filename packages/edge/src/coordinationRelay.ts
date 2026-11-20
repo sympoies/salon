@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { OUTSIDE_COORDINATOR_TREE, type AccessStore, type SessionStartMark } from "./accessStore.ts";
 import { bearerToken, timingSafeEqualStr } from "./auth.ts";
-import type { ConsoleStartServiceConfig, CrossOwnerMessagingRule, EdgeConfig, MachineConfig, MessagingSelector, PrincipalConfig } from "./config.ts";
+import type { ConsoleStartServiceConfig, CrossOwnerMessagingRule, EdgeConfig, MachineConfig, MessagingSelector, PrincipalConfig, ServiceCapability } from "./config.ts";
 import { readJsonBody, sendJson } from "./http.ts";
 import { handleInboxRequest, readInboxJson } from "./companionInbox.ts";
 import { InboxError, type CompanionInboxStore } from "./companionInboxStore.ts";
@@ -451,9 +451,10 @@ function serviceSelectors(serviceId: unknown, generation: unknown, owner: unknow
   return { serviceId, generation, owner, machine } as ServiceSelectors;
 }
 
-function findServiceAdmission(config: EdgeConfig, relayMachine: string, serviceId: string, generation: string): ConsoleStartServiceConfig | undefined {
+function findServiceAdmission(config: EdgeConfig, relayMachine: string, serviceId: string, generation: string, capability: ServiceCapability): ConsoleStartServiceConfig | undefined {
   return config.consoleStartServices?.find(entry => entry.relay_machine === relayMachine
-    && entry.service_id === serviceId && entry.service_generation === generation);
+    && entry.service_id === serviceId && entry.service_generation === generation
+    && entry.capabilities.includes(capability));
 }
 
 function serviceMachineAllowed(admission: ConsoleStartServiceConfig, principal: PrincipalConfig, machine: string): boolean {
@@ -463,7 +464,7 @@ function serviceMachineAllowed(admission: ConsoleStartServiceConfig, principal: 
 // Binds the selectors to an explicit admission for the authenticated relay
 // machine. Keep service refusals off 401, reserved for rejected relay credentials.
 function serviceAdmission(config: EdgeConfig, relayMachine: string, selectors: ServiceSelectors): { principal: PrincipalConfig; machine: MachineConfig; consoleRole?: "coordinator" } {
-  const admission = findServiceAdmission(config, relayMachine, selectors.serviceId, selectors.generation);
+  const admission = findServiceAdmission(config, relayMachine, selectors.serviceId, selectors.generation, "console-start");
   if (!admission) return fail(403, "console-start-service-unauthorized", "the service is not admitted");
   const principal = config.principals.find(p => p.id === selectors.owner);
   if (!principal || !admission.owners.includes(principal.id)) return fail(422, "console-start-service-owner-denied", "the owner is not admitted for this service");
@@ -473,7 +474,7 @@ function serviceAdmission(config: EdgeConfig, relayMachine: string, selectors: S
 }
 
 function relayServiceAdmission(config: EdgeConfig, origin: ServiceOrigin): ConsoleStartServiceConfig {
-  return findServiceAdmission(config, origin.machine, origin.service_id, origin.service_generation)
+  return findServiceAdmission(config, origin.machine, origin.service_id, origin.service_generation, "message")
     ?? fail(403, "coordination-unauthorized", "the service is not admitted");
 }
 

@@ -51,19 +51,22 @@ export interface CrossOwnerSessionAccessRule {
 }
 
 // Lets `service_id` at `service_generation`, submitted through the relay of
-// `relay_machine`, start root sessions and discover or message admitted owners'
-// sessions on admitted machines. The service has its own origin identity and
-// receives no session, delegation, or browser authority.
+// `relay_machine`, use its declared capabilities for admitted owners and
+// machines. The service has its own origin identity and receives no session,
+// delegation, or browser authority.
 // `console_role` is the only way a service root gets a role; a request never
 // carries one.
 export interface ConsoleStartServiceConfig {
   readonly relay_machine: string;
   readonly service_id: string;
   readonly service_generation: string;
+  readonly capabilities: readonly ServiceCapability[];
   readonly owners: readonly string[];
   readonly machines: readonly string[];
   readonly console_role?: "coordinator";
 }
+
+export type ServiceCapability = "message" | "console-start";
 
 export type SpeechSynthesisVoiceConfig = Pick<SpeechSynthesisCapabilities, "voices" | "default_voice">;
 
@@ -286,12 +289,16 @@ export function parseCoordinationRelays(raw: string | undefined, machines: reado
 }
 
 const SERVICE_SELECTOR = /^[A-Za-z0-9._-]{1,128}$/;
-const SERVICE_ADMISSION_KEYS = ["relay_machine", "service_id", "service_generation", "owners", "machines"];
+const SERVICE_ADMISSION_KEYS = ["relay_machine", "service_id", "service_generation", "capabilities", "owners", "machines"];
 const SERVICE_ADMISSION_OPTIONAL_KEYS = ["console_role"];
 
 export function parseConsoleStartServices(raw: string | undefined, machines: readonly MachineConfig[], principals: readonly PrincipalConfig[], relays: readonly CoordinationRelayConfig[]): ConsoleStartServiceConfig[] {
   if (!raw?.trim()) return [];
-  const invalid = (): never => { throw new Error("AGENT_CONSOLE_CONSOLE_START_SERVICES must contain unique service admissions for a configured relay machine, nonempty configured non-root owners, nonempty configured machines and an optional console_role of coordinator"); };
+  const invalid = (): never => {
+    throw new Error("AGENT_CONSOLE_CONSOLE_START_SERVICES must contain unique service admissions for a configured relay machine, "
+      + "a nonempty capabilities array containing only message or console-start, nonempty configured non-root owners, "
+      + "nonempty configured machines and an optional console_role of coordinator");
+  };
   let entries: unknown;
   try { entries = JSON.parse(raw); } catch { return invalid(); }
   if (!Array.isArray(entries)) return invalid();
@@ -305,6 +312,8 @@ export function parseConsoleStartServices(raw: string | undefined, machines: rea
       || !relays.some(relay => relay.machine === v.relay_machine)
       || typeof v.service_id !== "string" || !SERVICE_SELECTOR.test(v.service_id)
       || typeof v.service_generation !== "string" || !SERVICE_SELECTOR.test(v.service_generation)
+      || !Array.isArray(v.capabilities) || !v.capabilities.length
+      || !v.capabilities.every(capability => capability === "message" || capability === "console-start")
       || !Array.isArray(v.owners) || !v.owners.length
       || !v.owners.every(owner => principals.some(p => p.id === owner && !isRootPrincipal(p)))
       || !Array.isArray(v.machines) || !v.machines.length
