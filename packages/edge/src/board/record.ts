@@ -104,6 +104,7 @@ export interface BoardRecord {
   readonly runtime_status: string | null;
   readonly created_at: string;
   readonly updated_at: string;
+  readonly last_terminal_activity_at: string | null;
   readonly closed_at: string | null;
   readonly close_reason: BoardCloseReason | null;
   readonly summary: null;
@@ -114,7 +115,7 @@ export interface BoardRecord {
 
 /** A stored record from before lineage.v1 is served with null members. */
 export function withBoardExtensionDefaults(record: BoardRecord): BoardRecord {
-  return { ...record, ...normalizeSessionModelSettings(record), role: record.role ?? null, lineage: record.lineage ?? null, work: record.work ?? null };
+  return { ...record, ...normalizeSessionModelSettings(record), last_terminal_activity_at: record.last_terminal_activity_at ?? null, role: record.role ?? null, lineage: record.lineage ?? null, work: record.work ?? null };
 }
 
 const MAX_ID = 256;
@@ -293,6 +294,7 @@ export function projectBoardRecord(
   const title = nullableStr(raw.title, MAX_TEXT, false);
   const createdAt = time(raw.created_at);
   const updatedAt = time(raw.updated_at);
+  const lastTerminalActivityAt = nullableTime(raw.last_terminal_activity_at ?? null);
   const turn = turnState(raw.turn_state);
   // lineage.v1 / work.v1: absent from a daemon that predates them, so null.
   const role = normalizeSessionRole(raw.role) ?? null;
@@ -307,7 +309,7 @@ export function projectBoardRecord(
   if (
     sessionId === INVALID || incarnation === INVALID || repoName === INVALID || cwd === INVALID
     || provider === INVALID || agentProfile === INVALID || title === INVALID
-    || createdAt === INVALID || updatedAt === INVALID || turn === INVALID || titleState === INVALID
+    || createdAt === INVALID || updatedAt === INVALID || lastTerminalActivityAt === INVALID || turn === INVALID || titleState === INVALID
     || recordLineage === INVALID || recordWork === INVALID
     || typeof raw.messaging_supported !== "boolean"
     || (raw.summary !== null && typeof raw.summary !== "string")
@@ -327,6 +329,7 @@ export function projectBoardRecord(
     turn_state: turn,
     created_at: createdAt,
     updated_at: updatedAt,
+    last_terminal_activity_at: lastTerminalActivityAt,
     // Reserved in v1: consumers must not depend on it, so it is never stored.
     summary: null,
     role,

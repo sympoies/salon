@@ -193,7 +193,7 @@ test("ingests every configured machine with its operator bearer and projects the
     ]);
     const s1 = rows.find((row) => row.session_id === "s1")!;
     assert.deepEqual(Object.keys(s1).sort(), [
-      "agent_profile", "close_reason", "closed_at", "created_at", "cwd", "lineage", "machine", "messaging_supported", "model",
+      "agent_profile", "close_reason", "closed_at", "created_at", "cwd", "last_terminal_activity_at", "lineage", "machine", "messaging_supported", "model",
       "provider", "reasoning_effort", "repo_name", "role", "runtime_status", "session_id", "session_incarnation", "state", "summary",
       "title", "title_state", "turn_state", "updated_at", "work",
     ]);
@@ -209,6 +209,31 @@ test("ingests every configured machine with its operator bearer and projects the
     await closeAll(a.server, b.server);
   }
 });
+
+for (const kind of ["snapshot", "closed"] as const) {
+  test(`ingests ${kind} terminal activity timestamps and rejects invalid values`, async () => {
+    const daemon = await fakeDaemon("host-a");
+    const timestamp = "2030-01-09T11:30:00Z";
+    const make = (id: string, value: Record<string, unknown> = {}) => kind === "snapshot"
+      ? record("host-a", id, value)
+      : { ...closedRecord("host-a", id, "deleted", "2030-01-09T12:00:00Z"), ...value };
+    const records = [make("present", { last_terminal_activity_at: timestamp }), make("absent"),
+      make("invalid", { last_terminal_activity_at: "not-a-time" })];
+    if (kind === "snapshot") daemon.records = records;
+    else daemon.ledger = records.map((item, index) => ({ seq: index + 1, record: item }));
+    const store = new BoardStore(freshDb());
+    try {
+      await aggregator(store, [daemon], { now: T0 }).ingestAll();
+      const rows = new Map(store.rows().map((row) => [row.session_id, row]));
+      assert.equal(rows.get("present")?.last_terminal_activity_at, timestamp);
+      assert.equal(rows.get("absent")?.last_terminal_activity_at, null);
+      assert.equal(rows.has("invalid"), false);
+    } finally {
+      store.close();
+      await closeAll(daemon.server);
+    }
+  });
+}
 
 // session-board-v1 lineage.v1 and work.v1 (nils-cli#2071).
 const ref = (id: string, machine = "host-a") => ({ machine, session_id: id, session_created_at: "2030-01-01T00:00:00Z" });
@@ -278,7 +303,7 @@ test("a board store from before lineage migrates and serves its rows with null m
   const store = new BoardStore(path);
   try {
     const [row] = store.rows();
-    assert.deepEqual([row?.role, row?.lineage, row?.work], [null, null, null]);
+    assert.deepEqual([row?.role, row?.lineage, row?.work, row?.last_terminal_activity_at], [null, null, null, null]);
     const query = { states: ["live"], sinceMs: 0, repo: null, machine: null, availableMachines: ["host-a"], configuredMachines: ["host-a"], limit: 10 };
     assert.deepEqual(store.queryRows({ ...query, root: "boss" }), [], "a migrated row has no root until it is ingested again");
     store.applySnapshot("host-a", [{ ...row!, lineage: childLineage }], true, T0);
