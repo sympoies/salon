@@ -19,7 +19,8 @@ const ROOT_LINEAGE = {
 };
 const SERVICE = { source_service_id: "integration", source_service_generation: "generation-1", owner: "tess", machine: "cedar" };
 const SESSION = { agent: "claude", cwd: "/abs/path", title: "Service task", prompt: "run", lineage: ROOT_LINEAGE };
-const ADMISSION = { relay_machine: "summit", service_id: "integration", service_generation: "generation-1", owners: ["tess"], machines: ["summit", "cedar", "maple"] };
+const ADMISSION = { relay_machine: "summit", service_id: "integration", service_generation: "generation-1",
+  capabilities: ["console-start"] as const, owners: ["tess"], machines: ["summit", "cedar", "maple"] };
 
 function daemon(token: string) {
   const creates: Array<Record<string, unknown>> = [];
@@ -275,6 +276,35 @@ test("a deployment without admissions refuses service creates", async () => {
   } finally { await f.cleanup(); }
 });
 
+test("a message-only service cannot create or scan console starts", async () => {
+  const f = await fixture([{ ...ADMISSION, capabilities: ["message"] }]);
+  try {
+    const created = await create(f.base, { ...SERVICE, session: SESSION });
+    assert.equal(created.status, 403);
+    assert.equal(created.body.error.code, "console-start-service-unauthorized");
+    assert.equal(f.cedar.creates.length, 0);
+    const scanned = await scan(f.base, SERVICE);
+    assert.equal(scanned.status, 403);
+    assert.equal(scanned.body.error.code, "console-start-service-unauthorized");
+  } finally { await f.cleanup(); }
+});
+
+test("a service with both capabilities can create a root and discover it", async () => {
+  const f = await fixture([{ ...ADMISSION, capabilities: ["message", "console-start"] }]);
+  try {
+    const created = await create(f.base, { ...SERVICE, session: SESSION });
+    assert.equal(created.status, 201);
+    const { source_service_id, source_service_generation } = SERVICE;
+    const query = new URLSearchParams({ source_service_id, source_service_generation });
+    const response = await fetch(`${f.base}/api/coordination/peers/v1?${query}`, {
+      headers: { authorization: "Bearer summit-relay" },
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { peers: Array<{ session_id: string }> };
+    assert.deepEqual(body.peers.map(peer => peer.session_id), [created.body.data.session.id]);
+  } finally { await f.cleanup(); }
+});
+
 test("a malformed service create is refused and never reaches a session-scoped path", async () => {
   const f = await fixture();
   try {
@@ -446,7 +476,7 @@ test("a malformed scan is refused without a session-scoped fallback", async () =
   } finally { await f.cleanup(); }
 });
 
-test("service admissions load only with configured relays, owners and machines", () => {
+test("service admissions require explicit capabilities and configured relays, owners and machines", () => {
   const env = {
     AGENT_CONSOLE_PRINCIPALS: JSON.stringify([
       { id: "tess", token: "t".repeat(32), machines: ["summit"], permissions: [] },
@@ -456,9 +486,11 @@ test("service admissions load only with configured relays, owners and machines",
     AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: "summit", url: "http://127.0.0.1:1", token: "m".repeat(32) }]),
     AGENT_CONSOLE_COORDINATION_RELAYS: JSON.stringify([{ machine: "summit", token: "a".repeat(32), ingress_token: "b".repeat(32) }]),
   };
-  const entry = { relay_machine: "summit", service_id: "integration", service_generation: "generation-1", owners: ["tess"], machines: ["summit"] };
+  const scope = { relay_machine: "summit", service_id: "integration", service_generation: "generation-1", owners: ["tess"], machines: ["summit"] };
+  const entry = { ...scope, capabilities: ["message", "console-start"] };
   const load = (value: unknown) => loadConfig({ ...env, AGENT_CONSOLE_CONSOLE_START_SERVICES: JSON.stringify(value) }).consoleStartServices;
   assert.deepEqual(loadConfig(env).consoleStartServices, []);
+  assert.throws(() => load([scope]), /CONSOLE_START_SERVICES/);
   assert.deepEqual(load([entry]), [entry]);
   // Two generations of one service may overlap during a rotation.
   assert.equal(load([entry, { ...entry, service_generation: "generation-2" }])?.length, 2);
@@ -469,6 +501,8 @@ test("service admissions load only with configured relays, owners and machines",
     [{ ...entry, service_id: "bad id" }], [{ ...entry, service_generation: "" }],
     [{ ...entry, owners: [] }], [{ ...entry, owners: ["stranger"] }], [{ ...entry, owners: ["root"] }],
     [{ ...entry, machines: [] }], [{ ...entry, machines: ["pine"] }],
+    [{ ...entry, capabilities: [] }], [{ ...entry, capabilities: "message" }],
+    [{ ...entry, capabilities: ["message", "unknown"] }],
     [{ ...entry, console_role: "worker" }], [{ ...entry, console_role: "domain-coordinator" }],
     [{ ...entry, console_role: "" }], [{ ...entry, console_role: null }], [{ ...entry, console_role: true }],
   ]) assert.throws(() => load(invalid), /CONSOLE_START_SERVICES/, JSON.stringify(invalid));
