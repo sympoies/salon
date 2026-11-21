@@ -120,6 +120,7 @@ async function readSnapshot(machine: MachineConfig): Promise<{ records: BoardRec
 export interface BoardAggregatorOptions {
   readonly retention: BoardRetention;
   readonly now?: () => number;
+  readonly removeExpiredLayoutKeys?: (keys: readonly string[]) => void;
 }
 
 export class BoardAggregator {
@@ -127,6 +128,7 @@ export class BoardAggregator {
   readonly #machines: readonly MachineConfig[];
   readonly #retentionMs: number;
   readonly #now: () => number;
+  readonly #removeExpiredLayoutKeys?: (keys: readonly string[]) => void;
   #pollTimer: NodeJS.Timeout | null = null;
   #pruneTimer: NodeJS.Timeout | null = null;
   #inFlight: Promise<void> | null = null;
@@ -137,6 +139,7 @@ export class BoardAggregator {
     this.#machines = machines;
     this.#retentionMs = BOARD_RETENTIONS[options.retention];
     this.#now = options.now ?? Date.now;
+    this.#removeExpiredLayoutKeys = options.removeExpiredLayoutKeys;
   }
 
   /**
@@ -171,7 +174,10 @@ export class BoardAggregator {
 
   prune(): void {
     try {
-      this.#store.prune(this.#now(), this.#retentionMs, this.#machines.map((machine) => machine.name));
+      const now = this.#now();
+      // Keep the board evidence if layout cleanup fails, so the next tick can retry.
+      this.#removeExpiredLayoutKeys?.(this.#store.expiredLayoutKeys(now - this.#retentionMs));
+      this.#store.prune(now, this.#retentionMs, this.#machines.map((machine) => machine.name));
     } catch {
       // Retried on the next prune tick.
     }

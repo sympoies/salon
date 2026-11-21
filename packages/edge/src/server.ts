@@ -742,7 +742,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
   });
   if (accessStore) server.once("close", () => accessStore.close());
   if (machinePreferences) server.once("close", () => machinePreferences.close());
-  const board = openBoardService(config, options.board);
+  const board = openBoardService(config, { ...options.board, removeExpiredLayoutKeys: keys => accessStore?.removeLayoutKeys(keys) });
   let boardClose: Promise<void> | undefined;
   const closeBoard = () => boardClose ??= board ? board.close() : Promise.resolve();
   server.once("close", () => { void closeBoard(); });
@@ -2191,16 +2191,22 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       }
 
       case "layout":
+        {
+        const configured = new Set(config.machines.map(machine => machine.name));
+        const cleanOrder = (order: readonly string[]) => order.filter(key => configured.has(key.split("/", 1)[0]!));
         if (config.multiUser && accessStore) {
           if (method === "GET") {
-            sendJson(res, 200, { ok: true, data: { ...accessStore.readLayout(_principal.id), reachable: true } });
+            const current = accessStore.readLayout(_principal.id);
+            const order = cleanOrder(current.order);
+            const layout = order.length === current.order.length ? current : accessStore.writeLayout(_principal.id, order, current.revision);
+            sendJson(res, 200, { ok: true, data: { order: layout.order, revision: layout.revision, reachable: true } });
             return;
           }
           if (!csrfExempt(req)) return forbidCrossOrigin(res);
           const body = objectProp(await readJsonBody(req).catch(() => undefined));
-          const order = normalizeOrder(body?.order);
+          const order = normalizeOrder(cleanOrder(Array.isArray(body?.order) ? body.order.filter((key): key is string => typeof key === "string") : []));
           const baseRevision = normalizeRevision(body?.base_revision);
-          if (!order || baseRevision === null) {
+          if (!Array.isArray(body?.order) || baseRevision === null) {
             sendJson(res, 422, { ok: false, error: { message: "layout body must include order and base_revision" } });
             return;
           }
@@ -2216,6 +2222,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         if (method === "GET") {
           await sendReachableData(res, config.layout, { order: [] }, async (reader) => {
             const layout = await fetchLayoutOrder(reader);
+            const order = cleanOrder(layout.order);
+            if (order.length !== layout.order.length && layout.revision !== null) {
+              const result = await writeLayoutOrder(reader, { order, baseRevision: layout.revision });
+              return { data: { order: result.order, revision: result.revision } };
+            }
             return { data: { order: layout.order, revision: layout.revision } };
           });
           return;
@@ -2233,8 +2244,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             sendJson(res, 422, { ok: false, error: { message: "layout body must be { order: string[] }" } });
             return;
           }
-          const order = normalizeOrder(rawOrder);
-          if (order.length === 0 && rawOrder.length > 0) {
+          const order = normalizeOrder(cleanOrder(rawOrder.filter((key): key is string => typeof key === "string")));
+          if (normalizeOrder(rawOrder).length === 0 && rawOrder.length > 0) {
             sendJson(res, 422, { ok: false, error: { message: "layout order has no valid session keys" } });
             return;
           }
@@ -2261,6 +2272,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return;
         }
         return;
+        }
 
       case "discard-saved-draft": {
         if (!csrfExempt(req)) return forbidCrossOrigin(res);

@@ -641,6 +641,24 @@ export class AccessStore {
     return { order, revision: Number(row.revision) };
   }
 
+  removeLayoutKeys(keys: readonly string[]): void {
+    if (keys.length === 0) return;
+    const removed = new Set(keys);
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      const rows = this.#db.prepare("SELECT principal_id, order_json, revision FROM principal_layout").all() as Array<{ principal_id: string; order_json: string; revision: number }>;
+      for (const row of rows) {
+        const order = JSON.parse(row.order_json) as string[];
+        const kept = order.filter(key => !removed.has(key));
+        if (kept.length !== order.length) this.writeLayout(row.principal_id, kept, Number(row.revision));
+      }
+      this.#db.exec("COMMIT");
+    } catch (error) {
+      this.#db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   writeLayout(principalId: string, order: readonly string[], baseRevision: number): LayoutWriteResult {
     const current = this.readLayout(principalId);
     if (current.revision !== baseRevision) return { ok: false, ...current };

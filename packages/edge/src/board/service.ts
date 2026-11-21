@@ -15,6 +15,7 @@ export interface BoardServiceOptions {
   readonly now?: () => number;
   // Tests seed board.sqlite and query it without background ingestion.
   readonly autoStart?: boolean;
+  readonly removeExpiredLayoutKeys?: (keys: readonly string[]) => void;
 }
 
 /**
@@ -32,7 +33,7 @@ export function openBoardService(config: EdgeConfig, options: BoardServiceOption
     return null;
   }
   const now = options.now ?? Date.now;
-  const aggregator = new BoardAggregator(store, config.machines, { retention: config.board.retention, now });
+  const aggregator = new BoardAggregator(store, config.machines, { retention: config.board.retention, now, removeExpiredLayoutKeys: options.removeExpiredLayoutKeys });
   if (options.autoStart !== false) aggregator.start();
   return {
     store,
