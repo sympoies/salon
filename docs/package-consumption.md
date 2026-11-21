@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.90 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.91 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,7 +183,14 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.90`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.91`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.91
+
+Idle clients no longer repeatedly write the shared layout order at the 256-entry
+bound (#598, #599). Clients preserve keys outside their local view. Stale keys can
+accumulate toward that bound until edge cleanup is available (#600). No configuration
+change is required.
 
 ### Changes retained in SDK 0.1.90
 
