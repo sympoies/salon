@@ -88,8 +88,19 @@ test("session notices render Markdown bodies that stay selectable and wrap at ph
       await evaluate(code);
       const waitFor=async(condition:string)=>evaluate(`new Promise((resolve,reject)=>{let remaining=200;function check(){if(${condition})resolve(true);else if(--remaining)setTimeout(check,10);else reject(Error('fixture timed out'));}check();})`);
       await waitFor('document.querySelectorAll("article").length===4');
+      const collapsed = await evaluate(`(()=>{const row=document.querySelector('[data-history-message-id="notice"]'); const button=row.querySelector('button[aria-expanded]'); const preview=row.querySelector('.session-notice-preview'); return {expanded:button?.getAttribute('aria-expanded'), text:row.textContent, height:preview.getBoundingClientRect().height, textHeight:row.querySelector('.session-notice-first-line').getBoundingClientRect().height, overflow:row.scrollWidth>row.clientWidth};})()`);
+      assert.equal(collapsed.expanded, 'false');
+      assert.ok(!collapsed.text.includes('Parent one'));
+      assert.equal(collapsed.overflow, false);
+      assert.ok(collapsed.textHeight <= 24, `${width}px preview stays on one line`);
+      if(evidence){
+        const shot=await send('Page.captureScreenshot',{format:'png'});
+        writeFileSync(join(evidence,`notices-${width}.png`),Buffer.from(shot.data,'base64'));
+      }
+      await evaluate(`document.querySelector('[data-history-message-id="notice"] button[aria-expanded]').click()`);
+      await waitFor(`document.querySelector('[data-history-message-id="notice"] button[aria-expanded="true"]')`);
       const measured=await evaluate(`(()=>{const row=document.querySelector('[data-history-message-id="notice"]');
-        const notice=row.querySelector('.session-notice'),title=row.querySelector('.session-notice-title');
+        const notice=row.querySelector('.session-notice'),title=row.querySelector('.session-notice-preview');
         const body=row.querySelector('.session-notice-body'),time=row.querySelector('time').getBoundingClientRect();
         const r=row.getBoundingClientRect(),style=title&&getComputedStyle(title),bodyStyle=body&&getComputedStyle(body);
         const br=body?.getBoundingClientRect(),footer=row.querySelector('.session-notice-meta'),fr=footer?.getBoundingClientRect(),fs=footer&&getComputedStyle(footer);
@@ -108,11 +119,7 @@ test("session notices render Markdown bodies that stay selectable and wrap at ph
           timeVisible:time.x>=r.x&&time.right<=r.right,overflow:document.documentElement.scrollWidth>innerWidth||row.scrollWidth>row.clientWidth,
           footer:row.querySelector('.session-notice-meta > span')?.textContent};})()`);
       results.push(measured);
-      if(evidence){
-        const shot=await send('Page.captureScreenshot',{format:'png'});
-        writeFileSync(join(evidence,`notices-${width}.png`),Buffer.from(shot.data,'base64'));
-        writeFileSync(join(evidence,`notices-${width}.json`),JSON.stringify(measured,null,2));
-      }
+      if(evidence) writeFileSync(join(evidence,`notices-${width}.json`),JSON.stringify(measured,null,2));
       const drag=await evaluate(`(()=>{const items=[...document.querySelectorAll('[data-history-message-id="notice"] .session-notice-body .message-markdown > ul > li')];
         const first=items[0].getBoundingClientRect(),last=items[items.length-1].getBoundingClientRect();
         return {x:first.left+2,y:first.top+2,toX:last.right-2,toY:last.bottom-2};})()`);
@@ -128,8 +135,6 @@ test("session notices render Markdown bodies that stay selectable and wrap at ph
       assert.equal(measured.headerVisible,false);
       assert.equal(measured.overflow,false,`${measured.width}px fits the viewport`);
       assert.equal(measured.timeVisible,true);
-      assert.equal(measured.centered,true,`${measured.width}px title is centered`);
-      assert.ok(measured.weight>=600,'title has heading weight');
       assert.equal(measured.nested,true,'nested list keeps its structure');
       assert.equal(measured.topItems,2);
       assert.ok(!measured.text.includes('- Parent')&&!measured.text.includes('`'),'Markdown syntax is not shown literally');
@@ -145,7 +150,7 @@ test("session notices render Markdown bodies that stay selectable and wrap at ph
       assert.ok(Math.abs((measured.bodyLeft-measured.rowLeft)-(measured.rowRight-measured.bodyRight))<1,'body inset is symmetric');
       assert.ok(Math.abs(measured.footerLeft-measured.bodyLeft)<1,'footer shares the body left inset');
       assert.ok(Math.abs(measured.footerRight-measured.bodyRight)<1,'footer shares the body right inset');
-      assert.equal(measured.copyButton,false,'the notice has no copy button');
+      assert.equal(measured.copyButton,true,'the notice has an expander');
       assert.notEqual(measured.bodySelect,'none','the notice body stays selectable');
       assert.equal(measured.bubble,false);
       assert.equal(measured.background,'rgba(0, 0, 0, 0)','row has no bubble background');
