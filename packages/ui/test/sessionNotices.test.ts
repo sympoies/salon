@@ -32,18 +32,26 @@ async function mount(text: string, latestMessagePaging = true, role = "user", ro
   return { container: container as unknown as HTMLElement, window, ssr, root };
 }
 
-test("notice header is hidden and rendered Markdown body is visible in live and history", async () => {
-  const live = await mount(raw, true, "user", "notice");
-  const history = await mount(raw, false, "user", "notice");
-  for (const { container } of [live, history]) {
-    assert.doesNotMatch(container.textContent ?? "", /<!-- agent-notice:/, "the envelope must not appear as visible text");
+test("multiline notices start collapsed and expand in live and history", async () => {
+  for (const live of [true, false]) {
+    const { container, window } = await mount(raw, live, "user", "notice");
+    assert.doesNotMatch(container.textContent ?? "", /<!-- agent-notice:/);
     assert.match(container.textContent ?? "", /Mailbox.*12:00.*Synthetic update/s);
-    assert.equal(Boolean(container.querySelector("button[aria-expanded]")), false);
-    assert.equal(container.querySelector(".session-notice-body")?.textContent, "Synthetic updateFull body");
+    assert.doesNotMatch(container.textContent ?? "", /Full body/);
+    const button = container.querySelector<HTMLButtonElement>("button[aria-expanded]");
+    assert.ok(button);
+    assert.equal(button.getAttribute("aria-expanded"), "false");
+    await act(async () => button.dispatchEvent(new window.MouseEvent("click", { bubbles: true })));
+    assert.equal(button.getAttribute("aria-expanded"), "true");
+    assert.equal(container.querySelector(".session-notice-body strong")?.textContent, "Full body");
     assert.equal(Boolean(container.querySelector(".history-bubble")), false);
   }
-  assert.equal(live.container.querySelector("article")?.outerHTML, history.container.querySelector("article")?.outerHTML);
-  assert.equal(live.container.querySelector(".session-notice-body strong")?.textContent, "Full body");
+});
+
+test("single-line notices have no expander", async () => {
+  const { container } = await mount(`${header}\n\nOnly one line`, true, "user", "notice");
+  assert.match(container.textContent ?? "", /Only one line/);
+  assert.equal(Boolean(container.querySelector("button[aria-expanded]")), false);
 });
 
 
@@ -51,7 +59,7 @@ test("a notice-role message renders once as the same System notice as a user mes
   const asNotice = await mount(raw, true, "notice");
   const asUser = await mount(raw, true, "user", "notice");
   assert.equal(asNotice.container.querySelectorAll("article").length, 1);
-  assert.equal(asNotice.container.querySelectorAll(".session-notice-body").length, 1);
+  assert.equal(asNotice.container.querySelectorAll(".session-notice-preview").length, 1);
   assert.equal(asNotice.container.querySelector("article")?.getAttribute("aria-label"), "System notice");
   assert.equal(Boolean(asNotice.container.querySelector(".history-bubble")), false);
   assert.equal(asNotice.container.querySelector("article")?.outerHTML, asUser.container.querySelector("article")?.outerHTML);
@@ -105,7 +113,7 @@ for (const [kind, label] of [["mailbox", "Mailbox"], ["mailbox.wake", "Mailbox"]
     for (const latestMessagePaging of [true, false]) {
       const { container, window } = await mount(`<!-- agent-notice:v1 kind=${kind} source=fixture.admin -->\n\nBody`, latestMessagePaging, "user", "notice");
       assert.equal(container.querySelector(".session-notice-label")?.textContent, label);
-      assert.equal(container.querySelector(".session-notice-meta > span")?.textContent, `${kind} · fixture.admin`);
+      assert.match(container.textContent ?? "", /Body/);
       assert.equal(Boolean(container.querySelector("script, b")), false);
       // The raw fields remain plain text in this mounted view.
       assert.equal(window.document.querySelectorAll(".session-notice").length, 1);
@@ -124,6 +132,8 @@ test("failed notice child renders the parsed body without exposing the envelope"
       notice: parseSessionNotice(raw)!, raw, time: "12:00", suppressImages: false,
       children: createElement(FailedAttachment),
     })));
+    const button = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    await act(async () => button.click());
     assert.match(container.textContent ?? "", /Synthetic update/);
     assert.match(container.textContent ?? "", /\*\*Full body\*\*/);
     assert.doesNotMatch(container.textContent ?? "", /agent-notice:v1/);
@@ -133,7 +143,7 @@ test("failed notice child renders the parsed body without exposing the envelope"
 
 test("leading blank lines do not leave empty blocks before the body", async () => {
   const { container } = await mount(`${header}\n\n\n   \nFirst readable line\nSecond line`, true, "user", "notice");
-  assert.equal(container.querySelector(".session-notice-body")?.textContent, "First readable line\nSecond line");
+  assert.equal(container.querySelector(".session-notice-first-line")?.textContent, "First readable line");
 });
 
 test("voice messages stay ordinary human messages, plain or quoted (#243)", async () => {

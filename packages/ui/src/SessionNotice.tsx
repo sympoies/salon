@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { MessageMarkdown, MessageMarkdownBoundary } from "./MessageMarkdown.tsx";
 import type { SessionNotice as ParsedNotice } from "@agent-console/shared";
 
@@ -27,6 +27,10 @@ function NoticeContent({ notice, time, suppressImages, children, summary }: {
   readonly children?: ReactNode;
   readonly summary?: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const body = notice.body.replace(/^(?:[ \t]*\r?\n)+/, "");
+  const firstLine = body.split(/\r?\n/, 1)[0] ?? "";
+  const multiline = body.slice(firstLine.length).trim().length > 0;
   if (summary) return <details className="session-notice mailbox-event-disclosure">
     <summary className="session-notice-title">{summary}{time}</summary>
     <div className="session-notice-body"><MessageMarkdown text={notice.body} suppressImages={suppressImages} /></div>
@@ -34,15 +38,17 @@ function NoticeContent({ notice, time, suppressImages, children, summary }: {
     <div className="session-notice-meta"><span>{notice.kind} · {notice.source}</span></div>
   </details>;
   return <div className="session-notice">
-    <h3 className="session-notice-title">
+    <div className="session-notice-preview">
       <span className="session-notice-label">{noticeLabel(notice.kind)}</span>
       {time}
-    </h3>
-    <div className="session-notice-body"><MessageMarkdown text={notice.body} suppressImages={suppressImages} /></div>
-    {children}
-    <div className="session-notice-meta">
-      <span>{notice.kind} · {notice.source}</span>
+      <div className="session-notice-first-line"><MessageMarkdown text={firstLine} suppressImages={suppressImages} /></div>
+      {multiline && <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "Show less" : "Show more"}</button>}
     </div>
+    {expanded && <>
+      <div className="session-notice-body"><MessageMarkdown text={notice.body} suppressImages={suppressImages} /></div>
+      {children}
+      <div className="session-notice-meta"><span>{notice.kind} · {notice.source}</span></div>
+    </>}
   </div>;
 }
 
