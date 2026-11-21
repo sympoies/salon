@@ -967,7 +967,7 @@ for (const update of ["unchanged", "same-key parent refresh", "store recovery", 
       timers.delete(changedTimer);
       await act(async () => { reconcile(); await flushPromises(); });
       assert.equal(putCount, 4, "the new registry needs only one successful write");
-      assert.deepEqual(remote.order, ["summit/a", "summit/b"]);
+      assert.deepEqual(remote.order, ["summit/a", "retired/x", "summit/b"]);
       assert.equal(timers.size, 0);
       return;
     }

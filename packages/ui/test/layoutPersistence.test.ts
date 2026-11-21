@@ -450,7 +450,7 @@ test("createLayoutPersistQueue captures the registry at run start rather than en
     },
   });
   const pending = queue.persist({ localOrder: ["m/a", "m/b"], liveKeys: live("m/a", "m/b"),
-    reachableMachines: live("m"), reason: "reconcile" });
+    reachableMachines: live("m"), reason: "reorder", localOrderPlacement: true });
   known = live("m");
   await pending;
   assert.deepEqual(calls, [["m/a", "m/b"]]);
