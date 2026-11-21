@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.91 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.92 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,7 +183,20 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.91`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.92`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.92
+
+Meta/Ctrl+Shift+S in an editable field is left to the field on every client,
+and Android Back closes the header layout menu instead of leaving the app
+(#594, #597, #602). System notices render on one line with the kind, time and first
+line, plus an expander; stored text is unchanged (#603, #604).
+
+The edge removes layout keys for unconfigured machines and for closed sessions
+beyond board retention before pruning, preventing stale keys from filling the
+256-key bound (#600, #605). The optional host-backed layout store only receives
+the unconfigured-machine cleanup. This lifts the 0.1.91 capacity limitation for
+the internal layout store. No configuration change is required.
 
 ### Changes retained in SDK 0.1.91
 
