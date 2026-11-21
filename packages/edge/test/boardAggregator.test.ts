@@ -10,6 +10,7 @@ import { BOARD_STORE_VERSION, BoardStore } from "../src/board/store.ts";
 import { projectBoardRecord, parseBoardRetention } from "../src/board/record.ts";
 import { loadConfig } from "../src/config.ts";
 import { createEdgeServer } from "../src/server.ts";
+import { AccessStore } from "../src/accessStore.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
 const tempRoot = mkdtempSync(join(tmpdir(), "agent-console-board-"));
@@ -542,6 +543,51 @@ test("retention prunes old closed rows and unconfigured machines at startup and 
     store.close();
     await closeAll(a.server);
   }
+});
+
+test("retention removes expired closed session keys from every principal layout", () => {
+  const board = new BoardStore(freshDb());
+  const access = new AccessStore(freshDb());
+  const day = 24 * 3600_000;
+  board.applyClosed("host-a", [closedRecord("host-a", "old", "deleted", iso(T0 - 4 * day)),
+    closedRecord("host-a", "recent", "deleted", iso(T0 - day))] as never, "L1:2");
+  access.writeLayout("one", ["host-a/old", "host-a/recent", "host-a/unseen"], 0);
+  access.writeLayout("two", ["host-a/old"], 0);
+  access.writeLayout("three", ["host-a/unseen"], 0);
+  const agg = new BoardAggregator(board, [{ name: "host-a", url: "http://127.0.0.1:9", token: "test" }], {
+    retention: "3d", now: () => T0, removeExpiredLayoutKeys: keys => access.removeLayoutKeys(keys),
+  });
+  try {
+    agg.prune();
+    assert.deepEqual(access.readLayout("one"), { order: ["host-a/recent", "host-a/unseen"], revision: 2 });
+    assert.deepEqual(access.readLayout("two"), { order: [], revision: 2 });
+    assert.deepEqual(access.readLayout("three"), { order: ["host-a/unseen"], revision: 1 });
+    agg.prune();
+    assert.equal(access.readLayout("one").revision, 2);
+    const retained = Array.from({ length: 255 }, (_, i) => `host-a/live-${i}`);
+    let layout = access.readLayout("one");
+    access.writeLayout("one", retained, layout.revision);
+    for (let i = 0; i < 4; i += 1) {
+      const id = `closed-${i}`;
+      layout = access.readLayout("one");
+      access.writeLayout("one", [...layout.order, `host-a/${id}`], layout.revision);
+      board.applyClosed("host-a", [closedRecord("host-a", id, "deleted", iso(T0 - 4 * day))] as never, `L1:${i + 3}`);
+      agg.prune();
+      assert.deepEqual(access.readLayout("one").order, retained);
+    }
+  } finally { board.close(); access.close(); }
+});
+
+test("retention retains expired board evidence when layout cleanup fails", () => {
+  const board = new BoardStore(freshDb());
+  board.applyClosed("host-a", [closedRecord("host-a", "old", "deleted", iso(T0 - 4 * 24 * 3600_000))] as never, "L1:1");
+  const agg = new BoardAggregator(board, [{ name: "host-a", url: "http://127.0.0.1:9", token: "test" }], {
+    retention: "3d", now: () => T0, removeExpiredLayoutKeys: () => { throw new Error("unavailable"); },
+  });
+  try {
+    agg.prune();
+    assert.equal(board.rows().length, 1);
+  } finally { board.close(); }
 });
 
 test("retention drops open rows only of configured machines unseen for the whole window", () => {

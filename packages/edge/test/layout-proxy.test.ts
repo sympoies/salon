@@ -2,7 +2,12 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { createServer, type Server } from "node:http";
 import { createEdgeServer } from "../src/server.ts";
-import { closeServers, makeEdgeConfig, listenOnLoopback } from "./support.ts";
+import { closeServers, makeEdgeConfig as baseEdgeConfig, listenOnLoopback } from "./support.ts";
+
+const makeEdgeConfig: typeof baseEdgeConfig = (overrides = {}) => baseEdgeConfig({
+  machines: [{ name: "summit", url: "http://127.0.0.1:9", token: "test" }],
+  ...overrides,
+});
 
 // Outside multi-user mode (which persists layout per principal in access.sqlite)
 // the edge can proxy GET/PUT /api/layout to an optional host read-write layout
@@ -99,6 +104,40 @@ function fakeRevisionLayoutStore(initial: string[] = [], token?: string): {
   });
   return { server, seen: () => ({ order: stored, revision, lastBody }) };
 }
+
+test("layout: reading removes unconfigured machine keys and advances the revision", async () => {
+  const { server, seen } = fakeRevisionLayoutStore(["retired/old", "current/live"]);
+  const { base: readerBase } = await listenOnLoopback(server);
+  const edge = createEdgeServer(makeEdgeConfig({
+    machines: [{ name: "current", url: "http://127.0.0.1:9", token: "test" }],
+    layout: { url: readerBase, token: null },
+  }));
+  const { base } = await listenOnLoopback(edge);
+  try {
+    const body = await readJson(await fetch(`${base}/api/layout`));
+    assert.deepEqual(body.data.order, ["current/live"]);
+    assert.equal(body.data.revision, 4);
+    assert.deepEqual(seen().order, ["current/live"]);
+  } finally {
+    closeServers(edge, server);
+  }
+});
+
+test("layout: cleanup frees a full stale ranking for a new live session", async () => {
+  const { server } = fakeRevisionLayoutStore(Array.from({ length: 256 }, (_, i) => `retired/s${i}`));
+  const { base: readerBase } = await listenOnLoopback(server);
+  const edge = createEdgeServer(makeEdgeConfig({ layout: { url: readerBase, token: null } }));
+  const { base } = await listenOnLoopback(edge);
+  try {
+    const cleaned = await readJson(await fetch(`${base}/api/layout`));
+    assert.deepEqual(cleaned.data.order, []);
+    const result = await readJson(await fetch(`${base}/api/layout`, {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ order: ["summit/new"], base_revision: cleaned.data.revision }),
+    }));
+    assert.deepEqual(result.data.order, ["summit/new"]);
+  } finally { closeServers(edge, server); }
+});
 
 test("layout: reader not configured -> GET reachable:false, empty order (no host access)", async () => {
   const edge = createEdgeServer(makeEdgeConfig());

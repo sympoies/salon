@@ -23,8 +23,8 @@ test("clients with different visible sessions settle without idle layout writes"
             setTimeout(()=>window.changes.forEach(fn=>fn()),0);return {...window.store};};`;
         if (id !== "\0layout-idle-fixture") return;
         return `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {useLayoutSync} from '/src/useLayoutSync.ts';
-          window.changes=[];window.writes=[];const shared=Array.from({length:256},(_,i)=>({machine:'common',id:'s'+i}));
-          window.store={reachable:true,conflict:false,order:shared.map(s=>s.machine+'/'+s.id),revision:1};window.clients=[];
+          window.changes=[];window.writes=[];const shared=Array.from({length:2},(_,i)=>({machine:'common',id:'s'+i}));
+          window.store={reachable:true,conflict:false,order:Array.from({length:256},(_,i)=>'retired/s'+i),revision:1};window.clients=[];
           const a=[...shared,{machine:'alpha',id:'extra'}],b=[...shared,{machine:'beta',id:'extra'}];
           function Client({sessions,index}){const [slots,setSlots]=useState([]);const result=useLayoutSync({sessions,visible:sessions,slotCount:2,reachableMachineNames:new Set(['common',index?'beta':'alpha']),getKnownMachineNames:()=>new Set(['common',index?'beta':'alpha']),setSlots});window.clients[index]=result;return React.createElement('div');}
           createRoot(document.getElementById('root')).render(React.createElement(React.Fragment,null,React.createElement(Client,{sessions:a,index:0}),React.createElement(Client,{sessions:b,index:1})));`;
@@ -41,12 +41,19 @@ test("clients with different visible sessions settle without idle layout writes"
     await page.evaluate(`new Promise(resolve => setTimeout(resolve, ${process.env.LAYOUT_IDLE_LONG ? 300000 : 5000}))`);
     const after = await page.evaluate<number>("window.writes.length");
     assert.equal(after, before, `idle clients continued writing: ${before} to ${after}`);
+    assert.equal(after, 0);
+    await page.evaluate("window.store={...window.store,order:[],revision:window.store.revision+1};window.changes.forEach(fn=>fn())");
+    await page.evaluate("new Promise(resolve => setTimeout(resolve, 7000))");
+    const settled = await page.evaluate<{writes: number; order: string[]}>("({writes:window.writes.length,order:window.store.order})");
+    assert.ok(settled.order.includes("alpha/extra"), "a new live session enters the ranking after cleanup");
+    await page.evaluate("new Promise(resolve => setTimeout(resolve, 5000))");
+    assert.equal(await page.evaluate<number>("window.writes.length"), settled.writes, "clients stay quiet after cleanup");
     await page.evaluate("window.clients[0].applyLayoutLocalOrder(['common/s1','common/s0'], 'overview-reorder')");
     await page.evaluate("new Promise(resolve => setTimeout(resolve, 2000))");
     const result = await page.evaluate<{ writes: number; first: string[]; second: string[] }>(
       "({writes:window.writes.length,first:window.clients[0].orderedSessionKeys.slice(0,2),second:window.clients[1].orderedSessionKeys.slice(0,2)})",
     );
-    assert.ok(result.writes > after && result.writes <= after + 3, `reorder writes: ${result.writes - after}`);
+    assert.ok(result.writes > settled.writes && result.writes <= settled.writes + 3, `reorder writes: ${result.writes - settled.writes}`);
     assert.deepEqual(result.first, ["common/s1", "common/s0"]);
     assert.deepEqual(result.second, result.first);
   } finally { await page.close(); }

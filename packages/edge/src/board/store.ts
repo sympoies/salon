@@ -277,6 +277,18 @@ export class BoardStore {
     });
   }
 
+  expiredLayoutKeys(cutoff: number): string[] {
+    const rows = this.#db.prepare(`
+      SELECT DISTINCT machine, session_id FROM board_record AS expired
+      WHERE state = 'closed' AND closed_ms < ? AND NOT EXISTS (
+        SELECT 1 FROM board_record AS current
+        WHERE current.machine = expired.machine AND current.session_id = expired.session_id
+          AND (current.state != 'closed' OR current.closed_ms >= ?)
+      )
+    `).all(cutoff, cutoff) as Array<{ machine: string; session_id: string }>;
+    return rows.map(row => `${row.machine}/${row.session_id}`);
+  }
+
   /**
    * Rows for the aggregator query, in contract order: live, stopped, closed;
    * newest `updated_at` (live/stopped) or `closed_at` (closed) first; then

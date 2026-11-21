@@ -57,6 +57,30 @@ interface Fixture {
   cleanup: () => Promise<void>;
 }
 
+test("layout keeps configured machines outside the principal view and filters stale keys before the bound", async () => {
+  const f = await fixture();
+  try {
+    const response = await fetch(`${f.base}/api/layout`, {
+      method: "PUT", headers: { authorization: "Bearer browser-dana", "content-type": "application/json" },
+      body: JSON.stringify({ order: [...Array.from({ length: 256 }, (_, i) => `retired/s${i}`), "host-a/unseen", "host-b/new"], base_revision: 0 }),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { data: { order: string[]; revision: number } };
+    assert.deepEqual(body.data.order, ["host-a/unseen", "host-b/new"]);
+    assert.equal(body.data.revision, 1);
+  } finally { await f.cleanup(); }
+});
+
+test("board startup retention updates an inactive principal layout", async () => {
+  const f = await fixture({ seedLayouts: true, autoStart: true });
+  try {
+    const response = await fetch(`${f.base}/api/layout`, { headers: { authorization: "Bearer browser-dana" } });
+    const body = await response.json() as { data: { order: string[]; revision: number } };
+    assert.deepEqual(body.data.order, ["host-b/b-live"]);
+    assert.equal(body.data.revision, 2);
+  } finally { await f.cleanup(); }
+});
+
 // tess owns every seeded session except dana's b-live, so tess's scoped view
 // exercises the filters; principal scoping itself is boardPrincipalScope.test.ts.
 const OWNER_SESSIONS: ReadonlyArray<[string, string]> = [
@@ -69,11 +93,14 @@ async function fixture(options: {
   seed?: (store: BoardStore) => void;
   retention?: "3d" | "1mo";
   ownerSessions?: ReadonlyArray<[string, string]>;
+  seedLayouts?: boolean;
+  autoStart?: boolean;
 } = {}): Promise<Fixture> {
   const dir = join(tempRoot, `case-${++counter}`);
   const accessDb = join(dir, "access.sqlite");
   const boardDb = join(dir, "board.sqlite");
   const access = new AccessStore(accessDb);
+  if (options.seedLayouts) access.writeLayout("dana", ["host-a/a-old-closed", "host-b/b-live"], 0);
   access.claimSession({ principalId: "dana", machine: "host-b", sessionId: "b-live", incarnation: "b-live-inc" });
   access.close();
   // One transaction keeps the bulk cases fast.
@@ -119,7 +146,7 @@ async function fixture(options: {
     coordinationRelays: [{ machine: "host-a", token: "host-a-relay-token", ingress_token: "host-a-ingress-token" }],
     ...(options.board === false ? {} : { board: { dbPath: boardDb, retention: options.retention ?? "3d" } }),
   });
-  const edge = createEdgeServer(config, { board: { autoStart: false, now: () => NOW } });
+  const edge = createEdgeServer(config, { board: { autoStart: options.autoStart ?? false, now: () => NOW } });
   const { base } = await listenOnLoopback(edge);
   return {
     base,
