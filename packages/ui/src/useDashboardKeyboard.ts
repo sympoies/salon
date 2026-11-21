@@ -72,7 +72,7 @@ export function useDashboardKeyboard({
     const onKeyDown = (event: KeyboardEvent) => {
       const targetIsTerminal = isTerminalShortcutTarget(event.target);
       const macTauri = isMacTauri();
-      const targetIsEditable = macTauri && !targetIsTerminal ? isEditableShortcutTarget(event.target) : false;
+      const targetIsEditable = !targetIsTerminal && isEditableShortcutTarget(event.target);
       const shortcutAction = resolveDashboardShortcutAction({
         key: event.key,
         code: event.code,

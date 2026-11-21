@@ -3,6 +3,7 @@ import { IconButton } from "./IconButton.tsx";
 import { AutoLayoutIcon, LayoutModeIcon } from "./LayoutIcons.tsx";
 import { SelectChevronIcon } from "./icons.tsx";
 import { LAYOUT_MODES, type LayoutMode } from "./layout.ts";
+import { useAndroidBackEntry } from "./useAndroidBackEntry.ts";
 import { useDismissOnOutside } from "./useDismissOnOutside.ts";
 import { useMenuFocus } from "./useMenuFocus.ts";
 
@@ -19,6 +20,7 @@ export function LayoutPicker({ auto, mode, displayedMode, onToggleAuto, onSelect
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null), menuRef = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
+  useAndroidBackEntry("layout-picker", open, close);
   useDismissOnOutside(open, ".layout-picker", close);
   useEffect(() => {
     window.addEventListener("resize", close);

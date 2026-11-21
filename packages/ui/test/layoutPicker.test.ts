@@ -90,3 +90,26 @@ test("the compact menu applies Auto and a pane count turns it off", async () => 
     keys.forEach((key, index) => previous[index] ? Object.defineProperty(globalThis, key, previous[index]!) : Reflect.deleteProperty(globalThis, key));
   }
 });
+
+test("Android Back closes the open layout menu", async () => {
+  const window = new Window({ url: "http://localhost" });
+  Object.defineProperty(window, "__TAURI__", { value: {}, configurable: true });
+  const keys = ["window", "document", "navigator", "HTMLElement", "Element", "IS_REACT_ACT_ENVIRONMENT"];
+  const previous = keys.map(key => Object.getOwnPropertyDescriptor(globalThis, key));
+  const globals = { window, document: window.document, navigator: window.navigator, HTMLElement: window.HTMLElement, Element: window.Element, IS_REACT_ACT_ENVIRONMENT: true };
+  keys.forEach(key => Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: globals[key as keyof typeof globals] }));
+  const container = window.document.createElement("div"); window.document.body.append(container);
+  const root = createRoot(container), harness = createUiSsrHarness();
+  try {
+    const { LayoutPicker } = await harness.loadModule<typeof import("../src/LayoutPicker.tsx")>("/src/LayoutPicker.tsx");
+    await act(async () => root.render(createElement(LayoutPicker, { auto: false, mode: 1, displayedMode: 1, onToggleAuto() {}, onSelect() {} })));
+    const trigger = container.querySelector<HTMLButtonElement>(".layout-picker-trigger")!;
+    await act(async () => trigger.click());
+    assert.equal(trigger.getAttribute("aria-expanded"), "true");
+    await act(async () => window.dispatchEvent(new window.PopStateEvent("popstate", { state: null })));
+    assert.equal(trigger.getAttribute("aria-expanded"), "false");
+  } finally {
+    await act(async () => root.unmount()); await harness.close(); await window.happyDOM.close();
+    keys.forEach((key, index) => previous[index] ? Object.defineProperty(globalThis, key, previous[index]!) : Reflect.deleteProperty(globalThis, key));
+  }
+});
