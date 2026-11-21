@@ -1,3 +1,4 @@
+import { normalizeOrder } from "@agent-console/shared/api";
 import type { LayoutOrderResult, PutLayoutOrderOptions } from "./api.ts";
 import {
   layoutOrderChanged,
@@ -51,7 +52,8 @@ function mergeLayoutForIntent(
       ? mergeLayoutOrderWithLocalPrefix
       : mergeLayoutOrderWithReachability
     : mergeLayoutOrderPreservingRemote;
-  const order = merge(retained, intent.localOrder, intent.liveKeys, new Set(), undefined, knownMachines);
+  const liveKeys = intent.localOrderPlacement ? intent.liveKeys : new Set([...intent.liveKeys, ...retained]);
+  const order = merge(retained, intent.localOrder, liveKeys, new Set(), undefined, knownMachines);
   if (intent.reason !== "create" || !intent.localOrderPlacement || !hasTemporarilyMissingKey) {
     return order;
   }
@@ -77,7 +79,7 @@ export async function persistLayoutIntent(args: {
   readonly shouldRetry?: () => boolean;
 }): Promise<LayoutPersistResult> {
   let snapshot = args.previous;
-  let order = mergeLayoutForIntent(snapshot.order, args.intent, args.knownMachines);
+  let order = normalizeOrder(mergeLayoutForIntent(snapshot.order, args.intent, args.knownMachines));
   if (!layoutOrderChanged(order, snapshot.order)) {
     return { reachable: true, snapshot: args.previous };
   }
@@ -99,7 +101,7 @@ export async function persistLayoutIntent(args: {
     if (args.shouldRetry && !args.shouldRetry()) {
       return { reachable: true, snapshot, conflict: true };
     }
-    order = mergeLayoutForIntent(snapshot.order, args.intent, args.knownMachines);
+    order = normalizeOrder(mergeLayoutForIntent(snapshot.order, args.intent, args.knownMachines));
     if (!layoutOrderChanged(order, snapshot.order)) {
       return { reachable: true, snapshot };
     }
