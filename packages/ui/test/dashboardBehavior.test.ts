@@ -7734,3 +7734,29 @@ test("Dashboard leaves the runtime refusal visible in the dialog while guarding 
   await act(async () => { findTextButton(mounted.container, "Create").click(); await flushPromises(); });
   assert.equal(creates, 1);
 });
+
+test("non-macOS editable shortcut leaves the event and slot menus untouched", async () => {
+  const mounted = installDom({ web: true });
+  cleanupStack.push(mounted.cleanup);
+  let menuOpen = true;
+  function Host() {
+    useDashboardKeyboard({
+      active: true, autoLayout: false, autoDesktopMode: 1,
+      closeFocusedSession: async () => {}, closeOpenSlotMenus: () => { menuOpen = false; },
+      focusAdjacentSession: () => {}, isEditableShortcutTarget: target => target instanceof mounted.window.HTMLInputElement,
+      isTerminalShortcutTarget: () => false, onUsage: () => {}, onPagePrevious: () => {}, onPageNext: () => {},
+      onVoice: () => {}, onConversation: () => {}, onShortcutHelp: () => {}, openSessionByShortcutIndex: () => {},
+      reconnectFocusedSession: () => {}, renameFocusedSession: () => {}, repairSessions: async () => {},
+      retitleFocusedSession: async () => {}, setAutoLayout: () => {}, setFocusedKey: () => {}, setLayoutMode: () => {},
+      setPendingSlot: () => {}, setShowCreate: () => {}, toggleFocusList: () => {},
+    });
+    return createElement("input");
+  }
+  await act(async () => mounted.root.render(createElement(Host)));
+  const input = mounted.container.querySelector("input")!;
+  input.focus();
+  const event = new mounted.window.KeyboardEvent("keydown", { key: "S", code: "KeyS", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+  await act(async () => input.dispatchEvent(event));
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(menuOpen, true);
+});
