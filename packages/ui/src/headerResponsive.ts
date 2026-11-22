@@ -15,7 +15,7 @@ export function chooseHeaderCompactStage(fits: (stage: HeaderCompactStage) => bo
  */
 export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage | null {
   // Give quota the room left by the logo, New, More and number-only counts:
-  // fewer accounts, then one without names or countdowns, then stacked percentages. Nested so the serialized function in test fixtures is complete.
+  // fewer accounts, then one without names or countdowns, then stacked percentages.
   const fitQuota = (): void => {
     const usage = header.querySelector<HTMLElement>(".header-usage");
     if (!usage) return;
@@ -24,8 +24,12 @@ export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage 
     for (let accounts = total; accounts >= 1; accounts--) steps.push([accounts, "full"]);
     if (total > 0) steps.push([1, "compact"], [1, "percent"]);
     const fits = () => {
-      const rect = usage.getBoundingClientRect(), bounds = header.getBoundingClientRect();
-      return rect.width > 0 && usage.scrollWidth <= usage.clientWidth + 1 && rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
+      const rect = usage.getBoundingClientRect();
+      const bounds = header.getBoundingClientRect();
+      // Phone entries keep their intrinsic widths. Any excess now overflows
+      // the strip instead of being absorbed by an account name or meter.
+      return rect.width > 0 && usage.scrollWidth <= usage.clientWidth && usage.scrollHeight <= usage.clientHeight
+        && rect.left >= bounds.left && rect.right <= bounds.right;
     };
     for (const [accounts, detail] of steps) {
       header.dataset.quotaAccounts = String(accounts);

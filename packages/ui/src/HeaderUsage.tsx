@@ -1,5 +1,5 @@
 import { useUiExtensions } from "./extensions.tsx";
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, type CSSProperties, type ReactNode } from "react";
 import type { AccountProvider } from "@agent-console/shared/api";
 import { usage, type ProviderUsage, type UsageResult, type UsageWindow } from "./api.ts";
 import { AgentBadge } from "./AgentBadge.tsx";
@@ -113,15 +113,28 @@ export function HeaderUsage({ onOpen }: HeaderUsageProps) {
   );
 }
 
+function headerResetWidth(window: UsageWindow, updatedAt: number | null): string | undefined {
+  if (window.resets_at === null) return undefined;
+  // Size for "23h 59m" and the longest day/hour form since the usage sample.
+  // The live clock can shorten the countdown without changing this width.
+  const days = Math.ceil(Math.max(0, window.resets_at - (updatedAt ?? 0)) / 86400);
+  return `${Math.max(7, String(days).length + 5)}ch`;
+}
+
 /**
  * One compact usage window: its glyph, remaining-capacity meter, remaining
  * percentage and time to reset. The top-bar chip and the focused session
  * header's account quota share it so both read the same.
  */
-export function UsageWindowChip({ window: w, now }: { readonly window: UsageWindow; readonly now: number }) {
+export function UsageWindowChip({ window: w, now, resetWidth }: {
+  readonly window: UsageWindow;
+  readonly now: number;
+  readonly resetWidth?: string;
+}) {
   const remaining = remainingUsagePercent(w.used_percent);
   return (
-    <span className="hu-win" data-window-key={w.key}>
+    <span className="hu-win" data-window-key={w.key}
+      style={resetWidth === undefined ? undefined : { "--hu-reset-width": resetWidth } as CSSProperties}>
       <span className="hu-win-label" title={windowTitle(w)}>
         {w.key === "5h" ? (
           <ClockIcon />
@@ -169,7 +182,7 @@ export function HeaderUsageReadout({
             <AgentBadge agent={p.provider} />
             <span className="hu-name">{headerUsageName(p)}</span>
             {presentation.kind === "windows" ? (
-              compactWindows.map((w) => <UsageWindowChip window={w} now={now} key={w.key} />)
+              compactWindows.map((w) => <UsageWindowChip window={w} now={now} resetWidth={headerResetWidth(w, p.updated_at)} key={w.key} />)
             ) : (
               <span className={`hu-state ${presentation.warn ? "warn" : ""}`}>{presentation.compactStatus}</span>
             )}

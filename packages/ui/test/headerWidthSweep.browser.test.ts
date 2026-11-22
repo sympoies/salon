@@ -66,7 +66,8 @@ for (const focused of [false, true]) {
     if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
     const fixture = await headerFixture();
     try {
-      const widths = [320, 360, 412, 480, 600, 700, 760, 900, 1024, 1280];
+      // The focused header needs the roomier fixture to show both whole entries.
+      const widths = [320, 360, 412, 480, 600, 700, 760, 900, 1024, 1280, 1440];
       const shown = widths.map(width => measureHeaderMarkup<Sweep>(fixture.markup(width, false, focused, true), width, script(), false, 800, [], tierScript(true, false)).quota);
       const detail = JSON.stringify(Object.fromEntries(widths.map((width, i) => [width, shown[i]])));
       assert.equal(shown[0], 0, `the quota strip is gone at 320px: ${detail}`);
