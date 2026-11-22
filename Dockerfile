@@ -3,7 +3,7 @@ FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7c
 
 # The released GNU agent-session binary requires trixie's newer glibc.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep tmux zsh \
+    && apt-get install -y --no-install-recommends ca-certificates curl git procps ripgrep tmux zsh \
     && rm -rf /var/lib/apt/lists/*
 
 ARG TARGETARCH

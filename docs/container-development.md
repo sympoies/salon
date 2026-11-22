@@ -125,7 +125,8 @@ Run this test in a fresh, locally built Compose workspace before authenticating 
 docker compose exec -T workspace node --test /opt/salon/docker/default-create.test.ts
 ```
 
-The test signs in to Salon and verifies that the default session reaches the Codex sign-in prompt.
+The test checks the process listing Codex uses to register its app-server.
+It signs in to Salon and verifies that the default session reaches the Codex sign-in prompt.
 
 ### Complete scheduled provider acceptance
 

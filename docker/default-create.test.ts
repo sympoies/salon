@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
 // Run inside a fresh Compose workspace with no Codex credentials.
+test("Codex app-server can inspect local process state and start time", () => {
+  const details = execFileSync("ps", ["-p", String(process.pid), "-o", "stat=", "-o", "lstart="], {
+    encoding: "utf8",
+    timeout: 5_000,
+  });
+  assert.match(details.trim(), /^\S+\s+\S/, "ps returns process status and start time");
+});
+
 test("default Codex creation reaches provider sign-in", { timeout: 30_000 }, async () => {
   const origin = "http://127.0.0.1:3000";
   const signal = AbortSignal.timeout(25_000);
