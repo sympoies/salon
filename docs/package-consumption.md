@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.94 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.95 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,7 +183,26 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.94`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.95`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.95
+
+The publish workflow runs the Compose smoke check against the exact pushed
+image digest on a fresh runner before recording the digest in the release notes
+(#615, #617).
+
+The image pins agent-session 1.42.1 and installs `procps`. Default session
+creation now reaches provider setup, fixing session creation in the 0.1.94
+image (#614, #619).
+
+The image includes Claude Code alongside Codex. The
+[container guide](container-development.md#set-up-provider-authentication)
+covers API-key and subscription sign-in, logout, and credential removal for
+both providers (#616, #618). Add the named `claude-state` volume when upgrading
+an existing Compose file. The [pull-only example](../compose.image.yaml)
+already declares it.
+
+This release uses the existing SDK configuration.
 
 ### Changes retained in SDK 0.1.94
 
