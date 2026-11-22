@@ -8,7 +8,7 @@ import { build } from "vite";
 import react from "@vitejs/plugin-react";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
 
-test("session notices render Markdown bodies that stay selectable and wrap at phone width", async () => {
+test("session notices render Markdown bodies that stay selectable and wrap at phone width", async (t) => {
   assert.ok(hasHeadlessChrome(), "headless Chrome is required for notice acceptance");
   const long = "A".repeat(160);
   const body = [
@@ -80,14 +80,19 @@ test("session notices render Markdown bodies that stay selectable and wrap at ph
       assert.equal(result.exceptionDetails,undefined,"browser fixture executes successfully");
       return result.result.value;
     };
+    const waitFor=async(condition:string)=>evaluate(`new Promise((resolve,reject)=>{let remaining=200;function check(){if(${condition})resolve(true);else if(--remaining)setTimeout(check,10);else reject(Error('fixture timed out'));}check();})`);
+    async function renderFixture(width: number, theme = "dark", touch = false) {
+      await send('Emulation.setDeviceMetricsOverride',{width,height:800,deviceScaleFactor:1,mobile:touch});
+      await send('Emulation.setTouchEmulationEnabled',{enabled:touch});
+      const {frameTree}=await send('Page.getFrameTree');
+      await send('Page.setDocumentContent',{frameId:frameTree.frame.id,html:`<!doctype html><html data-theme="${theme}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div>`});
+      await evaluate(code);
+      await waitFor('document.querySelectorAll("article").length===4');
+    }
+
     const results=[];
     for(const width of [360,1440]) {
-      await send('Emulation.setDeviceMetricsOverride',{width,height:800,deviceScaleFactor:1,mobile:false});
-      const {frameTree}=await send('Page.getFrameTree');
-      await send('Page.setDocumentContent',{frameId:frameTree.frame.id,html:`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div>`});
-      await evaluate(code);
-      const waitFor=async(condition:string)=>evaluate(`new Promise((resolve,reject)=>{let remaining=200;function check(){if(${condition})resolve(true);else if(--remaining)setTimeout(check,10);else reject(Error('fixture timed out'));}check();})`);
-      await waitFor('document.querySelectorAll("article").length===4');
+      await renderFixture(width);
       const collapsed = await evaluate(`(()=>{const row=document.querySelector('[data-history-message-id="notice"]'); const button=row.querySelector('button[aria-expanded]'); const preview=row.querySelector('.session-notice-preview'); return {expanded:button?.getAttribute('aria-expanded'), text:row.textContent, height:preview.getBoundingClientRect().height, textHeight:row.querySelector('.session-notice-first-line').getBoundingClientRect().height, overflow:row.scrollWidth>row.clientWidth};})()`);
       assert.equal(collapsed.expanded, 'false');
       assert.ok(!collapsed.text.includes('Parent one'));
@@ -156,6 +161,61 @@ test("session notices render Markdown bodies that stay selectable and wrap at ph
       assert.equal(measured.background,'rgba(0, 0, 0, 0)','row has no bubble background');
       assert.equal(measured.footer,'mailbox · fixture');
     }
+    await t.test("notice expander uses themed text and a transparent background", async () => {
+      const styles = [];
+      for (const width of [360, 1440]) {
+        const touch = width === 360;
+        for (const theme of ["dark", "paper"]) {
+          await renderFixture(width, theme, touch);
+          const style = await evaluate(`(() => {
+            const button = document.querySelector('.session-notice-preview button[aria-expanded]');
+            const computed = getComputedStyle(button);
+            const probe = document.createElement('span');
+            probe.style.color = 'var(--conversation-agent-text)';
+            probe.style.outlineColor = 'var(--accent)';
+            button.after(probe);
+            const { color, outlineColor } = getComputedStyle(probe);
+            probe.remove();
+            button.focus();
+            const rect = button.getBoundingClientRect();
+            return {
+              themed: button.classList.contains('session-notice-toggle'),
+              background: computed.backgroundColor,
+              color: computed.color,
+              themeColor: color,
+              focused: button.matches(':focus-visible'),
+              outline: computed.outlineStyle,
+              outlineWidth: computed.outlineWidth,
+              outlineColor: computed.outlineColor,
+              themeOutlineColor: outlineColor,
+              touch: matchMedia('(pointer: coarse)').matches,
+              width: rect.width,
+              height: rect.height,
+            };
+          })()`);
+          if (evidence) {
+            const shot = await send('Page.captureScreenshot', {format:'png'});
+            writeFileSync(join(evidence, `expander-${theme}-${width}.png`), Buffer.from(shot.data, 'base64'));
+          }
+          styles.push({theme, viewport: width, touch, style});
+          await evaluate('window.fixtureRoot.unmount()');
+        }
+      }
+
+      if (evidence) writeFileSync(join(evidence, 'expander-styles.json'), JSON.stringify(styles, null, 2));
+      for (const {theme, viewport, touch, style} of styles) {
+        const context = `${theme} at ${viewport}px`;
+        assert.equal(style.background, 'rgba(0, 0, 0, 0)', `${context} expander has a transparent background`);
+        assert.equal(style.themed, true, `${context} expander carries the themed class`);
+        assert.equal(style.color, style.themeColor, `${context} expander uses the conversation text token`);
+        assert.equal(style.focused, true, `${context} expander receives visible focus`);
+        assert.equal(style.outline, 'solid', `${context} expander has a solid focus outline`);
+        assert.equal(style.outlineWidth, '2px', `${context} expander has a 2px focus outline`);
+        assert.equal(style.outlineColor, style.themeOutlineColor, `${context} focus uses the accent token`);
+        assert.equal(style.touch, touch, `${context} fixture uses the expected pointer type`);
+        if (touch) assert.ok(style.width >= 44 && style.height >= 44, `${context} expander has a 44px touch target`);
+      }
+    });
   } finally {
     socket?.close();
     if(browser.exitCode===null && browser.signalCode===null){
