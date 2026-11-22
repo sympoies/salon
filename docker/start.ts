@@ -58,9 +58,11 @@ try {
     "AGENT_HOME", "AGENT_SESSION_STATE_DIR", "TMPDIR"]) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
   }
+  // Start a separate process session so Linux tmux identity checks do not
+  // see the daemon inheriting process session 1 from the container init.
   daemon = spawn("agent-session", ["serve", "--bind", "127.0.0.1:8781",
     "--machine", "workspace", "--host", "workspace", "--token-stdin"], {
-    env, stdio: ["pipe", "inherit", "inherit"],
+    detached: true, env, stdio: ["pipe", "inherit", "inherit"],
   });
   daemon.once("error", () => { daemon = undefined; void shutdown(1); });
   daemon.once("exit", () => void shutdown(1));

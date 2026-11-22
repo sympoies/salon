@@ -8,12 +8,12 @@ RUN apt-get update \
 
 ARG TARGETARCH
 RUN case "$TARGETARCH" in \
-      amd64) target=x86_64-unknown-linux-gnu; digest=118c37aae503f0b83c4a79cd586e6a63a12fd9376aa0d1ed873afb148df7c7db ;; \
-      arm64) target=aarch64-unknown-linux-gnu; digest=d0b6d5dc8ca7af7f1ae15b65fe3424dca9b1913ab3dd2a9b9c49d4116fdd6fa3 ;; \
+      amd64) target=x86_64-unknown-linux-gnu; digest=c5ce2d3ab321669c4712e79bd15128a4b8dc8d1ff8dfd70c34aa39ef1c46a0b0 ;; \
+      arm64) target=aarch64-unknown-linux-gnu; digest=f9c12e8c3be68720cd02dd9f067cb9f903161d797a017fd1e86abcec684d5e11 ;; \
       *) exit 1 ;; \
     esac \
-    && archive="nils-cli-v1.36.26-${target}" \
-    && curl --fail --location --retry 3 "https://github.com/sympoies/nils-cli/releases/download/v1.36.26/${archive}.tar.gz" -o /tmp/nils.tar.gz \
+    && archive="nils-cli-v1.42.1-${target}" \
+    && curl --fail --location --retry 3 "https://github.com/sympoies/nils-cli/releases/download/v1.42.1/${archive}.tar.gz" -o /tmp/nils.tar.gz \
     && printf '%s  /tmp/nils.tar.gz\n' "$digest" | sha256sum --check \
     && mkdir /opt/nils \
     && tar -xzf /tmp/nils.tar.gz -C /opt/nils --strip-components=1 \
