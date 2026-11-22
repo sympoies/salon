@@ -42,7 +42,7 @@ function NoticeContent({ notice, time, suppressImages, children, summary }: {
       <span className="session-notice-label">{noticeLabel(notice.kind)}</span>
       {time}
       <div className="session-notice-first-line"><MessageMarkdown text={firstLine} suppressImages={suppressImages} /></div>
-      {multiline && <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "Show less" : "Show more"}</button>}
+      {multiline && <button type="button" className="session-notice-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "Show less" : "Show more"}</button>}
     </div>
     {expanded && <>
       <div className="session-notice-body"><MessageMarkdown text={notice.body} suppressImages={suppressImages} /></div>
