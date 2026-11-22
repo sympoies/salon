@@ -33,6 +33,7 @@ jobs:
     outputs:
       image: ${{ steps.ref.outputs.image }}
       digest: ${{ steps.push.outputs.digest }}
+      source-commit: ${{ steps.checkout.outputs.commit }}
     steps:
       - name: Validate tag
         run: |
@@ -43,6 +44,7 @@ jobs:
           }
 
       - name: Check out the tag
+        id: checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: refs/tags/${{ env.TAG }}
@@ -77,9 +79,44 @@ jobs:
         run: |
           printf '### Pinned image\n\n```text\n%s@%s\n```\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
 
+  smoke:
+    name: Smoke published image
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      SALON_IMAGE: ${{ needs.publish.outputs.image }}@${{ needs.publish.outputs.digest }}
+    steps:
+      - name: Fetch deployment files from the built tag
+        env:
+          SOURCE_COMMIT: ${{ needs.publish.outputs.source-commit }}
+        run: |
+          set -euo pipefail
+          base="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$SOURCE_COMMIT"
+          mkdir -p scripts
+          curl -fsSL --remove-on-error "$base/compose.image.yaml" -o compose.image.yaml
+          curl -fsSL --remove-on-error "$base/scripts/smoke-compose.sh" -o scripts/smoke-compose.sh
+
+      - name: Start and check the published image
+        run: |
+          set -euo pipefail
+          printf 'Smoking published image %s\n' "$SALON_IMAGE"
+          if ! docker compose -f compose.image.yaml up -d --wait --pull always; then
+            printf 'Failed to start published image %s with Docker Compose.\n' "$SALON_IMAGE" >&2
+            exit 1
+          fi
+          bash scripts/smoke-compose.sh compose.image.yaml
+
+      - name: Remove smoke containers and volumes
+        if: ${{ always() }}
+        run: |
+          if [[ -f compose.image.yaml ]]; then
+            docker compose -f compose.image.yaml down -v
+          fi
+
   record-digest:
     name: Record digest in release notes
-    needs: publish
+    needs: [publish, smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
