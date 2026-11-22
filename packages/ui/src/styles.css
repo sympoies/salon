@@ -5025,6 +5025,20 @@ textarea {
     position: static; transform: none; max-width: 100%; min-width: 0; overflow: hidden; flex-wrap: nowrap;
     justify-self: end; gap: var(--space-sm); height: var(--icon-standard-size); padding-block: 0;
   }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head > .header-usage {
+    font-family: Arial, sans-serif;
+  }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head > .header-usage > .hu-provider {
+    flex: none;
+  }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head > .header-usage :is(.hu-name, .hu-state) {
+    max-width: none;
+    overflow: visible;
+  }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head > .header-usage .hu-reset {
+    font-family: ui-monospace, monospace;
+    min-inline-size: var(--hu-reset-width, 0);
+  }
   /* Keep both window percentages in the narrowest quota cell. */
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage { padding-inline: 4px; }
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage .hu-provider { display: grid; grid-template-columns: auto; gap: 0; }
