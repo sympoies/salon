@@ -1,9 +1,9 @@
 # Development
 
-Salon has three reusable core libraries and local package validation. The complete
-application, container and provider milestone remains pending. The first application
-milestone covers one provider before the full two-provider MVP described in
-[README.md](README.md).
+Salon has three reusable core libraries and local package validation. The first
+self-host milestone covers Codex and Claude with API-key and subscription
+authentication. See [README.md](README.md) for the intended user flow and
+acceptance status.
 
 ## Prerequisites
 

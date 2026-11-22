@@ -12,6 +12,7 @@ services:
     volumes:
       - workspace:/home/node/Project/workspace
       - provider-state:/home/node/.codex
+      - claude-state:/home/node/.claude
       - runtime-state:/home/node/.local/state
     tmpfs:
       - /tmp:mode=1777
@@ -30,4 +31,5 @@ services:
 volumes:
   workspace:
   provider-state:
+  claude-state:
   runtime-state:

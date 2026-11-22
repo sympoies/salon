@@ -32,9 +32,8 @@ The reusable core libraries produce JavaScript, declarations and required assets
 An isolated package consumer exercises those artifacts without workspace source
 links. See [package consumption](docs/package-consumption.md) for that developer path.
 
-The first developer milestone will support one provider. The full MVP will
-support two providers. The intended user flow for those milestones runs from a
-published image, with no source build:
+The first self-host milestone covers Codex and Claude, each with an API key or
+subscription login. The intended user flow runs from a published image:
 
 1. Pull and start the workspace from the pinned image, then run the smoke check.
 2. Complete official provider login or API-key setup.
@@ -42,10 +41,9 @@ published image, with no source build:
 4. Receive an actual provider reply.
 5. Refresh the browser or reconnect to the same session.
 
-Only step 1 can be checked without a provider account. Steps 2 to 5 are
-accepted only after the scheduled tester run on a clean Linux host; do not read
-this section as a claim that they have passed. The local core package checks do
-not establish them either.
+The smoke check and the provider sign-in prompts can be checked without
+provider credentials. Signed-in use requires a scheduled tester run on a
+clean Linux host.
 
 ### Start from the published image
 
@@ -72,6 +70,20 @@ The smoke check needs no provider credentials. It prints one `PASS` or `FAIL`
 line per check: container running, container healthy, `/healthz` answering,
 the published port bound only to `127.0.0.1:3000`, and no root process. It
 exits 0 when all pass, 1 when a check fails and 2 for a missing tool or file.
+
+Open `http://127.0.0.1:3000` and enter the Salon browser token. Read it in a
+private terminal:
+
+```bash
+docker compose -f compose.image.yaml exec workspace cat /home/node/.local/state/salon/browser-token
+```
+
+Set up the provider you will select in **New**:
+
+| Provider | API key | Subscription |
+| --- | --- | --- |
+| Codex | [Codex API key](docs/container-development.md#codex-api-key) | [Codex device login](docs/container-development.md#codex-subscription-login) |
+| Claude | [Claude API key](docs/container-development.md#claude-api-key) | [Claude browser login](docs/container-development.md#claude-subscription-login) |
 
 To build from source instead, use `docker compose up --build`.
 

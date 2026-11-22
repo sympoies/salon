@@ -31,6 +31,24 @@ RUN npm install --global pnpm@11.9.0 @openai/codex@0.162.1 \
        '9d71575ecfd9a843fc1677b0efb08053c6ba9fd686a0de1a6f5382fd3c220915  /usr/local/share/licenses/codex/NOTICE' \
        | sha256sum --check
 
+
+# Use the official platform binary and retain its bundled legal files.
+ENV CLAUDE_CONFIG_DIR=/home/node/.claude \
+    DISABLE_UPDATES=1
+RUN case "$TARGETARCH" in \
+      amd64) target=x64; digest=f469fe57b0ed27c3359f3b4ff42783565f60dd1b6b7a923bace153c8f4519d97bc0facde6c81ca982ecebc16aeb9cb803f45f493ce520cdfcb3d56728ec19ecd ;; \
+      arm64) target=arm64; digest=578c9a9c0639100e54a70c113ed8d27ea0db36a0255097959f7358670d808264478dda52b0bb470336f14577e40276e3c135f3134b9e763431518d360113dcb0 ;; \
+      *) exit 1 ;; \
+    esac \
+    && package="claude-code-linux-${target}" \
+    && curl --fail --location --retry 3 "https://registry.npmjs.org/@anthropic-ai/${package}/-/${package}-2.1.330.tgz" -o /tmp/claude.tgz \
+    && printf '%s  /tmp/claude.tgz\n' "$digest" | sha512sum --check \
+    && mkdir -p /usr/local/share/licenses/claude \
+    && tar -xzf /tmp/claude.tgz -C /usr/local/share/licenses/claude --strip-components=1 package/LICENSE.md package/README.md \
+    && tar -xzf /tmp/claude.tgz -C /usr/local/bin --strip-components=1 package/claude \
+    && install -d -m 0700 -o node -g node "$CLAUDE_CONFIG_DIR" \
+    && rm /tmp/claude.tgz
+
 WORKDIR /opt/salon
 COPY LICENSE package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts ./scripts

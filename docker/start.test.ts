@@ -65,8 +65,10 @@ export function startWorkspaceEdge({ daemonToken, clientToken, onShutdown }) {
   const home = join(root, "home");
   const env = {
     PATH: bin + ":/usr/bin:/bin", HOME: home, CODEX_HOME: join(home, ".codex"),
+    CLAUDE_CONFIG_DIR: join(home, ".claude"), DISABLE_UPDATES: "1",
     XDG_STATE_HOME: join(home, ".local/state"), XDG_RUNTIME_DIR: join(root, "run"),
     NODE_OPTIONS: `--conditions=source --import=${join(root, "readiness.mjs")}`,
+    ANTHROPIC_API_KEY: "fixture-inherited-provider-credential",
     AGENT_SESSION_TOKEN: "fixture-inherited-daemon-credential",
     AGENT_CONSOLE_TOKEN: "fixture-inherited-browser-credential",
     AGENT_CONSOLE_MACHINES: "fixture-inherited-upstream-credential",
@@ -105,7 +107,9 @@ test("waits for daemon readiness, keeps credentials separate and stable, and sto
   assert.equal(edge.daemonMatches, true, "daemon receives its token through stdin");
   assert.equal(edge.distinct, true, "browser credential must not grant daemon access");
   const daemon = JSON.parse(await readFile(join(f.root, "daemon.json"), "utf8"));
-  for (const name of ["AGENT_SESSION_TOKEN", "AGENT_CONSOLE_TOKEN", "AGENT_CONSOLE_MACHINES", "NODE_OPTIONS"]) {
+  assert.equal(daemon.env.CLAUDE_CONFIG_DIR, join(f.home, ".claude"));
+  assert.equal(daemon.env.DISABLE_UPDATES, "1");
+  for (const name of ["AGENT_SESSION_TOKEN", "AGENT_CONSOLE_TOKEN", "AGENT_CONSOLE_MACHINES", "ANTHROPIC_API_KEY", "NODE_OPTIONS"]) {
     assert.equal(daemon.env[name], undefined, `${name} must not enter provider ancestry`);
   }
   assert.equal(daemon.args.includes(daemon.token), false);
