@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.92 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.93 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,7 +183,15 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.92`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.93`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.93
+
+The phone header usage strip shows complete account entries without clipping
+or overlap. As space narrows, it shows fewer accounts, one full account, and
+then compact details or stacked percentages. Countdown text changes keep the
+same step at a given width (#608, #609). This release uses the existing
+configuration.
 
 ### Changes retained in SDK 0.1.92
 
