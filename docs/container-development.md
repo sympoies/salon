@@ -117,6 +117,17 @@ browser cookie required login again, and the stopped shell was not silently recr
 Headless Chrome rendered login and the Codex session dialog and retained authenticated
 access after reload at desktop and mobile sizes.
 
+### Check default Codex startup
+
+Run this test in a fresh, locally built Compose workspace before authenticating Codex:
+
+```bash
+docker compose exec -T workspace node --test /opt/salon/docker/default-create.test.ts
+```
+
+The test checks the process listing Codex uses to register its app-server.
+It signs in to Salon and verifies that the default session reaches the Codex sign-in prompt.
+
 ### Complete scheduled provider acceptance
 
 A fixture response, headless UI run or successful daemon inventory request cannot
@@ -128,7 +139,7 @@ source archive or release is published by this developer flow.
 
 ### Installed runtime and licenses
 
-The pinned CLI runtime is agent-session 1.36.26 and Codex 0.162.1. The image keeps the
+The pinned CLI runtime is agent-session 1.42.1 and Codex 0.162.1. The image keeps the
 released nils-cli license/notices under `/opt/nils` and the Codex license/notice under
 `/usr/local/share/licenses/codex`. Only the agent-session binary is installed from
 nils-cli; no private runtime or hooks are copied from the host.
