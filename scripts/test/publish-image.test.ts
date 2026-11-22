@@ -59,3 +59,32 @@ test("a different digest is refused without editing release notes", () => {
   assert.equal(result.edited, undefined);
   assert.match(result.err, /Container image.*different.*reference/i);
 });
+
+test("release notes depend on a successful published-image smoke", () => {
+  assert.match(workflow, /^  record-digest:\n    name: [^\n]+\n    needs: \[publish, smoke\]$/m);
+});
+
+test("a missing published digest fails the smoke and names the attempted reference", () => {
+  const step = workflow.match(/^      - name: Start and check the published image\n        run: \|\n((?: {10}.*\n)+)/m)?.[1];
+  assert.ok(step, "the workflow must run a smoke step");
+  const wrongDigest = reference.replace("a".repeat(64), "0".repeat(64));
+  const root = mkdtempSync(join(tmpdir(), "salon-image-smoke-"));
+  try {
+    writeFileSync(join(root, "docker"), `#!/usr/bin/env bash
+if [[ "$*" != 'compose -f compose.image.yaml up -d --wait --pull always' || "$SALON_IMAGE" != "$WRONG_REFERENCE" ]]; then
+  exit 2
+fi
+echo 'manifest unknown' >&2
+exit 1
+`, { mode: 0o755 });
+    const result = spawnSync("bash", ["-c", step], {
+      cwd: root, encoding: "utf8",
+      env: { PATH: `${root}:/usr/bin:/bin`, SALON_IMAGE: wrongDigest, WRONG_REFERENCE: wrongDigest },
+    });
+    assert.equal(result.status, 1, result.stderr);
+    assert.ok(result.stderr.includes("manifest unknown"), result.stderr);
+    assert.ok(result.stderr.includes(`Failed to start published image ${wrongDigest}`), result.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

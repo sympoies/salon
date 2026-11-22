@@ -50,8 +50,9 @@ not establish them either.
 ### Start from the published image
 
 Each SDK release publishes a linux/amd64 image to
-`ghcr.io/sympoies/salon` and appends its immutable reference to the release
-notes. The image is published only for release tags created after this
+`ghcr.io/sympoies/salon`. The publish workflow runs the smoke check against
+the pushed digest before adding its immutable reference to the release notes.
+The image is published only for release tags created after this
 workflow exists. Copy `compose.image.yaml` and `scripts/smoke-compose.sh` from
 the matching tag, then set the reference from those notes:
 
