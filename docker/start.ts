@@ -54,7 +54,8 @@ try {
   // Only runtime paths and terminal settings enter provider ancestry. Neither
   // operator credential is exported to the daemon, tmux or provider children.
   const env: NodeJS.ProcessEnv = { LANG: "C.UTF-8", TERM: "xterm-256color" };
-  for (const key of ["PATH", "HOME", "CODEX_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR",
+  for (const key of ["PATH", "HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "DISABLE_UPDATES",
+    "XDG_STATE_HOME", "XDG_RUNTIME_DIR",
     "AGENT_HOME", "AGENT_SESSION_STATE_DIR", "TMPDIR"]) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
   }
