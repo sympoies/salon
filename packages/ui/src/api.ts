@@ -1148,13 +1148,17 @@ export async function createSession(
       && typeof details.message === "string" && details.message
       ? `${runtimeCode} / ${details.reason}: ${details.message}`
       : undefined;
+    const definiteRefusal = errorCode === "start-failed" && refusal !== undefined;
+    const refusalMessage = definiteRefusal && details?.reason === "startup-prompt-required"
+      ? `${refusal} See “Set up provider authentication” in the container guide for sign-in steps.`
+      : refusal;
     const failure = {
       ...result,
       ...(errorCode ? { errorCode } : {}),
       ...identity,
-      ...(refusal ? { error: refusal, runtimeRefusal: refusal } : {}),
+      ...(refusalMessage ? { error: refusalMessage, runtimeRefusal: refusalMessage } : {}),
     };
-    return r.status >= 500 && !DETERMINATE_CREATE_FAILURE_CODES.has(errorCode ?? "")
+    return r.status >= 500 && !definiteRefusal && !DETERMINATE_CREATE_FAILURE_CODES.has(errorCode ?? "")
       ? { ...failure, outcomeUnknown: true }
       : failure;
   }
