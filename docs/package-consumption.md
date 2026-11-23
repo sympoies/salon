@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.98 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.99 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -195,7 +195,22 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.98`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.99`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.99
+
+Usage providers can mark cached last-good quota windows with `retained: true` and
+optionally supply `backoff_until` in Unix seconds. The edge passes these fields
+through. The UI shows retained windows as stale with their age for up to six
+hours and drops them when they reset. Unmarked windows keep the ten-minute
+cutoff (#643, #645).
+
+The container installs `agent-hook` from the pinned nils-cli archive and
+configures warn-only Claude activity hooks so Salon can report session state.
+The edge stores its SQLite state database in the existing runtime volume,
+which enables shared replies in the Conversation view (#647, #649).
+
+You can upgrade with your existing SDK configuration.
 
 ### Changes retained in SDK 0.1.98
 
