@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.95 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.96 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,7 +183,21 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.95`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.96`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.96
+
+When the runtime refuses to start a session and returns a typed reason, the UI
+shows the runtime's message. If provider sign-in is required, the UI tells you
+to sign in on the selected machine. New stays available, and a definite refusal
+leaves no stopped placeholder. The unknown-outcome banner still appears when the
+result is uncertain, such as after a lost response (#621, #624).
+
+The Compose smoke script accepts an optional project name after the Compose file.
+The argument takes precedence over an exported `COMPOSE_PROJECT_NAME`
+(#622, #625).
+
+You can upgrade with your existing SDK configuration.
 
 ### Changes retained in SDK 0.1.95
 
