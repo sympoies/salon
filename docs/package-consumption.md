@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.99 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.100 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -195,7 +195,23 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.99`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.100`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.100
+
+The read-only extension facade `conversation.firstReplyAfter` returns the
+first assistant reply after an extension's own delivered input in the exact
+session incarnation. The response carries a durable event ID and order, bounded
+text, and typed unavailability. Codex is supported. Claude returns
+`unavailable` because it lacks a receipt binding (#650, #652).
+
+The container adds a documented command to add or remove Claude's
+`apiKeyHelper` while preserving its activity hooks. The edge and UI explain
+`structured-prompt-unavailable` for a refused initial prompt or Conversation
+reply. API-key Codex sessions in the container still require the terminal to
+send prompts until the pinned runtime is updated (#653, #654).
+
+You can upgrade with your existing SDK configuration.
 
 ### Changes retained in SDK 0.1.99
 
