@@ -180,6 +180,18 @@ mark must now pass its own `appIcon`.
 mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "/mark-light.svg" } });
 ```
 
+### Retain last-good usage during backoff
+
+A usage producer can set `ProviderUsage.retained` to `true` on an entry whose
+quota windows came from the last successful fetch. Keep `updated_at` set to the
+time of that fetch. Set `backoff_until` to the expected next refresh time when
+known. Both timestamps use Unix epoch seconds.
+
+The Usage page, header strip, and session account details show retained values
+as stale, with their age and any refresh estimate. Retained windows expire at
+six hours or at their own reset, whichever comes first. Reset eligibility
+continues to expire after ten minutes, as do windows without the opt-in.
+
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The

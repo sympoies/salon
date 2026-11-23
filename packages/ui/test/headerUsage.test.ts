@@ -242,6 +242,56 @@ test("usage display projection expires windows at 600 seconds and fails closed o
   assert.equal(projectProviderUsageForDisplay({ ...retained, updated_at: Number.NaN }, now).windows.length, 0);
 });
 
+const retainedNow = 1_784_025_200_000;
+const lastGoodUsage = provider({
+  retained: true,
+  windows: [usageWindow({ used_percent: 42 })],
+  updated_at: retainedNow / 1000 - 20 * 60,
+});
+
+test("marked last-good usage keeps windows at twenty minutes and is always stale", () => {
+  const display = projectProviderUsageForDisplay(lastGoodUsage, retainedNow);
+  assert.deepEqual(display.windows, lastGoodUsage.windows);
+  assert.equal(display.stale, true);
+  assert.equal(display.updated_at, lastGoodUsage.updated_at);
+  assert.deepEqual(providerUsagePresentation(display, retainedNow).retainedStatus, { age: "20m ago", refresh: null });
+  const recent = { ...lastGoodUsage, updated_at: retainedNow / 1000 - 60 };
+  assert.equal(projectProviderUsageForDisplay(recent, retainedNow).stale, true);
+});
+
+test("marked last-good usage expires at six hours even during backoff", () => {
+  const backoff_until = retainedNow / 1000 + 3600;
+  const atAge = (age: number) => projectProviderUsageForDisplay({
+    ...lastGoodUsage,
+    updated_at: retainedNow / 1000 - age,
+    backoff_until,
+    limit_resets: { juniper_tide: null, cedar_ember: null },
+  }, retainedNow);
+  assert.equal(atAge(6 * 3600 - 1).windows.length, 1);
+  assert.deepEqual(atAge(6 * 3600).windows, []);
+  assert.equal(atAge(6 * 3600 + 1).limit_resets, null);
+});
+
+test("marked last-good usage drops only windows whose reset has arrived", () => {
+  const windows = [
+    usageWindow({ key: "past", resets_at: retainedNow / 1000 - 1 }),
+    usageWindow({ key: "due", resets_at: retainedNow / 1000 }),
+    usageWindow({ key: "future", resets_at: retainedNow / 1000 + 1 }),
+    usageWindow({ key: "unknown", resets_at: null }),
+  ];
+  const display = projectProviderUsageForDisplay({ ...lastGoodUsage, windows }, retainedNow);
+  assert.deepEqual(display.windows, windows.slice(2));
+});
+
+test("marked last-good usage follows the same future-skew tolerance", () => {
+  const atOffset = (offset: number) => projectProviderUsageForDisplay({
+    ...lastGoodUsage,
+    updated_at: retainedNow / 1000 + offset,
+  }, retainedNow);
+  assert.equal(atOffset(5).windows.length, 1);
+  assert.deepEqual(atOffset(6).windows, []);
+});
+
 test("remainingUsagePercent converts consumed usage into a rounded, bounded capacity", () => {
   assert.equal(remainingUsagePercent(null), null);
   assert.equal(remainingUsagePercent(Number.NaN), null);

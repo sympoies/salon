@@ -787,6 +787,11 @@ export interface ProviderUsage {
   readonly plan: string | null;
   readonly windows: readonly UsageWindow[];
   readonly updated_at: number | null;
+  // Explicitly mark windows from the last successful fetch. Keep updated_at at
+  // that fetch's epoch time in seconds. Retained windows always display as stale.
+  readonly retained?: true;
+  // Expected next refresh for retained windows, as Unix epoch seconds.
+  readonly backoff_until?: number;
   readonly note: string | null;
   readonly error: string | null;
   readonly reason_code: ProviderUsageReason | null;

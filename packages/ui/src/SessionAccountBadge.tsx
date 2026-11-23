@@ -10,7 +10,7 @@ import {
   remainingUsagePercent,
   usageMeterLevel,
 } from "./headerUsageModel.ts";
-import { UsageWindowChip, useDashboardUsage } from "./HeaderUsage.tsx";
+import { RetainedUsageStatus, UsageWindowChip, useDashboardUsage } from "./HeaderUsage.tsx";
 import { usePreviewPinnedPopover } from "./SessionActivityPopover.tsx";
 import { findAccountUsage, sessionAccountView, type SessionAccountView } from "./sessionAccounts.ts";
 import type { Session } from "./types.ts";
@@ -80,6 +80,7 @@ export function SessionAccountQuota({
       ) : (
         <span className={`hu-state ${presentation.warn ? "warn" : ""}`}>{presentation.compactStatus}</span>
       )}
+      {presentation.retainedStatus ? <RetainedUsageStatus status={presentation.retainedStatus} /> : null}
     </span>
   );
 }
@@ -176,7 +177,9 @@ function SessionAccountPopover({
             {presentation?.status ?? "No usage data available for this account."}
           </span>
         )}
-        {presentation?.freshness ? (
+        {presentation?.retainedStatus ? (
+          <RetainedUsageStatus status={presentation.retainedStatus} />
+        ) : presentation?.freshness ? (
           <span className="account-usage-freshness">{presentation.freshness}</span>
         ) : null}
         {targetAccount && usage.loaded && !usage.reachable ? (

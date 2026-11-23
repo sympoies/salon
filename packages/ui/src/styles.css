@@ -3108,6 +3108,23 @@ textarea {
 .hu-state.warn {
   color: var(--warn);
 }
+.usage-retained-status {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-md);
+  color: var(--warn);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+:is(.header-usage, .session-quota) .usage-retained-status {
+  flex-direction: column;
+  flex: none;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.account-usage-section > .usage-retained-status {
+  margin-top: var(--space-sm);
+}
 .workspace-shell {
   max-width: none;
   height: 100dvh;
@@ -5137,6 +5154,23 @@ textarea {
   :where(:root[data-phone-header="true"]) .workspace-head:is([data-quota-detail="window-percent"], [data-quota-detail="percent"]) > .header-usage { padding-inline: 4px; }
   :where(:root[data-phone-header="true"]) .workspace-head:is([data-quota-detail="window-percent"], [data-quota-detail="percent"]) > .header-usage .hu-win { gap: 3px; font-size: var(--text-xs); }
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage .hu-pct { min-width: 0; }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] .hu-provider:has(> .usage-retained-status) {
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    row-gap: 0;
+    justify-items: center;
+  }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] .hu-provider:has(> .usage-retained-status) > .agent-badge {
+    width: 15px;
+    height: 15px;
+    justify-self: end;
+  }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] .usage-retained-status {
+    grid-column: 1 / -1;
+    align-items: center;
+    font-size: var(--text-2xs);
+    line-height: 1;
+  }
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="1"] > .header-usage > .hu-provider:nth-child(n+3),
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="2"] > .header-usage > .hu-provider:nth-child(n+4),
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="3"] > .header-usage > .hu-provider:nth-child(n+5) { display: none; }
@@ -7643,6 +7677,9 @@ textarea {
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-status-count .card-status-icon { width: var(--card-status-icon-size); height: var(--card-status-icon-size); }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-status-count > span { flex: none; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .session-filters-summary.is-compact-header .session-status-count { min-width: var(--icon-standard-size); height: var(--icon-standard-size); }
+  :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head[data-quota-detail="percent"]:has(> .header-usage .usage-retained-status) .session-status-count {
+    min-width: var(--icon-compact-size);
+  }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) .session-list-pagination { display: inline-flex; grid-area: pages; align-self: center; justify-self: start; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .header-usage { grid-area: usage; }
   :where(:root[data-phone-header="true"]:not([data-mac-titlebar="true"])) .workspace-head:has(.session-list-navigator) > .dash-actions { grid-area: actions; flex: none; flex-wrap: nowrap; justify-self: end; }
