@@ -7,6 +7,7 @@ import { hasBrowserExited, stopBrowser } from "./browserProfile.ts";
 export interface Page {
   /** Dispatch a real primary-button press and release through DevTools. */
   click(x: number, y: number): Promise<void>;
+  pressEscape(): Promise<void>;
   navigate(url: string): Promise<void>;
   evaluate<T>(expression: string): Promise<T>;
   setViewport(width: number, height: number, scale: number, mobile?: boolean): Promise<void>;
@@ -99,6 +100,11 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
     await send("Page.enable");
     await send("Runtime.enable");
     return {
+      async pressEscape() {
+        const key = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 };
+        await send("Input.dispatchKeyEvent", { type: "keyDown", ...key });
+        await send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+      },
       async click(x, y) {
         await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
         await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
