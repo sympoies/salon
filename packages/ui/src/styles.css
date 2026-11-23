@@ -5068,14 +5068,15 @@ textarea {
     font-family: ui-monospace, monospace;
     min-inline-size: var(--hu-reset-width, 0);
   }
-  /* Keep both window percentages in the narrowest quota cell. */
-  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage { padding-inline: 4px; }
-  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage .hu-provider { display: grid; grid-template-columns: auto; gap: 0; }
-  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage .agent-badge { display: none; }
-  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage .hu-win { gap: 3px; font-size: var(--text-xs); }
-  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage .hu-meter { display: none; }
+  /* Keep provider identity as narrower steps reduce window details. */
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail]:not([data-quota-detail="full"]) > .header-usage :is(.hu-name, .hu-reset),
+  :where(:root[data-phone-header="true"]) .workspace-head:is([data-quota-detail="window-meter"], [data-quota-detail="window-percent"], [data-quota-detail="percent"]) > .header-usage .hu-win:not([data-most-constrained]),
+  :where(:root[data-phone-header="true"]) .workspace-head:is([data-quota-detail="window-percent"], [data-quota-detail="percent"]) > .header-usage .hu-meter,
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage .hu-win-label,
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="0"] > .header-usage { display: none; }
-  :where(:root[data-phone-header="true"]) .workspace-head:is([data-quota-detail="compact"], [data-quota-detail="percent"]) > .header-usage :is(.hu-name, .hu-reset) { display: none; }
+  :where(:root[data-phone-header="true"]) .workspace-head:is([data-quota-detail="window-percent"], [data-quota-detail="percent"]) > .header-usage { padding-inline: 4px; }
+  :where(:root[data-phone-header="true"]) .workspace-head:is([data-quota-detail="window-percent"], [data-quota-detail="percent"]) > .header-usage .hu-win { gap: 3px; font-size: var(--text-xs); }
+  :where(:root[data-phone-header="true"]) .workspace-head[data-quota-detail="percent"] > .header-usage .hu-pct { min-width: 0; }
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="1"] > .header-usage > .hu-provider:nth-child(n+3),
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="2"] > .header-usage > .hu-provider:nth-child(n+4),
   :where(:root[data-phone-header="true"]) .workspace-head[data-quota-accounts="3"] > .header-usage > .hu-provider:nth-child(n+5) { display: none; }
