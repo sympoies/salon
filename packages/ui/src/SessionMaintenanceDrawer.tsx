@@ -134,6 +134,7 @@ export function SessionMaintenanceDrawer({
                 <label className="maintenance-confirm">
                   <input
                     type="checkbox"
+                    className="control-checkbox"
                     checked={confirmed}
                     disabled={busy}
                     onChange={(event) => setConfirmedAction(event.currentTarget.checked ? actionKey : null)}

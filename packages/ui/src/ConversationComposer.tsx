@@ -19,6 +19,7 @@ import { isSessionResumeAvailable, sessionLabel } from "./format.ts";
 import { sessionKey } from "./layout.ts";
 import { SILENT_TURN_MS, silentTurnMinutes, stuckTurn } from "./stuckTurn.ts";
 import { isPhoneTier } from "./phoneTier.ts";
+import { useConfirmation } from "./useConfirmation.tsx";
 import type { HistoryMessage, Session } from "./types.ts";
 
 // A working session queues replies; the message list shows Working (#942).
@@ -116,6 +117,7 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   const [discarding, setDiscarding] = useState(false);
   const [savedText, setSavedText] = useState<string | null>(null);
   const [savedError, setSavedError] = useState("");
+  const { confirmation, requestConfirmation, dismissConfirmation } = useConfirmation();
   const savedTarget = `${key}:${session.session_incarnation ?? ""}`;
   const savedTargetRef = useRef(savedTarget);
   const savedRequest = useRef(0);
@@ -123,12 +125,13 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   // Reset before the mounted controls can be clicked: a passive effect can
   // otherwise clear an immediately resolved list request after it opens.
   useLayoutEffect(() => {
+    dismissConfirmation();
     setSavedDrafts(null); setSavedOpen(false); setSavedUnsupported(false); setSavedText(null); setSavedSelected(null); setSavedEmpty(null); setDiscardUnsupported(false); setDiscarding(false); setSavedError("");
     return () => { savedRequest.current++; };
-  }, [savedTarget]);
+  }, [dismissConfirmation, savedTarget]);
   useLayoutEffect(() => {
-    if (hidden) { savedRequest.current++; setSavedOpen(false); setSavedText(null); }
-  }, [hidden]);
+    if (hidden) { dismissConfirmation(); savedRequest.current++; setSavedOpen(false); setSavedText(null); }
+  }, [dismissConfirmation, hidden]);
   const openSavedDrafts = async () => {
     const request = ++savedRequest.current;
     setSavedText(null);
@@ -163,9 +166,18 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
     } catch { if (savedTargetRef.current === savedTarget && savedRequest.current === request) setSavedError("Could not discard saved draft."); }
     finally { if (savedTargetRef.current === savedTarget) setDiscarding(false); }
   };
-  const restoreSavedDraft = () => {
+  const restoreSavedDraft = async () => {
     if (savedText === null || sending) return;
-    if ((readDraft().text || readDraft().attachments?.length) && !window.confirm("Replace the current composer text with this saved draft?")) return;
+    const currentDraft = readDraft();
+    if (currentDraft.text || currentDraft.attachments?.length) {
+      const request = savedRequest.current;
+      const confirmed = await requestConfirmation({
+        title: "Replace composer draft",
+        message: "Replace the current composer text with this saved draft?",
+        confirmLabel: "Replace",
+      });
+      if (!confirmed || savedRequest.current !== request || readDraft().sending) return;
+    }
     const linked = extractUploadedFiles(savedText, session.id);
     const text = linked.text;
     updateReply({ text, attachments: linked.files.map(({ path }) => ({ path })), incarnation: session.session_incarnation, error: readDraft().outcomeUnknown ? UNKNOWN_REPLY_OUTCOME : "" });
@@ -362,10 +374,11 @@ export function ConversationComposer({ session, machineReachable, replyDrafts, m
   return (
     <footer id={composerId} className="conversation-composer" hidden={hidden} onDragOver={onDragOver} onDrop={onDrop}>
       {session.stale_draft && !savedUnsupported && savedEmpty !== session.stale_draft.draft_id ? <div className="conversation-saved-drafts-row"><button type="button" className="btn ghost" onClick={() => void openSavedDrafts()}>Saved drafts</button></div> : null}
+      {confirmation}
       {savedOpen ? <section className="conversation-saved-drafts" aria-label="Saved drafts">
         <h3>Saved drafts</h3>
         {savedDrafts?.map(item => <button type="button" className="btn ghost" key={item.draft_id} onClick={() => void readSavedDraft(item)}>{new Date(item.saved_at).toLocaleString()} · {item.bytes} bytes</button>)}
-        {savedText !== null ? <><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{savedText}</pre><button type="button" className="btn" onClick={restoreSavedDraft}>Restore</button><button type="button" className="btn ghost" disabled={discarding || discardUnsupported} onClick={() => void discardOpenDraft()}>Discard</button></> : null}
+        {savedText !== null ? <><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{savedText}</pre><button type="button" className="btn" onClick={() => void restoreSavedDraft()}>Restore</button><button type="button" className="btn ghost" disabled={discarding || discardUnsupported} onClick={() => void discardOpenDraft()}>Discard</button></> : null}
         <button type="button" className="btn ghost" onClick={() => { savedRequest.current++; setSavedOpen(false); setSavedText(null); }}>Close</button>
       </section> : null}
       {savedError ? <p className="conversation-saved-drafts" role="alert">{savedError}</p> : null}

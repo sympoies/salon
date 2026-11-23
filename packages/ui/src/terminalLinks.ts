@@ -1,5 +1,6 @@
 import type { IBufferRange, ILink, ILinkHandler, ILinkProvider } from "@xterm/xterm";
 import { isTauri } from "./runtime.ts";
+import type { RequestConfirmation } from "./useConfirmation.tsx";
 
 const URL_START_RE = /\b(?:https?:\/\/|www\.)/gi;
 const TRAILING_PUNCTUATION_RE = /[,.;:!?]+$/;
@@ -468,15 +469,15 @@ function bufferRangeForTextLink(
   };
 }
 
-function activateTerminalUrl(
+async function activateTerminalUrl(
   event: MouseEvent,
   rawUrl: string,
   openUrl: TerminalUrlOpener,
   canActivate: (event: MouseEvent) => boolean,
   requiresConfirmation: (event: MouseEvent) => boolean,
-  confirmUrl: (url: string) => boolean,
+  confirmUrl: (url: string) => Promise<boolean>,
   onActivationAttempt: (() => void) | undefined,
-): void {
+): Promise<void> {
   if (!canActivate(event)) {
     return;
   }
@@ -488,7 +489,7 @@ function activateTerminalUrl(
   // Disclose the normalized target, which is what actually opens. An implicit
   // link is joined across wrapped rows, so the tapped row can show only its
   // head while the rest sits below the viewport.
-  if (requiresConfirmation(event) && !confirmUrl(safeUrl)) {
+  if (requiresConfirmation(event) && !(await confirmUrl(safeUrl))) {
     return;
   }
   void Promise.resolve(openUrl(safeUrl));
@@ -542,8 +543,8 @@ export function createTerminalLinkActivationGuard({
 // without a hover to show it first. Terminal output chooses both the target and
 // whatever text sits next to it, so the target has to be shown by something the
 // output does not control before anything is opened.
-export function confirmTerminalLinkOpen(url: string): boolean {
-  return window.confirm(`Open this terminal link?\n\n${url}`);
+export function confirmTerminalLinkOpen(url: string, confirm: RequestConfirmation): Promise<boolean> {
+  return confirm({ title: "Open terminal link", message: url, confirmLabel: "Open link" });
 }
 
 export function createTerminalLinkHoverTarget(host: HTMLElement): TerminalLinkHoverTarget {
@@ -602,7 +603,7 @@ export function createTerminalLinkProvider(
     canActivate = (event) => event.button === 0,
     hoverTarget,
     requiresConfirmation = () => false,
-    confirmUrl = () => false,
+    confirmUrl = async () => false,
     onActivationAttempt,
     maxCodeUnits = DEFAULT_MAX_LINK_SCAN_CODE_UNITS,
     maxLinks = DEFAULT_MAX_LINKS_PER_LOGICAL_LINE,
@@ -611,7 +612,7 @@ export function createTerminalLinkProvider(
     readonly canActivate?: (event: MouseEvent) => boolean;
     readonly hoverTarget?: TerminalLinkHoverTarget;
     readonly requiresConfirmation?: (event: MouseEvent) => boolean;
-    readonly confirmUrl?: (url: string) => boolean;
+    readonly confirmUrl?: (url: string) => Promise<boolean>;
     readonly onActivationAttempt?: () => void;
     readonly maxCodeUnits?: number;
     readonly maxLinks?: number;
@@ -690,7 +691,7 @@ export function createTerminalLinkProvider(
           text: link.text,
           decorations: { pointerCursor: true, underline: true },
           activate: (event, text) =>
-            activateTerminalUrl(
+            void activateTerminalUrl(
               event,
               text,
               openUrl,
@@ -714,18 +715,18 @@ export function createOsc8LinkHandler({
   canActivate = (event) => event.button === 0,
   hoverTarget,
   requiresConfirmation = () => false,
-  confirmUrl = () => false,
+  confirmUrl = async () => false,
   onActivationAttempt,
 }: {
   readonly openUrl?: TerminalUrlOpener;
   readonly canActivate?: (event: MouseEvent) => boolean;
   readonly hoverTarget?: TerminalLinkHoverTarget;
   readonly requiresConfirmation?: (event: MouseEvent) => boolean;
-  readonly confirmUrl?: (url: string) => boolean;
+  readonly confirmUrl?: (url: string) => Promise<boolean>;
   readonly onActivationAttempt?: () => void;
 } = {}): ILinkHandler {
   return {
-    activate: (event, text) => {
+    activate: async (event, text) => {
       if (!canActivate(event)) {
         return;
       }
@@ -733,7 +734,7 @@ export function createOsc8LinkHandler({
       // Explicit OSC 8 targets must open exactly as the terminal advertised them,
       // so validate without the prose trimming applied to implicit links.
       const safeUrl = validateTerminalUrl(text);
-      if (!safeUrl || (requiresConfirmation(event) && !confirmUrl(safeUrl))) {
+      if (!safeUrl || (requiresConfirmation(event) && !(await confirmUrl(safeUrl)))) {
         return;
       }
       void Promise.resolve(openUrl(safeUrl));

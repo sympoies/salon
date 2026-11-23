@@ -15,14 +15,17 @@ export function chooseHeaderCompactStage(fits: (stage: HeaderCompactStage) => bo
  */
 export function updateHeaderCompaction(header: HTMLElement): HeaderCompactStage | null {
   // Give quota the room left by the logo, New, More and number-only counts:
-  // fewer accounts, then one without names or countdowns, then stacked percentages.
+  // fewer complete accounts, then progressively less detail for one account.
   const fitQuota = (): void => {
     const usage = header.querySelector<HTMLElement>(".header-usage");
     if (!usage) return;
     const total = usage.querySelectorAll(".hu-provider").length;
-    const steps: Array<readonly [number, "full" | "compact" | "percent"]> = [];
+    const compactDetails = ["compact", "window-meter", "window-percent", "percent"] as const;
+    const steps: Array<readonly [number, "full" | (typeof compactDetails)[number]]> = [];
     for (let accounts = total; accounts >= 1; accounts--) steps.push([accounts, "full"]);
-    if (total > 0) steps.push([1, "compact"], [1, "percent"]);
+    if (total > 0) {
+      for (const detail of compactDetails) steps.push([1, detail]);
+    }
     const fits = () => {
       const rect = usage.getBoundingClientRect();
       const bounds = header.getBoundingClientRect();
