@@ -28,6 +28,7 @@ export interface ModalProps {
   readonly androidBackEntry?: string;
   readonly ariaLabel?: string;
   readonly ariaLabelledby?: string;
+  readonly ariaDescribedby?: string;
   readonly lightDismiss?: boolean;
   readonly style?: CSSProperties;
   readonly initialFocusRef?: RefObject<HTMLElement | null>;
@@ -58,6 +59,7 @@ export function Modal({
   androidBackEntry = "modal",
   ariaLabel,
   ariaLabelledby,
+  ariaDescribedby,
   lightDismiss = false,
   style,
   initialFocusRef,
@@ -174,6 +176,7 @@ export function Modal({
         aria-busy={busy}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledby}
+        aria-describedby={ariaDescribedby}
         tabIndex={-1}
         style={style}
         onKeyDown={onKeyDown}

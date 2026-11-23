@@ -32,7 +32,6 @@ import {
 import { shouldGateTerminalFocus } from "./terminalFocus.ts";
 import { createTerminalLayoutSync, shouldRequestFirstPayloadSync } from "./terminalLayoutSync.ts";
 import {
-  confirmTerminalLinkOpen,
   createOsc8LinkHandler,
   createTerminalLinkActivationGuard,
   createTerminalLinkHoverTarget,
@@ -151,6 +150,7 @@ interface TerminalInstanceDeps {
   readonly setStatus: (status: TerminalConnectionStatus) => void;
   readonly setTerminalTouchMenu: StateSetter<TerminalTouchMenu>;
   readonly setSelectionHandles: StateSetter<SelectionEndpoints | null>;
+  readonly confirmLinkOpen: (url: string) => Promise<boolean>;
 }
 
 const MONO_FONT =
@@ -309,7 +309,7 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       openUrl: openXtermTerminalUrl,
       onActivationAttempt: markTouchLinkActivationHandled,
       requiresConfirmation: linkOpenNeedsDisclosure,
-      confirmUrl: (url) => confirmTerminalLinkOpen(url),
+      confirmUrl: deps.confirmLinkOpen,
     });
     const linkProviderSub = term.registerLinkProvider(linkProvider);
     term.options.linkHandler = createOsc8LinkHandler({
@@ -318,7 +318,7 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       openUrl: openXtermTerminalUrl,
       onActivationAttempt: markTouchLinkActivationHandled,
       requiresConfirmation: linkOpenNeedsDisclosure,
-      confirmUrl: (url) => confirmTerminalLinkOpen(url),
+      confirmUrl: deps.confirmLinkOpen,
     });
     deps.termRef.current = term;
     const helperTextarea = term.element?.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
@@ -1146,12 +1146,11 @@ export function createTerminalInstance(hostEl: HTMLDivElement, deps: TerminalIns
       if (!url) {
         return false;
       }
-      if (!confirmTerminalLinkOpen(url)) {
-        // The tap resolved a link and the user declined: consume the tap so it
-        // cannot fall through into focus/keyboard side effects.
-        return true;
-      }
-      void openExternalTerminalUrl(url);
+      // Consume a resolved tap before the user responds, so declining does
+      // not fall through to terminal focus or keyboard handling.
+      void deps.confirmLinkOpen(url).then((confirmed) => {
+        if (confirmed) void openExternalTerminalUrl(url);
+      });
       return true;
     };
     const activateXtermLinkAtPoint = (clientX: number, clientY: number): boolean => {

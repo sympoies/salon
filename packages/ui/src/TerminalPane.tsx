@@ -1,6 +1,8 @@
 import {
+  useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -25,6 +27,7 @@ import {
   type TerminalTouchMenu,
 } from "./terminalInstance.ts";
 import { confirmTerminalLinkOpen, openExternalTerminalUrl } from "./terminalLinks.ts";
+import { useConfirmation } from "./useConfirmation.tsx";
 import type { TerminalLinkEntry } from "./terminalLinkRegistry.ts";
 import { hasCoarsePrimaryPointer } from "./terminalPointer.ts";
 import {
@@ -245,6 +248,9 @@ export function TerminalPane({
   // open and must re-fit/re-focus the same terminal, not recreate it. Only a
   // session incarnation, reconnect, or scrollback rebuild swaps it.
   const terminalInstanceKey = `${machine}\u0000${id}\u0000${sessionIncarnation ?? ""}\u0000${localReconnect}\u0000${reconnectToken}\u0000${scrollback}`;
+  const { confirmation, requestConfirmation, dismissConfirmation } = useConfirmation();
+  const confirmLinkOpen = useCallback((url: string) => confirmTerminalLinkOpen(url, requestConfirmation), [requestConfirmation]);
+  useLayoutEffect(dismissConfirmation, [dismissConfirmation, active, terminalInstanceKey]);
 
   // Every path that drops terminal focus goes through here. xterm never resets
   // CompositionHelper._isComposing on blur, and Chrome on Android reports
@@ -570,8 +576,9 @@ export function TerminalPane({
       setStatus,
       setTerminalTouchMenu,
       setSelectionHandles,
+      confirmLinkOpen,
     });
-  }, [active, agent, id, localReconnect, machine, reconnectToken, scrollback, terminalInstanceKey]);
+  }, [active, agent, confirmLinkOpen, id, localReconnect, machine, reconnectToken, scrollback, terminalInstanceKey]);
 
   useEffect(() => {
     if (
@@ -856,6 +863,7 @@ export function TerminalPane({
           </button>
         </div>
       ) : null}
+      {confirmation}
       {terminalLinkPicker ? (
         <div
           className="terminal-link-picker"
@@ -879,9 +887,9 @@ export function TerminalPane({
                 <button className="control-menu"
                   type="button"
                   title={entry.url}
-                  onClick={() => {
+                  onClick={async () => {
                     setTerminalLinkPicker(null);
-                    if (confirmTerminalLinkOpen(entry.url)) {
+                    if (await confirmLinkOpen(entry.url)) {
                       void openExternalTerminalUrl(entry.url);
                     }
                   }}

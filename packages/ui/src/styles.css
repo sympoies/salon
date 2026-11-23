@@ -5510,6 +5510,13 @@ textarea {
   max-height: 90dvh;
   overflow: auto;
 }
+.confirmation-backdrop {
+  z-index: 101;
+}
+.confirmation-message {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .modal h2 {
   margin: 0 0 var(--space-2xs);
   font-size: var(--text-lg);

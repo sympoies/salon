@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAndroidBackEntry } from "./useAndroidBackEntry.ts";
 import type { EmergencyShell } from "@agent-console/shared/shell";
 import { readEmergencyShell } from "./api.ts";
@@ -6,6 +6,7 @@ import { TerminalPane, type TerminalConnectionStatus } from "./TerminalPane.tsx"
 import { StatusNotice } from "./StatusNotice.tsx";
 import { useStatusNotice } from "./useStatusNotice.ts";
 import { AppSelect } from "./AppSelect.tsx";
+import { useConfirmation } from "./useConfirmation.tsx";
 
 export function ShellPage({ machines, onExit }: {
   readonly machines: readonly string[];
@@ -18,6 +19,7 @@ export function ShellPage({ machines, onExit }: {
   const [error, setError] = useState<string | null>(null);
   const { notice, dismiss } = useStatusNotice(error);
   const [busy, setBusy] = useState(false);
+  const { confirmation, requestConfirmation, dismissConfirmation } = useConfirmation();
   const [connection, setConnection] = useState<TerminalConnectionStatus>("connecting");
   const [reconnect, setReconnect] = useState(0);
   const epoch = useRef(0);
@@ -36,6 +38,7 @@ export function ShellPage({ machines, onExit }: {
     });
     return () => { epoch.current += 1; };
   }, [selectedMachine]);
+  useLayoutEffect(dismissConfirmation, [dismissConfirmation, selectedMachine, shell?.incarnation]);
 
   useEffect(() => {
     if (connection === "open") { closedCheck.current = null; return; }
@@ -53,9 +56,18 @@ export function ShellPage({ machines, onExit }: {
 
   const act = async (method: "GET" | "POST" | "DELETE") => {
     if (operation.current || !selectedMachine) return;
-    if (method === "DELETE" && (!shell?.incarnation || !window.confirm(`End your shell on ${selectedMachine}? This stops the terminal and its foreground command.`))) return;
-    operation.current = true; setBusy(true); setError(null);
     const current = epoch.current;
+    if (method === "DELETE") {
+      if (!shell?.incarnation) return;
+      const confirmed = await requestConfirmation({
+        title: "End shell",
+        message: `End your shell on ${selectedMachine}? This stops the terminal and its foreground command.`,
+        confirmLabel: "End Shell",
+        destructive: true,
+      });
+      if (!confirmed || current !== epoch.current || operation.current) return;
+    }
+    operation.current = true; setBusy(true); setError(null);
     try {
       const result = await readEmergencyShell(selectedMachine, method, shell?.incarnation ?? undefined);
       if (current === epoch.current) { setShell(result); if (method === "GET") setReconnect((v) => v + 1); }
@@ -70,6 +82,7 @@ export function ShellPage({ machines, onExit }: {
 
   const stateLabel = shell ? shell.status === "running" ? connection : "Stopped" : null;
   return <section className="shell-page" aria-label="Shell">
+    {confirmation}
     <header className="shell-page-header">
       <div className="shell-page-title-row">
         <button type="button" className="btn ghost" onClick={onExit}>Back</button>
