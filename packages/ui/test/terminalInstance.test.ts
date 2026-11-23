@@ -1038,6 +1038,43 @@ test("terminal redraws do not invoke the custom link provider until xterm reques
   assert.equal(providerCalls, 1, "xterm hover lookup owns provider invocation");
 });
 
+const terminalLinkDialog = '[role="dialog"][aria-label="Open terminal link"]';
+
+function terminalTouch(
+  mounted: MountedPane,
+  type: "touchstart" | "touchmove" | "touchend",
+  clientX: number,
+  clientY: number,
+) {
+  const event = new mounted.window.Event(type, { bubbles: true, cancelable: true });
+  const points = [{ clientX, clientY }];
+  Object.defineProperty(event, "touches", { configurable: true, value: type === "touchend" ? [] : points });
+  Object.defineProperty(event, "changedTouches", { configurable: true, value: points });
+  return event;
+}
+
+async function tapTerminalLink(mounted: MountedPane, host: HTMLElement, x: number, y: number) {
+  const end = terminalTouch(mounted, "touchend", x, y);
+  await act(async () => {
+    host.dispatchEvent(terminalTouch(mounted, "touchstart", x, y));
+    host.dispatchEvent(end);
+  });
+  return end;
+}
+
+async function answerTerminalLink(mounted: MountedPane, target: string, answer: "Open link" | "Cancel") {
+  const document = mounted.window.document;
+  const dialogs = document.querySelectorAll(terminalLinkDialog);
+  assert.equal(dialogs.length, 1, "the tap asks for one confirmation");
+  const dialog = dialogs[0]!;
+  assert.equal(document.getElementById(dialog.getAttribute("aria-describedby") ?? "")?.textContent, target,
+    "the confirmation discloses the exact target");
+  const button = [...dialog.querySelectorAll("button")].find(element => element.textContent?.trim() === answer);
+  assert.ok(button, "the confirmation offers the selected action");
+  await act(async () => { button.click(); });
+  assertNoElement(document.body, terminalLinkDialog);
+}
+
 test("terminal touch links open once for a clean tap and never for scroll or mouse tracking", async () => {
   const mounted = await mountTerminalPane();
   const terminal = mounted.harness.terminals[0];
@@ -1069,69 +1106,38 @@ test("terminal touch links open once for a clean tap and never for scroll or mou
       return {};
     },
   });
-  const dispatchTouch = (type: string, x: number, y: number) => {
-    const event = new mounted.window.Event(type, { bubbles: true, cancelable: true });
-    const points = [{ clientX: x, clientY: y }];
-    Object.defineProperty(event, "touches", { configurable: true, value: type === "touchend" ? [] : points });
-    Object.defineProperty(event, "changedTouches", { configurable: true, value: points });
-    host.dispatchEvent(event);
-    return event;
-  };
-
-  // Every touch open discloses its target first, in either mouse-tracking
-  // mode: touch has no hover, and an implicit link is joined across hard-wrap
-  // junctions, so the tapped row can show only the head of what will open.
-  const confirmations: string[] = [];
-  let confirmAnswer = true;
-  Object.defineProperty(mounted.window, "confirm", {
-    configurable: true,
-    value: (message: string) => {
-      confirmations.push(message);
-      return confirmAnswer;
-    },
-  });
-
-  dispatchTouch("touchstart", 100, 100);
-  const cleanEnd = dispatchTouch("touchend", 100, 100);
-  await flushAsync();
-  assert.equal(confirmations.length, 1, "a tap discloses the target before opening");
-  assert.match(confirmations[0] ?? "", /https:\/\/example\.test\/touch/);
-  assert.equal(opens, 1, "a clean tap opens exactly once");
+  // Touch discloses the link in either mouse-tracking mode, and consumes the
+  // gesture before the user responds.
+  const cleanEnd = await tapTerminalLink(mounted, host, 100, 100);
   assert.equal(cleanEnd.defaultPrevented, true);
+  assert.equal(opens, 0, "the tap waits for approval");
+  await answerTerminalLink(mounted, url, "Open link");
+  assert.equal(opens, 1, "a confirmed tap opens exactly once");
 
-  confirmAnswer = false;
-  dispatchTouch("touchstart", 100, 100);
-  const declinedCleanEnd = dispatchTouch("touchend", 100, 100);
-  await flushAsync();
-  assert.equal(confirmations.length, 2, "a declined tap still asked");
+  const declinedCleanEnd = await tapTerminalLink(mounted, host, 100, 100);
+  await answerTerminalLink(mounted, url, "Cancel");
   assert.equal(opens, 1, "a declined tap opens nothing");
   assert.equal(declinedCleanEnd.defaultPrevented, true, "a declined tap is still consumed");
 
-  // A mouse-tracking pane resolves through the read-only text-scan path
-  // instead, and discloses the same way.
   terminal.modes.mouseTrackingMode = "any";
-  dispatchTouch("touchstart", 100, 100);
-  const declinedEnd = dispatchTouch("touchend", 100, 100);
-  await flushAsync();
-  assert.equal(confirmations.length, 3, "tracking-pane tap open asks for confirmation");
-  assert.match(confirmations[2] ?? "", /https:\/\/example\.test\/touch/);
+  const declinedEnd = await tapTerminalLink(mounted, host, 100, 100);
+  await answerTerminalLink(mounted, url, "Cancel");
   assert.equal(opens, 1, "declined confirmation must not open");
   assert.equal(declinedEnd.defaultPrevented, true, "a declined confirmation still consumes the tap");
 
-  confirmAnswer = true;
-  dispatchTouch("touchstart", 100, 100);
-  dispatchTouch("touchend", 100, 100);
-  await flushAsync();
-  assert.equal(confirmations.length, 4, "each tracking-pane tap open discloses the target");
+  await tapTerminalLink(mounted, host, 100, 100);
+  await answerTerminalLink(mounted, url, "Open link");
   assert.equal(opens, 2, "confirmed tracking-pane tap opens the link");
 
   terminal.modes.mouseTrackingMode = "none";
-  dispatchTouch("touchstart", 100, 160);
-  dispatchTouch("touchmove", 100, 100);
-  const scrollEnd = dispatchTouch("touchend", 100, 100);
-  await flushAsync();
+  const scrollEnd = terminalTouch(mounted, "touchend", 100, 100);
+  await act(async () => {
+    host.dispatchEvent(terminalTouch(mounted, "touchstart", 100, 160));
+    host.dispatchEvent(terminalTouch(mounted, "touchmove", 100, 100));
+    host.dispatchEvent(scrollEnd);
+  });
   assert.equal(opens, 2, "touch-scroll never falls through to link activation");
-  assert.equal(confirmations.length, 4, "touch-scroll never prompts a confirmation");
+  assertNoElement(mounted.window.document.body, terminalLinkDialog);
   assert.equal(scrollEnd.defaultPrevented, true);
 });
 
@@ -1167,45 +1173,24 @@ test("terminal touch taps a mouse-tracking pane link through xterm's own resolut
       return {};
     },
   });
-  const confirmations: string[] = [];
-  Object.defineProperty(mounted.window, "confirm", {
-    configurable: true,
-    value: (message: string) => {
-      confirmations.push(message);
-      return true;
-    },
-  });
-  const dispatchTouch = (type: string, x: number, y: number) => {
-    const event = new mounted.window.Event(type, { bubbles: true, cancelable: true });
-    const points = [{ clientX: x, clientY: y }];
-    Object.defineProperty(event, "touches", { configurable: true, value: type === "touchend" ? [] : points });
-    Object.defineProperty(event, "changedTouches", { configurable: true, value: points });
-    host.dispatchEvent(event);
-    return event;
-  };
 
-  dispatchTouch("touchstart", 605, 105);
-  const labelEnd = dispatchTouch("touchend", 605, 105);
-  await flushAsync();
+  const labelEnd = await tapTerminalLink(mounted, host, 605, 105);
+  await answerTerminalLink(mounted, fullTarget, "Open link");
   assert.deepEqual(opened, [fullTarget], "a tap on the label opens the OSC 8 target, not its visible text");
   assert.equal(labelEnd.defaultPrevented, true);
-  assert.match(confirmations[0] ?? "", /issues\/398/, "the confirmation discloses the resolved target");
 
   // A continuation row of the same link: no URL text under the cell, and its
   // column is before the link's start column. This returned nothing before.
-  dispatchTouch("touchstart", 65, 118);
-  dispatchTouch("touchend", 65, 118);
-  await flushAsync();
+  await tapTerminalLink(mounted, host, 65, 118);
+  await answerTerminalLink(mounted, fullTarget, "Open link");
   assert.deepEqual(opened, [fullTarget, fullTarget], "a tap on a continuation row opens the same target");
 
   // The negative half of the same contract: xterm resolved a link, but the
   // range it reported does not contain the pressed cell (row 18 here), so the
   // tap must fall through to text scanning and open nothing.
-  dispatchTouch("touchstart", 100, 250);
-  dispatchTouch("touchend", 100, 250);
-  await flushAsync();
+  await tapTerminalLink(mounted, host, 100, 250);
   assert.deepEqual(opened, [fullTarget, fullTarget], "a disclosure outside the pressed cell must not open");
-  assert.equal(confirmations.length, 2, "an out-of-range disclosure is never even confirmed");
+  assertNoElement(mounted.window.document.body, terminalLinkDialog);
   assert.equal(forwardedMoves, 0, "the probe forwards no mouse report to the attached TUI");
   // The probe drives xterm's hover, which paints the disclosure popup. Touch
   // never fires xterm's leave, and the popup takes pointer events, so leaving
@@ -1244,35 +1229,15 @@ test("terminal touch taps an OSC 8 link in a pane that does not own the mouse", 
       return {};
     },
   });
-  const confirmations: string[] = [];
-  Object.defineProperty(mounted.window, "confirm", {
-    configurable: true,
-    value: (message: string) => {
-      confirmations.push(message);
-      return true;
-    },
-  });
-  const dispatchTouch = (type: string, x: number, y: number) => {
-    const event = new mounted.window.Event(type, { bubbles: true, cancelable: true });
-    const points = [{ clientX: x, clientY: y }];
-    Object.defineProperty(event, "touches", { configurable: true, value: type === "touchend" ? [] : points });
-    Object.defineProperty(event, "changedTouches", { configurable: true, value: points });
-    host.dispatchEvent(event);
-    return event;
-  };
 
-  dispatchTouch("touchstart", 605, 105);
-  const labelEnd = dispatchTouch("touchend", 605, 105);
-  await flushAsync();
+  const labelEnd = await tapTerminalLink(mounted, host, 605, 105);
+  await answerTerminalLink(mounted, fullTarget, "Open link");
   assert.deepEqual(opened, [fullTarget], "a tap on the label opens the OSC 8 target, not its visible text");
-  assert.match(confirmations[0] ?? "", /issues\/398/, "the confirmation discloses the resolved target");
-  assert.equal(confirmations.length, 1, "the tap asks exactly once");
   assert.equal(labelEnd.defaultPrevented, true);
 
   // The continuation row of the same link, which no text scan can reach.
-  dispatchTouch("touchstart", 65, 118);
-  dispatchTouch("touchend", 65, 118);
-  await flushAsync();
+  await tapTerminalLink(mounted, host, 65, 118);
+  await answerTerminalLink(mounted, fullTarget, "Open link");
   assert.deepEqual(opened, [fullTarget, fullTarget], "a tap on a continuation row opens the same target");
 
   // The probe paints xterm's hover popup here too, and touch still never fires
@@ -2228,14 +2193,6 @@ test("terminal touch prefers an OSC 8 target over a URL-shaped visible label on 
       removeEventListener: () => undefined,
     }),
   });
-  const confirmations: string[] = [];
-  Object.defineProperty(mounted.window, "confirm", {
-    configurable: true,
-    value: (message: string) => {
-      confirmations.push(message);
-      return true;
-    },
-  });
   const opened: string[] = [];
   Object.defineProperty(mounted.window, "open", {
     configurable: true,
@@ -2244,15 +2201,6 @@ test("terminal touch prefers an OSC 8 target over a URL-shaped visible label on 
       return {};
     },
   });
-  const dispatchTouch = (type: string) => {
-    const event = new mounted.window.Event(type, { bubbles: true, cancelable: true });
-    const points = [{ clientX: 100, clientY: 100 }];
-    Object.defineProperty(event, "touches", { configurable: true, value: type === "touchend" ? [] : points });
-    Object.defineProperty(event, "changedTouches", { configurable: true, value: points });
-    host.dispatchEvent(event);
-    return event;
-  };
-
   // Match xterm 5.5's stale-cell edge: mouseleave clears the current link but
   // retains the last buffer cell, so one same-cell move does not query again.
   xtermElement.dispatchEvent(new mounted.window.MouseEvent("mousemove", {
@@ -2262,13 +2210,10 @@ test("terminal touch prefers an OSC 8 target over a URL-shaped visible label on 
   }));
   xtermElement.dispatchEvent(new mounted.window.MouseEvent("mouseleave", { bubbles: false }));
 
-  dispatchTouch("touchstart");
-  const touchEnd = dispatchTouch("touchend");
-  await flushAsync();
+  const touchEnd = await tapTerminalLink(mounted, host, 100, 100);
+  await answerTerminalLink(mounted, targetUrl, "Open link");
 
   assert.deepEqual(opened, [targetUrl]);
-  assert.equal(confirmations.length, 1);
-  assert.match(confirmations[0] ?? "", /https:\/\/target\.example\/path/);
   assert.equal(touchEnd.defaultPrevented, true);
 });
 

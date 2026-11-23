@@ -37,7 +37,6 @@ const terminalInstanceSource = uiSource("terminalInstance.ts");
 const terminalMouseSource = uiSource("terminalMouse.ts");
 const terminalPointerSource = uiSource("terminalPointer.ts");
 const terminalClipboardSource = uiSource("terminalClipboard.ts");
-const terminalLinksSource = uiSource("terminalLinks.ts");
 const terminalTouchSource = uiSource("terminalTouch.ts");
 const useTerminalClipboardSource = uiSource("useTerminalClipboard.ts");
 const xtermViewportSource = xtermSource("src/browser/Viewport.ts");
@@ -939,12 +938,10 @@ test("TerminalPane offers Copy link when the toolbar opens on a detected URL", (
   assert.match(terminalInstanceSource, /links\.length > 0 \? TERMINAL_TOUCH_MENU_LINKS_BUTTON_PX : 0/);
   assert.match(source, /width: `\$\{visibleTouchMenu\.width\}px`,/);
   // The picker: its button, the gate that hides it when nothing was harvested,
-  // the panel, and — the part that matters — that a row opens through the same
-  // disclosure every other coarse-pointer path uses, never directly.
+  // and the panel. The browser fixture exercises the picker confirmation.
   assert.match(source, /\{visibleTouchMenu\.links\.length > 0 \? \(/);
   assert.match(source, />\s*Links\s*<\/button>/);
   assert.match(source, /className="terminal-link-picker"/);
-  assert.match(source, /if \(confirmTerminalLinkOpen\(entry\.url\)\) \{\s*void openExternalTerminalUrl\(entry\.url\);/);
   // The picker joins the overlay lifecycle: cleared on instance swap, and
   // dismissed by Escape or an outside click like the toolbar beside it.
   assert.match(source, /setTerminalTouchMenu\(null\);\s*(?:\/\/[^\n]*\n\s*)*setTerminalLinkPicker\(null\);/);
@@ -1093,17 +1090,14 @@ test("TerminalPane opens terminal URLs on left-click and touch tap", () => {
     "both the implicit link provider and the OSC 8 handler must share the disclosure rule",
   );
   assert.match(terminalInstanceSource, /hasAnyCoarsePointer\(\)/);
-  // The disclosure prompt lives with the URL-semantics owner so every
-  // confirm-before-open path shares one wording.
-  assert.match(terminalLinksSource, /window\.confirm\(`Open this terminal link\?/);
-  assert.match(terminalInstanceSource, /confirmTerminalLinkOpen,/);
+  assert.equal(terminalInstanceSource.match(/confirmUrl: deps\.confirmLinkOpen,/g)?.length, 2);
   // A tap resolves through xterm's own resolution in EITHER tracking mode, not
   // a text scan at the tapped cell, and discloses the target before opening.
   // A text scan cannot see an OSC 8 label that is not a URL, nor a
   // continuation cell of a wrapped one, so a quiet pane needs the probe too.
   assert.match(
     terminalInstanceSource,
-    /const url = linkUrlAtPoint\(clientX, clientY, true\);[\s\S]*?if \(!confirmTerminalLinkOpen\(url\)\) \{/,
+    /const url = linkUrlAtPoint\(clientX, clientY, true\);[\s\S]*?void deps\.confirmLinkOpen\(url\)\.then\([\s\S]*?if \(confirmed\) void openExternalTerminalUrl\(url\);[\s\S]*?return true;/,
   );
   assert.doesNotMatch(
     terminalInstanceSource,

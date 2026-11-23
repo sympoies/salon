@@ -30,7 +30,8 @@ test("Shell page reads on entry, opens once, serializes reconnect and ends only 
   const keys = ["window","document","HTMLElement","Element","IS_REACT_ACT_ENVIRONMENT"];
   const previous = keys.map(key => Object.getOwnPropertyDescriptor(globalThis,key));
   Object.assign(globalThis, {window, document:window.document, HTMLElement:window.HTMLElement, Element:window.Element, IS_REACT_ACT_ENVIRONMENT:true});
-  window.confirm = () => true;
+  const nativeConfirmations: string[] = [];
+  window.confirm = (message) => { nativeConfirmations.push(message); return false; };
   const container = window.document.createElement("div"); window.document.body.append(container); const root = createRoot(container);
   const button = (text: string) => [...container.querySelectorAll("button")].find(el => el.textContent === text)!;
   const click = (text: string) => button(text).dispatchEvent(new window.MouseEvent("click",{bubbles:true}));
@@ -55,7 +56,23 @@ test("Shell page reads on entry, opens once, serializes reconnect and ends only 
     await act(async () => click("End Shell"));
     assert.equal(calls.filter(c => c[1] === "DELETE").length,0);
     await act(async () => { pending!.resolve(running); }); pending = null;
-    await act(async () => click("End Shell"));
+    const dialog = () => window.document.querySelector('[role="dialog"][aria-label="End shell"]');
+    const openConfirmation = async () => {
+      await act(async () => click("End Shell"));
+      assert.deepEqual(nativeConfirmations, [], "End Shell opens an in-app confirmation");
+      assert.ok(dialog()?.textContent?.includes("This stops the terminal and its foreground command."));
+      assert.equal(calls.filter(c => c[1] === "DELETE").length, 0);
+    };
+    const dialogButton = (text: string) => [...dialog()!.querySelectorAll("button")].find(el => el.textContent === text)!;
+    await openConfirmation();
+    await act(async () => dialogButton("Cancel").click());
+    assertNoElement(window.document.body, '[role="dialog"][aria-label="End shell"]');
+    await openConfirmation();
+    await act(async () => dialogButton("Cancel").dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    assertNoElement(window.document.body, '[role="dialog"][aria-label="End shell"]');
+    await openConfirmation();
+    assert.ok(dialogButton("End Shell").classList.contains("danger"));
+    await act(async () => dialogButton("End Shell").click());
     assert.deepEqual(calls.at(-1),["a","DELETE","shell-one"]);
     assertNoElement(container,"[data-shell-terminal]");
     const before = calls.length;

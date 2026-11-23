@@ -16,7 +16,7 @@ test("saved drafts show, read and restore with confirmation without sending", as
     import {SessionTitleMenu} from "/src/SessionTitleMenu.tsx";
     const event={event:"stale_draft_stashed",draft_id:"draft-1",session_id:"session-1",saved_at:"2026-11-01T12:00:00Z",bytes:12,cleared:true};
     const session={id:"session-1",machine:"fixture",agent:"codex",status:"running",title:"Example",session_incarnation:"inc-1",stale_draft:event};
-    window.calls=[]; window.allow=false; window.confirm=()=>{window.calls.push("confirm");return window.allow;};
+    window.calls=[]; window.nativeConfirmations=[]; window.confirm=message=>{window.nativeConfirmations.push(message);return false;};
     window.unsupported=false; window.text="Unicode 雪  "; window.deferReads=false; window.pending={}; window.settled={};
     window.fetch=async()=>{throw new Error("unexpected network");};
     const root=createRoot(document.querySelector("#root"));
@@ -40,6 +40,17 @@ test("saved drafts show, read and restore with confirmation without sending", as
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     };
     const button=text=>[...document.querySelectorAll("button")].find(b=>b.textContent===text);
+    const draftDialog=()=>document.querySelector('[role="dialog"][aria-label="Replace composer draft"]');
+    const openConfirmation=async()=>{
+      button("Restore").click();
+      if(window.nativeConfirmations.length)throw new Error("Saved draft used native confirmation: "+window.nativeConfirmations[0]);
+      await wait("show replace composer draft dialog",()=>draftDialog());
+      if(!draftDialog().textContent.includes("Replace the current composer text with this saved draft?"))throw new Error("Missing confirmation message");
+    };
+    const dismiss=async(action)=>{
+      action();
+      await wait("close replace composer draft dialog",()=>!draftDialog());
+    };
     (async()=>{try{
       // Click at the first observable commit, before passive mount effects.
       // Timer polling makes that ordering depend on scheduler load (#325).
@@ -57,9 +68,13 @@ test("saved drafts show, read and restore with confirmation without sending", as
       button("Restore").click(); await wait("restore into empty composer",()=>document.querySelector("textarea").value); result.empty=document.querySelector("textarea").value;
       button("Saved drafts").click(); await wait("reopen list for confirmation",()=>document.querySelector('[aria-label="Saved drafts"] button'));
       document.querySelector('[aria-label="Saved drafts"] button').click(); await wait("read draft for cancelled restore",()=>document.querySelector("pre"));
-      button("Restore").click(); result.cancel=document.querySelector("textarea").value;
-      window.allow=true;window.text="Replacement  ";document.querySelector('[aria-label="Saved drafts"] button').click();
-      await wait("read replacement preview",()=>document.querySelector("pre")?.textContent===window.text);button("Restore").click();
+      await openConfirmation();
+      await dismiss(()=>button("Cancel").click()); result.cancel=document.querySelector("textarea").value;
+      await openConfirmation();
+      await dismiss(()=>document.activeElement.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})));
+      result.escape=document.querySelector("textarea").value;
+      window.text="Replacement  ";document.querySelector('[aria-label="Saved drafts"] button').click();
+      await wait("read replacement preview",()=>document.querySelector("pre")?.textContent===window.text);await openConfirmation();button("Replace").click();
       await wait("confirm replacement restore",()=>document.querySelector("textarea").value===window.text);result.replaced=document.querySelector("textarea").value;
       window.text="Earlier preview";button("Saved drafts").click();
       await wait("open list for stale-read selection",()=>document.querySelectorAll('[aria-label="Saved drafts"] button').length>=2);
@@ -73,7 +88,7 @@ test("saved drafts show, read and restore with confirmation without sending", as
       window.pending["draft-2"]("Selected B");await wait("show selected draft-2 preview",()=>document.querySelector("pre")?.textContent==="Selected B");
       await settle("draft-1","Earlier A");
       result.latestPreview=document.querySelector("pre")?.textContent;
-      button("Restore").click();await wait("restore selected draft-2",()=>document.querySelector("textarea").value!=="Replacement  ");
+      await openConfirmation();button("Replace").click();await wait("restore selected draft-2",()=>document.querySelector("textarea").value!=="Replacement  ");
       result.latestRestored=document.querySelector("textarea").value;
       window.pending={};window.settled={};button("Saved drafts").click();await wait("reopen list before closing read",()=>document.querySelector('[aria-label="Saved drafts"] button'));
       document.querySelector('[aria-label="Saved drafts"] button').click();await wait("start read before closing",()=>window.pending["draft-1"]);
@@ -248,12 +263,13 @@ test("saved drafts show, read and restore with confirmation without sending", as
       assert.equal(result.preview, "Unicode 雪  ");
       assert.equal(result.empty, "Unicode 雪  ");
       assert.equal(result.cancel, "Unicode 雪  ");
+      assert.equal(result.escape, "Unicode 雪  ");
       assert.equal(result.replaced, "Replacement  ");
       assert.equal(result.oldPreviewHidden, true);
       assert.equal(result.latestPreview, "Selected B");
       assert.equal(result.latestRestored, "Selected B");
       assert.equal(result.closedPreviewHidden, true);
-      assert.deepEqual(result.restoreCalls, ["list", "read", "list", "read", "confirm", "read", "confirm", "list", "read", "read", "read", "confirm", "list", "read", "list"]);
+      assert.deepEqual(result.restoreCalls, ["list", "read", "list", "read", "read", "list", "read", "read", "read", "list", "read", "list"]);
       assert.equal(result.discardUnsupported, true);
       assert.equal(result.discarded, true);
       assert.equal(result.newDraftVisible, true);
