@@ -23,8 +23,11 @@
     "capture:readme": "pnpm build && NODE_OPTIONS=--conditions=source node scripts/readme-previews/capture.ts"
   },
   "devDependencies": {
-    "oxc-parser": "0.137.0",
     "@types/node": "^24.13.2",
+    "oxc-parser": "0.137.0",
     "typescript": "^7.0.0"
+  },
+  "dependencies": {
+    "@decimalturn/toml-patch": "3.3.3"
   }
 }

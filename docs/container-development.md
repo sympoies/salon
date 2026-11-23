@@ -131,8 +131,41 @@ accompanying README under `/usr/local/share/licenses/claude`. The binary is
 updated by rebuilding the image.
 
 [codex-auth]: https://developers.openai.com/codex/auth
+[codex-config]: https://developers.openai.com/codex/config-reference/
 [claude-helper]: https://code.claude.com/docs/en/settings-reference#apikeyhelper
 [claude-auth]: https://code.claude.com/docs/en/authentication
+[claude-trust]: https://code.claude.com/docs/en/permissions#project-allow-rules-and-workspace-trust
+
+## Set workspace trust
+
+On startup, Salon adds [Codex trust][codex-config] for the default working
+directory, `$HOME/Project/workspace` inside the container. The entry lives in
+`$CODEX_HOME/config.toml` on the `provider-state` volume. Restarts keep any
+existing trust decision and other settings.
+
+To trust an additional mounted directory for Codex, edit that same file. Use the
+absolute path as seen inside the container. If the file already has a project
+table for that path, set `trust_level` in the existing table.
+
+```toml
+[projects."/mnt/extra"]
+trust_level = "trusted"
+```
+
+After signing in to Claude Code or setting up its API key, run this command
+in the container workspace before creating a browser session.
+
+```bash
+docker compose exec -it workspace claude
+```
+
+Choose a text style, finish onboarding, and confirm [workspace trust][claude-trust]
+after reviewing the folder. Exit Claude and create the session in Salon. The
+`claude-state` volume keeps these choices. Repeat setup for the same workspace only
+if you recreate that volume.
+
+For a newly mounted directory, add `--workdir` with its absolute container path
+before `workspace` in the command and confirm trust there.
 
 ## Create and reconnect
 
@@ -169,8 +202,8 @@ volumes; removing volumes destroys this local state.
 
 Run the [project gate](../DEVELOPMENT.md#validation). It includes the actual workspace
 typecheck/build and `node --test docker/start.test.ts`. The startup tests cover readiness,
-token separation, durable browser credentials, failure and shutdown with isolated process
-fixtures. They do not contact a provider.
+token separation, durable browser credentials, Codex workspace trust, failure and shutdown
+with isolated process fixtures.
 
 On Linux, use the documented memory scope for build/test commands; give an isolated
 BuildKit builder the same six-GiB memory and zero-swap budget because the client scope

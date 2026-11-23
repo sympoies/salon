@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@decimalturn/toml-patch':
+        specifier: 3.3.3
+        version: 3.3.3
     devDependencies:
       '@types/node':
         specifier: ^24.13.2
@@ -133,6 +137,10 @@ importers:
         version: 8.1.6(@types/node@24.13.2)(jiti@2.7.0)(yaml@2.9.0)
 
 packages:
+
+  '@decimalturn/toml-patch@3.3.3':
+    resolution: {integrity: sha512-x3+jj/r8uEEnnVs0vgdSYxn4YXcnklZPmbQ105DI/e4mng+9z/eDUuc8PMwASab51CWt15DTVHLYiEbDBUzHJA==}
+    engines: {node: '>=16'}
 
   '@emnapi/core@1.11.1':
     resolution: {integrity: sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ==}
@@ -821,6 +829,8 @@ packages:
     hasBin: true
 
 snapshots:
+
+  '@decimalturn/toml-patch@3.3.3': {}
 
   '@emnapi/core@1.11.1':
     dependencies:
