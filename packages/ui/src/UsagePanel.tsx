@@ -18,6 +18,7 @@ import {
 import { formatResetCountdown, relativeEpochSeconds } from "./format.ts";
 import { AgentBadge } from "./AgentBadge.tsx";
 import { AsyncButton } from "./AsyncButton.tsx";
+import { RetainedUsageStatus } from "./HeaderUsage.tsx";
 import {
   orderUsageProviders,
   projectProviderUsageForDisplay,
@@ -604,12 +605,13 @@ export function ProviderCard({
         </div>
       )}
 
-      {presentation.kind === "windows" && (p.stale || p.note || p.reason_code) ? (
+      {presentation.kind === "windows" && (p.note || p.reason_code || (p.stale && !presentation.retainedStatus)) ? (
         <p className={`usage-note ${presentation.warn ? "warn" : ""}`}>
           {presentation.status ?? "Usage may be stale."}
         </p>
       ) : null}
 
+      {presentation.retainedStatus ? <RetainedUsageStatus status={presentation.retainedStatus} /> : null}
       {presentation.freshness ? <p className="usage-provider-updated">{presentation.freshness}</p> : null}
       {p.provider === "codex" && account && p.reset_credits && onReset ? (
         <CodexResetAction account={account} count={p.reset_credits.available_count} onReset={onReset} />

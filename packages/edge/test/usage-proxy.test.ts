@@ -86,6 +86,37 @@ test("usage: refresh=1 is forwarded to the host reader", async () => {
   }
 });
 
+test("usage: marked last-good windows reach the client with the original sample and backoff times", async () => {
+  const now = 1_800_000_000;
+  const updatedAt = now - 20 * 60;
+  const backoffUntil = now + 15 * 60;
+  const windows = [{ key: "weekly", label: "Weekly", used_percent: 62, window_minutes: 10080, resets_at: now + 86400 }];
+  const reader = fakeReader(() => ({
+    status: 200,
+    body: {
+      providers: [{
+        provider: "claude", ok: false, reason_code: "rate_limited", retained: true,
+        updated_at: updatedAt, backoff_until: backoffUntil, windows,
+      }],
+    },
+  }));
+  const { base: readerBase } = await listenOnLoopback(reader);
+  const edge = createEdgeServer({ ...makeEdgeConfig(), usage: { url: readerBase, token: null } });
+  const { base } = await listenOnLoopback(edge);
+  try {
+    const response = await fetch(`${base}/api/usage`);
+    assert.equal(response.status, 200);
+    const { data } = await response.json();
+    assert.equal(data.reachable, true);
+    assert.equal(data.providers[0]?.retained, true);
+    assert.equal(data.providers[0]?.backoff_until, backoffUntil);
+    assert.equal(data.providers[0]?.updated_at, updatedAt);
+    assert.deepEqual(data.providers[0]?.windows, windows);
+  } finally {
+    closeServers(edge, reader);
+  }
+});
+
 test("usage: an unreachable reader degrades to reachable:false (never 500s the panel)", async () => {
   const edge = createEdgeServer({ ...makeEdgeConfig(), usage: { url: "http://127.0.0.1:1", token: null } });
   const { base } = await listenOnLoopback(edge);

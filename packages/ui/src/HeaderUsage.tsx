@@ -16,6 +16,7 @@ import {
   shortWindowLabel,
   usageMeterLevel,
   windowTitle,
+  type RetainedUsageStatusText,
 } from "./headerUsageModel.ts";
 import { CalendarIcon, ClockIcon } from "./icons.tsx";
 import { useSharedClock } from "./useSharedClock.ts";
@@ -159,6 +160,15 @@ export function UsageWindowChip({ window: w, now, resetWidth, mostConstrained }:
   );
 }
 
+export function RetainedUsageStatus({ status }: { readonly status: RetainedUsageStatusText }) {
+  return (
+    <span className="usage-retained-status">
+      <span>Stale · {status.age}</span>
+      {status.refresh ? <span>{status.refresh}</span> : null}
+    </span>
+  );
+}
+
 export function HeaderUsageReadout({
   providers,
   now,
@@ -197,6 +207,7 @@ export function HeaderUsageReadout({
             ) : (
               <span className={`hu-state ${presentation.warn ? "warn" : ""}`}>{presentation.compactStatus}</span>
             )}
+            {presentation.retainedStatus ? <RetainedUsageStatus status={presentation.retainedStatus} /> : null}
           </span>
         );
       })}

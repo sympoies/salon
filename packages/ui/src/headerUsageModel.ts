@@ -1,6 +1,6 @@
 import type { AccountProvider } from "@agent-console/shared/api";
 import type { ProviderUsage, ProviderUsageReason, UsageWindow } from "./api.ts";
-import { relativeEpochSeconds } from "./format.ts";
+import { formatResetCountdown, relativeEpochSeconds } from "./format.ts";
 
 // Short window label for the compact header: the weekly window shows as "1w"
 // (the reader labels it "Weekly"); other windows keep their label (e.g. "5h").
@@ -193,9 +193,16 @@ export interface ProviderUsagePresentation {
   readonly status: string | null;
   readonly freshness: string | null;
   readonly warn: boolean;
+  readonly retainedStatus?: RetainedUsageStatusText;
+}
+
+export interface RetainedUsageStatusText {
+  readonly age: string;
+  readonly refresh: string | null;
 }
 
 const USAGE_MAX_DISPLAY_AGE_SECONDS = 600;
+const USAGE_MAX_RETAINED_AGE_SECONDS = 6 * 60 * 60;
 const USAGE_FUTURE_TOLERANCE_SECONDS = 5;
 const MAX_DATE_EPOCH_SECONDS = 8_640_000_000_000;
 
@@ -213,18 +220,23 @@ export function projectProviderUsageForDisplay(provider: ProviderUsage, nowMs: n
   const ageSeconds = Number.isFinite(nowMs) && updatedAtSafe
     ? nowMs / 1000 - updatedAt
     : null;
-  const displayable = ageSeconds !== null
-    && ageSeconds >= -USAGE_FUTURE_TOLERANCE_SECONDS
+  const validAge = ageSeconds !== null && ageSeconds >= -USAGE_FUTURE_TOLERANCE_SECONDS;
+  const withinDisplayAge = validAge
     && ageSeconds < USAGE_MAX_DISPLAY_AGE_SECONDS;
-  if (displayable) {
+  const retained = provider.retained === true;
+  if (withinDisplayAge && !retained) {
     return provider;
   }
+  const keepRetainedWindows = retained && validAge && ageSeconds < USAGE_MAX_RETAINED_AGE_SECONDS;
   return {
     ...provider,
     stale: true,
-    windows: [],
-    // Reset status read with those windows is just as old: show it as unknown.
-    ...(provider.limit_resets !== undefined ? { limit_resets: null } : {}),
+    windows: keepRetainedWindows
+      ? provider.windows.filter((window) => window.resets_at === null || window.resets_at > nowMs / 1000)
+      : [],
+    // The opt-in extends quota windows only. Reset eligibility still expires
+    // on the normal schedule.
+    ...(!withinDisplayAge && provider.limit_resets !== undefined ? { limit_resets: null } : {}),
     updated_at: updatedAtSafe ? updatedAt : null,
   };
 }
@@ -243,11 +255,11 @@ const COMPACT_REASON_STATUS: Record<ProviderUsageReason, string> = {
 };
 
 function providerUsageKind(provider: ProviderUsage): ProviderUsagePresentationKind {
+  if (provider.windows.length > 0 && (provider.ok || provider.retained === true)) {
+    return "windows";
+  }
   if (!provider.ok) {
     return provider.stale ? "expired" : "unavailable";
-  }
-  if (provider.windows.length > 0) {
-    return "windows";
   }
   return provider.stale ? "expired" : "current-empty";
 }
@@ -258,6 +270,7 @@ function providerUsageKind(provider: ProviderUsage): ProviderUsagePresentationKi
 // is a valid current check and must stay neutral.
 export function providerUsagePresentation(provider: ProviderUsage, now: number): ProviderUsagePresentation {
   const kind = providerUsageKind(provider);
+  const retained = kind === "windows" && provider.retained === true && provider.updated_at !== null;
   let compactStatus: string | null = null;
   if (kind !== "windows") {
     compactStatus = provider.reason_code
@@ -270,9 +283,22 @@ export function providerUsagePresentation(provider: ProviderUsage, now: number):
   }
 
   let freshness: string | null = null;
-  if (provider.updated_at !== null) {
+  if (!retained && provider.updated_at !== null) {
     const prefix = kind === "expired" ? "last success" : kind === "windows" ? "updated" : "checked";
     freshness = `${prefix} ${relativeEpochSeconds(provider.updated_at, now)}`;
+  }
+
+  let retainedStatus: RetainedUsageStatusText | undefined;
+  if (retained) {
+    const backoffUntil = provider.backoff_until;
+    const countdown = backoffUntil !== undefined && Number.isFinite(backoffUntil)
+      && Math.abs(backoffUntil) <= MAX_DATE_EPOCH_SECONDS
+      ? formatResetCountdown(backoffUntil, now)
+      : null;
+    retainedStatus = {
+      age: relativeEpochSeconds(provider.updated_at, now),
+      refresh: countdown === null ? null : countdown === "now" ? "Refresh due" : `Refresh in ${countdown}`,
+    };
   }
 
   return {
@@ -280,7 +306,8 @@ export function providerUsagePresentation(provider: ProviderUsage, now: number):
     compactStatus,
     status: providerUsageStatus(provider),
     freshness,
-    warn: kind === "expired" || kind === "unavailable" || provider.stale || provider.reason_code !== null,
+    warn: kind === "expired" || kind === "unavailable" || provider.stale || retained || provider.reason_code !== null,
+    ...(retainedStatus ? { retainedStatus } : {}),
   };
 }
 
@@ -317,6 +344,12 @@ export function providerUsageAccessibleSummary(provider: ProviderUsage, now: num
       : providerName;
   const parts: string[] = [];
 
+  if (presentation.retainedStatus) {
+    parts.push(`Stale, ${presentation.retainedStatus.age}`);
+    if (presentation.retainedStatus.refresh) {
+      parts.push(presentation.retainedStatus.refresh);
+    }
+  }
   if (presentation.kind === "windows") {
     parts.push(...compactUsageWindows(provider).map((window) => {
       const remaining = remainingUsagePercent(window.used_percent);
@@ -324,7 +357,7 @@ export function providerUsageAccessibleSummary(provider: ProviderUsage, now: num
       const label = compactAccessibleFragment(window.label, COMPACT_WINDOW_LABEL_LIMIT) || "Window";
       return `${label} ${value}`;
     }));
-    const state = compactReasonStatus(provider) ?? (provider.stale ? "Stale" : null);
+    const state = compactReasonStatus(provider) ?? (provider.stale && !presentation.retainedStatus ? "Stale" : null);
     if (state) {
       parts.push(state);
     }
