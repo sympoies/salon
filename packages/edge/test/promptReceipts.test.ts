@@ -111,3 +111,14 @@ for (const route of ["keyed", "unkeyed"] as const) test(`composer observation is
     }
   }
 });
+
+test("edge projects the control-unavailable refusal from an unkeyed initial prompt", async () => {
+  status = 409;
+  payload = { ok: false, error: { code: "structured-prompt-unavailable", message: "private daemon detail" } };
+  const response = await submit({ text: "initial prompt", expected_session_incarnation: "inc-1" });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: { code: "structured-prompt-unavailable", message: "provider prompt submission failed" },
+  });
+});

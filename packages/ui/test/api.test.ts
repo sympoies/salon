@@ -3290,6 +3290,22 @@ test("submitSessionPrompt POSTs exact multiline text and incarnation through the
   }));
 });
 
+test("submitSessionPrompt explains a definite control-unavailable refusal", async () => {
+  setFetchMock(async () => jsonResponse({
+    ok: false,
+    error: { code: "structured-prompt-unavailable", message: "provider prompt submission failed" },
+  }, { status: 409 }));
+
+  assert.deepEqual(await submitSessionPrompt("maple", "s1", {
+    text: "first prompt",
+    expected_session_incarnation: "launch-s1",
+  }), {
+    ok: false,
+    code: "structured-prompt-unavailable",
+    error: "Codex can't accept prompts from Salon right now. Use the terminal to send this prompt.",
+  });
+});
+
 test("submitSessionPrompt reports a prompt queued behind the running turn as sent", async () => {
   setFetchMock(async () => jsonResponse({
     ok: true,

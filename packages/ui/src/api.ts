@@ -4,7 +4,7 @@ import { normalizeHistoryRowClass, normalizeHistoryCompaction, normalizeHistoryT
 import { getPrincipalStorageNamespace } from "./storage.ts";
 import { validOutboxText, SHARED_OUTBOX_MAX_ITEMS, SHARED_OUTBOX_MAX_HOLDS, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
 import { isPromptRequestId, normalizePromptReceipt, normalizePromptRequestBinding, type PromptReceipt } from "@agent-console/shared/prompt-receipt";
-import { notePromptDelivery } from "./promptDelivery.ts";
+import { notePromptDelivery, STRUCTURED_PROMPT_UNAVAILABLE_MESSAGE } from "./promptDelivery.ts";
 import { normalizeSessionModelSettings } from "@agent-console/shared/session-model";
 import { normalizeEmergencyShell, type EmergencyShell } from "@agent-console/shared/shell";
 import { readReachableWithRecovery } from "./reachableRequest.ts";
@@ -1766,7 +1766,7 @@ export type SubmitSessionPromptBody = {readonly text: string} & (
   | {readonly expected_session_incarnation: string; readonly request_id?: string; readonly require_idle?: boolean}
 );
 
-export interface SubmitSessionPromptResult extends IndeterminateApiResult {
+export interface SubmitSessionPromptResult extends SendSessionInputResult {
   readonly receipt?: PromptReceipt;
   /** This key belongs to another payload; never look up its receipt for this text. */
   readonly refusalCode?: "request-id-conflict" | "keyed-prompt-unsupported";
@@ -1811,6 +1811,10 @@ async function submitSessionPromptRequest(
     }
     if (receipt.outcome === "refused" && !result.ok) return {ok:false, receipt, error:receipt.code === "busy" ? "The session is busy. This reply remains queued." : `The queued reply was refused (${receipt.code}).`};
     return {ok:false, outcomeUnknown:true, ...(receipt.outcome === "unknown" ? {receipt} : {}), error:"Queued reply delivery is unknown. Check its receipt before retrying."};
+  }
+  if (response.status === 409 && expectedSessionIncarnation !== undefined
+    && (response.body as { error?: { code?: unknown } } | undefined)?.error?.code === "structured-prompt-unavailable") {
+    return { ok: false, code: "structured-prompt-unavailable", error: STRUCTURED_PROMPT_UNAVAILABLE_MESSAGE };
   }
   if (response.status < 200 || response.status >= 300) {
     return response.status >= 500 && response.status !== 501

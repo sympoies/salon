@@ -5146,15 +5146,19 @@ test("Dashboard keeps multiple prompt recoveries independently copyable and dism
   globalThis.__agentConsoleDashboardBehaviorApiMock = {
     createSession: async () => {
       const id = `created-failed-${sessions.length + 1}`;
-      sessions.push(makeSession({ id, machine: "summit", agent: "codex", status: "running" }));
-      return { ok: true, id };
+      const session = makeSession({ id, machine: "summit", agent: "codex", status: "running",
+        session_incarnation: `incarnation-${id}` });
+      sessions.push(session);
+      return { ok: true, id, session };
     },
     listSessions: async () => ({
       ok: true,
       sessions,
       machines: [{ name: "summit", ok: true }],
     }),
-    submitSessionPrompt: async () => ({ ok: false, error: "send failed" }),
+    submitSessionPrompt: async (_machine, id) => id === "created-failed-1"
+      ? { ok: false, code: "structured-prompt-unavailable", error: "Codex can't accept prompts from Salon right now. Use the terminal to send this prompt." }
+      : { ok: false, error: "send failed" },
   };
 
   const { Dashboard } = await ssr.loadModule<typeof import("../src/Dashboard.tsx")>("/src/Dashboard.tsx");
@@ -5194,6 +5198,8 @@ test("Dashboard keeps multiple prompt recoveries independently copyable and dism
   );
   assert.match(recoveries[0]!.textContent ?? "", /summit \/ created-failed-1/);
   assert.match(recoveries[1]!.textContent ?? "", /summit \/ created-failed-2/);
+  assert.match(recoveries[0]!.textContent ?? "", /Codex can't accept prompts from Salon right now/);
+  assert.doesNotMatch(recoveries[1]!.textContent ?? "", /Codex can't accept prompts from Salon right now/);
 
   await act(async () => {
     findTextButton(recoveries[0]!, "Copy prompt").click();

@@ -237,6 +237,7 @@ interface CreatedPromptRecovery {
   readonly machine: string;
   readonly sessionId?: string;
   readonly submissionOutcome: "not-submitted" | "unknown";
+  readonly refusalMessage?: string;
   readonly creationOutcomeUnknown?: boolean;
   readonly listRequestFloor?: number;
   readonly reconciled?: boolean;
@@ -1764,7 +1765,9 @@ export function Dashboard({
       result?.autoResume.status === "skipped" && result.autoResume.reason === "startup-unknown"
         ? "The machine returned invalid startup metadata; post-create actions were skipped for safety."
         : undefined,
-      result?.prompt.status === "failed" ? result.prompt.error : undefined,
+      result?.prompt.status === "failed" && result.prompt.code !== "structured-prompt-unavailable"
+        ? result.prompt.error
+        : undefined,
       result?.prompt.status === "unknown" ? result.prompt.error : undefined,
       result?.prompt.status === "skipped" && result.prompt.reason === "no-session"
         ? "Created session identity was not confirmed; the initial prompt was not submitted. Open the created session and submit it manually."
@@ -1920,6 +1923,12 @@ export function Dashboard({
       // Keep the modal above every terminal until auto-resume and the staged
       // prompt have reached a terminal outcome, so user input cannot overtake
       // the initial prompt while the new session appears through polling.
+      const refusalMessage = initializationResult.prompt.status === "failed"
+        && initializationResult.prompt.code === "structured-prompt-unavailable"
+        ? initializationResult.prompt.error
+        : undefined;
+      // Keep the recovery visible when a focused session would cover the overview.
+      if (refusalMessage) leaveFocusedSession();
       setShowCreate(false);
       const recoverablePrompt = recoverableCreatedPrompt(prompt, initializationResult);
       if (recoverablePrompt) {
@@ -1933,6 +1942,7 @@ export function Dashboard({
         setUnsubmittedCreatePrompts((current) => [...current, {
           key: nextCreatePromptRecoveryKeyRef.current,
           prompt: recoverablePrompt,
+          refusalMessage,
           machine: recoveryTarget?.machine ?? machine,
           ...(recoveryTarget ? { sessionId: recoveryTarget.id } : {}),
           submissionOutcome: initializationResult.prompt.status === "unknown" ? "unknown" : "not-submitted",
@@ -1992,7 +2002,7 @@ export function Dashboard({
       const titleCreatedSession = resolveCreateTitleSession(r.session, reconciledCreatedSession);
       if (reconciledCreatedSession) {
         placeCreatedSession(targetSlot, sessionKey(reconciledCreatedSession), applied);
-        openByPhonePreferenceRef.current(reconciledCreatedSession, false);
+        if (!refusalMessage) openByPhonePreferenceRef.current(reconciledCreatedSession, false);
       } else if (r.id) {
         void refresh();
       }
@@ -3103,7 +3113,7 @@ export function Dashboard({
               ? "Session creation may have completed without this prompt. Inspect the session list before creating another session."
               : recovery.submissionOutcome === "unknown"
               ? "The initial prompt may have been submitted. Inspect the exact session before retrying this retained prompt."
-              : "The initial prompt was not submitted. Copy it and paste it into the created session after checking its state."}
+              : recovery.refusalMessage ?? "The initial prompt was not submitted. Copy it and paste it into the created session after checking its state."}
           </p>
           <p>
             Target: {recovery.machine} / {recovery.sessionId ?? "unconfirmed session"}

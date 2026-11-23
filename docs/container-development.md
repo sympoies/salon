@@ -64,6 +64,11 @@ docker compose exec -T workspace codex login --with-api-key < /path/to/private/c
 docker compose exec workspace codex login status
 ```
 
+With the pinned agent-session 1.42.1, managed prompt delivery is unavailable
+for Codex API-key sessions. Leave the initial prompt blank in the New session
+dialog and send prompts and replies in the terminal. [Issue #653][codex-prompt]
+tracks the runtime update.
+
 Codex saves the credential in `provider-state`. To sign out and clear the cached
 key, close active Codex sessions and run `docker compose exec workspace codex logout`.
 Remove any saved source copy when you retire the key.
@@ -93,18 +98,22 @@ docker compose exec -T workspace sh -c 'umask 077; cat > "$CLAUDE_CONFIG_DIR/api
   < /path/to/private/claude-api-key
 ```
 
-Add the `apiKeyHelper` entry below to `$CLAUDE_CONFIG_DIR/settings.json` in
-`claude-state`. Keep the activity hooks and any other entries already in the file.
+Set `apiKeyHelper` in the existing settings file. The command updates that
+entry and preserves the activity hooks and other settings in `claude-state`.
+If you already use another helper, edit its entry in `settings.json` to switch.
 
-```json
-{
-  "apiKeyHelper": "cat /home/node/.claude/api-key"
-}
+```bash
+docker compose exec -T workspace node /opt/salon/docker/claude-api-key-helper.ts add
 ```
 
-To remove API-key access, close active Claude sessions, remove the
-`apiKeyHelper` entry, and delete the credential with
-`docker compose exec workspace rm -f /home/node/.claude/api-key`.
+To remove API-key access, close active Claude sessions, remove the helper
+setting, and delete the key file from the container.
+
+```bash
+docker compose exec -T workspace node /opt/salon/docker/claude-api-key-helper.ts remove && \
+  docker compose exec workspace rm -f /home/node/.claude/api-key
+```
+
 Run `docker compose exec workspace claude auth logout` to clear any cached
 login too. Remove any saved source copy when you retire the key.
 
@@ -129,6 +138,7 @@ accompanying README under `/usr/local/share/licenses/claude`. The binary is
 updated by rebuilding the image.
 
 [codex-auth]: https://developers.openai.com/codex/auth
+[codex-prompt]: https://github.com/sympoies/salon/issues/653
 [codex-config]: https://developers.openai.com/codex/config-reference/
 [claude-helper]: https://code.claude.com/docs/en/settings-reference#apikeyhelper
 [claude-auth]: https://code.claude.com/docs/en/authentication

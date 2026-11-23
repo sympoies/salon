@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import type { SharedOutboxItem, SharedOutboxState } from "@agent-console/shared/shared-outbox";
 import { AUTH_QUARANTINED_CODE } from "./authQuarantine.ts";
 import { OutgoingBubble } from "./OutgoingBubble.tsx";
+import { STRUCTURED_PROMPT_UNAVAILABLE_MESSAGE } from "./promptDelivery.ts";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import type { HistoryMessage, Session } from "./types.ts";
 
@@ -33,6 +34,8 @@ function refusalReason(item: SharedOutboxItem): string {
       return "Your access to send this reply changed.";
     case "outbox-provider-changed":
       return "The session's current provider does not support replies.";
+    case "structured-prompt-unavailable":
+      return STRUCTURED_PROMPT_UNAVAILABLE_MESSAGE;
     case "keyed-prompt-unsupported":
     case "structured-prompt-unsupported":
       return "This session does not support reply delivery.";

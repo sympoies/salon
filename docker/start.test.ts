@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import test, { type TestContext } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { parse } from "@decimalturn/toml-patch";
@@ -243,4 +244,39 @@ test("keeps a browser session in the runtime state volume across restarts", { ti
   const status = await fetch("http://127.0.0.1:" + second.port + "/api/auth/status", { headers: { cookie } });
   assert.equal((await status.json()).authenticated, true);
   assert.ok((await stat(join(f.home, ".local/state/salon/access.sqlite"))).isFile());
+});
+
+test("the Claude API-key helper can be added and removed without losing activity hooks", async t => {
+  const root = await mkdtemp(join(tmpdir(), "salon-claude-settings-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const settingsPath = join(root, "settings.json");
+  const initial = {
+    hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "agent-hook" }] }] },
+    permissions: { defaultMode: "default" },
+  };
+  await writeFile(settingsPath, JSON.stringify(initial), { mode: 0o600 });
+  const script = fileURLToPath(new URL("./claude-api-key-helper.ts", import.meta.url));
+  const run = promisify(execFile);
+  const options = { env: { CLAUDE_CONFIG_DIR: root } };
+
+  await run(process.execPath, [script, "add"], options);
+  const { apiKeyHelper, ...settings } = JSON.parse(await readFile(settingsPath, "utf8"));
+  assert.deepEqual(settings, initial);
+  await writeFile(join(root, "api-key"), "synthetic-key", { mode: 0o600 });
+  const helper = await run("/bin/sh", ["-c", apiKeyHelper], {
+    env: { PATH: "/usr/bin:/bin", CLAUDE_CONFIG_DIR: root },
+  });
+  assert.equal(helper.stdout, "synthetic-key", "Claude's helper reads the key file");
+  assert.equal((await stat(settingsPath)).mode & 0o777, 0o600);
+
+  await run(process.execPath, [script, "remove"], options);
+  assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")), initial);
+  assert.equal((await stat(settingsPath)).mode & 0o777, 0o600);
+
+  const custom = JSON.stringify({ ...initial, apiKeyHelper: "example-secret-manager read" });
+  await writeFile(settingsPath, custom);
+  for (const operation of ["add", "remove"]) {
+    await assert.rejects(run(process.execPath, [script, operation], options), /different API-key helper/);
+    assert.equal(await readFile(settingsPath, "utf8"), custom);
+  }
 });

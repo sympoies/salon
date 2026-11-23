@@ -654,10 +654,15 @@ export function forwardFencedStructuredPromptDaemon(
   } | undefined;
   if (!ok2xx || body?.ok === false) {
     const code = body?.error?.code;
+    const publicCode = code === "composer-unobservable" || code === "structured-prompt-unavailable" ? code : undefined;
     const observation = code === "composer-unobservable" ? normalizePromptObservation(body?.error?.details?.observation) : undefined;
     sendJson(res, ok2xx ? 502 : r.status, {
       ok: false,
-      error: { message: "provider prompt submission failed", ...(code === "composer-unobservable" ? { code } : {}), ...(observation ? { details: { observation } } : {}) },
+      error: {
+        message: "provider prompt submission failed",
+        ...(publicCode ? { code: publicCode } : {}),
+        ...(observation ? { details: { observation } } : {}),
+      },
     });
     return;
   }
