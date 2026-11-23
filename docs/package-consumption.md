@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.96 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.97 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -183,7 +183,30 @@ mountApp(root, { appName: "Example", appIcon: { dark: "/mark-dark.svg", light: "
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.96`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.97`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.97
+
+Container startup adds Codex trust for the default workspace while preserving
+existing trust decisions and other settings. The
+[container guide](container-development.md#set-workspace-trust) documents
+Claude's one-time setup. The session-start hint points to sign-in or first-run
+setup on the selected machine (#627, #628).
+
+The header keeps the provider badge visible at every usage display step on
+narrow screens. Intermediate steps show as much usage detail as fits
+(#630, #635).
+
+Themed confirmation dialogs cover ending a shell, restoring a saved draft,
+and revealing a terminal link. A regression guard checks for new native
+confirmation calls (#629, #634).
+
+Checkboxes, select pickers, disclosure markers, and focus rings follow the
+active theme. A regression guard checks native form controls for theme coverage.
+Escape dismisses an open select picker and leaves the enclosing dialog open
+(#631, #633).
+
+You can upgrade with your existing SDK configuration.
 
 ### Changes retained in SDK 0.1.96
 
