@@ -1150,7 +1150,7 @@ export async function createSession(
       : undefined;
     const definiteRefusal = errorCode === "start-failed" && refusal !== undefined;
     const refusalMessage = definiteRefusal && details?.reason === "startup-prompt-required"
-      ? `${refusal} See “Set up provider authentication” in the container guide for sign-in steps.`
+      ? `${refusal} Sign in to the provider on the selected machine, then try again.`
       : refusal;
     const failure = {
       ...result,
