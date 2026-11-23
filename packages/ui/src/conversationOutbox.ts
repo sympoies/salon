@@ -87,8 +87,8 @@ const TERMINAL_DRAFT_ERRORS: Readonly<Record<string, string>> = {
   "composer-unobservable": "Console cannot read the terminal input, so this reply was not sent. Check the terminal, then Retry.",
   [AUTH_QUARANTINED_CODE]: AUTH_QUARANTINE_REPLY_TEXT,
 };
-/** The reason a refused reply was not sent, shared by the per-browser and shared outboxes. */
-export const refusalReason = (code: string, observation?: string): string =>
+/** The refusal explanation shown by the per-browser outbox. */
+const refusalReason = (code: string, observation?: string): string =>
   code === "composer-unobservable" && observation === "region-not-single-row"
     ? "The terminal input holds a multi-row draft, so this reply was not sent. Send or clear it in the terminal, then Retry." :
   Object.hasOwn(TERMINAL_DRAFT_ERRORS, code) ? TERMINAL_DRAFT_ERRORS[code]!
