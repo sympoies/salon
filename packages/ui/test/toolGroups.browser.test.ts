@@ -32,7 +32,7 @@ test("consecutive tool rows collapse and retain their state as live content grow
   try { for (const [width,height] of [[384,832],[1280,900]]) for (const theme of ["dark","paper"]) for (const view of ["live", "saved"]) {
     const file=join(temp, `${width}-${theme}-${view}.html`);
     const frame = `<!doctype html><html data-theme="${theme}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}html,body{margin:0}</style><div id="root"></div><script>window.publish=v=>parent.document.querySelector('#result').textContent=JSON.stringify(v);${code.replaceAll("</script", "<\\/script")}</script>`;
-    writeFileSync(file, `<!doctype html><style>html,body{margin:0}iframe{border:0;display:block}</style><iframe width="${width}" height="${height}"></iframe><pre id="result" hidden></pre><script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<", "\\u003c")}</script>`);
+    writeFileSync(file, `<!doctype html><meta charset="utf-8"><style>html,body{margin:0}iframe{border:0;display:block}</style><iframe width="${width}" height="${height}"></iframe><pre id="result" hidden></pre><script>document.querySelector('iframe').srcdoc=${JSON.stringify(frame).replaceAll("<", "\\u003c")}</script>`);
     const browser=spawnSync(process.env.CHROME_BIN ?? "google-chrome", ["--headless","--disable-gpu","--no-sandbox","--hide-scrollbars",`--window-size=${Math.max(width,800)},${height}`,"--virtual-time-budget=5000","--dump-dom",`file://${file}?${view}`],{encoding:"utf8",timeout:20000,maxBuffer:16*1024*1024});
     if (process.env.SALON_UI_EVIDENCE_DIR) {
       mkdirSync(process.env.SALON_UI_EVIDENCE_DIR, { recursive: true });
