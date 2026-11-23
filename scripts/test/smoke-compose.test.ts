@@ -9,7 +9,15 @@ import { fileURLToPath } from "node:url";
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 const smoke = join(repo, "scripts/smoke-compose.sh");
 
-type Fake = { id?: string; health?: string; port?: string; uids?: string; curl?: number };
+type Fake = {
+  id?: string;
+  health?: string;
+  port?: string;
+  uids?: string;
+  curl?: number;
+  projectEnvironment?: string;
+  expectedProject?: string;
+};
 
 const smokeSource = readFileSync(smoke, "utf8");
 
@@ -25,7 +33,14 @@ function run(fake: Fake, args: string[] = [], source = smokeSource) {
     };
     tool("docker", `case "$1" in
   compose)
-    [[ "$#" == 6 && "$2" == -f && "$3" == "$COMPOSE_FILE" && "$4" == ps && "$5" == --quiet && "$6" == workspace ]] || exit 2
+    [[ "$2" == -f && "$3" == "$COMPOSE_FILE" ]] || exit 2
+    shift 3
+    project="$COMPOSE_PROJECT_NAME"
+    if [[ "$1" == -p ]]; then
+      project="$2"
+      shift 2
+    fi
+    [[ "$project" == "$EXPECTED_PROJECT" && "$#" == 3 && "$1" == ps && "$2" == --quiet && "$3" == workspace ]] || exit 2
     printf '%s\\n' "${fake.id ?? "abc123"}" ;;
   inspect)
     [[ "$#" == 4 && "$2" == --format && "$3" == '{{.State.Health.Status}}' && "$4" == abc123 ]] || exit 2
@@ -42,7 +57,12 @@ esac`);
     const entrypoint = join(root, "smoke.sh");
     writeFileSync(entrypoint, source);
     const result = spawnSync("bash", [entrypoint, ...args], {
-      cwd: root, encoding: "utf8", env: { PATH: `${bin}:/usr/bin:/bin`, COMPOSE_FILE: args[0] ?? "compose.image.yaml" },
+      cwd: root, encoding: "utf8", env: {
+        PATH: `${bin}:/usr/bin:/bin`,
+        COMPOSE_FILE: args[0] ?? "compose.image.yaml",
+        COMPOSE_PROJECT_NAME: fake.projectEnvironment ?? "",
+        EXPECTED_PROJECT: fake.expectedProject ?? "",
+      },
     });
     return { status: result.status, out: result.stdout, err: result.stderr };
   } finally {
@@ -96,6 +116,16 @@ test("the pull-only compose differs from the build compose only in its image sou
 
 test("an explicit compose file reaches the Docker query", () => {
   assert.equal(run({}, ["./compose.image.yaml"]).status, 0);
+});
+
+test("an explicit project name overrides COMPOSE_PROJECT_NAME", () => {
+  const result = run({ projectEnvironment: "other-project", expectedProject: "example" }, ["compose.image.yaml", "example"]);
+  assert.equal(result.status, 0, result.out);
+});
+
+test("an exported COMPOSE_PROJECT_NAME selects the project without an argument", () => {
+  const result = run({ projectEnvironment: "example", expectedProject: "example" });
+  assert.equal(result.status, 0, result.out);
 });
 
 for (const [name, original, wrong] of [

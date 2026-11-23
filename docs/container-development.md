@@ -26,6 +26,16 @@ To run a published image instead of building, see
 [Start from the published image](../README.md#start-from-the-published-image) and add
 `-f compose.image.yaml` to every `docker compose` command below.
 
+If you started with `docker compose -p example`, pass the same project name after
+the Compose file in the smoke command.
+
+```bash
+bash scripts/smoke-compose.sh compose.yaml example
+```
+
+An exported `COMPOSE_PROJECT_NAME` also sets the project for both commands. If you
+supply both, the smoke script uses its project argument.
+
 Open `http://127.0.0.1:3000`. The browser requires its own Salon login token; read that
 token locally:
 

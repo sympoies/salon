@@ -66,6 +66,11 @@ it pulls `SALON_IMAGE` instead of building the checkout. `--wait` returns once t
 health check passes, so the smoke check does not race the start period. Compose refuses to
 start while `SALON_IMAGE` is unset.
 
+If you started Compose with `-p example`, run
+`bash scripts/smoke-compose.sh compose.image.yaml example`. You can also export
+`COMPOSE_PROJECT_NAME` before running both commands. The script's project
+argument takes precedence over the environment variable.
+
 The smoke check needs no provider credentials. It prints one `PASS` or `FAIL`
 line per check: container running, container healthy, `/healthz` answering,
 the published port bound only to `127.0.0.1:3000`, and no root process. It

@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # Post-start smoke check for a Salon container started with a compose file.
 # Needs only docker and curl; no provider credentials.
-# Usage: smoke-compose.sh [compose-file]   (default: compose.image.yaml)
+# Usage: smoke-compose.sh [compose-file] [project-name]
+# Defaults: compose.image.yaml and COMPOSE_PROJECT_NAME (if exported).
 # Exit: 0 all checks passed, 1 a check failed, 2 usage or missing tool.
 set -uo pipefail
 
 compose_file="${1:-compose.image.yaml}"
+project_name="${2:-${COMPOSE_PROJECT_NAME:-}}"
+compose=(docker compose -f "$compose_file")
+if [[ -n "$project_name" ]]; then
+  compose+=(-p "$project_name")
+fi
 expected_port="127.0.0.1:3000"
 failures=0
 
@@ -17,9 +23,9 @@ for tool in docker curl; do
 done
 [[ -f "$compose_file" ]] || { printf 'Compose file not found: %s\n' "$compose_file" >&2; exit 2; }
 
-container="$(docker compose -f "$compose_file" ps --quiet workspace 2>/dev/null)"
+container="$("${compose[@]}" ps --quiet workspace 2>/dev/null)"
 if [[ -z "$container" ]]; then
-  fail "container running" "no workspace container; run 'docker compose -f $compose_file up -d' first"
+  fail "container running" "no workspace container; run '${compose[*]} up -d' first"
   exit 1
 fi
 pass "container running"
