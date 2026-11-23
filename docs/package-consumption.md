@@ -187,6 +187,12 @@ checked-in SDK version is `0.1.97`. The publisher creates a GitHub prerelease wi
 
 ### Changes retained in SDK 0.1.97
 
+Container startup adds Codex trust for the default workspace while preserving
+existing trust decisions and other settings. The
+[container guide](container-development.md#set-workspace-trust) documents
+Claude's one-time setup. The session-start hint points to sign-in or first-run
+setup on the selected machine (#627, #628).
+
 The header keeps the provider badge visible at every usage display step on
 narrow screens. Intermediate steps show as much usage detail as fits
 (#630, #635).
