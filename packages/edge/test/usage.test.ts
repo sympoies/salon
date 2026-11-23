@@ -115,6 +115,24 @@ test("normalizeProviders defaults missing fields (label<-provider, ok<-true, nul
   assert.deepEqual(p.windows, []);
 });
 
+test("normalizeProviders omits the retention fields without a literal opt-in", () => {
+  for (const retained of [undefined, false, "true", 1]) {
+    const [entry] = normalizeProviders({
+      providers: [{ provider: "claude", retained, backoff_until: 1_800_000_900 }],
+    });
+    assert.equal(Object.hasOwn(entry!, "retained"), false);
+    assert.equal(Object.hasOwn(entry!, "backoff_until"), false);
+  }
+});
+
+test("normalizeProviders retains the marker when the optional backoff is absent or invalid", () => {
+  for (const backoffUntil of [undefined, null, "1800000900", Number.NaN, -1, Infinity, 1_800_000_900_000]) {
+    const [entry] = normalizeProviders({ providers: [{ provider: "claude", retained: true, backoff_until: backoffUntil }] });
+    assert.equal(entry?.retained, true);
+    assert.equal(Object.hasOwn(entry!, "backoff_until"), false);
+  }
+});
+
 test("normalizeProviders accepts only nonnegative integer reset credits", () => {
   const out = normalizeProviders({
     providers: [

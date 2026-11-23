@@ -20,6 +20,7 @@ const MAX_RESPONSE_BYTES = 512 * 1024;
 // The host helper's route; `agent-session serve` uses `/usage/v1` (configured
 // through AGENT_CONSOLE_USAGE_PATH).
 const DEFAULT_USAGE_PATH = "/usage";
+const MAX_EPOCH_SECONDS = 1_000_000_000_000;
 
 const PROVIDER_USAGE_REASONS = new Set<ProviderUsageReason>([
   "auth_required",
@@ -188,7 +189,7 @@ function epochSecondsOrNull(value: unknown): number | null {
 }
 
 function normalizeEpochSeconds(epoch: number): number {
-  return epoch > 1_000_000_000_000 ? Math.floor(epoch / 1000) : epoch;
+  return epoch > MAX_EPOCH_SECONDS ? Math.floor(epoch / 1000) : epoch;
 }
 
 function usagePayload(body: unknown): unknown {
@@ -244,6 +245,7 @@ export function normalizeProviders(body: unknown): ProviderUsage[] {
         }
       }
     }
+    const backoffUntil = asFiniteNumber(p.backoff_until);
     out.push({
       provider,
       account,
@@ -253,6 +255,11 @@ export function normalizeProviders(body: unknown): ProviderUsage[] {
       plan: asString(p.plan),
       windows,
       updated_at: asFiniteNumber(p.updated_at),
+      ...(p.retained === true ? { retained: true as const } : {}),
+      // The retention contract takes a numeric epoch in seconds.
+      ...(p.retained === true && backoffUntil !== null && backoffUntil >= 0 && backoffUntil <= MAX_EPOCH_SECONDS
+        ? { backoff_until: backoffUntil }
+        : {}),
       note: asString(p.note),
       error: providerError(p.error),
       reason_code: providerReasonCode(p.reason_code),
