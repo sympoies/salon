@@ -97,7 +97,7 @@ test("Dashboard shows a definite start refusal and allows a new session", async 
       assert.deepEqual({ unknown: measured.unknown, newDisabled: measured.newDisabled, stopped: measured.stopped },
         { unknown: false, newDisabled: false, stopped: false });
       assert.ok(measured.errorText.includes(message), "the daemon message is visible");
-      assert.match(measured.errorText, /Sign in to the provider on the selected machine, then try again\./);
+      assert.match(measured.errorText, /Complete the provider's sign-in or first-run setup on the selected machine, then try again\./);
       assert.equal(measured.readable, true, "the refusal fits without horizontal clipping");
     });
   }

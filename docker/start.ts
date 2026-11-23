@@ -2,13 +2,42 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Writable } from "node:stream";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { TomlDocument } from "@decimalturn/toml-patch";
 
 let daemon: ChildProcessByStdio<Writable, null, null> | undefined;
 let edge: ReturnType<typeof import("../apps/workspace/src/server.ts").startWorkspaceEdge> | undefined;
 let stopping = false;
+
+async function initializeCodexTrust(codexHome: string, workspace: string) {
+  const configPath = join(codexHome, "config.toml");
+  const existing = await readFile(configPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+    return undefined;
+  });
+  const document = new TomlDocument(existing ?? "");
+  const config: { projects?: Record<string, { trust_level?: string }> } = document.toJsObject;
+  const projects = config.projects ??= {};
+  const project = projects[workspace] ??= {};
+  if (Object.hasOwn(project, "trust_level")) return;
+
+  project.trust_level = "trusted";
+  document.patch(config, { inlineTableStart: 2 });
+
+  // Keep the old config intact until the replacement is fully written.
+  await mkdir(codexHome, { recursive: true, mode: 0o700 });
+  const target = existing ? await realpath(configPath) : configPath;
+  const temporary = `${target}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    await writeFile(temporary, document.toTomlString, { flag: "wx", mode: 0o600 });
+    if (existing) await chmod(temporary, (await stat(target)).mode & 0o777);
+    await rename(temporary, target);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
 
 async function stopDaemon() {
   if (daemon && daemon.exitCode === null && daemon.signalCode === null) {
@@ -50,6 +79,9 @@ try {
   const clientToken = (await readFile(credential, "utf8")).trim();
   if (!clientToken) throw new Error("Empty browser credential");
   const daemonToken = randomBytes(32).toString("hex");
+
+  // Compose starts here, and agent-session inherits this default working directory.
+  await initializeCodexTrust(process.env.CODEX_HOME!, process.cwd());
 
   // Only runtime paths and terminal settings enter provider ancestry. Neither
   // operator credential is exported to the daemon, tmux or provider children.

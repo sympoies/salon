@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import test, { type TestContext } from "node:test";
 import type { ChildProcess } from "node:child_process";
+import { parse } from "@decimalturn/toml-patch";
 
 async function fixture(t: TestContext, { earlyExit = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "salon-start-"));
@@ -26,6 +28,7 @@ async function fixture(t: TestContext, { earlyExit = false } = {}) {
     await mkdir(join(root, dir), { recursive: true });
   }
   await copyFile(new URL("./start.ts", import.meta.url), join(root, "docker/start.ts"));
+  await symlink(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir");
   const daemon = `#!${process.execPath}
 import { writeFileSync } from 'node:fs';
 const root = ${JSON.stringify(root)};
@@ -63,8 +66,10 @@ export function startWorkspaceEdge({ daemonToken, clientToken, onShutdown }) {
 }
 `);
   const home = join(root, "home");
+  const workspace = join(home, "Project/workspace");
+  const codexHome = join(home, ".codex");
   const env = {
-    PATH: bin + ":/usr/bin:/bin", HOME: home, CODEX_HOME: join(home, ".codex"),
+    PATH: bin + ":/usr/bin:/bin", HOME: home, CODEX_HOME: codexHome,
     CLAUDE_CONFIG_DIR: join(home, ".claude"), DISABLE_UPDATES: "1",
     XDG_STATE_HOME: join(home, ".local/state"), XDG_RUNTIME_DIR: join(root, "run"),
     NODE_OPTIONS: `--conditions=source --import=${join(root, "readiness.mjs")}`,
@@ -75,7 +80,7 @@ export function startWorkspaceEdge({ daemonToken, clientToken, onShutdown }) {
   };
   function start() {
     const child = spawn(process.execPath, [join(root, "docker/start.ts")], {
-      cwd: join(home, "Project/workspace"), env, stdio: ["ignore", "pipe", "pipe"],
+      cwd: workspace, env, stdio: ["ignore", "pipe", "pipe"],
     });
     let output = "";
     child.stdout.on("data", chunk => { output += chunk; });
@@ -83,7 +88,7 @@ export function startWorkspaceEdge({ daemonToken, clientToken, onShutdown }) {
     children.push(child);
     return { child, output: () => output };
   }
-  return { root, home, start };
+  return { root, home, workspace, codexHome, start };
 }
 
 async function waitFile(path: string, running: { child: ChildProcess; output: () => string }) {
@@ -136,4 +141,50 @@ test("daemon startup failure terminates the container without starting edge", { 
   const [code] = await once(running.child, "exit");
   assert.notEqual(code, 0);
   await assert.rejects(readFile(join(f.root, "edge.json")), { code: "ENOENT" });
+});
+
+test("initializes trust for only the default Codex workspace across restarts", { timeout: 8000 }, async t => {
+  const f = await fixture(t);
+  const config = join(f.codexHome, "config.toml");
+  const first = f.start();
+  await waitFile(join(f.root, "edge.json"), first);
+  const initial = await readFile(config, "utf8");
+  const { projects } = parse(initial);
+  assert.deepEqual(Object.keys(projects), [f.workspace]);
+  assert.equal(projects[f.workspace].trust_level, "trusted");
+
+  const exited = once(first.child, "exit");
+  first.child.kill("SIGTERM");
+  await exited;
+  for (const name of ["ready", "edge.json", "stopped"]) await unlink(join(f.root, name));
+
+  const second = f.start();
+  await waitFile(join(f.root, "edge.json"), second);
+  assert.equal(await readFile(config, "utf8"), initial);
+});
+
+test("adds Codex workspace trust alongside existing user settings", { timeout: 8000 }, async t => {
+  const f = await fixture(t);
+  const config = join(f.codexHome, "config.toml");
+  const initial = '# User settings\nmodel = "example-model"\n\n[projects."/other/project"]\ntrust_level = "untrusted"\n';
+  await mkdir(f.codexHome);
+  await writeFile(config, initial);
+
+  await waitFile(join(f.root, "edge.json"), f.start());
+  const updated = await readFile(config, "utf8");
+  assert.ok(updated.startsWith('# User settings\nmodel = "example-model"\n'));
+  const { projects } = parse(updated);
+  assert.equal(projects["/other/project"].trust_level, "untrusted");
+  assert.equal(projects[f.workspace].trust_level, "trusted");
+});
+
+test("preserves an explicit Codex workspace trust decision", { timeout: 8000 }, async t => {
+  const f = await fixture(t);
+  const config = join(f.codexHome, "config.toml");
+  const initial = `projects = { '${f.workspace}' = { trust_level = 'untrusted' } } # User decision\n`;
+  await mkdir(f.codexHome);
+  await writeFile(config, initial);
+
+  await waitFile(join(f.root, "edge.json"), f.start());
+  assert.equal(await readFile(config, "utf8"), initial);
 });
