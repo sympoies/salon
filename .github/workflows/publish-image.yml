@@ -106,6 +106,7 @@ jobs:
             exit 1
           fi
           bash scripts/smoke-compose.sh compose.image.yaml
+          docker compose -f compose.image.yaml exec -T workspace node --test /opt/salon/docker/container-smoke.test.ts
 
       - name: Remove smoke containers and volumes
         if: ${{ always() }}

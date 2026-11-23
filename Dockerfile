@@ -17,9 +17,9 @@ RUN case "$TARGETARCH" in \
     && printf '%s  /tmp/nils.tar.gz\n' "$digest" | sha256sum --check \
     && mkdir /opt/nils \
     && tar -xzf /tmp/nils.tar.gz -C /opt/nils --strip-components=1 \
-       "${archive}/bin/agent-session" "${archive}/LICENSE" \
+       "${archive}/bin/agent-session" "${archive}/bin/agent-hook" "${archive}/LICENSE" \
        "${archive}/THIRD_PARTY_LICENSES.md" "${archive}/THIRD_PARTY_NOTICES.md" \
-    && install -m 0755 /opt/nils/bin/agent-session /usr/local/bin/agent-session \
+    && install -m 0755 /opt/nils/bin/agent-session /opt/nils/bin/agent-hook /usr/local/bin/ \
     && rm /tmp/nils.tar.gz
 
 RUN npm install --global pnpm@11.9.0 @openai/codex@0.162.1 \
@@ -67,6 +67,14 @@ ENV HOME=/home/node \
     AGENT_SESSION_STATE_DIR=/home/node/.local/state/agent-session
 RUN mkdir -p /home/node/Project/workspace /home/node/.codex /home/node/.local/state /run/salon \
     && chown -R node:node /home/node/Project /home/node/.codex /home/node/.local /run/salon
+
+# The pinned hook CLI requires both files to be owned by its runtime user.
+RUN mkdir -p /home/node/.config/agent-hook \
+    && policy=/opt/salon/docker/claude-activity.toml \
+    && digest="$(sha256sum "$policy")" \
+    && printf 'schema_version = "agent-hook.config.v1"\n\n[policy]\npath = "%s"\ndigest = "sha256:%s"\n' \
+       "$policy" "${digest%% *}" > /home/node/.config/agent-hook/config.toml \
+    && chown node:node "$policy" /home/node/.config/agent-hook/config.toml
 USER node
 WORKDIR /home/node/Project/workspace
 EXPOSE 3000

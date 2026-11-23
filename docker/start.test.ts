@@ -10,7 +10,7 @@ import test, { type TestContext } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { parse } from "@decimalturn/toml-patch";
 
-async function fixture(t: TestContext, { earlyExit = false } = {}) {
+async function fixture(t: TestContext, { earlyExit = false, refuseHookSetup = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "salon-start-"));
   const children: ChildProcess[] = [];
   t.after(async () => {
@@ -32,6 +32,10 @@ async function fixture(t: TestContext, { earlyExit = false } = {}) {
   const daemon = `#!${process.execPath}
 import { writeFileSync } from 'node:fs';
 const root = ${JSON.stringify(root)};
+if (process.argv[2] === "activity") {
+  writeFileSync(root + '/hook-setup.json', JSON.stringify({ args: process.argv.slice(2), env: process.env }));
+  process.exit(${refuseHookSetup ? 65 : 0});
+}
 const input = [];
 process.stdin.on('data', chunk => input.push(chunk));
 process.stdin.on('end', () => {
@@ -53,14 +57,17 @@ globalThis.fetch = async () => new Response("", { status: existsSync(${JSON.stri
   await writeFile(join(root, "apps/workspace/src/server.ts"), `
 import { startEdge } from ${JSON.stringify(new URL("../packages/edge/src/start.ts", import.meta.url).href)};
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-export function startWorkspaceEdge({ daemonToken, clientToken, onShutdown }) {
+export function startWorkspaceEdge({ daemonToken, clientToken, accessDbPath, onShutdown }) {
  const root = ${JSON.stringify(root)};
  const daemon = existsSync(root + '/daemon.json') ? JSON.parse(readFileSync(root + '/daemon.json', 'utf8')) : {};
- const edge = startEdge({ AGENT_CONSOLE_TOKEN: clientToken, AGENT_CONSOLE_EDGE_PORT: '0' }, {}, onShutdown);
+ const edge = startEdge({
+  AGENT_CONSOLE_TOKEN: clientToken, AGENT_CONSOLE_EDGE_PORT: '0', AGENT_CONSOLE_STATE_DB: accessDbPath,
+ }, {}, onShutdown);
  // Signal readiness only after edge shutdown handlers are installed and listening.
  edge.once('listening', () => writeFileSync(root + '/edge.json', JSON.stringify({
   ready: existsSync(root + '/ready'), daemonMatches: daemonToken === daemon.token,
-  distinct: daemonToken !== clientToken, clientToken,
+  distinct: daemonToken !== clientToken, clientToken, port: edge.address().port,
+  hookSetupAttempted: existsSync(root + '/hook-setup.json'),
  })));
  return edge;
 }
@@ -198,4 +205,42 @@ test("limits automatic Codex trust to the default workspace when startup uses an
   const { projects } = parse(await readFile(join(f.codexHome, "config.toml"), "utf8"));
   assert.deepEqual(Object.keys(projects), [f.workspace]);
   assert.equal(projects[f.workspace].trust_level, "trusted");
+});
+
+test("attempts Claude activity setup before the edge starts and tolerates a refusal", { timeout: 8000 }, async t => {
+  const f = await fixture(t, { refuseHookSetup: true });
+  const running = f.start();
+  const edge = await waitFile(join(f.root, "edge.json"), running);
+  assert.equal(edge.hookSetupAttempted, true);
+  const setup = JSON.parse(await readFile(join(f.root, "hook-setup.json"), "utf8"));
+  assert.deepEqual(setup.args, ["activity", "setup", "--agent", "claude", "--apply"]);
+  assert.equal(setup.env.CLAUDE_CONFIG_DIR, join(f.home, ".claude"));
+  assert.equal(setup.env.ANTHROPIC_API_KEY, undefined);
+  assert.match(running.output(), /Claude activity hook setup failed/);
+});
+
+test("keeps a browser session in the runtime state volume across restarts", { timeout: 8000 }, async t => {
+  const f = await fixture(t);
+  const first = f.start();
+  const edge = await waitFile(join(f.root, "edge.json"), first);
+  const origin = "http://127.0.0.1:" + edge.port;
+  const login = await fetch(origin + "/api/auth/login", {
+    method: "POST",
+    headers: { origin, "content-type": "application/json" },
+    body: JSON.stringify({ token: edge.clientToken }),
+  });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.getSetCookie()[0]?.split(";", 1)[0];
+  assert.ok(cookie);
+  await login.arrayBuffer();
+
+  const exited = once(first.child, "exit");
+  first.child.kill("SIGTERM");
+  await exited;
+  for (const name of ["ready", "edge.json", "stopped"]) await unlink(join(f.root, name));
+
+  const second = await waitFile(join(f.root, "edge.json"), f.start());
+  const status = await fetch("http://127.0.0.1:" + second.port + "/api/auth/status", { headers: { cookie } });
+  assert.equal((await status.json()).authenticated, true);
+  assert.ok((await stat(join(f.home, ".local/state/salon/access.sqlite"))).isFile());
 });
