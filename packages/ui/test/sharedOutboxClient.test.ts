@@ -164,7 +164,7 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
   };
 }
 
-test("sent reply bubbles have no editing controls or permanent delivery badges", async () => {
+test("an admitted reply shows Sending without editing controls", async () => {
   const h = await fixture(new IDBFactory(), false);
   try {
     await h.client.enqueue(session, "immutable sent message");
@@ -175,8 +175,8 @@ test("sent reply bubbles have no editing controls or permanent delivery badges",
     await act(async () => bubble.click()); await h.settle();
     assertNoElement(h.container, 'textarea, [role="menu"], [aria-haspopup="menu"]',
       "sent messages must not open a post-send editor or action menu");
-    assertNoElement(h.container, ".history-outgoing-status",
-      "normal conversation has no persistent delivery badge");
+    assert.equal(h.container.querySelector('[role="status"]')?.textContent, "Sending");
+    assertNoElement(h.container, "button", "an admitted reply has no Retry");
     assert.equal(h.patches.length, 0);
   } finally { await h.close(); }
 });
@@ -238,9 +238,13 @@ test("offline new intent survives local restart and uploads its original ID exac
     const id = await h.client.enqueue(session, "offline original");
     assert.equal(h.client.state(h.target).admissions[0]?.attempted, false);
     assert.equal(h.admissions.length, 0);
+    await h.showReplies();
+    assert.equal(h.container.querySelector('[role="status"]')?.textContent, "Uploading");
+    assertNoElement(h.container, "button", "a journaled reply has no Retry");
     const restored = new h.module.SharedOutboxClient(h.client.namespace, factory); clients.push(restored); await restored.ready;
     assert.equal(restored.state(h.target).admissions[0]?.id, id);
-    h.online(true); await restored.sync(h.target); await h.client.sync(h.target);
+    h.online(true);
+    await act(async () => { await restored.sync(h.target); await h.client.sync(h.target); });
     assert.deepEqual(h.admissions, [{ id, text: "offline original" }]);
     assert.equal(restored.state(h.target).admissions.length, 0);
   } finally { for (const client of clients) client.close(); await h.close(); }
@@ -310,6 +314,20 @@ test("enqueue during an in-flight refresh is retained and admitted without waiti
   } finally { gate.release(); await h.close(); }
 });
 
+test("a claimed reply still shows Sending and offers no Retry", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    await h.ownServer({ revision: 2, compose_holds: [], items: [{
+      id: "claimed-reply", text: "A reply in flight", state: "sending", revision: 2, session_incarnation: "inc-1",
+      created_at: 1, updated_at: 2, request_id: "claimed-attempt", edit_hold: null, error_code: null, receipt: null,
+    }] });
+    await h.client.sync(h.target);
+    await h.showReplies();
+    assert.equal(h.container.querySelector('[role="status"]')?.textContent, "Sending");
+    assertNoElement(h.container, "button", "a claimed reply has no Retry");
+  } finally { await h.close(); }
+});
+
 test("an unknown server delivery remains visible with no retry or provider replay", async () => {
   const h = await fixture(new IDBFactory(), false);
   try {
@@ -321,7 +339,9 @@ test("an unknown server delivery remains visible with no retry or provider repla
     }] });
     await h.client.sync(h.target); await h.showReplies();
     assert.ok(h.container.textContent?.includes("uncertain server delivery"));
-    assertNoElement(h.container, '[role="menuitem"], .history-outgoing-status');
+    assert.equal(h.container.querySelector('[role="status"]')?.textContent, "Unknown outcome");
+    assertNoElement(h.container, '[role="menuitem"]');
+    assert.ok(![...h.container.querySelectorAll("button")].some(button => button.textContent === "Retry"));
     await act(async () => { await h.client.sync(h.target); await h.client.sync(h.target); });
     assert.deepEqual(h.requests.filter(method => method !== "GET"), []);
     assert.equal(h.client.state(h.target).snapshot.items[0]?.request_id, requestId);
@@ -416,6 +436,8 @@ for (const provider of ["codex", "claude"] as const) test(`a submitted ${provide
     await h.showReplies({ ...session, agent: provider, provider_resume: { provider, session_id: "fixture-thread" } });
     assert.equal(h.client.state(h.target).snapshot.items[0]?.state, "submitted");
     assert.ok(h.container.textContent?.includes("already in the transcript"), "the server receipt must not erase the only visible copy before history arrives");
+    assert.equal(h.container.querySelector('[role="status"]')?.textContent, "Handed to the agent");
+    assert.ok(![...h.container.querySelectorAll("button")].some(button => button.textContent === "Retry"));
     await h.showReplies({ ...session, agent: provider, provider_resume: { provider, session_id: "fixture-thread" } }, [
       { id: "first-user-turn", role: "user", text: "already in the transcript", timestamp: new Date(3).toISOString() },
     ]);
@@ -542,7 +564,7 @@ for (const [name, scenario] of Object.entries(contract)) test(`shared reply cont
       await scenario.run(h, shown); await h.showReplies(shown);
       seen[provider] = {
         bubbles: [...h.container.querySelectorAll(".history-outgoing-text")].map(node => node.textContent),
-        notes: [...h.container.querySelectorAll(".history-outgoing-note, .history-outgoing-status")].map(node => node.textContent),
+        notes: [...h.container.querySelectorAll(".history-outgoing-note")].map(node => node.textContent),
         controls: h.container.querySelectorAll('button, textarea, [role="menu"]').length,
         submissions: h.admissions.length, edits: h.patches.length,
       };
@@ -600,7 +622,8 @@ test("a replaced shared cookie cannot move a retained intention into another acc
 });
 
 for (const [code, expected] of [
-  ["composer-unobservable", /^Console cannot read the terminal input, so this reply was not sent\. Check the terminal, then Retry\.$/],
+  ["composer-unobservable", "Can't read the agent's input box. Check the terminal."],
+  ["agent-blocked", "The agent is waiting for permission or an answer."],
 ] as const) test(`a shared refusal coded ${code} states why it was not sent`, async () => {
   const h = await fixture(new IDBFactory(), false);
   try {
@@ -616,7 +639,8 @@ for (const [code, expected] of [
     await h.showReplies();
     const refused = h.container.querySelector('[data-status="refused"]');
     assert.ok(refused);
-    assert.match(refused.querySelector('[role="alert"]')?.textContent ?? "", expected);
+    assert.equal(refused.querySelector('[role="status"]')?.textContent, "Refused");
+    assert.equal(refused.querySelector('[role="alert"]')?.textContent, expected);
     assert.ok(refused.textContent?.includes("Discard") && refused.textContent.includes("Retry"));
   } finally { await h.close(); }
 });
@@ -636,8 +660,7 @@ test("a shared composer draft refusal explains safe recovery without automatic r
     await h.showReplies();
     const refused = h.container.querySelector('[data-status="refused"]');
     assert.ok(refused);
-    assert.match(refused.querySelector('[role="alert"]')?.textContent ?? "", /Terminal has a draft/);
-    assert.match(refused.querySelector('[role="alert"]')?.textContent ?? "", /Clear it in the terminal, then Retry/);
+    assert.equal(refused.querySelector('[role="alert"]')?.textContent, "Terminal has a draft. Clear it in the terminal, then Retry.");
     assert.match(refused.textContent ?? "", /preserved reply/);
     await act(async () => h.client.sync(h.target));
     assert.equal(h.admissions.length, 0, "a refusal never automatically resubmits the text");
@@ -646,9 +669,10 @@ test("a shared composer draft refusal explains safe recovery without automatic r
 });
 
 for (const [code, expected] of [
-  ["busy", 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'],
-  ["auth-quarantined", "This session is under authentication quarantine, so this reply was not sent. Re-verify the account, then Retry."],
-  ["some-other-refusal", "Not sent (code: some-other-refusal). Retry when the session is idle."],
+  ["busy", "Slash commands need an idle session. Retry when the agent is idle."],
+  ["auth-quarantined", "Session is under authentication quarantine. Re-verify the account, then Retry."],
+  ["outbox-authorization-changed", "Your access to send this reply changed."],
+  ["some-other-refusal", "The reply could not be sent."],
 ] as const) test(`a shared reply refused as ${code} shows its own text and keeps Retry and Discard`, async () => {
   const h = await fixture(new IDBFactory(), false);
   try {
@@ -1116,7 +1140,7 @@ test("shared multi-row composer refusal names recovery", async () => {
         outcome: "refused", code: "composer-unobservable", observation: "region-not-single-row" },
     }] });
     await h.client.sync(h.target); await h.showReplies();
-    assert.equal(h.container.querySelector('[role="alert"]')?.textContent, "The terminal input holds a multi-row draft, so this reply was not sent. Send or clear it in the terminal, then Retry.");
+    assert.equal(h.container.querySelector('[role="alert"]')?.textContent, "Terminal has a multi-line draft. Send or clear it in the terminal, then Retry.");
   } finally { await h.close(); }
 });
 

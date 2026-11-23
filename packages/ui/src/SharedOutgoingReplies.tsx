@@ -1,8 +1,47 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { refusalReason } from "./conversationOutbox.ts";
+import type { SharedOutboxItem, SharedOutboxState } from "@agent-console/shared/shared-outbox";
+import { AUTH_QUARANTINED_CODE } from "./authQuarantine.ts";
 import { OutgoingBubble } from "./OutgoingBubble.tsx";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import type { HistoryMessage, Session } from "./types.ts";
+
+const deliveryLabel = {
+  queued: "Sending",
+  sending: "Sending",
+  submitted: "Handed to the agent",
+  refused: "Refused",
+  unknown: "Unknown outcome",
+  command_dispatched: null,
+  cancelled: null,
+} satisfies Record<SharedOutboxState, string | null>;
+
+function refusalReason(item: SharedOutboxItem): string {
+  switch (item.error_code ?? item.receipt?.code) {
+    case "composer-not-empty":
+      return "Terminal has a draft. Clear it in the terminal, then Retry.";
+    case "composer-unobservable":
+      return item.receipt?.observation === "region-not-single-row"
+        ? "Terminal has a multi-line draft. Send or clear it in the terminal, then Retry."
+        : "Can't read the agent's input box. Check the terminal.";
+    case "agent-blocked":
+      return "The agent is waiting for permission or an answer.";
+    case "busy":
+      return "Slash commands need an idle session. Retry when the agent is idle.";
+    case AUTH_QUARANTINED_CODE:
+      return "Session is under authentication quarantine. Re-verify the account, then Retry.";
+    case "outbox-authorization-changed":
+      return "Your access to send this reply changed.";
+    case "outbox-provider-changed":
+      return "The session's current provider does not support replies.";
+    case "keyed-prompt-unsupported":
+    case "structured-prompt-unsupported":
+      return "This session does not support reply delivery.";
+    case "request-id-conflict":
+      return "This delivery attempt conflicts with another reply.";
+    default:
+      return "The reply could not be sent.";
+  }
+}
 
 /** Local echoes are immutable once sent. Provider receipts stay internal. */
 export function SharedOutgoingReplies({ session, messages = [] }: {
@@ -19,7 +58,7 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
   const visibleRows = rows.map(row => {
     const current = row.target.incarnation === session.session_incarnation;
     const proven = current ? client.submittedProof(row, messages) : {};
-    return { ...row, admissions: row.admissions.filter(item => !Object.hasOwn(proven, item.id)), items: client.outgoingItems(row).filter(item => item.state !== "cancelled" && item.state !== "command_dispatched" && !client.isDismissed(row, item)
+    return { ...row, current, admissions: row.admissions.filter(item => !Object.hasOwn(proven, item.id)), items: client.outgoingItems(row).filter(item => item.state !== "cancelled" && item.state !== "command_dispatched" && !client.isDismissed(row, item)
       && (item.state !== "submitted" || current)
       // Transcript proof outranks an unsent or uncertain row, so no Retry can duplicate it (#181).
       && !Object.hasOwn(proven, item.id)) };
@@ -59,27 +98,32 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
     </div>)}
     {visibleRows.map(row => <div key={row.key}>
       {client.error(row.target) ? <p role="alert" className="history-outgoing-note">{client.error(row.target)}</p> : null}
-      {row.admissions.map(item => <article key={item.id} className="history-message is-user history-outgoing-reply">
-        <div className="history-outgoing-body"><OutgoingBubble text={item.text} uploadSessionId={session.id} attachments={row.attachments?.[item.id]} /></div>
+      {row.admissions.map(item => <article key={item.id} className="history-message is-user history-outgoing-reply" data-status="uploading">
+        <div className="history-outgoing-body">
+          <OutgoingBubble text={item.text} uploadSessionId={session.id} attachments={row.attachments?.[item.id]} />
+          {row.current ? <p role="status" className="history-outgoing-status">Uploading</p> : null}
+        </div>
       </article>)}
-      {row.items.map(item =>
-        <article key={item.id} className="history-message is-user history-outgoing-reply" data-status={item.state}>
+      {row.items.map(item => {
+        // Earlier held replies need their existing pause note instead of an in-flight label.
+        const label = item.state === "queued" && (item.edit_hold || !row.current) ? null : deliveryLabel[item.state];
+        return <article key={item.id} className="history-message is-user history-outgoing-reply" data-status={item.state}>
           <div className="history-outgoing-body">
             <OutgoingBubble uploadSessionId={session.id} text={item.text} attachments={row.attachments?.[item.id]} onDismiss={client.canDismiss(row, item) ? () => { void client.dismiss(row.target, item.id).catch(() => {}); } : undefined} />
+            {label ? <p role="status" className="history-outgoing-status">{label}</p> : null}
             {item.state === "refused" ? <>
-              <p role="alert" className="history-outgoing-note">{item.error_code === "busy"
-                ? 'Not sent: messages that start with "/" are sent as commands and need the session to be idle. Retry when it is idle.'
-                : refusalReason(item.error_code ?? "unknown", item.receipt?.observation)}</p>
+              <p role="alert" className="history-outgoing-note">{refusalReason(item)}</p>
               <div className="history-outgoing-actions">
                 <button type="button" className="btn ghost" onClick={() => void client.actOnRefused(session, row.target, item, "discard_refused")}>Discard</button>
-                {row.target.incarnation === session.session_incarnation
+                {row.current
                   ? <button type="button" className="btn ghost" onClick={() => void client.actOnRefused(session, row.target, item, "retry_refused")}>Retry</button> : null}
               </div>
             </> : null}
             {item.edit_hold ? <p role="alert" className="history-outgoing-note">This older message was paused before the update and has not been sent.</p> : null}
-            {row.target.incarnation !== session.session_incarnation ? <p role="alert" className="history-outgoing-note">This message belongs to the previous session.</p> : null}
+            {!row.current ? <p role="alert" className="history-outgoing-note">This message belongs to the previous session.</p> : null}
           </div>
-        </article>)}
+        </article>;
+      })}
     </div>)}
   </section>;
 }

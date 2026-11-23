@@ -1208,14 +1208,28 @@ button.history-outgoing-bubble {
   overflow-wrap: anywhere;
 }
 
-.history-outgoing-note {
-  color: var(--err);
-}
-
-.history-outgoing-note {
+.history-outgoing-note,
+.history-outgoing-status {
   margin: 4px 0 0;
   font-size: var(--text-xs);
   text-align: right;
+}
+
+.history-outgoing-status {
+  color: var(--conversation-meta);
+}
+
+[data-status="submitted"] .history-outgoing-status {
+  color: var(--ok);
+}
+
+[data-status="unknown"] .history-outgoing-status {
+  color: var(--warn);
+}
+
+.history-outgoing-note,
+[data-status="refused"] .history-outgoing-status {
+  color: var(--err);
 }
 
 /* Refused replies stay actionable at narrow conversation widths. */
