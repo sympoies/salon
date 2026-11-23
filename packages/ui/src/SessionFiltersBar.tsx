@@ -213,26 +213,26 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
           <summary>Workspace <span>{draftWorkspaces == null ? `All workspaces (${count({ workspaces: null, excludedWorkspaces: null })})` : `${draftWorkspaces.length} of ${workspaceChoices.length}`}</span></summary>
           <div className="session-filter-facet-body"><button type="button" className="btn ghost session-filter-facet-all" disabled={draftWorkspaces == null} onClick={() => update({ workspaces: null, excludedWorkspaces: null })}>All workspaces</button>
             <fieldset className="session-filter-options"><legend className="sr-only">Workspace</legend>{workspaceChoices.map(workspace => <label className="session-filter-choice" key={workspace ?? "unassigned"}>
-              <input type="checkbox" value={workspace ?? ""} checked={draftWorkspaces?.includes(workspace) ?? false} onChange={() => update({ workspaces: toggleFacetSelection(draftWorkspaces, workspaceChoices, workspace), excludedWorkspaces: null })} />{nameWorkspace(workspace)} ({count({ workspaces: [workspace], excludedWorkspaces: null })})</label>)}</fieldset>
+              <input type="checkbox" className="control-checkbox" value={workspace ?? ""} checked={draftWorkspaces?.includes(workspace) ?? false} onChange={() => update({ workspaces: toggleFacetSelection(draftWorkspaces, workspaceChoices, workspace), excludedWorkspaces: null })} />{nameWorkspace(workspace)} ({count({ workspaces: [workspace], excludedWorkspaces: null })})</label>)}</fieldset>
           </div>
         </details>
           <details open className="session-filter-multi-select" data-filter-dimension="hosts">
             <summary>Hosts <span>{draft.hosts === null ? `All hosts (${count({ hosts: null })})` : `${machines.filter(machine => draft.hosts!.includes(machine)).length} of ${machines.length}`}</span></summary>
             <div className="session-filter-facet-body"><button type="button" className="btn ghost session-filter-facet-all" disabled={draft.hosts === null} onClick={() => update({ hosts: null })}>All hosts</button>
             <fieldset className="session-filter-options"><legend className="sr-only">Hosts</legend>{machines.map(machine => <label className="session-filter-choice session-filter-host" key={machine}>
-          <input type="checkbox" value={machine} checked={draft.hosts?.includes(machine) ?? false} onChange={() => update({ hosts: toggleFacetSelection(draft.hosts, machines, machine) })} />{machine} ({count({ hosts: [machine] })})</label>)}</fieldset></div>
+          <input type="checkbox" className="control-checkbox" value={machine} checked={draft.hosts?.includes(machine) ?? false} onChange={() => update({ hosts: toggleFacetSelection(draft.hosts, machines, machine) })} />{machine} ({count({ hosts: [machine] })})</label>)}</fieldset></div>
           </details>
           {roles !== undefined ? <details open className="session-filter-multi-select" data-filter-dimension="roles">
             <summary>Roles <span>{draft.roles == null || roleChoices.every(role => draft.roles!.includes(role)) ? `All roles (${count({ roles: null })})` : `${roleChoices.filter(role => draft.roles!.includes(role)).length} of ${roleChoices.length}`}</span></summary>
             <div className="session-filter-facet-body"><button type="button" className="btn ghost session-filter-facet-all" disabled={draft.roles == null} onClick={() => update({ roles: null })}>All roles</button>
             <fieldset className="session-filter-options"><legend className="sr-only">Roles</legend>{roleChoices.map(role => <label className="session-filter-choice" key={role ?? "no-role"}>
-              <input type="checkbox" value={role ?? ""} checked={draft.roles?.includes(role) ?? false} onChange={() => update({ roles: toggleFacetSelection(draft.roles ?? null, roleChoices, role) })} />{role ?? "No role"} ({count({ roles: [role] })})</label>)}</fieldset></div>
+              <input type="checkbox" className="control-checkbox" value={role ?? ""} checked={draft.roles?.includes(role) ?? false} onChange={() => update({ roles: toggleFacetSelection(draft.roles ?? null, roleChoices, role) })} />{role ?? "No role"} ({count({ roles: [role] })})</label>)}</fieldset></div>
           </details> : null}
           <details open className="session-filter-multi-select" data-filter-dimension="harnesses">
             <summary>Harness <span>{draft.harnesses === null ? `All harnesses (${count({ harnesses: null })})` : `${harnessIds.filter(id => draft.harnesses!.includes(id)).length} of ${harnessIds.length}`}</span></summary>
             <div className="session-filter-facet-body"><button type="button" className="btn ghost session-filter-facet-all" disabled={draft.harnesses === null} onClick={() => update({ harnesses: null })}>All harnesses</button>
             <fieldset className="session-filter-options"><legend className="sr-only">Harness</legend>{harnesses.map(harness => <label className="session-filter-choice" key={harness.id}>
-          <input type="checkbox" value={harness.id} checked={draft.harnesses?.includes(harness.id) ?? false} onChange={() => update({ harnesses: toggleFacetSelection(draft.harnesses, harnessIds, harness.id) })} />{harness.label} ({count({ harnesses: [harness.id] })})</label>)}</fieldset></div>
+          <input type="checkbox" className="control-checkbox" value={harness.id} checked={draft.harnesses?.includes(harness.id) ?? false} onChange={() => update({ harnesses: toggleFacetSelection(draft.harnesses, harnessIds, harness.id) })} />{harness.label} ({count({ harnesses: [harness.id] })})</label>)}</fieldset></div>
           </details>
         <label><span>Repository</span><input type="search" aria-label="Repository" autoCorrect="off" autoCapitalize="none" spellCheck={false} placeholder="Exact repository name" value={draft.repo} onChange={event => update({ repo: event.currentTarget.value })} /></label>
 
