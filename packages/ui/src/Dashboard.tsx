@@ -1923,6 +1923,12 @@ export function Dashboard({
       // Keep the modal above every terminal until auto-resume and the staged
       // prompt have reached a terminal outcome, so user input cannot overtake
       // the initial prompt while the new session appears through polling.
+      const refusalMessage = initializationResult.prompt.status === "failed"
+        && initializationResult.prompt.code === "structured-prompt-unavailable"
+        ? initializationResult.prompt.error
+        : undefined;
+      // Keep the recovery visible when a focused session would cover the overview.
+      if (refusalMessage) leaveFocusedSession();
       setShowCreate(false);
       const recoverablePrompt = recoverableCreatedPrompt(prompt, initializationResult);
       if (recoverablePrompt) {
@@ -1932,10 +1938,6 @@ export function Dashboard({
           : "session" in initializationResult.autoResume
             ? initializationResult.autoResume.session
             : r.id ? { machine, id: r.id } : null;
-        const refusalMessage = initializationResult.prompt.status === "failed"
-          && initializationResult.prompt.code === "structured-prompt-unavailable"
-          ? initializationResult.prompt.error
-          : undefined;
         nextCreatePromptRecoveryKeyRef.current += 1;
         setUnsubmittedCreatePrompts((current) => [...current, {
           key: nextCreatePromptRecoveryKeyRef.current,
@@ -2000,7 +2002,7 @@ export function Dashboard({
       const titleCreatedSession = resolveCreateTitleSession(r.session, reconciledCreatedSession);
       if (reconciledCreatedSession) {
         placeCreatedSession(targetSlot, sessionKey(reconciledCreatedSession), applied);
-        openByPhonePreferenceRef.current(reconciledCreatedSession, false);
+        if (!refusalMessage) openByPhonePreferenceRef.current(reconciledCreatedSession, false);
       } else if (r.id) {
         void refresh();
       }
