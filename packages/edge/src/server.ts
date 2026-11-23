@@ -90,7 +90,8 @@ import {
 import { DebugEventBuffer, isDebugRoute, requestIdFromHeader } from "./debugEvents.ts";
 import { matchApiRoute, routeParam } from "./apiRoutes.ts";
 import { createEdgeExtensionRegistry, type EdgeExtension, type EdgeOutboxError, type EdgeRouteMethod } from "./extensions.ts";
-import { createExtensionOutbox } from "./extensionOutbox.ts";
+import { createExtensionConversation } from "./extensionConversation.ts";
+import { createExtensionOutbox, type ExtensionOutboxOptions } from "./extensionOutbox.ts";
 import { createCsrfExempt, forbidCrossOrigin, sameOrigin, sameOriginOrNativeApp } from "./csrf.ts";
 import { MachinePreferenceInitializedError, MachinePreferencesStore, applyMachinePreferences, validPreferenceReason } from "./machinePreferences.ts";
 import {
@@ -1069,7 +1070,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         || (write && (method === "GET" || !csrfExempt(req)))) return { status: 403, code: "forbidden" };
       return undefined;
     };
-    const outbox = createExtensionOutbox({
+    const outboxOptions: ExtensionOutboxOptions = {
       store: outboxStore, principalId: principal.id, extensionId: route.key.split(":")[0]!,
       grant: { routeKey: route.key, permission: route.permission },
       authorizeRequest,
@@ -1084,6 +1085,20 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           deviceId: devicePrincipals.get(principal)?.id ?? null };
       },
       dispatch: () => { void outboxDispatcher?.tick(); },
+    };
+    const outbox = createExtensionOutbox(outboxOptions);
+    const conversation = createExtensionConversation({
+      ...outboxOptions,
+      canReadHistory(machineName, historyId, provider, providerSessionId) {
+        if (!config.multiUser || isRootPrincipal(principal)) return true;
+        const grant = accessStore?.historyGrant(machineName, historyId);
+        // For an unlisted history, require the same provider claim that
+        // authorizes its discovery. The facade never creates a history grant.
+        return grant
+          ? grant.provider === provider && grant.providerSessionId === providerSessionId
+            && canReadHistory(principal, machineName, historyId)
+          : historyClaimant(principal, machineName, provider, providerSessionId) !== undefined;
+      },
     });
     try {
       await route.handle({
@@ -1095,6 +1110,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         principal: { id: principal.id, permissions: Object.freeze([...principal.permissions]) },
         requestId,
         outbox,
+        conversation,
         sendJson: (status, body) => sendJson(res, status, body),
         assertAuthorized,
         readJsonBody: async (limitBytes) => {
@@ -1680,6 +1696,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             last_prompt: true,
             last_message: true,
             history: true,
+            extension_first_reply: Boolean(outboxStore && !config.openAccess && !_principal.managedCredential),
             archive: true,
             session_retitle_v2: true,
             session_retitle_v3: true,

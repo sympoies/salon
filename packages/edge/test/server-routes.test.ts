@@ -1020,6 +1020,7 @@ test("API route matrix exercises read-route success paths", async () => {
     last_prompt: true,
     last_message: true,
     history: true,
+    extension_first_reply: false,
     archive: true,
     session_retitle_v2: true,
     session_retitle_v3: true,

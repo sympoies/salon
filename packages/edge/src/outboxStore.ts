@@ -99,6 +99,8 @@ export class OutboxStore {
         scope TEXT NOT NULL, intent_id TEXT NOT NULL, admission_hash TEXT NOT NULL, admission TEXT NOT NULL,
         retired_item TEXT, PRIMARY KEY(principal_id,extension_id,channel,input_id), UNIQUE(scope,intent_id)
       ) STRICT;
+      CREATE INDEX IF NOT EXISTS outbox_extension_inputs_intent
+        ON outbox_extension_inputs(principal_id,extension_id,intent_id);
       CREATE TABLE IF NOT EXISTS outbox_lifecycle (
         machine TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY(machine,session_id)
       ) STRICT;
@@ -202,12 +204,26 @@ export class OutboxStore {
     return cancelled ? JSON.parse(cancelled.value) as SharedOutboxItem : undefined;
   }
   extensionInput(input: ExtensionOutboxKey): ExtensionOutboxEntry | undefined {
+    return this.#extensionInput("principal_id=? AND extension_id=? AND channel=? AND input_id=?",
+      input.principalId, input.extensionId, input.channel, input.inputId);
+  }
+
+  /** Resolve only the admission owned by this principal and extension. */
+  extensionInputForDelivery(principalId: string, extensionId: string,
+    selector: { outboxIntentId: string } | { receiptRequestId: string }): ExtensionOutboxEntry | undefined {
+    return "outboxIntentId" in selector
+      ? this.#extensionInput("principal_id=? AND extension_id=? AND extension.intent_id=?",
+        principalId, extensionId, selector.outboxIntentId)
+      : this.#extensionInput(`principal_id=? AND extension_id=? AND (extension.scope,extension.intent_id)=
+        (SELECT scope,intent_id FROM outbox_attempts WHERE request_id=?)`,
+        principalId, extensionId, selector.receiptRequestId);
+  }
+
+  #extensionInput(where: string, ...parameters: string[]): ExtensionOutboxEntry | undefined {
     const row = this.#db.prepare(`SELECT admission, extension.admission_hash, COALESCE(json_remove(items.value,'$.text','$.edit_hold'),retired_item) AS item
       FROM outbox_extension_inputs AS extension LEFT JOIN outbox_items AS items
         ON items.scope=extension.scope AND items.id=extension.intent_id
-      WHERE principal_id=? AND extension_id=? AND channel=? AND input_id=?`)
-      .get(input.principalId, input.extensionId, input.channel, input.inputId) as
-      { admission: string; admission_hash: string; item: string } | undefined;
+      WHERE ${where}`).get(...parameters) as { admission: string; admission_hash: string; item: string } | undefined;
     if (!row) return undefined;
     return { ...JSON.parse(row.admission) as ExtensionOutboxInput,
       admissionHash: row.admission_hash, item: JSON.parse(row.item) as ExtensionOutboxEntry["item"] };
