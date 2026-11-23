@@ -1,10 +1,11 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { execFile, spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Writable } from "node:stream";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { chmod, mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 import { TomlDocument } from "@decimalturn/toml-patch";
 
 let daemon: ChildProcessByStdio<Writable, null, null> | undefined;
@@ -92,6 +93,12 @@ try {
     "AGENT_HOME", "AGENT_SESSION_STATE_DIR", "TMPDIR"]) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
   }
+  try {
+    await promisify(execFile)("agent-session", ["activity", "setup", "--agent", "claude", "--apply"], { env });
+  } catch {
+    console.warn("Claude activity hook setup failed. Run agent-session activity setup --agent claude --dry-run in the container to diagnose.");
+  }
+
   // Start a separate process session so Linux tmux identity checks do not
   // see the daemon inheriting process session 1 from the container init.
   daemon = spawn("agent-session", ["serve", "--bind", "127.0.0.1:8781",
@@ -120,7 +127,10 @@ try {
   const { startWorkspaceEdge } = await import("../apps/workspace/src/server.ts");
   process.off("SIGTERM", startupSignal);
   process.off("SIGINT", startupSignal);
-  edge = startWorkspaceEdge({ daemonToken, clientToken, onShutdown: async () => { stopping = true; await stopDaemon(); } });
+  edge = startWorkspaceEdge({
+    daemonToken, clientToken, accessDbPath: join(state, "access.sqlite"),
+    onShutdown: async () => { stopping = true; await stopDaemon(); },
+  });
   edge.once("error", () => void shutdown(1));
   edge.once("close", () => { if (!stopping) void shutdown(1); });
 } catch {

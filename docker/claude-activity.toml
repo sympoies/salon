@@ -1,0 +1,68 @@
+schema_version = "agent-hook.policy.v1"
+bundle_id = "salon-claude-activity"
+version = "1"
+
+# Record activity without enforcing host workflow rules.
+[[rules]]
+id = "claude.turn"
+products = ["claude"]
+events = ["UserPromptSubmit", "Stop", "StopFailure"]
+priority = 10
+failure_posture = "warn"
+timeout_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "claude.session-start"
+products = ["claude"]
+events = ["SessionStart"]
+matcher = "startup|resume|clear"
+priority = 10
+failure_posture = "warn"
+timeout_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "claude.notification"
+products = ["claude"]
+events = ["Notification"]
+matcher = "agent_needs_input|idle_prompt"
+priority = 10
+failure_posture = "warn"
+timeout_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "claude.permission"
+products = ["claude"]
+events = ["PermissionRequest"]
+priority = 10
+failure_posture = "warn"
+timeout_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "claude.tool-start"
+products = ["claude"]
+events = ["PreToolUse"]
+matcher = "AskUserQuestion|Bash|Write|Edit|NotebookEdit|MultiEdit"
+priority = 10
+failure_posture = "warn"
+timeout_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }
+
+[[rules]]
+id = "claude.question-end"
+products = ["claude"]
+events = ["PostToolUse", "PostToolUseFailure"]
+matcher = "AskUserQuestion"
+priority = 10
+failure_posture = "warn"
+timeout_posture = "warn"
+override_class = "downgrade-only"
+capability = { id = "agent-session.activity.v1", reason_code = "agent-activity" }

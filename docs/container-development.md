@@ -93,15 +93,13 @@ docker compose exec -T workspace sh -c 'umask 077; cat > "$CLAUDE_CONFIG_DIR/api
   < /path/to/private/claude-api-key
 ```
 
-If you already have a user `settings.json` in `claude-state`, add the `apiKeyHelper`
-entry below to that file. For a new setup, create the file with this command:
+Add the `apiKeyHelper` entry below to `$CLAUDE_CONFIG_DIR/settings.json` in
+`claude-state`. Keep the activity hooks and any other entries already in the file.
 
-```bash
-docker compose exec -T workspace sh -c 'umask 077; set -C; cat > "$CLAUDE_CONFIG_DIR/settings.json"' <<'JSON'
+```json
 {
   "apiKeyHelper": "cat /home/node/.claude/api-key"
 }
-JSON
 ```
 
 To remove API-key access, close active Claude sessions, remove the
@@ -167,6 +165,25 @@ if you recreate that volume.
 For a newly mounted directory, add `--workdir` with its absolute container path
 before `workspace` in the command and confirm trust there.
 
+### Claude activity hooks
+
+At startup, Salon runs `agent-session activity setup --agent claude --apply`.
+The pinned CLI adds hook handlers to `$CLAUDE_CONFIG_DIR/settings.json` in
+`claude-state`, preserves unrelated settings and hooks, and skips rewriting a
+file that already has the managed handlers. The hooks report activity as Claude
+Code runs. Provider sign-in and workspace trust still require the steps above.
+
+The image supplies a digest-pinned policy for Claude activity only. Finish-line
+checks require a systemd user manager, cgroup v2 and user namespaces on the host.
+
+If startup logs a hook setup warning, preview the problem from the running
+container. The setup command refuses unsafe settings files and requires review
+before replacing legacy or drifted hook entries.
+
+```bash
+docker compose exec workspace agent-session activity setup --agent claude --dry-run
+```
+
 ## Create and reconnect
 
 In the browser, open **New**, choose Codex or Claude, and create a session. The
@@ -190,7 +207,10 @@ docker compose stop
 docker compose up -d
 ```
 
-Named volumes preserve workspace files, provider login/history and daemon records.
+Named volumes preserve workspace files, provider login and history, and daemon records.
+The edge database at `$XDG_STATE_HOME/salon/access.sqlite` inside the container
+preserves Salon browser sessions and the Conversation shared reply outbox in
+the `runtime-state` volume across restarts.
 Stopping the container ends live tmux processes. Durable session records and provider
 history survive; resuming a stopped session remains owned by agent-session.
 
@@ -202,8 +222,8 @@ volumes; removing volumes destroys this local state.
 
 Run the [project gate](../DEVELOPMENT.md#validation). It includes the actual workspace
 typecheck/build and `node --test docker/start.test.ts`. The startup tests cover readiness,
-token separation, durable browser credentials, Codex workspace trust, failure and shutdown
-with isolated process fixtures.
+token separation, durable browser credentials and sessions, Codex workspace trust,
+Claude hook setup, failure and shutdown with isolated process fixtures.
 
 On Linux, use the documented memory scope for build/test commands; give an isolated
 BuildKit builder the same six-GiB memory and zero-swap budget because the client scope
@@ -234,6 +254,19 @@ docker compose exec -T workspace node --test /opt/salon/docker/default-create.te
 The test checks the process listing Codex uses to register its app-server.
 It signs in to Salon and verifies that the default session reaches the Codex sign-in prompt.
 
+### Check Claude hooks and shared replies
+
+Run this check in a fresh, disposable Compose workspace.
+
+```bash
+docker compose exec -T workspace node --test /opt/salon/docker/container-smoke.test.ts
+```
+
+The check runs `agent-hook`, verifies that startup configured the Claude hooks,
+and sends a shared outbox request to the real edge for a synthetic session. It
+requires no provider credentials. The release workflow runs it against the
+published image digest alongside the Compose smoke.
+
 ### Complete scheduled provider acceptance
 
 A fixture response, headless UI run or successful daemon inventory request cannot
@@ -245,7 +278,8 @@ source archive or release is published by this developer flow.
 
 ### Installed runtime and licenses
 
-The pinned CLI runtime is agent-session 1.42.1 and Codex 0.162.1. The image keeps the
+The pinned CLI runtime includes agent-session and agent-hook from nils-cli
+1.42.1, along with Codex 0.162.1. The image keeps the
 released nils-cli license/notices under `/opt/nils` and the Codex license/notice under
-`/usr/local/share/licenses/codex`. Only the agent-session binary is installed from
-nils-cli; no private runtime or hooks are copied from the host.
+`/usr/local/share/licenses/codex`. The two nils-cli binaries come from the same
+digest-checked release archive.
