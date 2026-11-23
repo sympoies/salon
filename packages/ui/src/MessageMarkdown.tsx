@@ -62,6 +62,9 @@ function safeProps(tag: string, props: Record<string, unknown> | null): Record<s
     if (props[name] !== undefined) safe[name] = props[name];
   }
   if (safe.className !== undefined && typeof safe.className !== "string") delete safe.className;
+  if (tag === "input" && safe.type === "checkbox") {
+    safe.className = safe.className ? `control-checkbox ${safe.className}` : "control-checkbox";
+  }
   if (safe.style !== undefined) {
     const align = (safe.style as { textAlign?: unknown } | null)?.textAlign;
     if (typeof align === "string" && TABLE_ALIGNMENTS.has(align)) safe.style = { textAlign: align };

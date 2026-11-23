@@ -497,16 +497,18 @@
   color: var(--conversation-meta);
 }
 
-/* The disclosure marker is a drawn triangle, not a text glyph, so it looks the
-   same on every platform font. It follows the native `open` state. */
+/* Draw the marker from the disclosure's themed text color and open state. */
+.session-filter-multi-select > summary,
 .mailbox-event-disclosure > summary {
   list-style: none;
 }
 
+.session-filter-multi-select > summary::-webkit-details-marker,
 .mailbox-event-disclosure > summary::-webkit-details-marker {
   display: none;
 }
 
+.session-filter-multi-select > summary::before,
 .mailbox-event-disclosure > summary::before {
   content: "";
   flex: none;
@@ -516,6 +518,7 @@
   border-color: transparent transparent transparent currentColor;
 }
 
+.session-filter-multi-select[open] > summary::before,
 .mailbox-event-disclosure[open] > summary::before {
   border-width: 0.45em 0.3em 0 0.3em;
   border-color: currentColor transparent transparent transparent;
@@ -1990,9 +1993,50 @@ select,
   gap: var(--space-xs);
   text-align: left;
 }
-select option {
-  background: var(--panel-2);
-  color: var(--fg);
+@supports (appearance: base-select) {
+  select.app-select,
+  select.app-select::picker(select) {
+    appearance: base-select;
+  }
+  select.app-select::picker-icon {
+    display: none;
+  }
+  select.app-select::picker(select) {
+    background: var(--surface-floating);
+    color: var(--fg);
+    border: var(--control-border-width) solid var(--border-default);
+    border-radius: var(--control-radius);
+    box-shadow: var(--elev-3);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(var(--edge-rgb), 0.5) transparent;
+  }
+  select.app-select option {
+    padding: var(--space-sm) var(--space-md);
+    min-height: var(--form-field-height);
+  }
+  select.app-select option:where(:checked, :hover, :focus-visible):not(:disabled) {
+    background: var(--state-selected);
+  }
+  select.app-select option:focus-visible {
+    outline: var(--control-focus-ring-width) solid var(--accent);
+    outline-offset: calc(-1 * var(--control-focus-ring-width));
+  }
+}
+.control-checkbox {
+  accent-color: var(--accent);
+}
+.control-checkbox:focus-visible,
+.settings-color-input:focus-visible,
+.session-filter-multi-select > summary:focus-visible {
+  outline: var(--control-focus-ring-width) solid var(--accent);
+  outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  .control-checkbox:focus-visible,
+  .settings-color-input:focus-visible,
+  .session-filter-multi-select > summary:focus-visible {
+    outline-color: Highlight;
+  }
 }
 textarea {
   min-height: 4.5rem;
@@ -2142,9 +2186,16 @@ textarea {
   height: 1.65rem;
   padding: 0;
   border: var(--control-border-width) solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--panel);
+  border-radius: var(--control-radius);
+  background: var(--surface-inset);
   cursor: pointer;
+}
+.settings-color-input:hover {
+  border-color: var(--accent);
+}
+.settings-color-input::-moz-color-swatch {
+  border: 0;
+  border-radius: var(--r-xs);
 }
 .settings-color-input::-webkit-color-swatch-wrapper {
   padding: 2px;
@@ -2272,9 +2323,7 @@ textarea {
   align-items: center;
   flex-wrap: wrap;
 }
-/* Machine filter — keep the platform-native menu while presenting its trigger
-   as a first-class member of the header toolbar. The wrapper owns the themed
-   shell and focus ring; the select remains the full-size interactive target. */
+/* The wrapper owns the themed shell and focus ring around the full-size trigger. */
 .machine-filter {
   position: relative;
   display: inline-grid;
@@ -2319,7 +2368,7 @@ textarea {
   white-space: nowrap;
   cursor: pointer;
 }
-/* The Android themed menu replaces the select in the same slot: same box, icon clearance and no second chevron. */
+/* Both trigger variants share the same slot, icon clearance and chevron. */
 .machine-filter > .select-menu.machine-filter-select { grid-column: 1 / -1; grid-row: 1; z-index: 1; width: 100%; min-width: 9rem; max-width: 11rem; }
 .machine-filter .select-menu-trigger { min-height: 36px; border: 0; border-radius: inherit; padding: 0 var(--space-md) 0 var(--space-2xl); background: transparent; box-shadow: none; font-size: var(--text-md); font-weight: var(--weight-medium); }
 .machine-filter-select:focus-visible {
@@ -2332,10 +2381,6 @@ textarea {
     outline-offset: 2px;
     box-shadow: none;
   }
-}
-.machine-filter-select option {
-  background: var(--panel-2);
-  color: var(--fg);
 }
 .machine-filter-icon,
 .machine-filter-chevron {
@@ -2759,6 +2804,7 @@ textarea {
 .debug-filters {
   padding: 0 12px 12px;
 }
+.debug-toolbar .select-menu,
 .debug-toolbar select {
   width: auto;
   min-width: 0;
@@ -5641,7 +5687,7 @@ textarea {
   border-color: var(--dialog-option-hover-border);
 }
 .close-session-delete-option:has(input:focus-visible) {
-  outline: 2px solid var(--focus);
+  outline: var(--control-focus-ring-width) solid var(--dialog-focus);
   outline-offset: 2px;
 }
 .close-session-delete-option.is-selected {
@@ -5687,7 +5733,7 @@ textarea {
   border-color: var(--dialog-option-hover-border);
 }
 .close-session-star-option:has(input:focus-visible) {
-  outline: 2px solid var(--focus);
+  outline: var(--control-focus-ring-width) solid var(--dialog-focus);
   outline-offset: 2px;
 }
 .close-session-star-option.is-selected {
@@ -6939,16 +6985,21 @@ textarea {
   flex-direction: column;
   gap: var(--space-xs);
 }
+.speech-modal .select-menu-trigger,
 .speech-modal select,
 .speech-modal textarea {
   width: 100%;
   box-sizing: border-box;
   color: var(--fg);
-  background: var(--surface-control);
+  background-color: var(--surface-control);
   border: 1px solid var(--border-default);
   border-radius: var(--r-md);
-  padding: var(--space-sm);
+  padding-block: var(--space-sm);
+  padding-inline-start: var(--space-sm);
   font: inherit;
+}
+.speech-modal textarea {
+  padding-inline-end: var(--space-sm);
 }
 .speech-modal textarea {
   resize: vertical;
@@ -7396,8 +7447,8 @@ textarea {
 .session-filter-panel-fields select, .session-filter-panel-fields input[type="search"] { box-sizing: border-box; min-height: var(--control-compact-height); min-width: 0; width: 100%; padding: var(--space-xs) var(--space-sm); font-size: var(--text-sm); }
 .session-filter-panel-fields fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .session-filter-multi-select { min-width: 0; }
-.session-filter-multi-select > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); min-height: var(--control-compact-height); cursor: pointer; list-style-position: inside; }
-.session-filter-multi-select > summary span { color: var(--muted); white-space: nowrap; }
+.session-filter-multi-select > summary { display: flex; align-items: center; gap: var(--space-sm); min-height: var(--control-compact-height); cursor: pointer; }
+.session-filter-multi-select > summary span { margin-inline-start: auto; color: var(--muted); white-space: nowrap; }
 .session-filter-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 2px var(--space-sm); }
 .session-filter-choice { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; min-height: var(--control-compact-height); overflow-wrap: anywhere; }
 .session-filter-choice input { width: 20px; height: 20px; flex: none; }

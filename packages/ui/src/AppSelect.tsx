@@ -32,16 +32,19 @@ function optionsOf(children: ReactNode): SelectMenuOption[] {
 }
 
 /**
- * A native select everywhere except the Android app, whose native popup does
- * not follow the app theme: there it is the themed SelectMenu. Call sites keep
- * the native shape (`<option>` children, a change event with the new value).
+ * Use a browser-rendered picker when its popup can be styled. The Android app
+ * and browsers without that capability use the themed SelectMenu.
  */
-export function AppSelect({ children, value, onChange, disabled, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
-  if (!isAndroidTauri()) return <select value={value} onChange={onChange} disabled={disabled} {...rest}>{children}</select>;
+export function AppSelect({ children, value, onChange, disabled, className, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+  const canStylePicker = typeof window === "undefined" || window.CSS?.supports("appearance", "base-select");
+  if (canStylePicker && !isAndroidTauri()) {
+    return <select {...rest} className={className ? `app-select ${className}` : "app-select"}
+      value={value} onChange={onChange} disabled={disabled}>{children}</select>;
+  }
   const choose = (next: string) => {
     const target = { value: next };
     onChange?.({ target, currentTarget: target } as unknown as ChangeEvent<HTMLSelectElement>);
   };
   return <SelectMenu ariaLabel={rest["aria-label"] ?? ""} value={String(value ?? "")} options={optionsOf(children)}
-    disabled={disabled} className={rest.className} onChange={choose} />;
+    disabled={disabled} className={className} onChange={choose} />;
 }
