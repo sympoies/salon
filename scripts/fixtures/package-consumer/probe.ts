@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startEdge } from "@agent-console/edge/start";
-import type { EdgeExtension, EdgeOutboxInput, EdgeOutboxResult } from "@agent-console/edge/extensions";
+import type { EdgeExtension, EdgeFirstReplyResult, EdgeOutboxInput, EdgeOutboxResult } from "@agent-console/edge/extensions";
 import { normalizeOrder, projectPublicAgentSession } from "@agent-console/shared/api";
 import { normalizeConversationImages, type ConversationImage } from "@agent-console/shared/conversation-images";
 import { normalizeRefusedOutboxAction, type RefusedOutboxAction } from "@agent-console/shared/shared-outbox";
@@ -53,6 +53,15 @@ const extension: EdgeExtension = {
   routes: [
     { id: "ping", pattern: "/api/ext/fixture/ping", methods: ["GET"], permission: "debug",
       handle: context => context.sendJson(200, { fixture: true }) },
+    { id: "reply", pattern: "/api/ext/fixture/reply/:intent", methods: ["GET"], permission: "debug",
+      async handle(context) {
+        const result: EdgeFirstReplyResult = await context.conversation.firstReplyAfter({
+          target: { ...outboxInput.target, sessionCreatedAt: "2026-01-01T00:00:00Z" },
+          outboxIntentId: context.params.intent!,
+        });
+        context.sendJson(200, result);
+      },
+    },
     { id: "input", pattern: "/api/ext/fixture/input", methods: ["PUT", "GET"], permission: "debug",
       async handle(context) {
         const result: EdgeOutboxResult<200 | 201> = context.method === "PUT"
@@ -266,6 +275,9 @@ try {
   const read = await fetch(inputUrl, { headers });
   assert.equal(read.status, 200);
   assert.deepEqual(await read.json(), { ok: true, status: 200, record: admission.record });
+  const reply = await fetch(`${base}/api/ext/fixture/reply/${admission.record.outboxIntentId}`, { headers });
+  assert.equal(reply.status, 200);
+  assert.deepEqual(await reply.json(), { status: "unavailable", reason: "receipt_not_submitted" });
   const imageUrl = `${base}/api/history/sessions/fixture/history/images/${image.id}`;
   assert.equal((await fetch(imageUrl)).status, 401);
   assert.equal(imageCredentials.length, 0, "unauthenticated image reads never contact upstream");

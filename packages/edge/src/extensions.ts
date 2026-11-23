@@ -75,6 +75,41 @@ export interface EdgeOutbox {
   get(key: EdgeOutboxInputKey): Promise<EdgeOutboxResult<200>>;
 }
 
+export interface EdgeConversationTarget extends EdgeOutboxTarget {
+  /** The exact created_at value advertised by the session list. */
+  readonly sessionCreatedAt: string;
+}
+
+export type EdgeFirstReplyQuery = { readonly target: EdgeConversationTarget } & (
+  | { readonly outboxIntentId: string; readonly receiptRequestId?: never }
+  | { readonly receiptRequestId: string; readonly outboxIntentId?: never }
+);
+
+export const EDGE_FIRST_REPLY_MAX_TEXT_BYTES = 16 * 1024;
+
+export interface EdgeAssistantReply {
+  readonly event_id: string;
+  /** Unix milliseconds verified to increase in the observed assistant history. */
+  readonly order: number;
+  readonly text: string;
+  readonly created_at: string;
+}
+
+export type EdgeFirstReplyResult =
+  | { readonly status: "found"; readonly reply: EdgeAssistantReply }
+  | { readonly status: "none_yet" | "wrong_incarnation" | "invalid_request" | "unauthenticated" | "forbidden" }
+  | {
+    readonly status: "unavailable";
+    readonly reason: "durability_unavailable" | "receipt_missing" | "receipt_not_submitted"
+      | "session_unavailable" | "provider_order_unavailable" | "history_unavailable"
+      | "history_order_unavailable" | "receipt_not_in_history";
+  };
+
+export interface EdgeConversation {
+  /** Read the first assistant text message after this extension's submitted input. */
+  firstReplyAfter(query: EdgeFirstReplyQuery): Promise<EdgeFirstReplyResult>;
+}
+
 export interface EdgeRouteContext {
   readonly req: IncomingMessage;
   readonly res: ServerResponse;
@@ -84,6 +119,7 @@ export interface EdgeRouteContext {
   readonly principal: { readonly id: string; readonly permissions: readonly string[] };
   readonly requestId: string;
   readonly outbox: EdgeOutbox;
+  readonly conversation: EdgeConversation;
   sendJson(status: number, body: unknown): void;
   /** Recheck the captured credential immediately before a side effect after an asynchronous operation. */
   assertAuthorized(): void;

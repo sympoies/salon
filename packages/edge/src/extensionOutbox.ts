@@ -13,7 +13,7 @@ interface TargetAccess {
   readonly deviceId: string | null;
 }
 
-interface ExtensionOutboxOptions {
+export interface ExtensionOutboxOptions {
   readonly store: OutboxStore | null;
   readonly extensionId: string;
   readonly principalId: string;

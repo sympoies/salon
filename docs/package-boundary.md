@@ -110,3 +110,60 @@ provider submission.
 
 See [package consumption](package-consumption.md) for the local producer and isolated
 installed-package check.
+
+## First reply to an extension input
+
+Use `ctx.conversation.firstReplyAfter` to read one assistant text message after
+an input that the same extension delivered. Pass the session list's exact
+`created_at` and `session_incarnation` along with the machine and session ID.
+Use either the outbox record's `outboxIntentId` or its submitted receipt's
+`request_id` as `receiptRequestId`. The facade resolves both from the
+authenticated principal and extension's durable outbox.
+
+```ts
+const result = await ctx.conversation.firstReplyAfter({
+  target: { machine, sessionId, sessionCreatedAt, sessionIncarnation },
+  outboxIntentId: record.outboxIntentId,
+});
+if (result.status === "found") {
+  const { event_id, order, text, created_at } = result.reply;
+  // Use event_id to claim the reply before delivering text to the channel.
+}
+```
+
+Import `EdgeConversation`, `EdgeFirstReplyQuery`, `EdgeFirstReplyResult` and
+`EDGE_FIRST_REPLY_MAX_TEXT_BYTES` from `@agent-console/edge/extensions`.
+The session list advertises `data.capabilities.extension_first_reply` when
+authenticated requests can use the facade with a persistent outbox.
+Each read checks the current route, the original admission grant and access to
+the exact session and its history. Adapters apply their own channel grant
+before calling the facade.
+
+| Status | Meaning |
+| --- | --- |
+| `found` | The reply includes a provider-neutral event ID, numeric order, text and the history timestamp. Text is capped at 16 KiB of UTF-8. |
+| `none_yet` | The input is bound in the observed history and no later assistant text message appears in that window. |
+| `wrong_incarnation` | The submitted input, session identity or history binding conflicts with the requested incarnation. |
+| `unavailable` | The reason describes missing receipt, session, history or ordering evidence. A later poll can pick up newly available evidence. |
+| `invalid_request`, `unauthenticated`, `forbidden` | The query or its access checks failed. |
+
+Codex history places the submitted request on its user row via the daemon's
+`prompt_request` binding. The facade selects the first assistant text row
+after that anchor when the history fits in one bounded read of up to 100
+provider rows. Codex transcript byte offsets establish the sequence relative
+to the receipt.
+
+The public `order` is the assistant row's Unix timestamp in milliseconds,
+after verifying that those timestamps strictly increase in the window's
+assistant text sequence. Tied, reversed or missing assistant timestamps and
+a compaction boundary after the anchor return `unavailable`. Longer histories,
+incomplete reads and missing anchors also return `unavailable`.
+
+The event ID is derived from the target, history identity, assistant timestamp
+and full text. Moving an otherwise unchanged row to a different byte offset
+preserves both its event ID and its order. Compare positions for the exact
+target and use the event ID as an opaque claim key.
+
+Claude history exposes transcript order. The current daemon lacks an
+authoritative binding from its submitted prompt receipt to a user history row,
+so the facade returns `unavailable` with `provider_order_unavailable`.
