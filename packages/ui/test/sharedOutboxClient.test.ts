@@ -624,6 +624,7 @@ test("a replaced shared cookie cannot move a retained intention into another acc
 for (const [code, expected] of [
   ["composer-unobservable", "Can't read the agent's input box. Check the terminal."],
   ["agent-blocked", "The agent is waiting for permission or an answer."],
+  ["structured-prompt-unavailable", "Codex can't accept prompts from Salon right now. Use the terminal to send this prompt."],
 ] as const) test(`a shared refusal coded ${code} states why it was not sent`, async () => {
   const h = await fixture(new IDBFactory(), false);
   try {

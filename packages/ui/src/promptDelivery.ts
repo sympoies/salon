@@ -1,6 +1,9 @@
 import { useSyncExternalStore } from "react";
 import type { Session } from "./types.ts";
 
+export const STRUCTURED_PROMPT_UNAVAILABLE_MESSAGE =
+  "Codex can't accept prompts from Salon right now. Use the terminal to send this prompt.";
+
 export interface PromptDeliveryFailure {
   readonly at: string;
   readonly unknown: boolean;
