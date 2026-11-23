@@ -35,11 +35,16 @@ function optionsOf(children: ReactNode): SelectMenuOption[] {
  * Use a browser-rendered picker when its popup can be styled. The Android app
  * and browsers without that capability use the themed SelectMenu.
  */
-export function AppSelect({ children, value, onChange, disabled, className, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+export function AppSelect({ children, value, onChange, onKeyDown, disabled, className, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   const canStylePicker = typeof window === "undefined" || window.CSS?.supports("appearance", "base-select");
   if (canStylePicker && !isAndroidTauri()) {
     return <select {...rest} className={className ? `app-select ${className}` : "app-select"}
-      value={value} onChange={onChange} disabled={disabled}>{children}</select>;
+      value={value} onChange={onChange} disabled={disabled}
+      onKeyDown={event => {
+        onKeyDown?.(event);
+        // Keep the dialog open while the browser dismisses its own picker.
+        if (event.key === "Escape" && event.currentTarget.matches(":open")) event.stopPropagation();
+      }}>{children}</select>;
   }
   const choose = (next: string) => {
     const target = { value: next };
