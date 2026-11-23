@@ -11,7 +11,7 @@ for (const theme of ["dark", "paper"]) for (const [width, height, coarse] of cas
     try {
       const m = measureHeaderMarkup<{
         counts: { text: string; name: string; title: string; group: string }[];
-        windows: string[]; providers: number; resets: number; overlaps: string[]; clipped: string[]; overflow: number;
+        windows: string[]; providers: number; badges: number; resets: number; overlaps: string[]; clipped: string[]; overflow: number;
       }>(fixture.markup(width, coarse), width, `
         const header=document.querySelector('.workspace-head');
         const visible=e=>!!e&&e.getBoundingClientRect().width>0&&e.getBoundingClientRect().height>0;
@@ -26,6 +26,7 @@ for (const theme of ["dark", "paper"]) for (const [width, height, coarse] of cas
         const result={counts:[...header.querySelectorAll('.session-status-count')].map(b=>({text:[...b.querySelectorAll('span[aria-hidden="true"]')].filter(visible).map(e=>e.textContent).join(' ').trim(),name:b.getAttribute('aria-label'),title:b.title,group:b.dataset.statusGroup})),
           windows:percents.map(e=>e.closest('.hu-win').dataset.windowKey+':'+e.textContent),
           providers:[...usage.querySelectorAll('.hu-provider')].filter(visible).length,
+          badges:[...usage.querySelectorAll('.hu-provider > .agent-badge')].filter(visible).length,
           resets:[...usage.querySelectorAll('.hu-reset')].filter(e=>visible(e)&&visible(e.closest('.hu-provider'))).length,
           overlaps,clipped,overflow:document.documentElement.scrollWidth-innerWidth};
       `, false, height, coarse ? ["--blink-settings=primaryPointerType=2,availablePointerTypes=2"] : [], `document.documentElement.dataset.theme='${theme}';${noticeFixtureFontScript}`);
@@ -36,7 +37,9 @@ for (const theme of ["dark", "paper"]) for (const [width, height, coarse] of cas
         assert.match(c.name, new RegExp(`^${label}: \\d+ sessions$`));
         assert.equal(c.title, c.name);
       }
-      if (width < 760 || width === 1280 || coarse) assert.ok(m.windows.includes("5h:60%") && m.windows.includes("weekly:40%"), JSON.stringify(m));
+      assert.equal(m.badges, m.providers, "each visible entry identifies its provider");
+      if (width < 760) assert.deepEqual(m.windows, ["weekly:40%"], "the tight header shows the lowest remaining window");
+      else if (width === 1280 || coarse) assert.ok(m.windows.includes("5h:60%") && m.windows.includes("weekly:40%"), JSON.stringify(m));
       if (width === 1280) assert.ok(m.providers > 1 || m.resets > 0, "desktop uses available space for more detail");
       assert.deepEqual(m.overlaps, []);
       assert.deepEqual(m.clipped, []);

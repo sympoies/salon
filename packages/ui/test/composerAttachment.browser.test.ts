@@ -15,7 +15,7 @@ test("composer attachments preserve the delivered text and restore as chips", as
     import {ConversationComposer} from "/src/ConversationComposer.tsx";
     const saved={event:"stale_draft_stashed",draft_id:"draft-1",session_id:"session-1",saved_at:"2026-11-01T12:00:00Z",bytes:12,cleared:true};
     const session={id:"session-1",machine:"fixture",agent:"codex",status:"running",title:"Example",session_incarnation:"inc-1",stale_draft:saved};
-    window.calls=[]; window.confirm=()=>true; window.fetch=async()=>{throw Error("unexpected network")};
+    window.calls=[]; window.fetch=async()=>{throw Error("unexpected network")};
     const root=createRoot(document.querySelector("#root"));
     const wait=async(f)=>{const end=Date.now()+2000;while(!f()&&Date.now()<end)await new Promise(r=>setTimeout(r,10));};
     const button=label=>document.querySelector('[aria-label="'+label+'"]');
@@ -37,7 +37,7 @@ test("composer attachments preserve the delivered text and restore as chips", as
       document.querySelector('footer').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:dropTransfer}));await wait(()=>button('Remove document.txt'));
       result.drop=!!button('Remove document.txt');result.size=document.querySelector('[aria-label="Attachment document.txt"]')?.textContent.includes('8 B');
       button('Remove image.png')?.click();button('Remove document.txt')?.click();
-      textButton('Saved drafts').click();await wait(()=>document.querySelector('[aria-label="Saved drafts"] button'));document.querySelector('[aria-label="Saved drafts"] button').click();await wait(()=>textButton('Restore'));textButton('Restore').click();await new Promise(r=>setTimeout(r,100));result.restored=!!button('Remove saved.txt')&&!!button('Remove second.txt')&&!button('Remove preserved.txt');result.restoreText=document.querySelector('textarea').value;
+      textButton('Saved drafts').click();await wait(()=>document.querySelector('[aria-label="Saved drafts"] button'));document.querySelector('[aria-label="Saved drafts"] button').click();await wait(()=>textButton('Restore'));textButton('Restore').click();await wait(()=>textButton('Replace'));textButton('Replace').click();await wait(()=>button('Remove saved.txt'));result.restored=!!button('Remove saved.txt')&&!!button('Remove second.txt')&&!button('Remove preserved.txt');result.restoreText=document.querySelector('textarea').value;
       parent.document.querySelector('#result').textContent=JSON.stringify(result);
     }catch(e){parent.document.querySelector('#result').textContent=JSON.stringify({error:String(e)});}})();
   `;

@@ -339,7 +339,7 @@ test("custom link provider rejects activation while the terminal owns mouse trac
   assert.equal(opens, 0);
 });
 
-test("custom link provider discloses a wrapped implicit target before opening it", () => {
+test("custom link provider discloses a wrapped implicit target before opening it", async () => {
   // The tapped row shows only the head of the URL; the rest lives on a
   // continuation row that can sit below the viewport. Disclose what will
   // actually open, not what the tapped row happens to show.
@@ -348,7 +348,7 @@ test("custom link provider discloses a wrapped implicit target before opening it
     fakeBufferLine("long/path next", true),
   ];
   const joined = "https://example.test/verylong/path";
-  const activateWith = (accept: boolean) => {
+  const activateWith = async (accept: boolean) => {
     const opened: string[] = [];
     const disclosed: string[] = [];
     const provider = createTerminalLinkProvider(
@@ -359,7 +359,7 @@ test("custom link provider discloses a wrapped implicit target before opening it
           return true;
         },
         requiresConfirmation: () => true,
-        confirmUrl: (url) => {
+        confirmUrl: async (url) => {
           disclosed.push(url);
           return accept;
         },
@@ -370,19 +370,21 @@ test("custom link provider discloses a wrapped implicit target before opening it
       link = links?.[0];
     });
     link?.activate({ button: 0 } as MouseEvent, link.text);
+    assert.deepEqual(opened, [], "opening waits for an answer");
+    await Promise.resolve();
     return { opened, disclosed };
   };
 
-  const declined = activateWith(false);
+  const declined = await activateWith(false);
   assert.deepEqual(declined.disclosed, [joined]);
   assert.deepEqual(declined.opened, []);
 
-  const accepted = activateWith(true);
+  const accepted = await activateWith(true);
   assert.deepEqual(accepted.disclosed, [joined]);
   assert.deepEqual(accepted.opened, [joined]);
 });
 
-test("custom link provider reports an implicit activation even when the target is declined", () => {
+test("custom link provider reports an implicit activation even when the target is declined", async () => {
   // The touch caller uses this to decide the tap was consumed. Without it a
   // declined implicit link falls through to the untargeted text-scan fallback,
   // which would open the URL the user just refused.
@@ -398,7 +400,7 @@ test("custom link provider reports an implicit activation even when the target i
       },
       onActivationAttempt: () => attempts.push("attempt"),
       requiresConfirmation: () => true,
-      confirmUrl: () => false,
+      confirmUrl: async () => false,
     },
   );
   let link: NonNullable<Parameters<Parameters<typeof provider.provideLinks>[1]>[0]>[number] | undefined;
@@ -407,6 +409,7 @@ test("custom link provider reports an implicit activation even when the target i
   });
   link?.activate({ button: 0 } as MouseEvent, link.text);
   assert.deepEqual(attempts, ["attempt"]);
+  await Promise.resolve();
   assert.deepEqual(opened, []);
 
   // A rejected activation is not an attempt: the pane owns the mouse.
@@ -422,7 +425,7 @@ test("custom link provider reports an implicit activation even when the target i
   assert.deepEqual(attempts, ["attempt"]);
 });
 
-test("custom link provider withholds an implicit target when confirmation is unavailable", () => {
+test("custom link provider withholds an implicit target when confirmation is unavailable", async () => {
   const lines = [fakeBufferLine("https://example.test/path", false)];
   const opened: string[] = [];
   const provider = createTerminalLinkProvider(
@@ -440,6 +443,7 @@ test("custom link provider withholds an implicit target when confirmation is una
     link = links?.[0];
   });
   link?.activate({ button: 0 } as MouseEvent, link.text);
+  await Promise.resolve();
   assert.deepEqual(opened, []);
 });
 
@@ -454,7 +458,7 @@ test("custom link provider opens implicit links unprompted when no confirmation 
         opened.push(url);
         return true;
       },
-      confirmUrl: () => {
+      confirmUrl: async () => {
         confirmCalls += 1;
         return true;
       },
@@ -599,7 +603,7 @@ test("implicit and OSC 8 links share a safe opener and inspectable hover target"
       return true;
     },
     requiresConfirmation: () => true,
-    confirmUrl: (url) => {
+    confirmUrl: async (url) => {
       confirmed.push(url);
       return confirmed.length > 1;
     },
@@ -668,7 +672,7 @@ test("OSC 8 confirm dialog and open receive the identical untrimmed target", asy
       return true;
     },
     requiresConfirmation: () => true,
-    confirmUrl: (url) => {
+    confirmUrl: async (url) => {
       confirmed.push(url);
       return true;
     },

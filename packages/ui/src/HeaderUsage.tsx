@@ -126,14 +126,15 @@ function headerResetWidth(window: UsageWindow, updatedAt: number | null): string
  * percentage and time to reset. The top-bar chip and the focused session
  * header's account quota share it so both read the same.
  */
-export function UsageWindowChip({ window: w, now, resetWidth }: {
+export function UsageWindowChip({ window: w, now, resetWidth, mostConstrained }: {
   readonly window: UsageWindow;
   readonly now: number;
   readonly resetWidth?: string;
+  readonly mostConstrained?: boolean;
 }) {
   const remaining = remainingUsagePercent(w.used_percent);
   return (
-    <span className="hu-win" data-window-key={w.key}
+    <span className="hu-win" data-window-key={w.key} data-most-constrained={mostConstrained || undefined}
       style={resetWidth === undefined ? undefined : { "--hu-reset-width": resetWidth } as CSSProperties}>
       <span className="hu-win-label" title={windowTitle(w)}>
         {w.key === "5h" ? (
@@ -177,12 +178,22 @@ export function HeaderUsageReadout({
       {shown.map((p) => {
         const presentation = providerUsagePresentation(p, now);
         const compactWindows = compactUsageWindows(p);
+        // Keep the first displayed window in a tie and prefer known percentages.
+        const mostConstrained = compactWindows.reduce<UsageWindow | undefined>((lowest, window) => {
+          if (!lowest) return window;
+          const remaining = remainingUsagePercent(window.used_percent) ?? Infinity;
+          const lowestRemaining = remainingUsagePercent(lowest.used_percent) ?? Infinity;
+          return remaining < lowestRemaining ? window : lowest;
+        }, undefined);
         return (
           <span className="hu-provider" data-provider={p.provider} key={`${p.provider}:${p.account ?? ""}`}>
             <AgentBadge agent={p.provider} />
             <span className="hu-name">{headerUsageName(p)}</span>
             {presentation.kind === "windows" ? (
-              compactWindows.map((w) => <UsageWindowChip window={w} now={now} resetWidth={headerResetWidth(w, p.updated_at)} key={w.key} />)
+              compactWindows.map((w) => (
+                <UsageWindowChip window={w} now={now} resetWidth={headerResetWidth(w, p.updated_at)}
+                  mostConstrained={w === mostConstrained} key={w.key} />
+              ))
             ) : (
               <span className={`hu-state ${presentation.warn ? "warn" : ""}`}>{presentation.compactStatus}</span>
             )}
