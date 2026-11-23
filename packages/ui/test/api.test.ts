@@ -3957,7 +3957,7 @@ test("history HTTP decoding retains bounded optional assistant tool parts and te
   assert.equal(response.messages[3]?.tool_parts, undefined);
 });
 
-test("createSession exposes a startup refusal while preserving the unknown-outcome guard", async () => {
+test("createSession exposes a typed startup refusal as a definite failure", async () => {
   setFetchMock(async () => jsonResponse({ ok: false, error: {
     code: "start-failed", message: "session creation failed",
     details: { reason: "startup-trust-required", message: "Review folder trust for /work/example before retrying." },
@@ -3966,7 +3966,7 @@ test("createSession exposes a startup refusal while preserving the unknown-outco
   assert.equal(result.ok, false);
   assert.equal(result.errorCode, "start-failed");
   assert.equal(result.error, "start-failed / startup-trust-required: Review folder trust for /work/example before retrying.");
-  assert.equal(result.outcomeUnknown, true);
+  assert.equal(result.outcomeUnknown, undefined);
   assert.equal(result.runtimeRefusal, result.error);
 });
 
