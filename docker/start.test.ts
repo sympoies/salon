@@ -78,9 +78,9 @@ export function startWorkspaceEdge({ daemonToken, clientToken, onShutdown }) {
     AGENT_CONSOLE_TOKEN: "fixture-inherited-browser-credential",
     AGENT_CONSOLE_MACHINES: "fixture-inherited-upstream-credential",
   };
-  function start() {
+  function start(cwd = workspace) {
     const child = spawn(process.execPath, [join(root, "docker/start.ts")], {
-      cwd: workspace, env, stdio: ["ignore", "pipe", "pipe"],
+      cwd, env, stdio: ["ignore", "pipe", "pipe"],
     });
     let output = "";
     child.stdout.on("data", chunk => { output += chunk; });
@@ -187,4 +187,15 @@ test("preserves an explicit Codex workspace trust decision", { timeout: 8000 }, 
 
   await waitFile(join(f.root, "edge.json"), f.start());
   assert.equal(await readFile(config, "utf8"), initial);
+});
+
+test("limits automatic Codex trust to the default workspace when startup uses another directory", { timeout: 8000 }, async t => {
+  const f = await fixture(t);
+  const otherDirectory = join(f.home, "Project/extra");
+  await mkdir(otherDirectory);
+
+  await waitFile(join(f.root, "edge.json"), f.start(otherDirectory));
+  const { projects } = parse(await readFile(join(f.codexHome, "config.toml"), "utf8"));
+  assert.deepEqual(Object.keys(projects), [f.workspace]);
+  assert.equal(projects[f.workspace].trust_level, "trusted");
 });

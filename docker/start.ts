@@ -80,8 +80,9 @@ try {
   if (!clientToken) throw new Error("Empty browser credential");
   const daemonToken = randomBytes(32).toString("hex");
 
-  // Compose starts here, and agent-session inherits this default working directory.
-  await initializeCodexTrust(process.env.CODEX_HOME!, process.cwd());
+  // Keep automatic trust confined to the workspace volume's default mount.
+  const workspace = join(process.env.HOME!, "Project/workspace");
+  await initializeCodexTrust(process.env.CODEX_HOME!, workspace);
 
   // Only runtime paths and terminal settings enter provider ancestry. Neither
   // operator credential is exported to the daemon, tmux or provider children.
