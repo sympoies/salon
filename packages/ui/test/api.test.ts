@@ -3301,6 +3301,7 @@ test("submitSessionPrompt explains a definite control-unavailable refusal", asyn
     expected_session_incarnation: "launch-s1",
   }), {
     ok: false,
+    code: "structured-prompt-unavailable",
     error: "Codex can't accept prompts from Salon right now. Use the terminal to send this prompt.",
   });
 });

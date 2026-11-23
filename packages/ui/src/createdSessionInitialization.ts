@@ -37,7 +37,12 @@ export type CreatedPromptSubmitResult =
     }
   | { readonly status: "submitted"; readonly session: CreatedSessionTarget }
   | { readonly status: "unknown"; readonly session: CreatedSessionTarget; readonly error: string }
-  | { readonly status: "failed"; readonly session: CreatedSessionTarget; readonly error: string };
+  | {
+      readonly status: "failed";
+      readonly session: CreatedSessionTarget;
+      readonly error: string;
+      readonly code?: string;
+    };
 
 export interface CreatedSessionInitializationResult {
   readonly autoResume: AutoResumeInitializationResult;
@@ -181,7 +186,12 @@ async function submitCreatedPrompt(
         error: "Initial prompt submission outcome is unknown; check the created session before submitting the retained prompt manually.",
       };
     }
-    return { status: "failed", session: target, error: result.error ?? "initial prompt submit failed" };
+    return {
+      status: "failed",
+      session: target,
+      error: result.error ?? "initial prompt submit failed",
+      ...(result.code ? { code: result.code } : {}),
+    };
   }
   return { status: "submitted", session: target };
 }
