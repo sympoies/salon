@@ -118,12 +118,9 @@ export class SharedOutboxClient {
     return row.snapshot.items.filter(item => localIntentIds.includes(item.id)
       || (unattributedIntentIds.includes(item.id) && item.state !== "submitted"));
   }
-  /**
-   * A reply handed to the session, or that may have been, can have its echo
-   * dismissed here. Queued, sending and refused replies have other outcomes.
-   */
+  /** Allow local dismissal when the reply's delivery outcome is unknown. */
   canDismiss(row: SharedClientTarget, item: SharedOutboxItem): boolean {
-    return (item.state === "submitted" || item.state === "unknown") && !row.dismissedIds?.includes(item.id);
+    return item.state === "unknown" && !row.dismissedIds?.includes(item.id);
   }
   isDismissed(row: SharedClientTarget, item: SharedOutboxItem): boolean { return Boolean(row.dismissedIds?.includes(item.id)); }
   /** Hide this device's echo of a reply. Never sends, cancels or edits the server row. */

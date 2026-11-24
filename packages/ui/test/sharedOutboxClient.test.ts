@@ -10,7 +10,7 @@ import type { HistoryMessage } from "../src/types.ts";
 import { makeSession } from "./support/fixtures.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 import { assertNoElement } from "./support/domAssert.ts";
-import { openReplyMenu, replyMenuItem } from "./support/replyMenu.ts";
+import { longPressReply, openReplyMenu, replyBubble, replyMenuItem } from "./support/replyMenu.ts";
 
 const session = makeSession({ machine: "fixture", id: "shared-reply", agent: "codex", session_incarnation: "inc-1",
   provider_resume: { provider: "codex", session_id: "fixture-thread" },
@@ -433,26 +433,31 @@ for (const provider of ["codex", "claude"] as const) test(`a submitted ${provide
       receipt: { request_id: requestId, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null },
     }] });
     await h.client.sync(h.target);
-    await h.showReplies({ ...session, agent: provider, provider_resume: { provider, session_id: "fixture-thread" } });
+    const active = provider === "codex"
+      ? { ...session, provider_resume: undefined }
+      : { ...session, provider_resume: { provider, session_id: "fixture-thread" } };
+    await h.showReplies(active);
     assert.equal(h.client.state(h.target).snapshot.items[0]?.state, "submitted");
     assert.ok(h.container.textContent?.includes("already in the transcript"), "the server receipt must not erase the only visible copy before history arrives");
-    assert.equal(h.container.querySelector('[role="status"]')?.textContent, "Handed to the agent");
+    assert.equal(h.container.querySelector('[role="status"]')?.textContent, provider === "claude"
+      ? "Queued for Claude; read after the current step."
+      : "Sent into the current turn.");
     assert.ok(![...h.container.querySelectorAll("button")].some(button => button.textContent === "Retry"));
-    await h.showReplies({ ...session, agent: provider, provider_resume: { provider, session_id: "fixture-thread" } }, [
+    await h.showReplies(active, [
       { id: "first-user-turn", role: "user", text: "already in the transcript", timestamp: new Date(3).toISOString() },
     ]);
     assert.ok(!h.container.textContent?.includes("already in the transcript"), "the transcript takes over the bubble once it proves this reply");
     const laterWindow: HistoryMessage[] = Array.from({ length: 50 }, (_, index) => ({
       id: `later-${index}`, role: "assistant", text: `Later progress ${index}`, timestamp: new Date(10 + index).toISOString(),
     }));
-    await h.showReplies({ ...session, agent: provider }, laterWindow);
+    await h.showReplies(active, laterWindow);
     assert.ok(!h.container.textContent?.includes("already in the transcript"), "a later history page must not resurrect the settled reply");
     await h.close();
     h = await fixture(factory, false);
     h.online(false);
     await h.client.ready;
     assert.equal(h.client.state(h.target).snapshot.items[0]?.id, id, "the retained server row still exists after client remount");
-    await h.showReplies({ ...session, agent: provider }, []);
+    await h.showReplies(active, []);
     assert.ok(!h.container.textContent?.includes("already in the transcript"), "remount with unloaded history must preserve the handover");
   } finally { await h.close(); }
 });
@@ -999,7 +1004,7 @@ test("#110 a mid-turn reply's transcript turn stamped before its admission clear
   } finally { await h.close(); }
 });
 
-test("#110 a pending bubble is dismissed from its context menu, only locally, and stays dismissed", async () => {
+test("only an unknown shared reply can be dismissed locally", async () => {
   const factory = new IDBFactory();
   let h = await fixture(factory, false);
   try {
@@ -1014,16 +1019,26 @@ test("#110 a pending bubble is dismissed from its context menu, only locally, an
     await openReplyMenu(h.container, "refused reply"); assert.equal(replyMenuItem(), undefined, "a refused reply keeps Discard and Retry");
     await openReplyMenu(h.container, "queued reply"); assert.equal(replyMenuItem(), undefined, "an unsent reply is not dismissible");
     await openReplyMenu(h.container, "stuck submitted reply");
-    await act(async () => replyMenuItem()!.click()); await h.settle();
+    assert.equal(Boolean(replyMenuItem()), false, "right-click does not open a submitted reply menu");
+    await openReplyMenu(h.container, "stuck submitted reply", "keyboard");
+    assert.equal(Boolean(replyMenuItem()), false, "the menu key does not open a submitted reply menu");
+    await longPressReply(h.container, "stuck submitted reply", 550);
+    assert.equal(Boolean(replyMenuItem()), false, "a long press does not open a submitted reply menu");
+    assert.equal(replyBubble(h.container, "stuck submitted reply").tabIndex, -1, "the bubble is not a menu trigger");
+    await act(async () => {
+      assert.equal(await h.client.dismiss(h.target, stuck), false, "the client rejects dismissal of a submitted reply");
+    });
     await openReplyMenu(h.container, "stuck uncertain reply");
+    assert.equal(replyMenuItem()?.textContent, "Dismiss reply");
     await act(async () => replyMenuItem()!.click()); await h.settle();
-    assert.ok(!h.container.textContent?.includes("stuck submitted reply") && !h.container.textContent?.includes("stuck uncertain reply"));
+    assert.ok(h.container.textContent?.includes("stuck submitted reply") && !h.container.textContent?.includes("stuck uncertain reply"));
     assert.ok(h.container.textContent?.includes("refused reply") && h.container.textContent?.includes("queued reply"));
     assert.equal(mutations(), before, "dismissing sends, cancels and edits nothing on the server");
     assert.equal(h.snapshot().items.length, 4, "the server rows are untouched");
     await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
     await h.showReplies(session, []);
-    assert.ok(!h.container.textContent?.includes("stuck submitted reply"), "the dismissal survives a restart");
+    assert.ok(!h.container.textContent?.includes("stuck uncertain reply"), "the dismissal survives a restart");
+    assert.ok(h.container.textContent?.includes("stuck submitted reply"), "a submitted reply still awaits transcript proof after restart");
     assert.ok(h.container.textContent?.includes("queued reply"));
   } finally { await h.close(); }
 });
@@ -1088,8 +1103,8 @@ for (const removal of ["dismiss", "evict"] as const) test(`local attachment meta
     await h.showReplies(); assert.ok(h.container.querySelector(".outgoing-attachment-preview"));
     const snapshot = h.snapshot();
     if (removal === "dismiss") {
-      h.server({ ...snapshot, revision: snapshot.revision + 1, items: snapshot.items.map(item => ({ ...item, state: "submitted", request_id: item.id,
-        receipt: { request_id: item.id, session_id: session.id, session_incarnation: "inc-1", outcome: "submitted", code: null } })) });
+      h.server({ ...snapshot, revision: snapshot.revision + 1,
+        items: snapshot.items.map(item => sharedItem(item.id, item.text, "unknown", item.created_at)) });
       await act(async () => { await h.client.sync(h.target); await h.client.sync(h.target); await h.client.dismiss(h.target, id); });
     } else {
       h.server({ ...snapshot, revision: snapshot.revision + 1, items: [] });

@@ -131,10 +131,12 @@ The choice is saved on this device; text and attachments remain visible.
 ## Track outgoing replies and attachments
 
 Shared reply bubbles show **Uploading** while the reply is stored on this device
-and **Sending** once the workspace accepts it. **Handed to the agent** means the
-runtime accepted the reply, including when the provider queued it. If Salon shows
-**Refused**, check the reason and use **Retry** after resolving it. **Unknown
-outcome** means Salon could not confirm delivery.
+and **Sending** once the workspace accepts it. After handoff, Salon shows
+**Queued for Claude; read after the current step.** for Claude and
+**Sent into the current turn.** for Codex. If Salon cannot identify the provider, it shows
+**Handed to the agent**. If Salon shows **Refused**, check the reason and use
+**Retry** after resolving it. **Unknown outcome** means Salon could not confirm
+delivery. Use **Dismiss reply** to hide that bubble on this device.
 
 When a session is replaced or removed, Salon automatically clears its
 unconfirmed outgoing replies across clients once the server confirms the
