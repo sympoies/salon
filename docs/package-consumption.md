@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.101 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.102 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -195,7 +195,20 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.101`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.102`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.102
+
+Once Salon hands a reply to the agent, the reply bubble shows the provider's
+delivery status (#660, closes #659). Claude shows **Queued for Claude; read after the current step.**
+Codex shows **Sent into the current turn.** Other providers show **Handed to the agent**.
+
+**Dismiss reply** is available only for **Unknown outcome**. Refused replies
+still offer **Discard** and **Retry**. The [README](../README.md#track-outgoing-replies-and-attachments)
+describes the updated reply statuses.
+
+SDK consumers can keep their existing configuration. The container runtime
+remains pinned to nils-cli v1.42.6.
 
 ### Changes retained in SDK 0.1.101
 
