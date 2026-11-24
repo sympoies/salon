@@ -6,16 +6,6 @@ import { STRUCTURED_PROMPT_UNAVAILABLE_MESSAGE } from "./promptDelivery.ts";
 import { useSharedOutbox, usesSharedOutbox } from "./sharedOutboxClient.ts";
 import type { HistoryMessage, Session } from "./types.ts";
 
-const deliveryLabel = {
-  queued: "Sending",
-  sending: "Sending",
-  submitted: "Handed to the agent",
-  refused: "Refused",
-  unknown: "Unknown outcome",
-  command_dispatched: null,
-  cancelled: null,
-} satisfies Record<SharedOutboxState, string | null>;
-
 function refusalReason(item: SharedOutboxItem): string {
   switch (item.error_code ?? item.receipt?.code) {
     case "composer-not-empty":
@@ -51,6 +41,18 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
   readonly session: Session;
   readonly messages?: readonly HistoryMessage[];
 }) {
+  const provider = session.provider_resume?.provider ?? session.agent;
+  const deliveryLabel = {
+    queued: "Sending",
+    sending: "Sending",
+    submitted: provider === "claude" ? "Queued for Claude; read after the current step."
+      : provider === "codex" ? "Sent into the current turn."
+      : "Handed to the agent",
+    refused: "Refused",
+    unknown: "Unknown outcome",
+    command_dispatched: null,
+    cancelled: null,
+  } satisfies Record<SharedOutboxState, string | null>;
   const client = useSharedOutbox(session);
   const rows = client.targets(session);
   const retainedEdits = client.retainedEdits(session);
