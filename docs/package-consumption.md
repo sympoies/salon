@@ -208,8 +208,7 @@ text, and typed unavailability. Codex is supported. Claude returns
 The container adds a documented command to add or remove Claude's
 `apiKeyHelper` while preserving its activity hooks. The edge and UI explain
 `structured-prompt-unavailable` for a refused initial prompt or Conversation
-reply. API-key Codex sessions in the container still require the terminal to
-send prompts until the pinned runtime is updated (#653, #654).
+reply (#653, #654).
 
 You can upgrade with your existing SDK configuration.
 

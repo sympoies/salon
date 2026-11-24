@@ -64,11 +64,6 @@ docker compose exec -T workspace codex login --with-api-key < /path/to/private/c
 docker compose exec workspace codex login status
 ```
 
-With the pinned agent-session 1.42.1, managed prompt delivery is unavailable
-for Codex API-key sessions. Leave the initial prompt blank in the New session
-dialog and send prompts and replies in the terminal. [Issue #653][codex-prompt]
-tracks the runtime update.
-
 Codex saves the credential in `provider-state`. To sign out and clear the cached
 key, close active Codex sessions and run `docker compose exec workspace codex logout`.
 Remove any saved source copy when you retire the key.
@@ -138,7 +133,6 @@ accompanying README under `/usr/local/share/licenses/claude`. The binary is
 updated by rebuilding the image.
 
 [codex-auth]: https://developers.openai.com/codex/auth
-[codex-prompt]: https://github.com/sympoies/salon/issues/653
 [codex-config]: https://developers.openai.com/codex/config-reference/
 [claude-helper]: https://code.claude.com/docs/en/settings-reference#apikeyhelper
 [claude-auth]: https://code.claude.com/docs/en/authentication
@@ -264,6 +258,15 @@ docker compose exec -T workspace node --test /opt/salon/docker/default-create.te
 The test checks the process listing Codex uses to register its app-server.
 It signs in to Salon and verifies that the default session reaches the Codex sign-in prompt.
 
+### Check Codex API-key prompt delivery offline
+
+In a fresh disposable image started with `--network none`, run
+`node --test /opt/salon/docker/codex-api-key.test.ts` inside the container.
+The test uses synthetic auth and a loopback provider that returns HTTP 503.
+It checks the initial prompt and durable Conversation receipt through the real
+edge and daemon and confirms Codex reached the loopback endpoint. Real provider
+replies are covered by scheduled acceptance.
+
 ### Check Claude hooks and shared replies
 
 Run this check in a fresh, disposable Compose workspace.
@@ -289,7 +292,7 @@ source archive or release is published by this developer flow.
 ### Installed runtime and licenses
 
 The pinned CLI runtime includes agent-session and agent-hook from nils-cli
-1.42.1, along with Codex 0.162.1. The image keeps the
+1.42.6, along with Codex 0.162.1. The image keeps the
 released nils-cli license/notices under `/opt/nils` and the Codex license/notice under
 `/usr/local/share/licenses/codex`. The two nils-cli binaries come from the same
 digest-checked release archive.
