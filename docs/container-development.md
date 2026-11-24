@@ -260,8 +260,30 @@ It signs in to Salon and verifies that the default session reaches the Codex sig
 
 ### Check Codex API-key prompt delivery offline
 
-In a fresh disposable image started with `--network none`, run
-`node --test /opt/salon/docker/codex-api-key.test.ts` inside the container.
+Start a fresh disposable container from a locally built image. Replace
+`salon:local` with its tag. Keep the same private runtime directory as Compose
+so managed Codex can open its socket.
+
+```bash
+docker run --name salon-offline-test --rm --detach --init --network none --read-only \
+  --cap-drop ALL --security-opt no-new-privileges --memory 6g --memory-swap 6g \
+  --user 1000:1000 --tmpfs /tmp:mode=1777 --tmpfs /run/salon:uid=1000,gid=1000,mode=0700 \
+  --mount type=volume,destination=/home/node/Project/workspace \
+  --mount type=volume,destination=/home/node/.codex \
+  --mount type=volume,destination=/home/node/.claude \
+  --mount type=volume,destination=/home/node/.local/state \
+  --workdir /home/node/Project/workspace salon:local
+```
+
+Wait for the health check to return HTTP 200, then run the test. Stop the
+container when it finishes.
+
+```bash
+docker exec salon-offline-test curl -fsS http://127.0.0.1:3000/healthz
+docker exec salon-offline-test node --test /opt/salon/docker/codex-api-key.test.ts
+docker stop salon-offline-test
+```
+
 The test uses synthetic auth and a loopback provider that returns HTTP 503.
 It checks the initial prompt and durable Conversation receipt through the real
 edge and daemon and confirms Codex reached the loopback endpoint. Real provider
