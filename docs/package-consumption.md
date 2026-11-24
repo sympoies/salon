@@ -199,8 +199,8 @@ checked-in SDK version is `0.1.103`. The publisher creates a GitHub prerelease w
 
 ### Changes retained in SDK 0.1.103
 
-Every outgoing reply bubble offers **Copy text** in its menu (#663, closes
-#661). Open the menu with a long press, a right-click or the keyboard menu key.
+Every outgoing reply bubble menu offers **Copy text** (#663, closes #661).
+Open the menu with a long press, a right-click or the keyboard menu key.
 The action copies the reply as sent, with uploaded-file paths shortened to
 their file names. Salon briefly confirms a successful copy and shows a notice
 if the clipboard is unavailable or denies access.
