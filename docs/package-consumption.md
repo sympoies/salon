@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.100 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.101 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -195,7 +195,22 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.100`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.101`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.101
+
+The container updates its pinned nils-cli runtime from 1.42.1 to 1.42.6.
+Managed Codex control stays ready when Codex uses an API key. This restores
+the initial prompt and Conversation replies for API-key Codex sessions in
+the container (#653, #656).
+
+SDK consumers can keep their existing configuration. For standalone container
+launches, mount `/run/salon` owned by UID 1000 with mode `0700`, as shown in
+the [container test procedure](container-development.md#check-codex-api-key-prompt-delivery-offline).
+A wholly unreachable provider endpoint can still prevent thread attachment.
+[nils-cli #3995][codex-unreachable] records that case.
+
+[codex-unreachable]: https://github.com/sympoies/nils-cli/issues/3995
 
 ### Changes retained in SDK 0.1.100
 
