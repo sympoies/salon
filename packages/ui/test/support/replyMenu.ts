@@ -11,25 +11,40 @@ export function replyBubble(container: Element, text: string): HTMLElement {
   return bubble;
 }
 
-export function replyMenuItem(): HTMLButtonElement | undefined {
-  return document.querySelector<HTMLButtonElement>('[role="menu"] [role="menuitem"]') ?? undefined;
+export function replyMenuItems(): HTMLButtonElement[] {
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] [role="menuitem"]')];
+}
+
+export function replyMenuItem(label: string): HTMLButtonElement | undefined {
+  return replyMenuItems().find(item => item.textContent === label);
 }
 
 /** Right-click, or the keyboard's context-menu key on the focused bubble. */
 export async function openReplyMenu(container: Element, text: string, gesture: "contextmenu" | "keyboard" = "contextmenu") {
   const bubble = replyBubble(container, text), classes = eventClasses(bubble);
   await act(async () => {
+    if (gesture === "keyboard") bubble.focus();
     bubble.dispatchEvent(gesture === "contextmenu"
       ? new classes.MouseEvent!("contextmenu", { bubbles: true, cancelable: true, clientX: 24, clientY: 24 })
       : new classes.KeyboardEvent!("keydown", { bubbles: true, cancelable: true, key: "ContextMenu" }));
   });
 }
 
+export async function closeReplyMenu(container: Element) {
+  await act(async () => {
+    const event = new (eventClasses(container).KeyboardEvent!)("keydown", { bubbles: true, key: "Escape" });
+    (replyMenuItems()[0] ?? container).dispatchEvent(event);
+  });
+}
+
 /** A touch long press: a touch pointer held down for `holdMs` before release. */
-export async function longPressReply(container: Element, text: string, holdMs: number) {
+export async function longPressReply(container: Element, text: string, holdMs: number, moveY = 0) {
   const bubble = replyBubble(container, text), classes = eventClasses(bubble);
   const init = { bubbles: true, cancelable: true, pointerType: "touch", clientX: 24, clientY: 24 };
   await act(async () => { bubble.dispatchEvent(new classes.PointerEvent!("pointerdown", init)); });
+  if (moveY) await act(async () => {
+    bubble.dispatchEvent(new classes.PointerEvent!("pointermove", { ...init, clientY: init.clientY + moveY }));
+  });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, holdMs)); });
   await act(async () => { bubble.dispatchEvent(new classes.PointerEvent!("pointerup", init)); });
 }

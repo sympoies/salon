@@ -10,7 +10,7 @@ import type { HistoryMessage } from "../src/types.ts";
 import { makeSession } from "./support/fixtures.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 import { assertNoElement } from "./support/domAssert.ts";
-import { longPressReply, openReplyMenu, replyBubble, replyMenuItem } from "./support/replyMenu.ts";
+import { closeReplyMenu, longPressReply, openReplyMenu, replyMenuItem, replyMenuItems } from "./support/replyMenu.ts";
 
 const session = makeSession({ machine: "fixture", id: "shared-reply", agent: "codex", session_incarnation: "inc-1",
   provider_resume: { provider: "codex", session_id: "fixture-thread" },
@@ -173,8 +173,8 @@ test("an admitted reply shows Sending without editing controls", async () => {
     const bubble = h.container.querySelector<HTMLElement>(".history-outgoing-bubble")!;
     assert.ok(bubble);
     await act(async () => bubble.click()); await h.settle();
-    assertNoElement(h.container, 'textarea, [role="menu"], [aria-haspopup="menu"]',
-      "sent messages must not open a post-send editor or action menu");
+    assertNoElement(h.container, "textarea", "sent messages have no post-send editor");
+    assert.equal(replyMenuItems().length, 0, "a normal tap leaves the menu closed");
     assert.equal(h.container.querySelector('[role="status"]')?.textContent, "Sending");
     assertNoElement(h.container, "button", "an admitted reply has no Retry");
     assert.equal(h.patches.length, 0);
@@ -870,10 +870,10 @@ test("a delayed equal-revision snapshot cannot hide the sender's acknowledged qu
   }
 });
 
-const sharedItem = (id: string, text: string, state: "queued" | "unknown" | "refused" | "submitted", createdAt: number): SharedOutboxItem => ({
+const sharedItem = (id: string, text: string, state: "queued" | "sending" | "unknown" | "refused" | "submitted", createdAt: number): SharedOutboxItem => ({
   id, text, state, revision: 3, session_incarnation: "inc-1", created_at: createdAt, updated_at: createdAt, edit_hold: null, error_code: null,
   request_id: state === "queued" ? null : id,
-  receipt: state === "queued" ? null : { request_id: id, session_id: session.id, session_incarnation: "inc-1", outcome: state,
+  receipt: state === "queued" || state === "sending" ? null : { request_id: id, session_id: session.id, session_incarnation: "inc-1", outcome: state,
     code: state === "submitted" ? null : state === "unknown" ? "structured-prompt-outcome-unknown" : "session-blocked" },
 });
 
@@ -1004,45 +1004,88 @@ test("#110 a mid-turn reply's transcript turn stamped before its admission clear
   } finally { await h.close(); }
 });
 
-test("only an unknown shared reply can be dismissed locally", async () => {
+test("every shared reply can be copied and only an unknown reply can be dismissed locally", async () => {
   const factory = new IDBFactory();
   let h = await fixture(factory, false);
   try {
-    const stuck = crypto.randomUUID(), uncertain = crypto.randomUUID(), refused = crypto.randomUUID(), queued = crypto.randomUUID();
-    await h.ownServer({ revision: 5, compose_holds: [], items: [
-      sharedItem(stuck, "stuck submitted reply", "submitted", Date.now()), sharedItem(uncertain, "stuck uncertain reply", "unknown", Date.now()),
-      sharedItem(refused, "refused reply", "refused", Date.now()), sharedItem(queued, "queued reply", "queued", Date.now())] });
+    const stuck = crypto.randomUUID(), uncertain = crypto.randomUUID();
+    const items = [
+      sharedItem(stuck, "submitted reply", "submitted", Date.now()),
+      sharedItem(uncertain, "uncertain reply", "unknown", Date.now()),
+      sharedItem(crypto.randomUUID(), "refused reply", "refused", Date.now()),
+      sharedItem(crypto.randomUUID(), "queued reply", "queued", Date.now()),
+      sharedItem(crypto.randomUUID(), "claimed reply", "sending", Date.now()),
+    ];
+    await h.ownServer({ revision: 5, compose_holds: [], items });
     await h.client.sync(h.target);
     await h.showReplies(session, []);
     const mutations = () => h.requests.filter(method => method !== "GET").length;
     const before = mutations();
-    await openReplyMenu(h.container, "refused reply"); assert.equal(replyMenuItem(), undefined, "a refused reply keeps Discard and Retry");
-    await openReplyMenu(h.container, "queued reply"); assert.equal(replyMenuItem(), undefined, "an unsent reply is not dismissible");
-    await openReplyMenu(h.container, "stuck submitted reply");
-    assert.equal(Boolean(replyMenuItem()), false, "right-click does not open a submitted reply menu");
-    await openReplyMenu(h.container, "stuck submitted reply", "keyboard");
-    assert.equal(Boolean(replyMenuItem()), false, "the menu key does not open a submitted reply menu");
-    await longPressReply(h.container, "stuck submitted reply", 550);
-    assert.equal(Boolean(replyMenuItem()), false, "a long press does not open a submitted reply menu");
-    assert.equal(replyBubble(h.container, "stuck submitted reply").tabIndex, -1, "the bubble is not a menu trigger");
+    for (const item of items) {
+      await openReplyMenu(h.container, item.text);
+      assert.deepEqual(replyMenuItems().map(action => action.textContent),
+        item.state === "unknown" ? ["Copy text", "Dismiss reply"] : ["Copy text"], item.state);
+      await closeReplyMenu(h.container);
+    }
+    await openReplyMenu(h.container, "submitted reply", "keyboard");
+    assert.equal(replyMenuItem("Copy text")?.textContent, "Copy text", "the menu key opens a submitted reply menu");
+    await closeReplyMenu(h.container);
+    await longPressReply(h.container, "submitted reply", 550, 40);
+    assert.equal(replyMenuItems().length, 0, "moving a touch leaves the menu closed");
+    await longPressReply(h.container, "submitted reply", 550);
+    assert.equal(replyMenuItem("Copy text")?.textContent, "Copy text", "a long press opens a submitted reply menu");
+    await closeReplyMenu(h.container);
     await act(async () => {
       assert.equal(await h.client.dismiss(h.target, stuck), false, "the client rejects dismissal of a submitted reply");
     });
-    await openReplyMenu(h.container, "stuck uncertain reply");
-    assert.equal(replyMenuItem()?.textContent, "Dismiss reply");
-    await act(async () => replyMenuItem()!.click()); await h.settle();
-    assert.ok(h.container.textContent?.includes("stuck submitted reply") && !h.container.textContent?.includes("stuck uncertain reply"));
+    await openReplyMenu(h.container, "uncertain reply");
+    await act(async () => replyMenuItem("Dismiss reply")!.click()); await h.settle();
+    assert.ok(h.container.textContent?.includes("submitted reply") && !h.container.textContent?.includes("uncertain reply"));
     assert.ok(h.container.textContent?.includes("refused reply") && h.container.textContent?.includes("queued reply"));
     assert.equal(mutations(), before, "dismissing sends, cancels and edits nothing on the server");
-    assert.equal(h.snapshot().items.length, 4, "the server rows are untouched");
+    assert.equal(h.snapshot().items.length, items.length, "the server rows are untouched");
     await h.close(); h = await fixture(factory, false); h.online(false); await h.client.ready;
     await h.showReplies(session, []);
-    assert.ok(!h.container.textContent?.includes("stuck uncertain reply"), "the dismissal survives a restart");
-    assert.ok(h.container.textContent?.includes("stuck submitted reply"), "a submitted reply still awaits transcript proof after restart");
+    assert.ok(!h.container.textContent?.includes("uncertain reply"), "the dismissal survives a restart");
+    assert.ok(h.container.textContent?.includes("submitted reply"), "a submitted reply still awaits transcript proof after restart");
     assert.ok(h.container.textContent?.includes("queued reply"));
   } finally { await h.close(); }
 });
 
+
+test("Copy text preserves source markdown and reports clipboard success, refusal and unavailability", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    const source = "  **Sample**  \n\n- [check](https://example.com)\n`literal`  ";
+    await h.ownServer({ revision: 2, compose_holds: [], items: [
+      sharedItem(crypto.randomUUID(), source, "submitted", Date.now()),
+    ] });
+    await h.client.sync(h.target);
+    await h.showReplies();
+    const writes: string[] = [];
+    const clipboard = (value: unknown) => Object.defineProperty(navigator, "clipboard", { configurable: true, value });
+    const copy = async () => {
+      await openReplyMenu(h.container, "Sample");
+      const action = replyMenuItem("Copy text");
+      assert.ok(action, "the bubble offers Copy text");
+      // A pointer activation can blur the focused action before the click arrives.
+      await act(async () => { action.focus(); action.blur(); });
+      assert.ok(replyMenuItem("Copy text"), "a blur without a next focus target keeps the action available");
+      await act(async () => action.click()); await h.settle();
+    };
+    clipboard({ async writeText(text: string) { writes.push(text); } });
+    await copy();
+    assert.deepEqual(writes, [source]);
+    assert.equal(replyMenuItems().length, 0);
+    assert.match(h.container.textContent ?? "", /Reply text copied/);
+    clipboard({ async writeText() { throw new DOMException("Denied", "NotAllowedError"); } });
+    await copy();
+    assert.match(h.container.querySelector('[role="alert"]')?.textContent ?? "", /clipboard access was refused/i);
+    clipboard(undefined);
+    await copy();
+    assert.match(h.container.querySelector('[role="alert"]')?.textContent ?? "", /clipboard is unavailable/i);
+  } finally { await h.close(); }
+});
 
 test("composer uploads retain original names and local previews through admission and refusal", async () => {
   const factory = new IDBFactory(), h = await fixture(factory);
@@ -1062,6 +1105,16 @@ test("composer uploads retain original names and local previews through admissio
     assert.match(h.container.querySelector(".outgoing-attachment-preview")?.getAttribute("src") ?? "", /^blob:/);
     assert.equal(h.admissions.length, 1);
     assert.equal(h.admissions[0]?.text, "'/fixture/sessions/shared-reply/attachments/stored.png'");
+    const writes: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      async writeText(text: string) { writes.push(text); },
+    } });
+    await openReplyMenu(h.container, "Design draft.png");
+    const copy = replyMenuItem("Copy text");
+    assert.ok(copy);
+    await act(async () => copy.click()); await h.settle();
+    assert.deepEqual(writes, ["Design draft.png"], "copy uses the composer attachment name");
+
     const queued = h.snapshot();
     h.server({ ...queued, revision: queued.revision + 1, items: queued.items.map(item => ({ ...item, state: "refused", error_code: "busy" })) });
     await act(async () => { await h.client.sync(h.target); }); await h.showReplies();

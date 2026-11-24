@@ -138,6 +138,10 @@ and **Sending** once the workspace accepts it. After handoff, Salon shows
 **Retry** after resolving it. **Unknown outcome** means Salon could not confirm
 delivery. Use **Dismiss reply** to hide that bubble on this device.
 
+Right-click, long-press or use the keyboard menu key on any outgoing reply to
+open its actions. **Copy text** copies the reply's original text and includes
+attachments by their displayed names.
+
 When a session is replaced or removed, Salon automatically clears its
 unconfirmed outgoing replies across clients once the server confirms the
 change. Cached replies disappear when the conversation next syncs. This does

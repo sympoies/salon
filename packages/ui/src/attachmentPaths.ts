@@ -1,3 +1,5 @@
+import { sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
+
 // The composer sends an uploaded file as its single-quoted host path (see
 // shellQuote.ts). The daemon stores uploads at <state>/sessions/<id>/attachments/<name>.
 const QUOTED_UPLOAD = /(?<![A-Za-z0-9])'((?:[^']|'\\'')*)'/g;
@@ -52,6 +54,10 @@ export interface OutgoingAttachment {
   readonly preview?: Blob;
 }
 
+export function composerAttachmentName(attachment: Pick<OutgoingAttachment, "path" | "original_name">): string {
+  return sanitizeAttachmentName(attachment.original_name) ?? sanitizeAttachmentName(attachment.path) ?? "File";
+}
+
 export interface UploadedFile {
   readonly path: string;
   readonly label: string;
@@ -104,6 +110,15 @@ export function separateFileUploads(linked: { readonly text: string; readonly fi
     return removed && !remaining.trim() ? [] : [remaining];
   }).join("\n");
   return { text, files };
+}
+
+/** Keep the reply source intact except for the composer labels of its uploaded files. */
+export function outgoingReplyCopyText(text: string, owner: string, attachments: readonly OutgoingAttachment[]): string {
+  return editOutsideCode(text, (quoted, whole) => {
+    const file = uploadedFile(quoted, owner);
+    if (!file) return whole;
+    return composerAttachmentName(attachments.find(attachment => attachment.path === file.path) ?? file);
+  });
 }
 
 /** A prompt preview with each quoted upload path shortened to its chip label. */
