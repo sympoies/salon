@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { sanitizeAttachmentName } from "@agent-console/shared/conversation-images";
-import type { OutgoingAttachment } from "./attachmentPaths.ts";
+import { composerAttachmentName, type OutgoingAttachment } from "./attachmentPaths.ts";
 
 export function ComposerAttachment({ attachment, disabled, onRemove }: { readonly attachment: OutgoingAttachment; readonly disabled: boolean; readonly onRemove: () => void }) {
-  const name = sanitizeAttachmentName(attachment.original_name) ?? sanitizeAttachmentName(attachment.path) ?? "File";
+  const name = composerAttachmentName(attachment);
   const [preview, setPreview] = useState<string>();
   useEffect(() => {
     if (!attachment.preview) { setPreview(undefined); return; }

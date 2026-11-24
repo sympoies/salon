@@ -12,7 +12,7 @@ import { sessionKey } from "../src/layout.ts";
 import type { ConversationReplyDrafts } from "../src/ConversationComposer.tsx";
 import { assertNoElement } from "./support/domAssert.ts";
 import { makeSession } from "./support/fixtures.ts";
-import { longPressReply, openReplyMenu, replyBubble, replyMenuItem } from "./support/replyMenu.ts";
+import { closeReplyMenu, longPressReply, openReplyMenu, replyBubble, replyMenuItem, replyMenuItems } from "./support/replyMenu.ts";
 import { createUiSsrHarness } from "./support/ssr.ts";
 
 type TestResult={ok:boolean;error?:string;outcomeUnknown?:boolean;queued?:boolean;refusalCode?:string;receipt?:PromptReceipt|null};
@@ -433,10 +433,9 @@ test("#943 a reply handed to a busy Claude session cannot be cancelled and stays
     await h.render("working",1,claude);await h.write("while you work");await h.reply();
     await clock.advance(5000,h.settle);
     assert.equal(h.requests.length,1);assert.equal((h.requests[0] as PromptBody).require_idle,undefined);
-    assert.equal(h.status("while you work"),"sent","handed off: a plain bubble");
-    assertNoElement(h.container,'[aria-label="Your replies"] button[aria-haspopup="menu"]');
+    assert.equal(h.status("while you work"),"sent");
     await act(async()=>finish({ok:true,queued:true}));await h.settle();
-    assert.equal(h.status("while you work"),"delivered","still a plain bubble once delivered");assert.equal(h.queued(),"");assert.equal(h.requests.length,1);
+    assert.equal(h.status("while you work"),"delivered");assert.equal(h.queued(),"");assert.equal(h.requests.length,1);
   }finally{await h.close();clock.restore();}
 });
 test("#943 a Codex reply observed idle before the grace ends keeps the idle guard",async()=>{
@@ -448,9 +447,8 @@ test("#943 a Codex reply observed idle before the grace ends keeps the idle guar
   }finally{await h.close();}
 });
 
-// #969 (was #942's one-line rows): each waiting reply is the owner's own bubble
-// with a clock, and its menu cancels only that reply.
-test("legacy local replies are immutable bubbles without delivery badges or action menus",async()=>{
+// #969: each waiting reply is the owner's own bubble with a clock.
+test("legacy local replies are immutable bubbles without delivery badges",async()=>{
   const h=await mount();try{
     await h.render("working",1);
     await h.write("first queued reply that is long enough to wrap on a phone screen");await h.reply();
@@ -459,7 +457,7 @@ test("legacy local replies are immutable bubbles without delivery badges or acti
     assert.equal(rows().length,2);
     for(const row of rows()){
       assert.equal(row.dataset.status,"queued");assert.equal(row.getAttribute("aria-label"),"You");
-      assertNoElement(row,'.history-outgoing-status, [aria-haspopup="menu"]');
+      assertNoElement(row,'.history-outgoing-status');
       assertNoElement(row,'[role="menu"]');
     }
     assertNoElement(h.container,".conversation-queued-replies");
@@ -715,7 +713,7 @@ for(const agent of [claude,{}] as Partial<Session>[])test(`#969 an idle ${agent.
     const body=h.requests[0] as PromptBody;
     assert.equal(typeof body.request_id,"string","keyed");assert.equal(body.require_idle,undefined,"no idle guard, as a direct send");
     await act(async()=>finish({ok:true}));await h.settle();
-    assert.equal(h.status("straight away"),"delivered","still a plain bubble once delivered");
+    assert.equal(h.status("straight away"),"delivered");
   }finally{await h.close();}
 });
 test("a command_dispatched receipt leaves no bubble, no error and is never sent again",async()=>{
@@ -1302,7 +1300,7 @@ test("a busy admission does not expose obsolete reply actions or internal idle i
     h.response({ok:false,refusalCode:"busy",error:"The session is busy or terminal input is in use."});
     await h.render("working");await h.write("explain the hold");await h.reply();await h.render("idle",2);
     assert.equal(h.status("explain the hold"),"queued");
-    assertNoElement(h.container,'[aria-haspopup="menu"], [role="menu"], .history-outgoing-status');
+    assertNoElement(h.container,'[role="menu"], .history-outgoing-status');
     assert.doesNotMatch(h.container.textContent??"",/terminal input is in use/);
     assert.equal(h.status("explain the hold"),"queued","the explanation does not add a normal bubble status");
   }finally{await h.close();clock.restore();}
@@ -1878,13 +1876,14 @@ test("#110 a fresh unproven echo is dismissed from its context menu with zero se
     ]);
     assert.equal(h.container.querySelectorAll('button[aria-label="Dismiss reply"]').length, 0, "no standing button");
     await openReplyMenu(h.container, "unsent echo");
-    assert.equal(replyMenuItem(), undefined, "an unsent reply has no dismiss action");
+    assert.equal(replyMenuItem("Dismiss reply"), undefined, "an unsent reply has no dismiss action");
+    await closeReplyMenu(h.container);
     await openReplyMenu(h.container, "stuck echo");
-    assert.equal(replyMenuItem()?.textContent, "Dismiss reply");
+    assert.equal(replyMenuItem("Dismiss reply")?.textContent, "Dismiss reply");
     const sharedBefore = globalThis.__outboxSharedItems?.slice();
-    await act(async () => replyMenuItem()!.click()); await h.settle();
+    await act(async () => replyMenuItem("Dismiss reply")!.click()); await h.settle();
     assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()).map(row => row.id), ["keep"]);
-    assert.equal(replyMenuItem(), undefined, "the menu closes");
+    assert.equal(replyMenuItems().length, 0, "the menu closes");
     assert.deepEqual(globalThis.__outboxSharedItems, sharedBefore);
     assert.equal(h.requests.length, 0); assert.equal(h.inputs.length, 0);
     await h.close(); h = await mount(factory); await h.render("idle");
@@ -1900,15 +1899,15 @@ test("#110 the menu opens from the keyboard and a touch long press, and closes w
     await seedLegacyEchoes(h, [{ id: "stuck", requestId: "stuck", text: "stuck echo", incarnation: "older-incarnation", state: "delivered", attemptedAt: Date.now() }]);
     assert.equal(replyBubble(h.container, "stuck echo").getAttribute("tabindex"), "0", "the bubble is reachable by keyboard");
     await longPressReply(h.container, "stuck echo", 250);
-    assert.equal(replyMenuItem(), undefined, "a short touch is not a long press");
+    assert.equal(replyMenuItems().length, 0, "a short touch is not a long press");
     await openReplyMenu(h.container, "stuck echo", "keyboard");
-    assert.equal(replyMenuItem()?.textContent, "Dismiss reply");
+    assert.equal(replyMenuItem("Dismiss reply")?.textContent, "Dismiss reply");
     await act(async () => { document.dispatchEvent(new (document.defaultView as unknown as { KeyboardEvent: typeof KeyboardEvent }).KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
-    assert.equal(replyMenuItem(), undefined, "Escape closes the menu");
+    assert.equal(replyMenuItems().length, 0, "Escape closes the menu");
     assert.equal(h.queueModule.conversationOutbox().items(h.session()).length, 1, "closing dismisses nothing");
     await longPressReply(h.container, "stuck echo", 700);
-    assert.equal(replyMenuItem()?.textContent, "Dismiss reply", "a long touch opens it");
-    await act(async () => replyMenuItem()!.click()); await h.settle();
+    assert.equal(replyMenuItem("Dismiss reply")?.textContent, "Dismiss reply", "a long touch opens it");
+    await act(async () => replyMenuItem("Dismiss reply")!.click()); await h.settle();
     assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), []);
     assert.equal(h.requests.length, 0);
   } finally { await h.close(); }
@@ -1968,7 +1967,7 @@ test("#86 an unmatched untimed legacy echo is dismissible without sending", asyn
     await seedLegacyEchoes(h, [{ id: "untimed-image", requestId: "untimed-image", text: "'/attachments/unmatched-legacy.png'",
       incarnation: "older-incarnation", state: "unknown" }]);
     await openReplyMenu(h.container, "unmatched-legacy");
-    await act(async () => replyMenuItem()!.click()); await h.settle();
+    await act(async () => replyMenuItem("Dismiss reply")!.click()); await h.settle();
     assert.deepEqual(h.queueModule.conversationOutbox().items(h.session()), []);
     assert.equal(h.requests.length, 0); assert.equal(h.inputs.length, 0);
   } finally { await h.close(); }
