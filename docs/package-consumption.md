@@ -89,7 +89,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.102 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.103 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -195,7 +195,21 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.102`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.103`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.103
+
+Every outgoing reply bubble offers **Copy text** in its menu (#663, closes
+#661). Open the menu with a long press, a right-click or the keyboard menu key.
+The action copies the reply as sent, with uploaded-file paths shortened to
+their file names. Salon briefly confirms a successful copy and shows a notice
+if the clipboard is unavailable or denies access.
+
+**Dismiss reply** is available only for replies with an **Unknown outcome**.
+Moving your finger during a long press cancels the gesture.
+
+SDK consumers can keep their existing configuration. The container runtime
+remains pinned to nils-cli v1.42.6.
 
 ### Changes retained in SDK 0.1.102
 
