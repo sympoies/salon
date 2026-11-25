@@ -5664,6 +5664,11 @@ test("Dashboard refuses to initialize a no-id created session from an uncorrelat
     stagedPromptCreateDialogMockPlugin(),
   ]);
   cleanupStack.push(ssr.close);
+  const submitCreate = () => {
+    const dialog = mounted.container.querySelector('textarea[aria-label="Initial prompt"]')?.parentElement;
+    assert.ok(dialog, "the create dialog is open");
+    findTextButton(dialog, "Create").click();
+  };
   const calls: string[] = [];
   let created = false;
   let createAttempts = 0;
@@ -5726,8 +5731,7 @@ test("Dashboard refuses to initialize a no-id created session from an uncorrelat
     await flushPromises();
   });
   await act(async () => {
-    findTextButton(mounted.container, "Create")
-      .dispatchEvent(new mounted.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    submitCreate();
     await flushPromises();
   });
   await waitForCondition(
@@ -5749,8 +5753,7 @@ test("Dashboard refuses to initialize a no-id created session from an uncorrelat
     await flushPromises();
   });
   await act(async () => {
-    findTextButton(mounted.container, "Create")
-      .dispatchEvent(new mounted.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    submitCreate();
     await flushPromises();
   });
 
@@ -5761,8 +5764,7 @@ test("Dashboard refuses to initialize a no-id created session from an uncorrelat
   );
 
   await act(async () => {
-    findTextButton(mounted.container, "Create")
-      .dispatchEvent(new mounted.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    submitCreate();
     await flushPromises();
   });
   await waitForCondition(
