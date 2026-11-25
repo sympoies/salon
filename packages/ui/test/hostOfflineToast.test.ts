@@ -150,7 +150,7 @@ test("non-host failures keep the persistent attention notice", async () => {
   assert.equal(liveTimers(scheduler, 8_000).length, 0, "other attention notices are not auto-dismissed");
 });
 
-test("legacy non-inline notice slots preserve compact accessible text and decorative dot behavior", () => {
+test("legacy non-inline notice slots preserve compact text and a details control", () => {
   const css = uiStyles();
   const rule = makeCssRuleLookup(css);
   assert.match(rule(".session-filter-trigger-row.has-row-notice"), /flex-wrap:\s*nowrap/, "the row stays on one line while a toast shows");
@@ -172,7 +172,7 @@ test("legacy non-inline notice slots preserve compact accessible text and decora
   const noSpace = /@container \(max-width: 24px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
   assert.doesNotMatch(noSpace, /\.connection-notice \{ display: none; \}/, "with no free space the alert is not removed");
   assert.match(noSpace, /\.connection-notice \{[^}]*clip-path: inset\(50%\)/, "with no free space the toast is visually hidden but still announced");
-  assert.match(noSpace, /\.connection-notice-dismiss \{[^}]*visibility: hidden/, "the hidden toast's dismiss button leaves the focus order");
+  assert.match(noSpace, /:is\(\.connection-notice-dismiss, \.connection-notice-trigger\) \{[^}]*visibility: hidden/, "clipped buttons leave the focus order");
   assert.match(noSpace, /\.connection-notice-dot \{[^}]*display: block/, "with no free space a red dot shows instead");
   assert.match(rule(".connection-notice-dot"), /display:\s*none/, "the dot shows only when the toast has no room");
   assert.doesNotMatch(layer, /top:\s*calc\(100% \+ 4px\)/, "the toast never drops over the card area");
@@ -225,10 +225,10 @@ test("the optional desktop field notice keeps its contract while phone notices u
     "the empty field's hint gives its width to the notice while it shows");
 });
 
-test("only a host-offline notice carries the narrow-width red dot, and the dot is decorative", async () => {
+test("only a host-offline notice carries the narrow-width red dot, with an accessible details control", async () => {
   const StatusNotice = await loadStatusNotice();
   const host = renderComponent(StatusNotice, { notice: { kind: "host-offline", message: HOST_DOWN }, onDismiss() {} });
-  assert.match(host, /<span class="connection-notice-dot" aria-hidden="true"><\/span>/);
+  assert.match(host, /<button type="button" class="connection-notice-dot" aria-label="Show status notice details" aria-haspopup="dialog"/);
   assert.ok(host.indexOf("connection-notice-dot") > host.indexOf('class="connection-notice is-host-offline"'),
     "the dot sits beside the toast inside the layer");
   for (const kind of ["attention", "unreachable", "restored"]) {

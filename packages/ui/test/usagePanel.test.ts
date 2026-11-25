@@ -492,19 +492,21 @@ test("ProviderCard shows the account nickname next to the title when present, om
 });
 
 // #937: a new Codex account's card showed no plan at all; show the reported plan, else say it is unknown.
-test("ProviderCard shows the reported plan, and an unknown plan badge when none is reported", async () => {
+test("ProviderCard shows the reported plan, and an unavailable plan badge when none is reported", async () => {
   const reported = await cardHtml({ account: "account-b", plan: "plus", windows: [win()] });
   assert.match(reported, /<span class="badge">plus<\/span>/);
   assert.doesNotMatch(reported, /usage-plan-unknown/);
   const missing = await cardHtml({ account: "account-b", plan: null, windows: [win()] });
-  assert.match(missing, /<span class="badge usage-plan-unknown" title="The provider did not report a plan">unknown<\/span>/);
+  assert.match(missing, /<span class="badge usage-plan-unknown">Plan unavailable<\/span>/);
 });
 
-test("ProviderCard labels a Claude account by its alias and keeps the email as the tooltip", async () => {
+test("ProviderCard labels a Claude account by its alias and shows the account identity", async () => {
   const html = await cardHtml({ provider: "claude", label: "Claude", account: "max@example.com", switch_key: "20X", windows: [win()] });
-  assert.match(html, /class="usage-provider-account" title="max@example\.com">20X</);
+  assert.match(html, /class="usage-provider-account">20X</);
+  assert.match(html, /class="usage-provider-account-detail">max@example\.com</);
   const noProfile = await cardHtml({ provider: "claude", label: "Claude", account: "team@example.com", windows: [win()] });
   assert.match(noProfile, /class="usage-provider-account">team@example\.com</);
+  assert.doesNotMatch(noProfile, /usage-provider-account-detail/);
 });
 
 test("ProviderCard surfaces updated_at freshness when present, omits it when null", async () => {

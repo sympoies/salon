@@ -13,7 +13,7 @@ export function ComposerAttachment({ attachment, disabled, onRemove }: { readonl
   const size = attachment.bytes === undefined ? "" : attachment.bytes < 1024 ? `${attachment.bytes} B` : `${Number((attachment.bytes / 1024).toFixed(1))} KB`;
   return <div className="composer-attachment" role="group" aria-label={`Attachment ${name}`}>
     {preview ? <img src={preview} alt="" /> : null}
-    <span className="composer-attachment-name" title={name}>{name}{size ? <small>{size}</small> : null}</span>
+    <span className="composer-attachment-name">{name}{size ? <small>{size}</small> : null}</span>
     <button type="button" aria-label={`Remove ${name}`} disabled={disabled} onClick={onRemove}>×</button>
   </div>;
 }

@@ -810,14 +810,12 @@ export function TerminalPane({
           }}
           onMouseDown={preventKeyBarMouseFocus}
         >
-          <button className="control-menu"
+          <button className="control-menu terminal-copy-selection"
             type="button"
-            title={canCopyTerminalSelection ? "Copy selection" : "Copy the last terminal selection"}
+            aria-label={canCopyTerminalSelection ? "Copy selection" : "Copy the last terminal selection"}
             onClick={handleTouchMenuCopy}
-          >
-            Copy
-          </button>
-          <button className="control-menu" type="button" style={{ flex: "2 1 0", whiteSpace: "normal", lineHeight: 1.1 }} title="Copy the selected command or URL as one line" onClick={handleTouchMenuCopyOneLine}>
+          >{canCopyTerminalSelection ? "Copy" : "Copy last"}</button>
+          <button className="control-menu" type="button" style={{ flex: "2 1 0", whiteSpace: "normal", lineHeight: 1.1 }} onClick={handleTouchMenuCopyOneLine}>
             Copy as one line
           </button>
           {visibleTouchMenu.linkUrl ? (
@@ -828,7 +826,6 @@ export function TerminalPane({
           {visibleTouchMenu.links.length > 0 ? (
             <button className="control-menu"
               type="button"
-              title="Open a link printed since this terminal attached"
               onClick={() => {
                 setTerminalLinkPicker(visibleTouchMenu.links);
                 setTerminalTouchMenu(null);
@@ -843,7 +840,7 @@ export function TerminalPane({
           {onRetitle ? (
             <button className="control-menu"
               type="button"
-              title="Regenerate this session's title with the LLM"
+              aria-label="Regenerate session title"
               onClick={() => {
                 onRetitle();
                 setTerminalTouchMenu(null);

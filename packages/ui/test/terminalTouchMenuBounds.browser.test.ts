@@ -51,7 +51,7 @@ test("terminal clipboard targets fit the shared menu and pane at touch edges", a
               const menu=document.querySelector('.terminal-touch-menu'),pane=document.querySelector('.terminal-pane');
               const box=e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom];};
               const buttons=[...menu.querySelectorAll('button')],r=buttons[0].getBoundingClientRect();
-              parent.document.querySelector('#measurement').textContent=JSON.stringify({viewportWidth:innerWidth,menu:box(menu),pane:box(pane),buttons:buttons.map(box),selected:buttons[0].title==='Copy selection',targetHeight:r.height,hit:document.elementFromPoint(r.left+r.width/2,r.top+1)===buttons[0]&&document.elementFromPoint(r.left+r.width/2,r.bottom-1)===buttons[0]});
+              parent.document.querySelector('#measurement').textContent=JSON.stringify({viewportWidth:innerWidth,menu:box(menu),pane:box(pane),buttons:buttons.map(box),selected:buttons[0].getAttribute('aria-label')==='Copy selection',targetHeight:r.height,hit:document.elementFromPoint(r.left+r.width/2,r.top+1)===buttons[0]&&document.elementFromPoint(r.left+r.width/2,r.bottom-1)===buttons[0]});
             },50);
           }sample();
         `,false,800,coarse?["--blink-settings=primaryPointerType=2,availablePointerTypes=2"]:[]);

@@ -312,11 +312,9 @@
 
 .history-session-id {
   margin-top: 4px;
-  overflow: hidden;
   color: var(--muted);
   font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .history-viewer > .history-outgoing {
@@ -2190,6 +2188,21 @@ textarea {
   justify-self: start;
   min-width: 5.5rem;
 }
+.settings-color-swatch {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3xs);
+}
+.settings-color-value {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.reorder-list:has(.settings-machine-color) {
+  column-gap: var(--space-xs);
+}
+.reorder-row:has(.settings-machine-color) .reorder-row-label {
+  overflow-wrap: anywhere;
+}
 .settings-color-input {
   appearance: none;
   -webkit-appearance: none;
@@ -3241,8 +3254,8 @@ textarea {
 .connection-notice.is-host-offline { border-color: var(--warn); color: var(--warn); }
 /* The host-offline toast lives in the filter trigger row's free space only, after the search bar. The bar
    never shrinks or moves while a toast shows; the toast takes the remaining width as one ellipsized line, with
-   the dismiss button always visible. Below about 150px it shows a compact "! host" label; the full text stays
-   on the title attribute and, visually hidden, in the alert. */
+   the dismiss button always visible. Below about 150px it shows a compact "! host" label.
+   The label opens the full message. */
 /* The spacing after the bar lives on the toast, so an empty slot adds no width and the page never scrolls sideways. */
 .session-filter-trigger-row.has-row-notice { flex-wrap: nowrap; }
 .session-filters-summary.is-compact-header .session-filter-trigger-row.has-row-notice { gap: 0; }
@@ -3282,12 +3295,22 @@ textarea {
 }
 /* With no free space in the row (phone widths, where the search bar fills it) the toast is visually hidden, still
    announced, and a small red dot inside the search bar's right padding marks the offline host instead. The bar
-   keeps its full width, the dot ignores taps, and it leaves with the toast (auto-dismiss, startup grace). */
-.connection-notice-dot { display: none; }
+   keeps its full width and the dot opens the full message. */
+.connection-notice-dot {
+  display: none;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+.connection-notice-dot::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
 @container (max-width: 24px) {
   .session-filter-trigger-row > .connection-notice-layer .connection-notice { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .session-filter-trigger-row > .connection-notice-layer .connection-notice-dismiss { visibility: hidden; display: none; }
-  .session-filter-trigger-row > .connection-notice-layer .connection-notice-dot { display: block; position: absolute; top: 50%; right: calc(100% + 3px); width: 8px; height: 8px; border-radius: 50%; background: var(--err); transform: translateY(-50%); pointer-events: none; }
+  .session-filter-trigger-row > .connection-notice-layer :is(.connection-notice-dismiss, .connection-notice-trigger) { visibility: hidden; }
+  .session-filter-trigger-row > .connection-notice-layer .connection-notice-dot { display: block; position: absolute; top: 50%; right: calc(100% + 3px); width: 8px; height: 8px; border-radius: 50%; background: var(--err); transform: translateY(-50%); pointer-events: auto; }
 }
 /* Desktop (#761): the filter field fills its row and the header stages leave no width beside it, so the notice takes
    the field's own free space after its chips. It gives way before they do (a huge flex-shrink), so the field's box,
@@ -3298,8 +3321,8 @@ textarea {
 .session-filter-field-notice { display: flex; align-items: center; flex: 0 1000 20rem; min-width: 0; margin-left: calc(-1 * var(--space-sm)); }
 @container (max-width: 89px) {
   .session-filter-field-notice > .connection-notice-layer .connection-notice { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .session-filter-field-notice > .connection-notice-layer .connection-notice-dismiss { visibility: hidden; display: none; }
-  .session-filter-field-notice > .connection-notice-layer .connection-notice-dot { display: block; position: absolute; top: 50%; left: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--err); transform: translateY(-50%); pointer-events: none; }
+  .session-filter-field-notice > .connection-notice-layer :is(.connection-notice-dismiss, .connection-notice-trigger) { visibility: hidden; }
+  .session-filter-field-notice > .connection-notice-layer .connection-notice-dot { display: block; position: absolute; top: 50%; left: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--err); transform: translateY(-50%); pointer-events: auto; }
 }
 /* Inline in a header row the notice is a tinted control that matches the header buttons, not a floating toast:
    a tinted 1px border and background, the control radius and no elevation. The icon and text keep the full state
@@ -3316,6 +3339,27 @@ textarea {
 .connection-notice-layer.is-inline .connection-notice.is-transient.is-tone-ok { --notice-tone: var(--ok); }
 .connection-notice-icon { font-weight: var(--weight-bold); }
 .connection-notice-message { min-width: 0; overflow-wrap: anywhere; }
+.connection-notice-trigger {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.connection-notice-trigger:focus-visible,
+.connection-notice-dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.connection-notice-detail {
+  pointer-events: auto;
+  overflow-wrap: anywhere;
+}
 .connection-notice-retrying { color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
 .connection-notice-spinner {
   width: 0.8rem;
@@ -6322,7 +6366,7 @@ textarea {
   justify-content: flex-end;
   gap: var(--space-xs);
 }
-/* On a phone-width card the account pill truncates first: badges stay whole. */
+/* Keep the badges whole while the account label can wrap. */
 .usage-provider-badges .badge {
   white-space: nowrap;
 }
@@ -6363,9 +6407,13 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--r-full);
   padding: var(--space-3xs) var(--space-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+.usage-provider-account-detail {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
 }
 /* Hosts whose login is unreadable. */
 .usage-provider-hosts {
@@ -6725,6 +6773,15 @@ textarea {
 .title-button {
   max-width: min(46vw, 26rem);
 }
+.term-connection-status {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: var(--space-xs);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
 .term-meta {
   font-size: var(--text-sm);
   color: var(--muted);
@@ -6957,6 +7014,10 @@ textarea {
   color: var(--fg);
   font-family: inherit;
   white-space: nowrap;
+}
+.terminal-touch-menu .terminal-copy-selection {
+  white-space: normal;
+  line-height: 1.1;
 }
 .terminal-touch-menu button:disabled {
   opacity: 0.45;
@@ -7478,6 +7539,15 @@ textarea {
 .session-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); margin-top: var(--space-xs); }
 .session-filter-chip { display: inline-flex; max-width: 100%; min-width: 0; white-space: nowrap; text-align: left; }
 .session-filter-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.session-filter-chips.are-expanded .session-filter-chip {
+  align-items: center;
+  height: auto;
+  max-width: 100%;
+}
+.session-filter-chips.are-expanded .session-filter-chip-label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .session-filter-chip > span:last-child { flex: none; }
 .session-filter-coverage { font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-xs); }
 .session-filters-summary.is-compact-header .session-filter-coverage { flex: none; margin: 0; white-space: nowrap; }
@@ -7640,9 +7710,15 @@ textarea {
 .layout-picker-inline { display:inline-flex; }
 .layout-picker .layout-picker-trigger { display:none; align-items:center; gap:1px; }
 .layout-picker .layout-picker-trigger > svg:last-child { width:10px; }
-.layout-picker-menu { position:absolute; right:0; top:calc(100% + 4px); z-index:96; min-width:120px; padding:4px; border:1px solid var(--border-default); border-radius:var(--r-md); background:var(--surface-floating); box-shadow:0 8px 24px rgba(var(--shadow-rgb), calc(0.533 * var(--shadow-strength))); }
+.layout-picker-menu { position:absolute; right:0; top:calc(100% + 4px); z-index:96; min-width:154px; padding:4px; border:1px solid var(--border-default); border-radius:var(--r-md); background:var(--surface-floating); box-shadow:0 8px 24px rgba(var(--shadow-rgb), calc(0.533 * var(--shadow-strength))); }
 .layout-picker-option { display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent; color:var(--fg); text-align:left; cursor:pointer; }
-.layout-picker-option > svg { width:22px; height:22px; }
+.layout-picker-option > svg { width:22px; height:22px; flex:none; }
+.layout-picker-option-description {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  white-space: normal;
+}
 .layout-picker-option[aria-checked="true"],.layout-picker-option:hover,.layout-picker-option:focus-visible { background:var(--state-selected); outline:none; }
 /* Phone (#930): the pre-#915 header, except in the macOS shell. Brand, counts and actions share the first
    row; the pager and the filter take their own rows. Phones have no layout picker. The tier is
@@ -7982,9 +8058,7 @@ textarea {
 .file-card { display:grid; grid-template-columns:20px minmax(0,1fr) 16px; align-items:center; gap:8px; width:100%; max-width:320px; padding:8px 10px; border:0; border-radius:var(--r-md); background:color-mix(in srgb,var(--conversation-user-bubble) 88%,#fff); color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .file-card-kind { width:20px; height:20px; }
 .file-card-content { min-width:0; }
-.file-card-name { display:flex; min-width:0; white-space:nowrap; font-size:var(--text-sm); }
-.file-card-stem { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.file-card-extension { flex:none; }
+.file-card-name { display:block; overflow-wrap:anywhere; white-space:normal; font-size:var(--text-sm); }
 .file-card-details { display:block; margin-top:2px; color:inherit; opacity:.85; font-size:var(--text-xs); }
 .file-card-copy { display:flex; color:inherit; opacity:.75; }
 .file-card-copy svg { width:16px; height:16px; }
@@ -8050,6 +8124,6 @@ textarea {
 .composer-attachments { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
 .composer-attachment { display:flex; align-items:center; gap:8px; min-width:0; max-width:100%; padding:6px 8px; border-radius:var(--r-md); background:var(--conversation-user-bubble); }
 .composer-attachment img { width:36px; height:36px; object-fit:cover; border-radius:var(--r-xs); }
-.composer-attachment-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.composer-attachment-name { min-width:0; overflow-wrap:anywhere; }
 .composer-attachment-name small { display:block; opacity:.8; }
 .composer-attachment button { flex:none; border:0; background:transparent; color:inherit; cursor:pointer; font:inherit; font-size:var(--text-xl); }

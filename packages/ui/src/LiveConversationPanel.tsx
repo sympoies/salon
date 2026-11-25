@@ -111,13 +111,15 @@ export function LiveConversationPanel({ session, onClose, machineReachable = tru
             <AgentBadge agent={session.agent} decorative />
             <span>{sessionLabel(session)}</span>
           </h2>
-          <p>{label} conversation on {session.machine}</p>
+          <p>{label} conversation on {session.machine}
+            {onTogglePin ? (pinned ? " · Pinned to this session" : " · Following selected session") : null}
+          </p>
         </div>
         <div className="conversation-head-actions">
           {onTogglePin ? (
             <IconButton type="button" className={pinned ? "btn icon-btn conversation-pin is-pinned" : "btn icon-btn conversation-pin"}
               aria-label={pinned ? "Unpin conversation" : "Pin conversation"}
-              title={pinned ? "Pinned: stays on this session. Click to follow the selection" : "Pin to this session"}
+              aria-pressed={pinned}
               onClick={onTogglePin}>
               <PinIcon filled={pinned} />
             </IconButton>

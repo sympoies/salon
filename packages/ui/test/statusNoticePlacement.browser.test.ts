@@ -81,7 +81,7 @@ function measure(markup: string, width: number, native: boolean, name: string) {
       const row=pill?.closest('${native ? ".mac-titlebar" : width <= 760 ? ".slot-focus-strip, .session-filter-status-row" : ".session-filter-trigger-row, .slot-head"}');
       const p=pill?.getBoundingClientRect(),r=row?.getBoundingClientRect();
       const counts=row?.querySelector('.session-status-counts'),c=counts?.getBoundingClientRect();
-      const dismiss=pill?.querySelector('button'),d=dismiss?.getBoundingClientRect(),hit=d&&document.elementFromPoint(d.x+d.width/2,d.y+d.height/2);
+      const dismiss=pill?.querySelector('.connection-notice-dismiss'),d=dismiss?.getBoundingClientRect(),hit=d&&document.elementFromPoint(d.x+d.width/2,d.y+d.height/2);
       const rowHeight=r?.height; if(layer)layer.style.display='none';
       const clearRowHeight=row?.getBoundingClientRect().height; if(layer)layer.style.display='';
       const full=pill?.querySelector('.connection-notice-message-full'),fullStyle=full&&getComputedStyle(full);

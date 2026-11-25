@@ -49,7 +49,7 @@ test("phone host notices overlay the count row without shifting filters, pager o
           const barShown=box(bar),paneShown=box(pane),widthShown=document.documentElement.scrollWidth;layer.style.display='none';
           const barHidden=box(bar),paneHidden=box(pane),widthHidden=document.documentElement.scrollWidth;layer.style.display='';
           const counts=row?.querySelector('.session-status-counts');
-          const dismiss=pill.querySelector('button'),d=dismiss.getBoundingClientRect(),hit=document.elementFromPoint(d.x+d.width/2,d.y+d.height/2);
+          const dismiss=pill.querySelector('.connection-notice-dismiss'),d=dismiss.getBoundingClientRect(),hit=document.elementFromPoint(d.x+d.width/2,d.y+d.height/2);
           const full=pill.querySelector('.connection-notice-message-full'),cs=getComputedStyle(full);
           const controls=[...document.querySelectorAll('.workspace-head button,.session-card-probe')]
             .filter(el=>!el.closest('.connection-notice-layer,.session-status-counts'));

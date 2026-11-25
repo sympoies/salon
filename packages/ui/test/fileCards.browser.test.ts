@@ -44,11 +44,10 @@ test("non-image file cards retain names, extensions and stacking at phone and de
           setTimeout(()=>{const cards=[...document.querySelectorAll('.file-card')];
             window.publish({charset:document.characterSet,parentCharset:parent.document.characterSet,width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,
               literal:document.querySelector('#root').textContent.includes('[File')||document.querySelector('#root').textContent.includes('stored-'),
-              cards:cards.map(card=>{const name=card.querySelector('.file-card-name'),stem=card.querySelector('.file-card-stem'),extension=card.querySelector('.file-card-extension');
+              cards:cards.map(card=>{const name=card.querySelector('.file-card-name');
                 return {name:name?.textContent,details:card.querySelector('.file-card-details')?.textContent,box:rect(card),bubble:rect(card.closest('.history-bubble')),time:rect(card.closest('article').querySelector('time')),
                   icon:rect(card.querySelector('.file-card-kind')),radius:getComputedStyle(card).borderRadius,border:getComputedStyle(card).borderWidth,
-                  stem:stem?{overflow:stem.scrollWidth>stem.clientWidth,ellipsis:getComputedStyle(stem).textOverflow,nowrap:getComputedStyle(stem).whiteSpace}:null,
-                  extension:extension?{text:extension.textContent,box:rect(extension)}:null};}),
+                  nameOverflows:name.scrollWidth>name.clientWidth,nameHeight:name.getBoundingClientRect().height};}),
               textFirst:[...document.querySelectorAll('.history-outgoing-body')].slice(3).every(body=>!body.textContent.trim().startsWith('Demo recording')&&!body.textContent.trim().startsWith('Build output.bin'))});
           },150);`;
       },
@@ -106,11 +105,9 @@ test("non-image file cards retain names, extensions and stacking at phone and de
           assert.equal(card.border, "0px");
         }
         const long = result.cards[2];
-        assert.equal(long.stem.overflow, true);
-        assert.equal(long.stem.ellipsis, "ellipsis");
-        assert.equal(long.stem.nowrap, "nowrap");
-        assert.equal(long.extension.text, ".pdf");
-        assert.ok(long.extension.box.right <= long.box.right);
+        assert.equal(long.nameOverflows, false, "the full filename fits in the card");
+        assert.match(long.name, /implementation notes and supporting appendices for review\.pdf$/);
+        assert.ok(long.nameHeight > result.cards[1].nameHeight, "the long filename wraps onto multiple lines");
         assert.ok(Math.abs(result.cards[4].box.y - (result.cards[3].box.y + result.cards[3].box.h) - 6) < 1);
       });
     }

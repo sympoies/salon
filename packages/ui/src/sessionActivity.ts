@@ -1,3 +1,4 @@
+import { formatContextUsage } from "./contextUsage.ts";
 import type { PromptDeliveryFailure } from "./promptDelivery.ts";
 import { normalizeSessionModelSettings } from "@agent-console/shared/session-model";
 import type { TerminalConnectionStatus } from "./TerminalPane.tsx";
@@ -619,9 +620,11 @@ export function buildSessionActivityDetails(
   if (state?.last_turn?.outcome) previousRows.push({ label: "Previous turn outcome", value: titleCase(state.last_turn.outcome) });
 
   const modelSettings = normalizeSessionModelSettings(session);
+  const context = formatContextUsage(session.context_usage, nowMs, session.turn_state?.phase === "working");
   const runtimeRows: ActivityDetailRow[] = [
     { label: "Model", value: modelSettings.model ?? "unknown" },
     { label: "Reasoning effort", value: modelSettings.reasoning_effort ?? "unknown" },
+    ...(context ? [{ label: "Context usage", value: context.detail }] : []),
     { label: "Machine", value: `${session.machine} · ${machineReachable ? "Reachable" : "Unavailable"}` },
     { label: "Process", value: `${titleCase(safeSessionStatus(session.status))}${session.resumable ? " · Resumable" : ""}` },
   ];

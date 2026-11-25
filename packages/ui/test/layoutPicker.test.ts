@@ -27,7 +27,7 @@ test("compact layout offers all six layouts, selects, restores focus and dismiss
     await act(async () => trigger.click());
     const all = container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
     assert.equal(all.length, 7);
-    assert.equal(all[0]!.textContent, "Auto", "the menu lists Auto first, as the inline control does at wide widths");
+    assert.match(all[0]!.textContent ?? "", /Auto.*Follows session count/, "the first option explains automatic layout");
     assert.equal(all[0]!.getAttribute("aria-checked"), "false");
     const options = [...all].slice(1);
     assert.equal(options[1]!.getAttribute("aria-checked"), "true");
@@ -47,7 +47,7 @@ test("compact layout offers all six layouts, selects, restores focus and dismiss
     await act(async () => root.render(createElement(LayoutPicker, { auto: true, mode: 1, displayedMode: 4, onToggleAuto() {}, onSelect() {} })));
     await act(async () => container.querySelector<HTMLButtonElement>(".layout-picker-trigger")!.click());
     assert.equal(container.querySelectorAll('[role="menuitemradio"][aria-checked="true"]').length, 1);
-    assert.equal(container.querySelector('[role="menuitemradio"][aria-checked="true"]')?.textContent, "Auto", "while Auto is on, the menu shows Auto as the choice");
+    assert.equal(container.querySelector('[role="menuitemradio"][aria-checked="true"]')?.textContent, "AutoFollows session count", "while Auto is on, the menu shows Auto as the choice");
     assert.ok(container.querySelector(".layout-picker-trigger")!.getAttribute("aria-label")?.includes("Auto, 4 panes"), "the trigger still shows the resolved layout");
   } finally {
     await act(async () => root.unmount()); await harness.close(); await window.happyDOM.close();
@@ -73,7 +73,7 @@ test("the compact menu applies Auto and a pane count turns it off", async () => 
     }
     await act(async () => root.render(createElement(Host)));
     const trigger = container.querySelector<HTMLButtonElement>(".layout-picker-trigger")!;
-    const item = (name: string) => [...container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(node => node.textContent === name)!;
+    const item = (name: string) => [...container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(node => node.textContent === name || node.textContent === `${name}Follows session count`)!;
     await act(async () => trigger.click());
     await act(async () => item("Auto").click());
     assert.ok(trigger.getAttribute("aria-label")?.includes("Auto, 2 panes"));

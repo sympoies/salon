@@ -61,7 +61,7 @@ function measure(markup: string, surface: NoticeSurface, width: number): Measure
         if(!clickable)blocker=(el.getAttribute('aria-label')||el.textContent)+' blocked by '+hit?.className;
         return clickable;
       });
-      const dismiss=pill.querySelector('button');const d=dismiss.getBoundingClientRect();const hit=document.elementFromPoint(d.x+d.width/2,d.y+d.height/2);
+      const dismiss=pill.querySelector('.connection-notice-dismiss');const d=dismiss.getBoundingClientRect();const hit=document.elementFromPoint(d.x+d.width/2,d.y+d.height/2);
       const row=layer.closest('.session-filter-trigger-row, .session-filter-status-row, .slot-head, .slot-focus-strip');
       const slot=row;
       const p=pill.getBoundingClientRect(),r=slot?.getBoundingClientRect();

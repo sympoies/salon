@@ -566,21 +566,15 @@ export function ProviderCard({
         <div className="usage-provider-id">
           <AgentBadge agent={p.provider} />
           <h2 className="usage-provider-title">{p.label}</h2>
-          {/* codex reports one entry per account (all provider:"codex"); the badge
-              stays the provider glyph and the account alias labels the card. A
-              Claude alias keeps the signed-in email as its tooltip. */}
-          {alias ? (
-            <span className="usage-provider-account" title={alias !== p.account ? p.account ?? undefined : undefined}>
-              {alias}
-            </span>
-          ) : null}
+          {alias ? <span className="usage-provider-account">{alias}</span> : null}
         </div>
         <div className="usage-provider-badges">
           {isDefault ? <span className="badge usage-default-badge">Default</span> : null}
           {p.plan ? <span className="badge">{p.plan}</span>
-            : <span className="badge usage-plan-unknown" title="The provider did not report a plan">unknown</span>}
+            : <span className="badge usage-plan-unknown">Plan unavailable</span>}
         </div>
       </div>
+      {p.account && alias !== p.account ? <p className="usage-provider-account-detail">{p.account}</p> : null}
       {hostAlert ? (
         <div className="usage-provider-hosts warn" role="note">
           <span className="usage-provider-hosts-label">{hostAlert}</span>
