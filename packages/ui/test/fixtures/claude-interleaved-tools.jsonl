@@ -1,0 +1,6 @@
+{"type":"user","uuid":"prompt","message":{"role":"user","content":"Check the sample."}}
+{"type":"assistant","uuid":"first-call","message":{"role":"assistant","id":"message-first","content":[{"type":"tool_use","id":"tool-first","name":"Bash","input":{"command":"printf sample"}}]}}
+{"type":"user","uuid":"first-result","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-first","content":"Sample verified","is_error":false}]}}
+{"type":"assistant","uuid":"thinking","message":{"role":"assistant","id":"message-second","content":[{"type":"thinking","thinking":"Fixture reasoning"}]}}
+{"type":"assistant","uuid":"progress","message":{"role":"assistant","id":"message-second","content":[{"type":"text","text":"The sample passed. I am checking the next one."}]}}
+{"type":"assistant","uuid":"second-call","message":{"role":"assistant","id":"message-second","content":[{"type":"tool_use","id":"tool-second","name":"Bash","input":{"command":"sleep 5"}}]}}
