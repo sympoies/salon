@@ -475,7 +475,7 @@ export function HistoryPanel({ machines, liveSessions = [], onClose, onResumed }
                 <div>
                   <strong>{sessionTitle(selected)}</strong>
                   <span className="history-viewer-meta"><SessionContext session={selected} marker={historyMarkerItem(selected, liveSessions)} /></span>
-                  <code className="history-session-id" title={selected.provider_session_id}>{selected.provider_session_id}</code>
+                  <code className="history-session-id">{selected.provider_session_id}</code>
                 </div>
                 <div className="history-viewer-actions">
                   <button className="btn ghost history-back" type="button" onClick={returnToSessionList}>

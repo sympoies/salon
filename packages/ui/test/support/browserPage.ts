@@ -7,6 +7,8 @@ import { hasBrowserExited, stopBrowser } from "./browserProfile.ts";
 export interface Page {
   /** Dispatch a real primary-button press and release through DevTools. */
   click(x: number, y: number): Promise<void>;
+  tap(x: number, y: number): Promise<void>;
+  pressEnter(): Promise<void>;
   pressEscape(): Promise<void>;
   navigate(url: string): Promise<void>;
   evaluate<T>(expression: string): Promise<T>;
@@ -100,10 +102,19 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
     await send("Page.enable");
     await send("Runtime.enable");
     return {
+      async pressEnter() {
+        const key = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 };
+        await send("Input.dispatchKeyEvent", { type: "keyDown", ...key, text: "\r" });
+        await send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+      },
       async pressEscape() {
         const key = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 };
         await send("Input.dispatchKeyEvent", { type: "keyDown", ...key });
         await send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+      },
+      async tap(x, y) {
+        await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+        await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       },
       async click(x, y) {
         await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });

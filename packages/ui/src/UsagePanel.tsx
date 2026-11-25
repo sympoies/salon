@@ -38,6 +38,8 @@ import {
   isAccountProvider,
 } from "@agent-console/shared/api";
 import { Modal } from "./Modal.tsx";
+import { SelectChevronIcon } from "./icons.tsx";
+import { usePreviewPinnedPopover } from "./SessionActivityPopover.tsx";
 
 // Usage data changes slowly (codex updates its rollout every turn; claude only
 // when a session runs), so poll unhurriedly. The shared 1s clock keeps reset
@@ -519,6 +521,7 @@ export function ProviderCard({
   const presentation = providerUsagePresentation(p, now);
   const account = p.account;
   const alias = usageAccountAlias(p);
+  const { open, popoverId, rootRef, triggerRef, popoverRef, onClick } = usePreviewPinnedPopover();
   // Hosts are shown only as a fault: a per-host read with no account could not
   // name its login. Which hosts run a named account is not shown on the card;
   // the entry still carries them.
@@ -536,13 +539,13 @@ export function ProviderCard({
     switching: (name: string) => `Switching default ${p.provider} account to ${name}`,
     set: (name: string) => `Set ${name} as the default ${p.provider} account`,
   } : null;
-  const actionLabel = !account || !switchCopy
+  const actionLabel = !account || !alias || !switchCopy
     ? undefined
     : isDefault
-      ? switchCopy.current(account)
+      ? switchCopy.current(alias)
       : pending
-        ? switchCopy.switching(account)
-        : switchCopy.set(account);
+        ? switchCopy.switching(alias)
+        : switchCopy.set(alias);
   return (
     <li
       className={[
@@ -566,19 +569,26 @@ export function ProviderCard({
         <div className="usage-provider-id">
           <AgentBadge agent={p.provider} />
           <h2 className="usage-provider-title">{p.label}</h2>
-          {/* codex reports one entry per account (all provider:"codex"); the badge
-              stays the provider glyph and the account alias labels the card. A
-              Claude alias keeps the signed-in email as its tooltip. */}
-          {alias ? (
-            <span className="usage-provider-account" title={alias !== p.account ? p.account ?? undefined : undefined}>
-              {alias}
+          {alias && account && alias !== account ? (
+            <span className="usage-provider-account-disclosure" ref={rootRef}>
+              <button type="button" className="usage-provider-account usage-provider-account-trigger"
+                ref={triggerRef} aria-label={`${alias} account details`} aria-haspopup="dialog"
+                aria-expanded={open} aria-controls={open ? popoverId : undefined} onClick={onClick}>
+                <span>{alias}</span><SelectChevronIcon className="usage-provider-account-chevron" />
+              </button>
+              {open ? (
+                <span className="account-usage-popover usage-provider-account-detail"
+                  ref={popoverRef} id={popoverId} role="dialog" aria-label={`${alias} account identity`} tabIndex={-1}>
+                  {account}
+                </span>
+              ) : null}
             </span>
-          ) : null}
+          ) : alias ? <span className="usage-provider-account">{alias}</span> : null}
         </div>
         <div className="usage-provider-badges">
           {isDefault ? <span className="badge usage-default-badge">Default</span> : null}
           {p.plan ? <span className="badge">{p.plan}</span>
-            : <span className="badge usage-plan-unknown" title="The provider did not report a plan">unknown</span>}
+            : <span className="badge usage-plan-unknown">Plan unavailable</span>}
         </div>
       </div>
       {hostAlert ? (

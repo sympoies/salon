@@ -492,19 +492,41 @@ test("ProviderCard shows the account nickname next to the title when present, om
 });
 
 // #937: a new Codex account's card showed no plan at all; show the reported plan, else say it is unknown.
-test("ProviderCard shows the reported plan, and an unknown plan badge when none is reported", async () => {
+test("ProviderCard shows the reported plan, and an unavailable plan badge when none is reported", async () => {
   const reported = await cardHtml({ account: "account-b", plan: "plus", windows: [win()] });
   assert.match(reported, /<span class="badge">plus<\/span>/);
   assert.doesNotMatch(reported, /usage-plan-unknown/);
   const missing = await cardHtml({ account: "account-b", plan: null, windows: [win()] });
-  assert.match(missing, /<span class="badge usage-plan-unknown" title="The provider did not report a plan">unknown<\/span>/);
+  assert.match(missing, /<span class="badge usage-plan-unknown">Plan unavailable<\/span>/);
 });
 
-test("ProviderCard labels a Claude account by its alias and keeps the email as the tooltip", async () => {
-  const html = await cardHtml({ provider: "claude", label: "Claude", account: "max@example.com", switch_key: "20X", windows: [win()] });
-  assert.match(html, /class="usage-provider-account" title="max@example\.com">20X</);
+test("ProviderCard discloses the identity only after opening the account alias", async () => {
+  const ProviderCard = await loadProviderCard();
+  const mounted = installDom();
+  cleanupStack.push(mounted.cleanup);
+  const identity = "max@example.com";
+  const switches: string[] = [];
+  await act(async () => mounted.root.render(createElement(ProviderCard, {
+    provider: provider({ provider: "claude", label: "Claude", account: identity, switch_key: "20X", windows: [win()] }),
+    now: NOW,
+    switchable: true,
+    onSwitch: async account => { switches.push(account); },
+  })));
+  assert.ok(!mounted.container.innerHTML.includes(identity), "the closed card omits the account identity");
+  const alias = mounted.container.querySelector<HTMLButtonElement>('button[aria-label="20X account details"]');
+  assert.ok(alias);
+  assert.equal(alias.getAttribute("aria-expanded"), "false");
+  await act(() => alias.click());
+  assert.equal(alias.getAttribute("aria-expanded"), "true");
+  const detail = mounted.container.querySelector('.usage-provider-account-detail[role="dialog"]');
+  assert.equal(detail?.textContent, identity);
+  assert.deepEqual(switches, [], "opening the alias is independent of switching defaults");
+  await act(() => alias.click());
+  assert.ok(!mounted.container.innerHTML.includes(identity));
+
   const noProfile = await cardHtml({ provider: "claude", label: "Claude", account: "team@example.com", windows: [win()] });
   assert.match(noProfile, /class="usage-provider-account">team@example\.com</);
+  assert.doesNotMatch(noProfile, /account details/);
 });
 
 test("ProviderCard surfaces updated_at freshness when present, omits it when null", async () => {
@@ -605,14 +627,14 @@ test("Claude ProviderCard marks the provider default and offers to switch by pro
     onSwitch: async () => {},
   });
   assert.match(shown, /<span class="badge usage-default-badge">Default<\/span>/);
-  assert.match(shown, /aria-label="Current default claude account team@example.com"/);
+  assert.match(shown, /aria-label="Current default claude account account-secondary"/);
   const other = renderComponent(ProviderCard, {
     provider: provider({ provider: "claude", label: "Claude", account: "max@example.com", switch_key: "account-primary" }),
     now: NOW,
     switchable: true,
     onSwitch: async () => {},
   });
-  assert.match(other, /aria-label="Set max@example.com as the default claude account"/);
+  assert.match(other, /aria-label="Set account-primary as the default claude account"/);
   assert.doesNotMatch(other, /usage-default-badge/);
 });
 

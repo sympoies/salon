@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { formatContextUsage, normalizeContextUsage, type ContextUsage } from "../src/contextUsage.ts";
 
-test("context usage renders compact counts, rounded percent, and a source tooltip", () => {
+test("context usage renders compact counts, rounded percent, and exact context details", () => {
   const usage = normalizeContextUsage({
     used_tokens: 244000,
     window_tokens: 1000000,
@@ -14,7 +14,7 @@ test("context usage renders compact counts, rounded percent, and a source toolti
     text: "· 24% 244k/1M",
     percentText: "24%",
     tokensText: "244k/1M",
-    title: "Context usage: 244,000 / 1,000,000 tokens · codex-rollout · 2026-10-14T00:00:00Z · gpt-example",
+    detail: "244,000 / 1,000,000 tokens · codex-rollout · 2026-10-14T00:00:00Z · gpt-example",
     stale: false,
   });
 });

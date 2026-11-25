@@ -307,22 +307,24 @@ export function Settings({
     const hasOverride = Object.prototype.hasOwnProperty.call(machineColors, machine);
     return (
       <span className="settings-machine-color">
-        <input
-          type="color"
-          className="settings-color-input"
-          value={color}
-          onChange={(e) => {
-            const next = e.currentTarget.value;
-            setDraftMachineColors((prev) => {
-              const draft = createMachineColorMap(Object.entries(prev));
-              draft[machine] = next;
-              return draft;
-            });
-          }}
-          onBlur={(e) => commitMachineColor(machine, e.currentTarget.value)}
-          aria-label={`Color for ${machine}`}
-          title={`${machine} color ${color}`}
-        />
+        <span className="settings-color-swatch">
+          <input
+            type="color"
+            className="settings-color-input"
+            value={color}
+            onChange={(e) => {
+              const next = e.currentTarget.value;
+              setDraftMachineColors((prev) => {
+                const draft = createMachineColorMap(Object.entries(prev));
+                draft[machine] = next;
+                return draft;
+              });
+            }}
+            onBlur={(e) => commitMachineColor(machine, e.currentTarget.value)}
+            aria-label={`Color for ${machine}`}
+          />
+          <code className="settings-color-value">{color}</code>
+        </span>
         {hasOverride ? (
           <button
             type="button"
@@ -335,7 +337,7 @@ export function Settings({
               });
               onMachineColorReset(machine);
             }}
-            title={`Reset ${machine} color`}
+            aria-label={`Reset ${machine} color`}
           >
             reset
           </button>

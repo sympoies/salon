@@ -188,9 +188,9 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     setDraft(current => ({ ...current, ...draftPatch }));
   };
   const filterDetails = <>
-    <div className="session-filter-chips" aria-label="Active session filters">
+    <div className={`session-filter-chips${open ? " are-expanded" : ""}`} aria-label="Active session filters">
       {chips.map(chip => <button key={chip.key} type="button" className="control-chip btn session-filter-chip" aria-label={`Remove ${chip.label}`} title={chip.label}
-        onClick={() => applyImmediate({ ...filters, ...chip.reset }, chip.reset)}><span className="session-filter-chip-label">{chip.compact}</span><span aria-hidden="true"> ×</span></button>)}
+        onClick={() => applyImmediate({ ...filters, ...chip.reset }, chip.reset)}><span className="session-filter-chip-label">{open ? chip.label : chip.compact}</span><span aria-hidden="true"> ×</span></button>)}
       {chips.length > 0 ? <button className="btn ghost" type="button" onClick={() => applyImmediate(CLEAR_SESSION_FILTERS)}>Clear all</button> : null}
     </div>
     {restrictedHosts > 0 ? <div className="session-list-hidden-hosts" role="status"><span>{restrictedHosts} {restrictedHosts === 1 ? "host" : "hosts"} excluded by your filter</span>
@@ -207,8 +207,8 @@ export function SessionFiltersBar({ records, countRecords, offlineCountMachines 
     {mobile ? <button type="button" className="session-filter-scrim" aria-label="Close session filters" onClick={close} /> : null}
     <div id={panelId} ref={panelRef} className={`session-filter-panel ${mobile ? "is-mobile" : ""}`} role="dialog" aria-modal={mobile ? true : undefined} aria-labelledby={headingId} onKeyDown={onKeyDown}>
       <div className="session-filter-panel-heading"><h2 id={headingId}>Session filters</h2><IconButton className="btn" aria-label="Close session filters" type="button" onClick={close}><CloseIcon /></IconButton></div>
-      {compactHeader ? filterDetails : null}
       <div className="session-filter-panel-fields">
+        {compactHeader ? filterDetails : null}
         <details open className="session-filter-multi-select" data-filter-dimension="workspaces">
           <summary>Workspace <span>{draftWorkspaces == null ? `All workspaces (${count({ workspaces: null, excludedWorkspaces: null })})` : `${draftWorkspaces.length} of ${workspaceChoices.length}`}</span></summary>
           <div className="session-filter-facet-body"><button type="button" className="btn ghost session-filter-facet-all" disabled={draftWorkspaces == null} onClick={() => update({ workspaces: null, excludedWorkspaces: null })}>All workspaces</button>

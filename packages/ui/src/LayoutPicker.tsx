@@ -31,7 +31,7 @@ export function LayoutPicker({ auto, mode, displayedMode, onToggleAuto, onSelect
   const select = (value: LayoutMode) => { onSelect(value); close(); triggerRef.current?.focus(); };
   return <div className="layout-picker" role="group" aria-label="Terminal layout">
     <IconButton preset="standard" type="button" className={`layout-seg-btn is-auto ${auto ? "is-active" : ""}`}
-      aria-pressed={auto} aria-label="Auto layout" title="Auto layout — grid follows the session count" onClick={onToggleAuto}>
+      aria-pressed={auto} aria-label="Auto layout" aria-description="Grid follows the session count" title="Auto layout — grid follows the session count" onClick={onToggleAuto}>
       <AutoLayoutIcon />
     </IconButton>
     <div className="layout-seg layout-picker-inline">
@@ -49,7 +49,7 @@ export function LayoutPicker({ auto, mode, displayedMode, onToggleAuto, onSelect
     </IconButton>
     {open ? <div ref={menuRef} id={id} className="layout-picker-menu" role="menu" aria-label="Choose terminal layout" onKeyDown={focus.onKeyDown}>
       <button type="button" role="menuitemradio" className="control-menu layout-picker-option" aria-checked={auto}
-        onClick={() => { if (!auto) onToggleAuto(); close(); triggerRef.current?.focus(); }}><AutoLayoutIcon />Auto</button>
+        onClick={() => { if (!auto) onToggleAuto(); close(); triggerRef.current?.focus(); }}><AutoLayoutIcon /><span>Auto<span className="layout-picker-option-description">Follows session count</span></span></button>
       {LAYOUT_MODES.map(value => <button key={value} type="button" role="menuitemradio" className="control-menu layout-picker-option"
         aria-checked={!auto && mode === value} onClick={() => select(value)}><LayoutModeIcon mode={value} />{label(value)}</button>)}
     </div> : null}

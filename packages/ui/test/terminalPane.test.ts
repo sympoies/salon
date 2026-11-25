@@ -891,7 +891,7 @@ test("TerminalPane shows an Android-safe touch clipboard toolbar", () => {
   assert.doesNotMatch(source, /height:.*TERMINAL_TOUCH_MENU_HEIGHT/);
   // Select all was retired; the menu is Copy · Copy link · Paste · Retitle · Done.
   assert.doesNotMatch(source, />\s*Select all\s*<\/button>/);
-  assert.match(source, />\s*Copy\s*<\/button>/);
+  assert.match(source, /canCopyTerminalSelection \? "Copy" : "Copy last"/);
   assert.match(source, />\s*Paste\s*<\/button>/);
   assert.match(source, /readonly onRetitle\?: \(\) => void;/);
   assert.match(source, /onRetitle\(\);\s*setTerminalTouchMenu\(null\);/);

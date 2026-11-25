@@ -76,7 +76,10 @@ export function TerminalView({ machine, id, title, titleRevision, sessionIncarna
               {currentTitle}
             </button>
           )}
-          <span className={`dot ${status}`} title={status} />
+          <span className="term-connection-status" role="status">
+            <span className={`dot ${status}`} aria-hidden="true" />
+            {status === "open" ? "Connected" : status === "closed" ? "Disconnected" : "Connecting"}
+          </span>
         </div>
         {status === "closed" ? (
           <button className="btn" onClick={() => setReconnectToken((e) => e + 1)}>

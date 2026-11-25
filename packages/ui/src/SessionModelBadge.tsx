@@ -11,7 +11,7 @@ export function SessionModelBadge({ session }: { readonly session: SessionModelD
   const label = sessionModelLabel(session);
   const settings = normalizeSessionModelSettings(session);
   const usage = formatContextUsage(session.context_usage, Date.now(), session.turn_state?.phase === "working");
-  const title = [`Model · reasoning effort: ${label}`, usage?.title].filter(Boolean).join("\n");
+  const title = [`Model · reasoning effort: ${label}`, usage && `Context usage: ${usage.detail}`].filter(Boolean).join("\n");
   return (
     <span className="slot-meta session-model-badge" title={title} aria-label={`${label}${usage ? ` ${usage.text}` : ""}`} style={{ display: "flex" }}>
       <span className="session-model-name">{settings.model ?? "unknown"}</span>

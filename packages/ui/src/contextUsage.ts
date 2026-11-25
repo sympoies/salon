@@ -28,7 +28,7 @@ export function formatContextUsage(
   /** `text` split so a narrow row can drop the tokens and keep the percentage. */
   readonly percentText: string;
   readonly tokensText: string;
-  readonly title: string;
+  readonly detail: string;
   readonly stale: boolean;
 } | undefined {
   if (
@@ -46,7 +46,7 @@ export function formatContextUsage(
     text: `· ${percent}% ${compactTokens(usage.used_tokens)}/${compactTokens(usage.window_tokens)}`,
     percentText: `${percent}%`,
     tokensText: `${compactTokens(usage.used_tokens)}/${compactTokens(usage.window_tokens)}`,
-    title: `Context usage: ${usage.used_tokens.toLocaleString("en-US")} / ${usage.window_tokens.toLocaleString("en-US")} tokens · ${sourceDetail} · ${observedDetail}${modelDetail}`,
+    detail: `${usage.used_tokens.toLocaleString("en-US")} / ${usage.window_tokens.toLocaleString("en-US")} tokens · ${sourceDetail} · ${observedDetail}${modelDetail}`,
     stale,
   };
 }

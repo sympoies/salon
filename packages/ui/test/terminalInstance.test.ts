@@ -2753,7 +2753,7 @@ test("TerminalPane menu never treats a stale tmux buffer as a selection", async 
     await flushAsync();
   });
   await act(async () => {
-    buttonNamed(mounted.container, "Copy").click();
+    buttonNamed(mounted.container, "Copy last").click();
     await flushAsync();
   });
 

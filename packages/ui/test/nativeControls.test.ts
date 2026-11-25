@@ -57,3 +57,77 @@ test("native form controls use the shared theme or an explicitly styled trigger"
   }
   assert.deepEqual(offenders, []);
 });
+
+// These audited titles get their equivalent from a composed label or a nearby
+// detail surface. An exact entry keeps another title in the same file checked.
+const composedTitleHints = [
+  'ConversationComposer.tsx button {sending ? "Sending…" : "Send reply"}', // Button state.
+  'DebugPanel.tsx button "Filter to this session"', // Named session-filter action.
+  'HeaderCountsNotice.tsx IconButton "Partial counts: tap for offline hosts"', // Offline host details.
+  'HeaderUsage.tsx span {windowTitle(w)}', // Usage page.
+  'HeaderUsage.tsx span {`${w.label} resets in ${formatResetCountdown(w.resets_at, now)}`}',
+  'HistoryPanel.tsx span {session.cwd}', // The selected session shows the full path.
+  'HistoryPanel.tsx span {session.cwd}',
+  'LayoutPicker.tsx IconButton "Auto layout — grid follows the session count"', // Auto option description.
+  'LayoutPicker.tsx IconButton "Choose layout"', // Name includes the current layout.
+  'LiveConversationPanel.tsx IconButton "Refresh"', // Named conversation actions.
+  'LiveConversationPanel.tsx IconButton "Close"',
+  'MessageMarkdown.tsx a {title}', // Optional author-supplied link metadata.
+  'MessageMarkdown.tsx button "Copy path"', // Name includes the attachment.
+  'OutgoingBubble.tsx div "Reply actions: right-click, long-press or press Enter"', // Visible reply action button.
+  'SessionAccountBadge.tsx span {view.statusLabel}', // Account popover on the session.
+  'SessionActivityPopover.tsx button {statusDescription}', // Name includes the status.
+  'SessionCopyMenu.tsx IconButton {title}', // Action names in the copy menu.
+  'SessionFiltersBar.tsx button {chip.label}', // Full names in the filter panel.
+  'SessionFiltersBar.tsx button {chip.label}',
+  'SessionFiltersBar.tsx span {entry.label}',
+  'SessionModelBadge.tsx span {title}', // Runtime rows in the session activity popover.
+  'SessionSlot.tsx button "Choose a session"', // Current position in the chooser name.
+  'SessionSlot.tsx IconButton "Open session"', // Name includes the session.
+  'SessionSlot.tsx summary {s ? "Open session menu" : "Open slot menu"}', // Trigger names.
+  'SessionSlot.tsx IconButton {showPhoneConversation ? "Refresh conversation" : "Refresh terminal"}',
+  'SessionSlot.tsx SessionCopyMenu {copyAction ? copyAction.kind === "command" ? "Copy session command" : "Copy provider session ID" : copyActions[0]!.label}',
+  'SessionSlot.tsx AsyncButton {`${actionLabel}. ${accessibleLabel}`}', // Name and status details.
+  'SessionTitleMenu.tsx IconButton "Move here: swap into the current position"', // Named move action.
+  'SessionTitleMenu.tsx summary "Open session menu"', // Name includes the session.
+  'SessionTitleMenu.tsx span {savedDraftLabel}', // Visible draft text.
+  'StatusNotice.tsx button {notice.message}', // The button opens the full message.
+  'TerminalPane.tsx button {`Copy ${visibleTouchMenu.linkUrl}`}', // URL in the Links picker.
+  'TerminalPane.tsx button {entry.url}',
+];
+
+test("native title hints have a visible or accessible equivalent", () => {
+  const remaining = [...composedTitleHints];
+  const offenders: string[] = [];
+  const files = readdirSync(source, { recursive: true }).filter(file => /\.[jt]sx$/.test(file)).sort();
+  for (const file of files) {
+    const text = readFileSync(new URL(file, source), "utf8");
+    const { program, errors } = parseSync(file, text);
+    assert.deepEqual(errors, [], `parse ${file}`);
+    new Visitor({
+      JSXElement(node) {
+        const { openingElement } = node;
+        if (openingElement.name.type !== "JSXIdentifier") return;
+        if (openingElement.name.name === "SessionWorkRefs") return; // A session data prop.
+        const attrs = new Map(openingElement.attributes.flatMap(attr =>
+          attr.type === "JSXAttribute" && attr.name.type === "JSXIdentifier" ? [[attr.name.name, attr]] : []));
+        const title = attrs.get("title");
+        if (!title?.value) return;
+        const hint = text.slice(title.value.start, title.value.end);
+        const equivalent = [attrs.get("aria-label"), attrs.get("aria-description")].some(attr =>
+          attr?.value && text.slice(attr.value.start, attr.value.end) === hint);
+        const literal = attributeValue(title);
+        if (equivalent || (literal && node.children.some(child => child.type === "JSXText" && child.value.trim() === literal))) return;
+        const key = `${file} ${openingElement.name.name} ${hint}`;
+        const existing = remaining.indexOf(key);
+        if (existing >= 0) {
+          remaining.splice(existing, 1);
+          return;
+        }
+        offenders.push(key);
+      },
+    }).visit(program);
+  }
+  assert.deepEqual(offenders, [], "Give the title hint a visible or accessible equivalent");
+  assert.deepEqual(remaining, [], "Remove unused title-hint exceptions");
+});
