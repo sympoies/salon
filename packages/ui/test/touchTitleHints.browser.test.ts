@@ -54,11 +54,12 @@ const fixture = `
     const [pinned, setPinned] = useState(true);
     return h(LiveConversationPanel,{session:makeSession(),docked:true,onClose:noop,pinned,onTogglePin:()=>setPinned(!pinned)});
   }
+  window.usageSwitches = 0;
   const views = {
     conversation:h(Dock),
     overview:h(Overview),
     history:h(HistoryPanel,{machines:['sample-host'],onClose:noop,onResumed:noop}),
-    usage:h('ul',{className:'usage-providers'},h(ProviderCard,{now:0,provider:{
+    usage:h('ul',{className:'usage-providers'},h(ProviderCard,{now:0,switchable:true,onSwitch:async () => {window.usageSwitches++;},provider:{
       ok:true,provider:'claude',label:'Claude',plan:null,account:${JSON.stringify(account)},switch_key:'Example team',windows:[]}})),
     attachments:h(React.Fragment,null,h(ComposerAttachment,{attachment,disabled:false,onRemove:noop}),
       h('div',{className:'attachment-file-list'},h(AttachmentFileCard,{attachment,file:{path:attachment.path}}))),
@@ -183,8 +184,23 @@ test("full details are readable on a touch-width viewport", async t => {
     });
     await run("usage", async () => {
       await wait(".usage-provider");
+      const trigger = '[aria-label="Example team account details"]';
+      const identityInCard = `document.querySelector(".usage-provider")?.textContent.includes(${JSON.stringify(account)})`;
+      await save(theme, "usage-closed");
+      const closedByDefault = await page.evaluate<boolean>(`!${identityInCard}`);
+      await tap(trigger);
+      if (evidence) await page.evaluate("new Promise(resolve => setTimeout(resolve, 250))");
       await save(theme, "usage");
-      assert.equal(await readable(".usage-provider-account-detail", account), true, "account card shows the identity behind the alias");
+      assert.equal(closedByDefault, true, "the closed card omits the aliased identity");
+      assert.equal(await readable(".usage-provider-account-detail", account), true, "tapping the alias reveals the identity");
+      assert.equal(await page.evaluate("window.usageSwitches"), 0, "tapping the alias does not select the default account");
+      await page.pressEscape();
+      assert.equal(await page.evaluate(`!${identityInCard} && document.activeElement.matches('${trigger}')`), true);
+      await page.pressEnter();
+      await wait(".usage-provider-account-detail");
+      assert.equal(await readable(".usage-provider-account-detail", account), true, "Enter opens the focused alias");
+      await tap(".usage-provider-title");
+      assert.equal(await page.evaluate(`!${identityInCard} && window.usageSwitches === 1`), true, "background press closes details and can still select the default");
       assert.equal(await page.evaluate("document.querySelector('.usage-plan-unknown')?.innerText"), "Plan unavailable");
     });
     await run("attachments", async () => {
