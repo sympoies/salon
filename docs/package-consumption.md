@@ -98,7 +98,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.105 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.106 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -204,7 +204,18 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.105`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.106`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.106
+
+Grouped tool-call summary rows remain clickable while pressed (#672, refs #671).
+Previously, pressed-state scaling could shrink the group toggle under a press near
+its left edge or chevron, causing the release to land outside the control. The
+button now uses the same non-moving pressed feedback as single tool rows. Grouping
+and row content are unchanged.
+
+SDK consumers can keep their current configuration. The container runtime remains
+pinned to nils-cli v1.42.6.
 
 ### Changes retained in SDK 0.1.105
 

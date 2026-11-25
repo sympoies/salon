@@ -646,7 +646,7 @@
   "adaptedFiles": {
     "packages/edge/package.json": {
       "upstreamSha256": "d82a9e32d4f81d79a55a7a44f89af8a965816df6058f5329aba16c93ad87cb1f",
-      "importedSha256": "5e110df4f7f3391d025315bc5a1cc30d64238f97ce2595cf5dd2dcb3d5a2d299"
+      "importedSha256": "c2a87f260d2aa54b8accd8399a384da1c61cf5170843f272cbd5592f2b31e01a"
     },
     "packages/edge/scripts/test-credential.ts": {
       "upstreamSha256": "6aa6702c19b3dcb2a3ade9d639c7606a6cf4f2b29e9106df1c2af706826347f4",
@@ -670,7 +670,7 @@
     },
     "packages/shared/package.json": {
       "upstreamSha256": "cc30b019d2887dddab4ada98dda0ac791444f55f81fb7dde56d469d897191b61",
-      "importedSha256": "de13706f2e7aefa6daf949c28bb9ffd6af107b4315c2515a61110a2567fe1752"
+      "importedSha256": "bce5de3c1e55082a625fdbc24133cbb0a30dbcd82192cdcf2425add5197901d4"
     },
     "packages/shared/src/sse.ts": {
       "upstreamSha256": "f9076276454f584749e895df9049cd1d24e181bec46c9bda2a2b4d851f9752ac",
@@ -678,7 +678,7 @@
     },
     "packages/ui/package.json": {
       "upstreamSha256": "879df3dda266feb2d41574e164b7846c5c44e2d4e5ac5f452925af6f3978538a",
-      "importedSha256": "ec7e6542963379aeab491d58e15956c707cf4233d685e9e0267827269b40a059"
+      "importedSha256": "30b34cab54840df9244cec1d7ba79dfcab4fadccf46a78f217bf9e8a535c1080"
     },
     "packages/ui/src/extensions.tsx": {
       "upstreamSha256": "d74f36fb4a5dff7fd66f7f0c3a1ce739403fd36af2ab9a41ac9fc29ed193c1b1",
