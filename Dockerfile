@@ -59,6 +59,8 @@ COPY docker ./docker
 RUN pnpm install --frozen-lockfile \
     && pnpm run build
 
+COPY docker/codex-container.toml /etc/codex/config.toml
+
 ENV HOME=/home/node \
     CODEX_HOME=/home/node/.codex \
     XDG_STATE_HOME=/home/node/.local/state \

@@ -1,0 +1,2 @@
+# The supplied Compose files isolate Codex commands at the container boundary.
+sandbox_mode = "danger-full-access"

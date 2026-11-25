@@ -47,6 +47,17 @@ Keep this browser credential private. The daemon token is distinct and remains
 server-side. The browser uses the core's authenticated cookie, write and WebSocket
 attachment paths. Raw daemon ports are never published.
 
+## Codex command isolation
+
+The Salon image disables Codex's own command sandbox by default. The supplied Compose
+files isolate commands with a non-root user, a read-only root filesystem, writable work
+and state volumes and temporary mounts, all Linux capabilities dropped, and no privilege
+escalation. The published port binds to loopback. Codex commands can access files
+available inside the container and use its network.
+
+The default lives in the image's system configuration. Host installs keep their own
+Codex sandbox settings.
+
 ## Set up provider authentication
 
 Choose one mode per provider. Keep credentials in the provider's named volume.
@@ -247,16 +258,25 @@ browser cookie required login again, and the stopped shell was not silently recr
 Headless Chrome rendered login and the Codex session dialog and retained authenticated
 access after reload at desktop and mobile sizes.
 
-### Check default Codex startup
+### Check Codex startup and tool execution
 
-Run this test in a fresh, locally built Compose workspace before authenticating Codex:
+Run these tests in a fresh, locally built Compose workspace before authenticating Codex.
 
 ```bash
 docker compose exec -T workspace node --test /opt/salon/docker/default-create.test.ts
+docker compose exec -T -e SALON_CODEX_SMOKE=container workspace \
+  node --test /opt/salon/docker/codex-runtime.test.ts
 ```
 
-The test checks the process listing Codex uses to register its app-server.
-It signs in to Salon and verifies that the default session reaches the Codex sign-in prompt.
+The first test checks that managed Codex can inspect its processes and reach the sign-in prompt.
+The second checks that the Codex app-server starts with zero warnings and runs a local tool command.
+The release workflow runs the second test against the published image.
+
+On a host with Codex installed, check the default sandbox with an isolated test config.
+
+```bash
+node --test docker/codex-runtime.test.ts
+```
 
 ### Check Codex API-key prompt delivery offline
 
