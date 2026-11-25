@@ -98,7 +98,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.103 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.104 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -204,7 +204,30 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.103`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.104`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.104
+
+Native shell code can import `nativeConnection()` from the new public subpath
+`@agent-console/ui/native-connection` (#666, closes #665). It returns a synchronous,
+read-only snapshot of the configured server URL and credential, or
+`{ unavailable: true }` if either is missing. Keep the credential out of URLs,
+logs, diagnostics and errors. SDK consumers can keep their current configuration
+and existing integrations behave as before.
+
+In the published container image, the system configuration at `/etc/codex/config.toml`
+turns off Codex's own command sandbox for managed runs (#667, closes #658). This clears
+the startup warning and lets Codex run tool commands. Host installs keep Codex's own sandbox.
+
+Run the image with the [supplied Compose settings][container-isolation]. They provide
+the isolation boundary through a non-root user, a read-only root filesystem with
+writable work and state volumes and temporary mounts, all capabilities dropped,
+privilege escalation disabled, and a loopback-only published port. A hand-written
+`docker run` without those settings removes that boundary and is unsupported.
+The image workflow smoke test checks a Codex tool command and zero startup warnings.
+The container runtime remains pinned to nils-cli v1.42.6.
+
+[container-isolation]: container-development.md#codex-command-isolation
 
 ### Changes retained in SDK 0.1.103
 
