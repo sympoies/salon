@@ -1,32 +1,38 @@
 import { strict as assert } from "node:assert";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import react from "@vitejs/plugin-react";
-import { build } from "vite";
-import { createEdgeServer } from "../../edge/src/server.ts";
-import { listenOnLoopback, makeEdgeConfig } from "../../edge/test/support.ts";
-import { launchPage } from "./support/browserPage.ts";
+import { createEdgeServer } from "../../packages/edge/src/server.ts";
+import { listenOnLoopback, makeEdgeConfig } from "../../packages/edge/test/support.ts";
+import { launchPage } from "../../packages/ui/test/support/browserPage.ts";
+
+const uiRoot = new URL("../../packages/ui/", import.meta.url);
+const uiRequire = createRequire(new URL("package.json", uiRoot));
+const { build } = await import(uiRequire.resolve("vite"));
+const { default: react } = await import(uiRequire.resolve("@vitejs/plugin-react"));
+type BundleItem = { type: "chunk"; code: string } | { type: "asset"; fileName: string; source: string | Uint8Array };
 
 type Block = { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: { command: string } }
   | { type: "tool_result"; tool_use_id: string; content: string; is_error: boolean }
   | { type: "thinking" };
 type Entry = { uuid: string; message: { id?: string; role: "user" | "assistant"; content: string | [Block] } };
+type FixtureRow = { id: string; role: Entry["message"]["role"]; text: string; parts: Record<string, unknown>[] };
 
 // The runtime projects parts=v1 by transcript offset. The inner Claude message
 // ID is not a row ID and is not sent to Salon. Only the fixture shapes are
 // mapped here; this test exercises Salon rather than the runtime parser.
 function fixtureRows() {
-  const lines = readFileSync(new URL("./fixtures/claude-interleaved-tools.jsonl", import.meta.url), "utf8").trimEnd().split("\n");
+  const lines = readFileSync(new URL("../fixtures/claude-interleaved-tools.jsonl", import.meta.url), "utf8").trimEnd().split("\n");
   const entries = lines.map(line => JSON.parse(line) as Entry);
   assert.ok(entries[4]?.message.id);
   assert.equal(entries[4].message.id, entries[5]?.message.id);
   let offset = 0;
-  return entries.flatMap(({ uuid, message: { role, content } }, index) => {
+  return entries.flatMap<FixtureRow>(({ uuid, message: { role, content } }, index) => {
     const id = `fixture-${offset}`;
     offset += Buffer.byteLength(lines[index]!) + 1;
     if (typeof content === "string") return [{ id, role, text: content, parts: [] }];
@@ -47,12 +53,12 @@ const history = {
 
 async function buildClient(out: string) {
   const built = await build({
-    root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, logLevel: "silent",
+    root: fileURLToPath(uiRoot), configFile: false, logLevel: "silent",
     resolve: { conditions: ["source"] }, define: { "process.env.NODE_ENV": JSON.stringify("production") },
     plugins: [react(), {
       name: "claude-interleaving-fixture",
-      resolveId(id) { if (id.endsWith("interleaving-fixture")) return "\0interleaving-fixture"; },
-      load(id) {
+      resolveId(id: string) { if (id.endsWith("interleaving-fixture")) return "\0interleaving-fixture"; },
+      load(id: string) {
         if (id !== "\0interleaving-fixture") return;
         return `
           import { createElement as h, useEffect } from 'react';
@@ -67,6 +73,8 @@ async function buildClient(out: string) {
           const fetchOrigin = window.fetch.bind(window);
           let offline = false;
           let stream;
+          let holdLatest = false;
+          window.holdLatest = () => { holdLatest = true; };
           const requests = { stream: 0, latest: 0 };
           window.dropStream = () => { offline = true; stream?.abort(); };
           window.restoreStream = () => { offline = false; };
@@ -78,7 +86,10 @@ async function buildClient(out: string) {
               stream = new AbortController();
               return fetchOrigin(path, { ...init, signal: AbortSignal.any([stream.signal, init.signal]) });
             }
-            if (url.pathname.endsWith('/messages') && url.searchParams.get('direction') === 'latest') requests.latest++;
+            if (url.pathname.endsWith('/messages') && url.searchParams.get('direction') === 'latest') {
+              requests.latest++;
+              if (holdLatest) return Promise.resolve(new Response(null, { status: 503 }));
+            }
             return fetchOrigin(path, init);
           };
           function Conversation({ conversation, working }) {
@@ -113,11 +124,11 @@ async function buildClient(out: string) {
     }],
     build: { write: false, lib: { entry: "interleaving-fixture", name: "Fixture", formats: ["iife"] } },
   });
-  const bundle = Array.isArray(built) ? built[0] : built;
-  assert.ok(bundle && "output" in bundle);
+  const bundle = (Array.isArray(built) ? built[0] : built) as { output?: BundleItem[] } | undefined;
+  assert.ok(bundle?.output);
   const script = bundle.output.find(file => file.type === "chunk");
   const style = bundle.output.find(file => file.type === "asset" && file.fileName.endsWith(".css"));
-  assert.ok(script && style);
+  assert.ok(script?.type === "chunk" && style?.type === "asset");
   writeFileSync(join(out, "fixture.js"), script.code);
   writeFileSync(join(out, "fixture.css"), style.source);
   writeFileSync(join(out, "index.html"), '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script src="/fixture.js" defer></script>');
@@ -133,19 +144,30 @@ interface ConversationState {
   requests: { stream: number; latest: number };
 }
 
-test("Claude interleaved text stays visible in saved history and while live tools run", { timeout: 85_000 }, async t => {
-  const complete = fixtureRows();
+test("Claude interleaved text stays visible in saved history and while live tools run", { timeout: 90_000 }, async t => {
+  const throughResult = fixtureRows();
+  const complete = throughResult.slice(0, 5);
   const [prompt, first, result, text, second] = complete;
   assert.ok(prompt && first && result && text && second);
   assert.notEqual(text.id, second.id);
   const twoToolsAndText = ["Bash", text.text, "Bash"];
   let visible = [prompt, first];
+  let spokeOffline = false;
+  const queries: URLSearchParams[] = [];
+  const frames: Array<{ type: string; delta: boolean; ids: string[] }> = [];
 
   const uiDir = mkdtempSync("/tmp/salon-interleaving-");
   t.after(() => rmSync(uiDir, { recursive: true, force: true }));
   await buildClient(uiDir);
   const daemon = createServer((req, res) => {
     const url = new URL(req.url!, "http://fixture");
+    if (url.pathname.endsWith("/messages")) {
+      queries.push(url.searchParams);
+      if (spokeOffline) {
+        req.socket.destroy();
+        return;
+      }
+    }
     const data = url.pathname === "/history/sessions" ? { sessions: [history], capabilities: { latest_message_paging: true } }
       : url.pathname === "/history/sessions/history/messages" && url.searchParams.get("parts") === "v1" ? { messages: visible } : undefined;
     res.writeHead(data ? 200 : 404, { "content-type": "application/json" }).end(JSON.stringify({ ok: !!data, data }));
@@ -155,10 +177,25 @@ test("Claude interleaved text stays visible in saved history and while live tool
     return new Promise<void>(resolve => daemon.close(() => resolve()));
   });
   const { base: upstream } = await listenOnLoopback(daemon);
-  const edge = createEdgeServer(makeEdgeConfig({ uiDir, machines: [{ name: "fixture", url: upstream }] }));
+  const edge = createEdgeServer(makeEdgeConfig({ uiDir, machines: [{ name: "fixture", url: upstream, token: "" }] }));
   t.after(() => {
     edge.closeAllConnections();
     return edge.shutdown();
+  });
+  edge.prependListener("request", (req, res) => {
+    if (!req.url?.startsWith("/api/resources/events?")) return;
+    const write = res.write.bind(res);
+    res.write = ((chunk: unknown, ...args: unknown[]) => {
+      if (typeof chunk === "string") {
+        const data = chunk.split("\n").find(line => line.startsWith("data: "));
+        if (data) {
+          const event = JSON.parse(data.slice(6));
+          frames.push({ type: event.type, delta: !!event.conversation_delta,
+            ids: event.conversation?.messages.map((row: { id: string }) => row.id) ?? [] });
+        }
+      }
+      return Reflect.apply(write, res, [chunk, ...args]);
+    }) as typeof res.write;
   });
   const { base } = await listenOnLoopback(edge);
   const page = await launchPage();
@@ -243,5 +280,28 @@ test("Claude interleaved text stays visible in saved history and while live tool
     await page.evaluate("window.restoreStream()");
     const reconnected = await expectState(twoToolsAndText, state => state.requests.stream > initial.requests.stream);
     assertPending(reconnected, true, 1280);
+  });
+
+  await t.test("edge recovery from a daemon outage sends an authoritative page", async () => {
+    visible = complete;
+    const initialFrame = frames.length;
+    await page.navigate(base);
+    await expectState(twoToolsAndText, () => frames.slice(initialFrame).some(frame => frame.ids.length === complete.length));
+    // Isolate the recovery frame from the browser's independent latest-GET fallback.
+    await page.evaluate("window.holdLatest()");
+    spokeOffline = true;
+    const duringOutage = frames.length;
+    const deadline = Date.now() + 10_000;
+    while (!frames.slice(duringOutage).some(frame => frame.type === "unavailable") && Date.now() < deadline) await sleep(75);
+    assert.ok(frames.slice(duringOutage).some(frame => frame.type === "unavailable"));
+    visible = throughResult;
+    const reconnectQueries = queries.length;
+    spokeOffline = false;
+    const recovered = await expectState(twoToolsAndText);
+    const update = frames.slice(duringOutage).find(frame => frame.type === "changed");
+    assert.deepEqual(update, { type: "changed", delta: false, ids: ids(throughResult) });
+    assert.equal(queries[reconnectQueries]?.get("direction"), "latest");
+    assert.equal(queries[reconnectQueries]?.has("cursor"), false);
+    assert.deepEqual(recovered.statuses, ["OK", "OK"]);
   });
 });
