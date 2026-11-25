@@ -54,7 +54,7 @@ async function launchToolFixture(profile: string) {
     });
     await send("Page.enable");
     return {
-      setViewport:(width: number,height: number,scale: number) => send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:scale,mobile:false}),
+      setViewport:(width: number,height: number,mobile: boolean) => send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile}),
       navigate:async (url: string) => {
         const done = new Promise<void>(resolve => { loaded = resolve; });
         await send("Page.navigate",{url}); await done;
@@ -71,7 +71,7 @@ async function launchToolFixture(profile: string) {
 }
 
 // Exercise hit testing and native pointer input; button.click() bypasses both.
-test("tool chevrons toggle with pointer input in live and saved conversations", { timeout: 60000 }, async t => {
+test("tool rows toggle from the chevron and left padding with pointer input in live and saved conversations", { timeout: 60000 }, async t => {
   assert.equal(hasHeadlessChrome(), true, "headless Chrome is required");
   const bundled = await build({
     root: fileURLToPath(new URL("..", import.meta.url)), resolve: { conditions: ["source"] }, configFile: false, logLevel: "silent",
@@ -113,44 +113,74 @@ test("tool chevrons toggle with pointer input in live and saved conversations", 
     const file = join(temp, "fixture.html");
     writeFileSync(file, `<!doctype html><html data-theme="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
       <style>${css}html,body{margin:0}#root{padding:12px}.history-messages{height:auto;overflow:visible}</style><div id="root"></div><script>${code.replaceAll("</script", "<\\/script")}</script>`);
-    for (const width of [384, 1280]) for (const live of [true, false]) for (const input of ["mouse", "touch"]) {
-      await t.test(`${live ? "live" : "saved"} ${width}px ${input}`, async () => {
-        await page.setViewport(width, width === 384 ? 832 : 900, 1);
-        await page.send("Emulation.setTouchEmulationEnabled", { enabled: input === "touch", maxTouchPoints: 1 });
-        await page.navigate(`file://${file}?${width}-${input}#${live ? "live" : "saved"}`);
-        await until(`document.querySelectorAll('.conversation-tool-toggle').length===3`);
-        // The first two calls form a collapsed group; reveal the original rows
-        // before testing each individual chevron with native pointer input.
-        await page.evaluate(`document.querySelector('.conversation-tool-group-toggle').click()`);
-        await until(`document.querySelector('.conversation-tool-group-toggle').getAttribute('aria-expanded')==='true'`);
-        const name = `${live ? "live" : "saved"}-${width}-${input}`;
-        for (const id of ["first", "continuation", "mixed"]) {
-          const selector = `[data-history-message-id="${id}"] .conversation-tool-toggle`;
-          const point = await page.evaluate<{x:number;y:number;hit:boolean;target:string}>(`(()=>{
-            const button=document.querySelector('${selector}'),icon=button.querySelector('svg'),box=icon.getBoundingClientRect();
-            const x=box.left+box.width/2,y=box.top+box.height/2,target=document.elementFromPoint(x,y);
-            return {x,y,hit:button.contains(target),target:target?.outerHTML.slice(0,180)};
-          })()`);
-          if (evidence && id === "first") {
-            mkdirSync(evidence, { recursive: true });
-            writeFileSync(join(evidence, `${name}-collapsed.png`), await page.screenshot());
-            writeFileSync(join(evidence, `${name}-hit.json`), JSON.stringify(point, null, 2));
-          }
-          assert.equal(point.hit, true, `chevron center hits its toggle: ${point.target}`);
-          for (const expanded of [true, false]) {
-            if (input === "mouse") {
-              await page.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", buttons: 1, clickCount: 1 });
-              await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", buttons: 0, clickCount: 1 });
-            } else {
-              await page.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: point.x, y: point.y, id: 1 }] });
-              await page.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    for (const [width, height] of [[384, 832], [390, 844], [1280, 900]] as const) {
+      for (const live of [true, false]) for (const input of ["mouse", "touch"]) {
+        await t.test(`${live ? "live" : "saved"} ${width}x${height} ${input}`, async t => {
+          await page.setViewport(width, height, width < 600 && input === "touch");
+          await page.send("Emulation.setTouchEmulationEnabled", { enabled: input === "touch", maxTouchPoints: 1 });
+          await page.navigate(`file://${file}?${width}-${input}#${live ? "live" : "saved"}`);
+          const group = ".conversation-tool-group-toggle";
+          await until(`document.querySelector('${group}') && document.querySelectorAll('.conversation-tool-toggle').length===3`);
+
+          const checkToggle = async (selector: string, edge: "chevron" | "left padding", capture = false) => {
+            for (const expanded of [true, false]) {
+              // Chrome can keep :active briefly after a tap. Measure the idle
+              // hit area, not the previous tap's pressed bounds.
+              await until(`!document.querySelector('${selector}').matches(':active')`);
+              const point = await page.evaluate<{x:number;y:number;hit:boolean;target:string}>(`(() => {
+                const button = document.querySelector('${selector}');
+                const box = (${edge === "chevron" ? "button.querySelector('svg')" : "button"}).getBoundingClientRect();
+                const x = ${edge === "chevron" ? "box.left + box.width / 2" : "Math.ceil(box.left) + 1"};
+                const y = box.top + box.height / 2;
+                const target = document.elementFromPoint(x, y);
+                return {x, y, hit: button.contains(target), target: target?.tagName ?? 'none'};
+              })()`);
+              const { x, y } = point;
+              assert.equal(point.hit, true, `${edge} hits its toggle before pressing: ${point.target}`);
+              if (input === "mouse") {
+                await page.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
+              } else {
+                await page.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y, id: 1 }] });
+              }
+              const pressedHit = await page.evaluate<boolean>(`document.querySelector('${selector}').contains(document.elementFromPoint(${x}, ${y}))`);
+              if (input === "mouse") {
+                await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 });
+              } else {
+                await page.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+              }
+              const state = await page.evaluate<{expanded:string;hidden:boolean}>(`new Promise(resolve => {
+                const start = performance.now(), button = document.querySelector('${selector}');
+                function read() {
+                  const expanded = button.getAttribute('aria-expanded');
+                  if (expanded === '${expanded}' || performance.now() - start >= 500) {
+                    resolve({expanded, hidden: document.getElementById(button.getAttribute('aria-controls')).hidden});
+                  } else requestAnimationFrame(read);
+                }
+                read();
+              })`);
+              if (capture && evidence && expanded) {
+                mkdirSync(evidence, { recursive: true });
+                writeFileSync(join(evidence, `${live ? "live" : "saved"}-${width}-after-release.png`), await page.screenshot());
+              }
+              assert.deepEqual({ pressedHit, ...state }, { pressedHit: true, expanded: String(expanded), hidden: !expanded },
+                `${edge} stays within its toggle during the press and ${expanded ? "opens" : "closes"} its content on release`);
             }
-            await until(`document.querySelector('${selector}').getAttribute('aria-expanded')==='${expanded}'`);
-            assert.equal(await page.evaluate<boolean>(`document.getElementById(document.querySelector('${selector}').getAttribute('aria-controls')).hidden`), !expanded);
-            if (evidence && id === "first" && expanded) writeFileSync(join(evidence, `${name}-expanded.png`), await page.screenshot());
+          };
+
+          for (const edge of ["chevron", "left padding"] as const) {
+            await t.test(`group ${edge}`, () => checkToggle(group, edge, width === 390 && input === "touch" && edge === "left padding"));
           }
-        }
-      });
+          // Open the group if necessary to expose the individual controls.
+          await page.evaluate(`if (document.querySelector('${group}').getAttribute('aria-expanded') === 'false') document.querySelector('${group}').click()`);
+          await until(`document.querySelector('${group}').getAttribute('aria-expanded')==='true'`);
+          for (const id of ["first", "continuation", "mixed"]) {
+            const selector = `[data-history-message-id="${id}"] .conversation-tool-toggle`;
+            await t.test(`${id} chevron`, () => checkToggle(selector, "chevron"));
+          }
+          await t.test("mixed single row left padding", () =>
+            checkToggle('[data-history-message-id="mixed"] .conversation-tool-toggle', "left padding"));
+        });
+      }
     }
   } finally { await page.close(); rmSync(temp, { recursive: true, force: true }); }
 });
