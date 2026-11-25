@@ -10,7 +10,7 @@ import { launchPage } from "./support/browserPage.ts";
 
 const message = "Sample host: the connection is unavailable. Reconnect to the host to continue working in this session.";
 const filename = `project-notes-${"appendix-".repeat(12)}final.pdf`;
-const account = `sample-${"team-".repeat(10)}member@example.test`;
+const account = `sample-${"team-".repeat(10)}member@example.com`;
 const sessionId = `sample-session-${"1234567890".repeat(8)}`;
 const path = `/example/projects/${"documentation-".repeat(8)}/sample`;
 const filter = `example-${"workspace-".repeat(8)}`;
