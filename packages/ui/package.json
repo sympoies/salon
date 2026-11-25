@@ -10,6 +10,11 @@
       "types": "./dist-package/src/pairingLink.d.ts",
       "default": "./dist-package/src/pairingLink.js"
     },
+    "./native-connection": {
+      "source": "./src/nativeConnection.ts",
+      "types": "./dist-package/src/nativeConnection.d.ts",
+      "default": "./dist-package/src/nativeConnection.js"
+    },
     "./app": {
       "source": "./src/mountApp.tsx",
       "types": "./dist-package/src/mountApp.d.ts",

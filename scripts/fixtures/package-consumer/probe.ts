@@ -11,7 +11,10 @@ import type { EdgeExtension, EdgeFirstReplyResult, EdgeOutboxInput, EdgeOutboxRe
 import { normalizeOrder, projectPublicAgentSession } from "@agent-console/shared/api";
 import { normalizeConversationImages, type ConversationImage } from "@agent-console/shared/conversation-images";
 import { normalizeRefusedOutboxAction, type RefusedOutboxAction } from "@agent-console/shared/shared-outbox";
+import * as nativeConnectionApi from "@agent-console/ui/native-connection";
 
+assert.deepEqual(Object.keys(nativeConnectionApi), ["nativeConnection"]);
+assert.deepEqual(nativeConnectionApi.nativeConnection(), { unavailable: true });
 assert.deepEqual(normalizeOrder({ order: ["a", "a", ""] }), ["a"]);
 const launch_env = { AGENT_RUNTIME_SUPPRESS_MEMORY: "1", AGENT_RUNTIME_SUPPRESS_HEALTH: "", AGENT_RUNTIME_CUSTOM_SWITCH: "a=b" };
 assert.deepEqual(projectPublicAgentSession({ launch_env, env: { PRIVATE_TOKEN: "fixture-only" } }), { launch_env });

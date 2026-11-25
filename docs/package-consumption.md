@@ -37,6 +37,15 @@ A fresh document with a later history window must retain the journaled handover.
 writes and browser errors fail the probe. No internal imports or source aliases replace the
 installed implementation.
 
+## Read the native connection configuration
+
+Use `nativeConnection()` from `@agent-console/ui/native-connection` in native shell code. It reads the
+current UI configuration synchronously and returns `{ serverUrl, token }` when both values are set,
+or `{ unavailable: true }` when either is missing. Reading the snapshot leaves storage untouched.
+
+Use the credential only in the authorization header of a request to the configured server's origin.
+Keep it out of URLs, logs, diagnostics and error messages.
+
 ## Run the installed owner commands
 
 The installed edge package exposes three owner-local commands:
