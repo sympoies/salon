@@ -3340,6 +3340,8 @@ textarea {
 .connection-notice-icon { font-weight: var(--weight-bold); }
 .connection-notice-message { min-width: 0; overflow-wrap: anywhere; }
 .connection-notice-trigger {
+  /* Keep the screen-reader label inside the clipped message. */
+  position: relative;
   appearance: none;
   padding: 0;
   border: 0;

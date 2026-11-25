@@ -29,7 +29,8 @@ const fixture = `
   import { ComposerAttachment } from '/src/ComposerAttachment.tsx';
   import { AttachmentFileCard } from '/src/AttachmentFileCard.tsx';
   import { HistoryPanel } from '/src/HistoryPanel.tsx';
-  import { SessionFiltersBar } from '/src/SessionFiltersBar.tsx';
+  import { SessionListNavigator } from '/src/SessionListNavigator.tsx';
+  import { BrandTitle } from '/src/BrandTitle.tsx';
   import { CLEAR_SESSION_FILTERS } from '/src/sessionFilters.ts';
   import { TerminalView } from '/src/TerminalView.tsx';
   import { LiveConversationPanel } from '/src/LiveConversationPanel.tsx';
@@ -46,9 +47,12 @@ const fixture = `
   const filters = {...CLEAR_SESSION_FILTERS, workspaces:[${JSON.stringify(filter)},'another-workspace']};
   function Overview() {
     const [show, setShow] = useState(true);
-    return h(SessionFiltersBar,{mobile:true,compactHeader:true,filters,records:[],workspaceChoicesComplete:false,machines:['sample-host'],
-      harnesses:[{id:'codex',label:'Codex'}],onChange:noop,resultCount:0,
-      statusNotice:show ? h(StatusNotice,{inline:true,notice:{kind:'host-offline',message:${JSON.stringify(message)}},onDismiss:()=>setShow(false)}) : null});
+    return h('header',{className:'dash-head workspace-head'},
+      h('div',{className:'workspace-head-start'},
+        h(BrandTitle),
+        h(SessionListNavigator,{mobile:true,filters,records:[],workspaceChoicesComplete:false,machines:['sample-host'],
+          harnesses:[{id:'codex',label:'Codex'}],onChange:noop,resultCount:0,page:1,pageCount:2,onPageChange:noop,
+          statusNotice:show ? h(StatusNotice,{inline:true,notice:{kind:'host-offline',message:${JSON.stringify(message)}},onDismiss:()=>setShow(false)}) : null})));
   }
   function Dock() {
     const [pinned, setPinned] = useState(true);
@@ -143,16 +147,18 @@ test("full details are readable on a touch-width viewport", async t => {
   const readable = (selector: string, value: string) => page.evaluate<boolean>(`(() => {
     const node = document.querySelector(${JSON.stringify(selector)});
     if (!node?.innerText.includes(${JSON.stringify(value)})) return false;
-    const box = node.getBoundingClientRect();
-    return box.width > 0 && box.height > 0 && box.left >= 0 && box.right <= innerWidth
+    const width = Math.min(document.documentElement.clientWidth, visualViewport?.width ?? Infinity);
+    const fits = ({width: w,height,left,right}) => w > 0 && height > 0 && left >= 0 && right <= width;
+    const panel = node.closest('[role="dialog"]');
+    return fits(node.getBoundingClientRect()) && (!panel || fits(panel.getBoundingClientRect()))
       && node.scrollWidth <= node.clientWidth + 1 && getComputedStyle(node).whiteSpace !== "nowrap";
   })()`);
   for (const theme of ["paper", "dark"]) {
     const run = (view: string, check: () => Promise<void>) => t.test(`${theme} ${view}`, async () => {
       const file = join(dir, `${theme}-${view}.html`);
-      writeFileSync(file, `<!doctype html><html data-theme="${theme}" data-phone-tier="true" data-phone-header="true" data-android-desktop="true">
+      writeFileSync(file, `<!doctype html><html data-theme="${theme}" data-phone-tier="true" data-phone-header="true" data-android-desktop="${view !== "overview"}">
         <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>${css} #root{padding:12px} .session-filter-status-row{height:34px;position:relative}</style>
+        <style>${css} #root{padding:12px}</style>
         <div id="root"></div><script>localStorage.setItem("ac.themeMode", ${JSON.stringify(theme)});</script>
         <script>${code.replaceAll("</script", "<\\/script")}</script>`);
       await page.navigate(`${pathToFileURL(file).href}#${view}`);
@@ -160,9 +166,19 @@ test("full details are readable on a touch-width viewport", async t => {
     });
     await run("overview", async () => {
       await wait(".connection-notice");
+      const assertPhoneViewport = async () => {
+        const dimensions = await page.evaluate(`({
+          client: document.documentElement.clientWidth,
+          visual: visualViewport?.width,
+          scroll: document.documentElement.scrollWidth,
+        })`);
+        assert.deepEqual(dimensions, { client: 390, visual: 390, scroll: 390 }, "the header stays within the actual phone viewport");
+      };
+      await assertPhoneViewport();
       const trigger = 'button[aria-label="Show status notice details"]';
       await tap(trigger);
       await save(theme, "notice");
+      await assertPhoneViewport();
       const showsFullMessage = await readable(".connection-notice-detail", message);
       if (showsFullMessage) {
         await page.pressEscape();
@@ -171,8 +187,11 @@ test("full details are readable on a touch-width viewport", async t => {
       await tap(".session-filter-search-open");
       await wait(".session-filter-panel");
       await save(theme, "filters");
+      await assertPhoneViewport();
       assert.equal(showsFullMessage, true, "pressing the notice shows the complete message");
       assert.equal(await readable(".session-filter-panel .session-filter-chip-label", `${filter}, another-workspace`), true);
+      await tap('.session-filter-panel button[aria-label="Close session filters"]');
+      assert.equal(await page.evaluate("!document.querySelector('.session-filter-panel')"), true, "the close button stays inside the phone viewport");
     });
     await run("history", async () => {
       await wait(".history-row");
