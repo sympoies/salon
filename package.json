@@ -1,6 +1,6 @@
 {
   "name": "salon",
-  "version": "0.1.104",
+  "version": "0.1.105",
   "private": true,
   "description": "Core packages for a self-hosted coding-agent workspace.",
   "license": "MIT",
