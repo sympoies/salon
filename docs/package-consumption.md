@@ -98,7 +98,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.104 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.105 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -204,7 +204,21 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.104`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.105`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.105
+
+Details that previously appeared only on hover are now reachable by touch and keyboard
+(#668, closes #639). The status notice has a details control and fits narrow phone
+screens. History paths and session IDs, attachment names, terminal links, and account
+identity are accessible through their existing detail views. Usage keeps the account
+identity hidden until you open its alias.
+
+The Usage card shows "Plan unavailable" in text, and terminal copy actions have distinct
+visible labels. A validation guard flags new hover-only title hints.
+
+SDK consumers can keep their current configuration. The container runtime remains
+pinned to nils-cli v1.42.6.
 
 ### Changes retained in SDK 0.1.104
 
