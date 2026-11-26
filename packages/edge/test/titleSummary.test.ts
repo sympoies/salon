@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { createServer, type ServerResponse } from "node:http";
 import { composeTitle } from "@agent-console/shared/title";
 import {
   summarizeTitle,
@@ -1096,24 +1097,45 @@ test("summarizeTitle falls back when command output exceeds the limit", async ()
 });
 
 test("summarizeTitle queues bounded concurrency and reports only queue saturation as busy", async () => {
+  const responses: ServerResponse[] = [];
+  let workersReady!: () => void;
+  const ready = new Promise<void>((resolve) => { workersReady = resolve; });
+  const server = createServer((_request, response) => {
+    responses.push(response);
+    if (responses.length === 2) workersReady();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
   const config = {
     command: [
       process.execPath,
       "-e",
-      "process.stdin.resume(); process.stdin.on('end', () => setTimeout(() => console.log('Slow title'), 100));",
+      `process.stdin.resume(); process.stdin.on('end', () => require('http').get('http://127.0.0.1:${address.port}', r => r.pipe(process.stdout)));`,
     ],
-    timeoutMs: 8000,
+    timeoutMs: 30000,
   };
-  const results = await Promise.all(Array.from(
-    { length: 11 },
-    (_, index) => summarizeTitleWithDiagnostics(config, {
+  const start = (index: number) => summarizeTitleWithDiagnostics(config, {
       baseTitle: "agent-console",
       prompt: `Prompt ${index + 1}`,
-    }),
-  ));
+    });
+  const running = [start(0), start(1)];
+  try {
+    await ready;
+    const queued = Array.from({ length: 8 }, (_, index) => start(index + 2));
+    const excess = await start(10);
+    assert.equal(excess.reason, "fallback_busy");
+    server.removeAllListeners("request");
+    server.on("request", (_request, response) => response.end("Slow title"));
+    for (const response of responses) response.end("Slow title");
+    const results = await Promise.all([...running, ...queued]);
 
-  assert.equal(results.filter((item) => item.reason === "accepted").length, 10);
-  assert.equal(results.filter((item) => item.reason === "fallback_busy").length, 1);
+    assert.equal(results.filter((item) => item.reason === "accepted").length, 10);
+  } finally {
+    for (const response of responses) response.end();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });
 
 test("titleSummarizerChildEnv excludes edge secrets and keeps summarizer config", () => {
