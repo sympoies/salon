@@ -21,22 +21,30 @@ test("Paper terminal text stays readable on every ANSI background cell and on re
     term.open(host);
     const codes = [40, 41, 42, 43, 44, 45, 46, 47, 100, 101, 102, 103, 104, 105, 106, 107, 7];
     const lines = codes.map(code => "\\x1b[" + code + "mCASE" + code + "\\x1b[0m").join("\\r\\n");
-    term.write(lines, () => setTimeout(() => {
-      const channels = text => text.match(/[\\d.]+/g).map(Number);
-      const lum = ([r, g, b]) => { const c = [r, g, b].map(v => v / 255).map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722; };
-      const ratio = (a, b) => { const [lo, hi] = [lum(a), lum(b)].sort((x, y) => x - y); return (hi + 0.05) / (lo + 0.05); };
-      const canvas = [244, 243, 237];
-      const out = {};
-      for (const span of host.querySelectorAll(".xterm-rows span")) {
-        const match = /CASE(\\d+)/.exec(span.textContent);
-        if (!match) continue;
-        const style = getComputedStyle(span);
-        const background = channels(style.backgroundColor);
-        const bg = background.length > 3 && background[3] === 0 || style.backgroundColor === "rgba(0, 0, 0, 0)" ? canvas : background.slice(0, 3);
-        out[match[1]] = Math.round(ratio(channels(style.color).slice(0, 3), bg) * 100) / 100;
-      }
-      document.querySelector("#result").textContent = JSON.stringify(out);
-    }, 300));
+    term.write(lines, () => {
+      const measure = () => {
+        const spans = [...host.querySelectorAll(".xterm-rows span")];
+        if (!codes.every(code => spans.some(span => span.textContent.includes("CASE" + code)))) {
+          requestAnimationFrame(measure);
+          return;
+        }
+        const channels = text => text.match(/[\\d.]+/g).map(Number);
+        const lum = ([r, g, b]) => { const c = [r, g, b].map(v => v / 255).map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722; };
+        const ratio = (a, b) => { const [lo, hi] = [lum(a), lum(b)].sort((x, y) => x - y); return (hi + 0.05) / (lo + 0.05); };
+        const canvas = [244, 243, 237];
+        const out = {};
+        for (const span of spans) {
+          const match = /CASE(\\d+)/.exec(span.textContent);
+          if (!match) continue;
+          const style = getComputedStyle(span);
+          const background = channels(style.backgroundColor);
+          const bg = background.length > 3 && background[3] === 0 || style.backgroundColor === "rgba(0, 0, 0, 0)" ? canvas : background.slice(0, 3);
+          out[match[1]] = Math.round(ratio(channels(style.color).slice(0, 3), bg) * 100) / 100;
+        }
+        document.querySelector("#result").textContent = JSON.stringify(out);
+      };
+      requestAnimationFrame(measure);
+    });
   `;
   const bundle = await build({ root: new URL("..", import.meta.url).pathname, configFile: false, logLevel: "silent",
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
@@ -87,7 +95,7 @@ test("Paper terminal text stays readable on every ANSI background cell and on re
       const evaluated = await rpc("Runtime.evaluate", { expression: "document.querySelector('#result')?.textContent ?? ''", returnByValue: true }, sessionId) as { result: { value: string } };
       json = evaluated.result.value;
     }
-    assert.ok(json, "the fixture published its measurements");
+    assert.ok(json, "the terminal did not render all 17 cases within 10 seconds; check browser support");
     const ratios = JSON.parse(json) as Record<string, number>;
     assert.equal(Object.keys(ratios).length, 17, `every case was rendered: ${json}`);
     for (const [code, measured] of Object.entries(ratios)) {
