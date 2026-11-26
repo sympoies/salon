@@ -241,5 +241,18 @@ test("a retained stop block rejects a new operation while the original receipt r
   first.beginStop(target, "operation-a");
   first.resolveStop(target, "operation-a", "stopped");
   assert.throws(() => second.beginStop(target, "operation-b"), /outbox-lifecycle-pending/);
+  assert.throws(() => second.beginStop({ ...target, principalId: "principal-b" }, "operation-c"),
+    /outbox-lifecycle-pending/);
   assert.deepEqual(second.beginStop(target, "operation-a"), { state: "stopped" });
+  const variants = [
+    { ...target, incarnation: "incarnation-b" }, { ...target, incarnation: "incarnation-" },
+    { ...target, incarnation: "incarnation-a-extra" }, { ...target, incarnation: "INCARNATION-A" },
+    { ...target, incarnation: "incarnation-a " }, { ...target, machine: "machine-b" },
+    { ...target, sessionId: "session-b" },
+  ];
+  for (const [index, other] of variants.entries()) {
+    const id = `near-miss-${index}`;
+    assert.deepEqual(second.beginStop(other, id), { state: "pending" });
+    assert.deepEqual(second.resolveStop(other, id, "refused"), { state: "refused" });
+  }
 });
