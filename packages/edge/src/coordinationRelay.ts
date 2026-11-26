@@ -850,6 +850,7 @@ async function attestedCreate(config: EdgeConfig, store: AccessStore, source: Ma
     const claim = store.claimAttestedCreate(key);
     if (claim.kind === "conflict") return fail(409, "console-start-operation-conflict", "operation conflicts with a previous request");
     if (claim.kind === "expired") return fail(409, "console-start-operation-expired", "operation receipt expired; inspect the destination");
+    if (claim.kind === "unproven") return attestedUnavailable();
     if (claim.kind === "fenced") return fail(409, "console-start-operation-conflict", "session id belongs to a previous operation");
     const dispatchKey = `${machine.url}\0${session.id}`;
     if (claim.kind === "repeat") {
@@ -893,7 +894,7 @@ async function attestedCreate(config: EdgeConfig, store: AccessStore, source: Ma
       return fail(503, "console-create-attestation-unavailable", "destination rejected attested create");
     }
     const root = object(result), data = object(root?.data), error = object(root?.error);
-    if (response.status >= 400 && response.status < 500 && root?.ok === false && typeof error?.code === "string"
+    if (response.status >= 400 && response.status < 500 && ![408, 425, 429].includes(response.status) && root?.ok === false && typeof error?.code === "string"
       && /^[a-z][a-z0-9_-]{0,127}$/.test(error.code)) {
       if (!await liveCaller()) return attestedForbidden();
       if (!store.refuseAttestedCreate(key, response.status, error.code)) return attestedUnavailable();

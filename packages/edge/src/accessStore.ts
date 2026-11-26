@@ -356,7 +356,7 @@ export class AccessStore {
     return { sessionId: row.session_id, machine: row.machine, agent: row.agent, fingerprint: row.fingerprint };
   }
 
-  claimAttestedCreate(key: { machine: string; sessionId: string; operationId: string; originMachine: string; callerId: string; incarnation: string; owner: string; digest: string; fresh: boolean; operationEpoch: number }): { kind: "new" | "repeat" | "conflict" | "fenced" | "expired"; outcome?: string; reconcilable?: boolean } {
+  claimAttestedCreate(key: { machine: string; sessionId: string; operationId: string; originMachine: string; callerId: string; incarnation: string; owner: string; digest: string; fresh: boolean; operationEpoch: number }): { kind: "new" | "repeat" | "conflict" | "fenced" | "expired" | "unproven"; outcome?: string; reconcilable?: boolean } {
     return this.#resumeMoveWrite(() => {
       const byOperation = this.#db.prepare("SELECT * FROM attested_create_fence WHERE operation_id = ?").get(key.operationId);
       const byId = this.#db.prepare("SELECT * FROM attested_create_fence WHERE machine = ? AND session_id = ?").get(key.machine, key.sessionId);
@@ -374,6 +374,9 @@ export class AccessStore {
       }
       if (byId) return { kind: "fenced" };
       if (!key.fresh) return { kind: "expired" };
+      // A store created after the operation began cannot prove that no earlier dispatch happened.
+      const marker = this.#db.prepare("SELECT initialized_epoch FROM attested_store_marker").get() as { initialized_epoch: number } | undefined;
+      if (typeof marker?.initialized_epoch !== "number" || marker.initialized_epoch > key.operationEpoch + 60) return { kind: "unproven" };
       this.#db.prepare("INSERT INTO attested_create_fence (machine, session_id, operation_id, origin_machine, caller_id, caller_incarnation, owner, digest, created_epoch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .run(key.machine, key.sessionId, key.operationId, key.originMachine, key.callerId, key.incarnation, key.owner, key.digest, Math.floor(Date.now() / 1000));
       return { kind: "new" };
