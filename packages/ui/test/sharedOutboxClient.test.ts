@@ -1,5 +1,7 @@
 import { strict as assert } from "node:assert";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { IDBFactory, IDBObjectStore } from "fake-indexeddb";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
@@ -20,7 +22,7 @@ const session = makeSession({ machine: "fixture", id: "shared-reply", agent: "co
 
 // Only HTTP is simulated here. The production composer, runtime, API and IDB
 // admission journal run unchanged. Real edge/browser isolation is a separate test.
-async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComposer = true, activeSession = session) {
+async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComposer = true, activeSession = session, plugins: Plugin[] = []) {
   const window = new Window({ url: "http://localhost" });
   Object.defineProperty(window.navigator, "locks", { configurable: true, value: { request: async (_n: unknown, _o: unknown, cb: (v: object) => unknown) => cb({}) } });
   const admissions: { id: string; text: string }[] = [];
@@ -94,9 +96,10 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   const speech: Plugin = { name: "shared-outbox-speech", enforce: "pre", resolveId(id) { if (id === "./SpeechComposer.tsx") return "\0speech"; },
     load(id) { if (id === "\0speech") return "export function SpeechComposer(){return null;}"; } };
-  const ssr = createUiSsrHarness([speech]), container = window.document.createElement("div");
+  const ssr = createUiSsrHarness([speech, ...plugins]), container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
+  try {
   const storage = await ssr.loadModule<typeof import("../src/storage.ts")>("/src/storage.ts");
   storage.setPrincipalStorageNamespace("alice");
   const { ConversationComposer } = await ssr.loadModule<typeof import("../src/ConversationComposer.tsx")>("/src/ConversationComposer.tsx");
@@ -162,7 +165,36 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
     },
     async close() { await act(async () => root.unmount()); client.close(); await ssr.close(); for (const [key, value] of saved) value ? Object.defineProperty(globalThis, key, value) : Reflect.deleteProperty(globalThis, key); await window.happyDOM.close(); },
   };
+  } catch (error) {
+    try {
+      await act(async () => root.unmount());
+    } finally {
+      try {
+        await ssr.close();
+      } finally {
+        for (const [key, value] of saved) value ? Object.defineProperty(globalThis, key, value) : Reflect.deleteProperty(globalThis, key);
+        await window.happyDOM.close();
+      }
+    }
+    throw error;
+  }
 }
+
+test("fixture setup failure releases resources", async () => {
+  if (process.env.OUTBOX_SETUP_FAILURE_CHILD === "1") {
+    const failure: Plugin = { name: "fixture-setup-failure", enforce: "pre", resolveId(id) {
+      if (id === "/src/ConversationComposer.tsx") throw new Error("fixture setup failure");
+    } };
+    await assert.rejects(fixture(new IDBFactory(), false, session, [failure]), /fixture setup failure/);
+    return;
+  }
+  const child = spawnSync(process.execPath, ["--conditions=source", "--test", "--test-name-pattern=^fixture setup failure releases resources$", fileURLToPath(import.meta.url)], {
+    env: { ...process.env, NODE_TEST_CONTEXT: undefined, OUTBOX_SETUP_FAILURE_CHILD: "1" }, encoding: "utf8", timeout: 5000,
+  });
+  assert.equal(child.error, undefined, `fixture subprocess did not exit: ${child.error?.message}`);
+  assert.equal(child.status, 0, child.stderr || child.stdout);
+  assert.match(child.stdout, /fixture setup failure releases resources/);
+});
 
 test("an admitted reply shows Sending without editing controls", async () => {
   const h = await fixture(new IDBFactory(), false);
