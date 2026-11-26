@@ -96,7 +96,11 @@ function ImageMenu({menu,paths,uploadPath,onOpen,onClose,onError}: {
   </div>,document.body);
 }
 
-function Thumbnail({target,index,onOpen,onMenu,sourceName,sourceUrl}: { readonly sourceUrl?: string; readonly sourceName?: string; readonly target: ImageTarget; readonly index: number; readonly onOpen: () => void; readonly onMenu: (menu: MenuState) => void }) {
+function Thumbnail({target,index,onOpen,onMenu,sourceName,sourceUrl,onResponseFilename}: {
+  readonly sourceUrl?: string; readonly sourceName?: string; readonly target: ImageTarget; readonly index: number;
+  readonly onOpen: () => void; readonly onMenu: (menu: MenuState) => void;
+  readonly onResponseFilename?: (id: string, name: string | undefined) => void;
+}) {
   // The shared descriptor is ID-only. Retain decoded dimensions when lazy
   // loading restarts so a known image keeps its place in the conversation.
   const [size,setSize] = useState<{width:number;height:number} | null>(null);
@@ -111,6 +115,10 @@ function Thumbnail({target,index,onOpen,onMenu,sourceName,sourceUrl}: { readonly
     observer.current.observe(element);
   },[]);
   const {data,fail,retry} = useImage(target,visible);
+  const responseFilename = data.state === "ready" ? data.responseFilename : undefined;
+  useEffect(() => {
+    onResponseFilename?.(target.image,sanitizeAttachmentName(responseFilename));
+  },[onResponseFilename,target.image,responseFilename]);
   const sizing = size ? {"--image-width":`${size.width}px`,"--image-ratio":size.width / size.height} as CSSProperties : undefined;
   // The macOS shell's native web view menu offers commands it cannot run; show
   // our own there. Browsers and Android keep theirs.
@@ -255,12 +263,14 @@ function ImageViewer({machine,history,images,initial,onClose,sourceNames,sourceU
 }
 
 /** Shared by History, the full Conversation pane, phone and desktop tiles. */
-export function ConversationImages({machine,history,images,attachmentPaths = [],markdownSource}: {
+export function ConversationImages({machine,history,images,attachmentPaths = [],markdownSource,filenameLabels}: {
   /** Visible message Markdown; never used as a read target. */
   readonly markdownSource?: {readonly text: string; readonly images?: readonly ConversationImage[]};
   readonly machine: string; readonly history: string; readonly images: readonly ConversationImage[];
   /** The message's own quoted upload paths, for Copy file path (#237). */
   readonly attachmentPaths?: readonly string[];
+  /** Outgoing captions may also use the authenticated image response when the row is image-only. */
+  readonly filenameLabels?: "descriptors" | "image-only";
 }) {
   // Match the daemon's inline Markdown source order. Mixed structured sources
   // cannot be paired from visible text alone, so do not guess their names.
@@ -277,16 +287,26 @@ export function ConversationImages({machine,history,images,attachmentPaths = [],
   const [open,setOpen] = useState<number | null>(null);
   const [menu,setMenu] = useState<MenuState | null>(null);
   const [notice,setNotice] = useState("");
+  const [responseFilenames,setResponseFilenames] = useState<Record<string,string | undefined>>({});
+  const updateFilename = useCallback((id: string, name: string | undefined) => {
+    setResponseFilenames(current => current[id] === name ? current : {...current,[id]:name});
+  },[]);
   const closeMenu = useCallback(() => setMenu(null),[]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""),4000);
     return () => clearTimeout(timer);
   },[notice]);
-  return <div className="conversation-images">
-    {images.map((image,index) => <Thumbnail key={image.id} target={{machine,history,image:image.id}} index={index} sourceName={sourceNames[index]} sourceUrl={sourceUrls[index]} onOpen={() => setOpen(index)} onMenu={next => { setNotice(""); setMenu(next); }} />)}
-    {menu ? <ImageMenu menu={menu} paths={attachmentPaths} uploadPath={images[menu.index]?.upload_path} onOpen={setOpen} onClose={closeMenu} onError={setNotice} /> : null}
-    {notice ? <div className="conversation-image-menu-error" role="status">{notice}</div> : null}
-    {open !== null ? <ImageViewer key={`${machine}/${history}`} machine={machine} history={history} images={images} sourceNames={sourceNames} sourceUrls={sourceUrls} initial={open} onClose={() => setOpen(null)} /> : null}
-  </div>;
+  return <>
+    <div className="conversation-images">
+      {images.map((image,index) => <Thumbnail key={image.id} target={{machine,history,image:image.id}} index={index} sourceName={sourceNames[index]} sourceUrl={sourceUrls[index]}
+        onResponseFilename={filenameLabels === "image-only" && !image.original_name ? updateFilename : undefined}
+        onOpen={() => setOpen(index)} onMenu={next => { setNotice(""); setMenu(next); }} />)}
+      {menu ? <ImageMenu menu={menu} paths={attachmentPaths} uploadPath={images[menu.index]?.upload_path} onOpen={setOpen} onClose={closeMenu} onError={setNotice} /> : null}
+      {notice ? <div className="conversation-image-menu-error" role="status">{notice}</div> : null}
+      {open !== null ? <ImageViewer key={`${machine}/${history}`} machine={machine} history={history} images={images} sourceNames={sourceNames} sourceUrls={sourceUrls} initial={open} onClose={() => setOpen(null)} /> : null}
+    </div>
+    {filenameLabels ? <span className="history-image-label">{images.map(image =>
+      image.original_name ?? (filenameLabels === "image-only" ? responseFilenames[image.id] : undefined) ?? "Image").join(" · ")}</span> : null}
+  </>;
 }
