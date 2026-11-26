@@ -32,12 +32,17 @@ test("image thumbnails retain their sizing and outgoing metadata stays beside th
           });
           window.IntersectionObserver=class {constructor(callback){this.callback=callback}
             observe(){this.callback([{isIntersecting:true}])}disconnect(){}};
-          window.fetch=async path=>new Response(blobs[Number(path.split('/').pop().split('.')[2])],{headers:{'content-type':'image/png'}});
+          window.fetch=async path=>{
+            const index=Number(path.split('/').pop().split('.')[2]);
+            const headers={'content-type':'image/png'};
+            if(index===0)headers['content-disposition']="inline; filename*=UTF-8''Review%20chart.png";
+            return new Response(blobs[index],{headers});
+          };
           const image=i=>({id:'a'.repeat(16)+'.0.'+i+'.'+'b'.repeat(32)});
           const messages=[
             {id:'landscape',role:'user',text:'',images:[image(0)]},
             {id:'portrait',role:'user',text:'',images:[image(1)]},
-            {id:'labels',role:'user',text:'[Image #1]',images:[image(0)]},
+            {id:'labels',role:'user',text:'[Image #1]',images:[{...image(0),original_name:'Design draft.png'}]},
             {id:'source',role:'user',text:'[Image #1]\\n[Image: source: /fixtures/sample.png]',images:[image(1)]},
             {id:'mixed',role:'user',text:'[Image #1] [Image: source: /fixtures/sample.png] Synthetic caption',images:[image(0)]},
             {id:'plain',role:'user',text:'[Image #1]',images:[]},
@@ -63,6 +68,7 @@ test("image thumbnails retain their sizing and outgoing metadata stays beside th
                 background:style.backgroundColor,border:style.borderWidth,radius:style.borderRadius,
                 imageRadius:image ? getComputedStyle(image.parentElement).borderRadius : null,
                 caption:bubble.querySelector('.message-markdown').textContent,
+                filename:bubble.querySelector('.history-image-label')?.textContent,
                 metadataColor:metadata.color,metadataBackground:metadata.backgroundColor};
             });
             window.publishFixtureResult({boxes,
@@ -121,6 +127,9 @@ test("image thumbnails retain their sizing and outgoing metadata stays beside th
 
         }
         for (const box of measured.boxes.slice(0,4)) assert.equal(box.caption,"","provider labels do not render as captions");
+        assert.equal(measured.boxes[1].filename,"Image","a response without name metadata keeps the neutral caption");
+        assert.equal(measured.boxes[2].filename,"Design draft.png","the history descriptor name takes precedence");
+        assert.equal(measured.boxes[0].filename,"Review chart.png","an image-only row displays the authenticated response filename");
         assert.equal(measured.boxes[5].caption,"[Image #1]","text without images is unchanged");
         for (const mixed of [measured.boxes[4], measured.boxes[6]]) {
         assert.equal(mixed.timeCount,1);
