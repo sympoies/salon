@@ -98,14 +98,20 @@ destination itself enforces its signer identity.
 - `GET /api/coordination/resume-move/v1` is the origin capability handshake. It takes no
   query, body, relay-token header or binding header, and answers with the authenticated
   origin machine and the capability `resume-move-start/v1`.
-- `POST /api/coordination/resume-move/v1` starts the move. The relay derives the owner from
-  the caller grant and refuses any other owner assertion before contacting the destination.
+- `POST /api/coordination/resume-move/v1` starts the move using the v1.1 request shape and
+  the same `agent-session.console-resume-move.v1` schema version. The `caller` object
+  contains exactly `session_id` and `session_incarnation`. The relay refuses
+  `caller.owner` with `resume-move-binding-mismatch` before contacting the destination.
 
 For each operation the relay asks the pinned destination's `GET /sessions` for the
 `resume_move_start_v1` capability and matching machine name. It never reuses a positive
 answer, follows a redirect or falls back to another route. The status read and the start
 POST then send the machine bearer, the ingress token and a relay-built binding header whose
-scope is `read` or `start`.
+scope is `read` or `start`. The relay derives the owner in that header from the exact caller grant.
+
+The relay's SHA-256 receipt digest covers `machine`, `caller.session_id`,
+`caller.session_incarnation` and the five `session` members `move_id`, `agent`, `resume`,
+`account` and `cwd`. The relay correlates `operation_id` separately from the digest.
 
 Before the first start the relay reads the move status. Only a staged move with a fresh
 proof is forwarded, once, under the durable dispatch fence. Other observations refuse
@@ -194,5 +200,5 @@ The narrower `--repair-session` command requires the same provider conversation 
 unbound session); it cannot repair the changed conversation produced by clear then restart.
 This procedure adds no relay endpoint or automatic re-bind.
 
-[move-start]: https://github.com/sympoies/nils-cli/blob/2ff54e3a6e60b45fedf61ba2d886bd91df2a9946/crates/agent-session/docs/specs/console-resume-move-v1.md
-[move-transport]: https://github.com/sympoies/nils-cli/blob/12a8dc4926da51ae43e8ef1655effc896d5489f8/crates/agent-session/docs/specs/console-resume-move-transport-v1.md
+[move-start]: https://github.com/sympoies/nils-cli/blob/77a6e22bd3a524716f24d81b243f95b0f8bf11f0/crates/agent-session/docs/specs/console-resume-move-v1.md
+[move-transport]: https://github.com/sympoies/nils-cli/blob/77a6e22bd3a524716f24d81b243f95b0f8bf11f0/crates/agent-session/docs/specs/console-resume-move-transport-v1.md

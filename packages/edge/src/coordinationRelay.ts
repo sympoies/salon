@@ -704,6 +704,7 @@ async function handleResumeMoveStart(config: EdgeConfig, store: AccessStore | nu
   if (!store) return send(moveRefusal(503, "resume-move-unavailable"));
   const { relay } = admitted;
   const request = await readRawBody(req, 64 * 1024).then(parseResumeMoveRequest, () => null);
+  if (request === "resume-move-binding-mismatch") return send(moveRefusal(409, request));
   if (!request) return send(moveRefusal(400, "resume-unsupported"));
   const { move_id } = request.session;
   const caller = identity({ machine: relay.machine, session_id: request.caller.session_id, session_incarnation: request.caller.session_incarnation });
@@ -713,7 +714,6 @@ async function handleResumeMoveStart(config: EdgeConfig, store: AccessStore | nu
     catch { return null; }
   })();
   if (!principal) return send(moveRefusal(403, "resume-move-unavailable"));
-  if (request.caller.owner !== principal.id) return send(moveRefusal(409, "resume-move-binding-mismatch", move_id));
   const machine = config.machines.find(machine => machine.name === request.machine && principal.machines.includes(machine.name));
   if (!machine) return send(moveRefusal(403, "resume-move-unavailable", move_id));
 
