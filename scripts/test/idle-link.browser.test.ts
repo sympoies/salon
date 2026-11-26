@@ -36,6 +36,7 @@ function fixtureSessions(count: number) {
   return Array.from({ length: count }, (_, index) => ({
     id: `session-${index}`, title: `Example session ${index}`, agent: "codex", status: "running",
     updated_at: stamp, cwd: "/workspace/sample", repo_name: "sample",
+    provider_resume: { provider: "codex", session_id: `provider-${index}` },
     last_message: { role: "assistant", text: "Example status line. ".repeat(24), submitted_at: stamp },
     last_prompt: { text: "Example work request. ".repeat(24), submitted_at: stamp },
     turn_state: { schema_version: "agent-session.turn-state.v1", phase: "idle", revision: 1, phase_changed_at: stamp,
@@ -47,6 +48,7 @@ async function startFixture(count: number, terminalTraffic = false, withOutbox =
   const sessions = fixtureSessions(count).map(session => withOutbox
     ? { ...session, session_incarnation: "fixture-incarnation" } : session);
   let outboxReads = 0;
+  let historyReads = 0;
   const bytes = new Map<string, number>();
   const add = (key: string, chunk: string | Uint8Array) =>
     bytes.set(key, (bytes.get(key) ?? 0) + Buffer.byteLength(chunk));
@@ -63,11 +65,16 @@ async function startFixture(count: number, terminalTraffic = false, withOutbox =
   };
   const daemon = createServer((req, res) => {
     const path = new URL(req.url!, "http://fixture").pathname;
+    if (req.method === "GET" && path.startsWith("/history/sessions")) historyReads++;
     const json = (data: unknown) => {
       res.setHeader("content-type", "application/json");
       return res.end(JSON.stringify({ ok: true, data }));
     };
     if (path === "/sessions") return json({ sessions, capabilities: { history: true, last_prompt: true, last_message: true } });
+    if (path === "/history/sessions") return json({ sessions: [{ id: "history-0", provider: "codex",
+      provider_session_id: "provider-0", title: "Example session 0", cwd: "/workspace/sample",
+      created_at: stamp, updated_at: stamp, resumable: false }], capabilities: { latest_message_paging: true } });
+    if (path === "/history/sessions/history-0/messages") return json({ messages: [{ id: "message-0", role: "user", text: "Example history" }] });
     if (path === "/activity/events") {
       res.writeHead(200, { "content-type": "text/event-stream" });
       activity.add(res);
@@ -127,6 +134,7 @@ async function startFixture(count: number, terminalTraffic = false, withOutbox =
   return {
     base, bytes, sessions, snapshot, sockets,
     get outboxReads() { return outboxReads; },
+    get historyReads() { return historyReads; },
     async close() {
       clearInterval(timer);
       for (const socket of sockets) socket.destroy();
@@ -244,6 +252,7 @@ for (const view of ["conversation", "terminal"] as const) {
         const deadline = Date.now() + 5_000;
         while (!fixture.outboxReads && Date.now() < deadline) await sleep(50);
         assert.ok(fixture.outboxReads > 0, "the visible composer reads its reply outbox");
+        await until(page, 'document.body.textContent.includes("Example history")', "the conversation history appears");
       }
       await page.evaluate(`void (window.originalFileInput = document.querySelector(${selector}))`);
 
@@ -256,10 +265,20 @@ for (const view of ["conversation", "terminal"] as const) {
       }
       if (view === "conversation") {
         const visibleReads = fixture.outboxReads;
+        const visibleHistoryReads = fixture.historyReads;
+        Object.assign(fixture.sessions[0]!.turn_state, { revision: 2, last_turn: { completed_at: "2026-01-01T00:01:00Z", outcome: "completed" } });
+        fixture.snapshot();
         await sleep(3_300);
         assert.equal(fixture.outboxReads, visibleReads, "the hidden composer stops polling its reply outbox");
+        assert.equal(fixture.historyReads, visibleHistoryReads, "the hidden conversation stops reading history");
       }
       await setVisibility("visible");
+      if (view === "conversation") {
+        const hiddenHistoryReads = fixture.historyReads;
+        const deadline = Date.now() + 5_000;
+        while (fixture.historyReads === hiddenHistoryReads && Date.now() < deadline) await sleep(50);
+        assert.ok(fixture.historyReads > hiddenHistoryReads, "history reads resume when visible");
+      }
       await until(page, `document.querySelector(${selector})`, `the ${view} file input is visible again`);
       assert.deepEqual({
         connectedWhileHidden,
