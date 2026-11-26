@@ -135,6 +135,7 @@ import {
   publicDispatchedBy,
   type SessionStartMark,
 } from "./accessStore.ts";
+import { startSuccessionStopReconciler } from "./successionStop.ts";
 import { handleCompanionIngress, handleCoordinationRelay, isCoordinationRoute, assertResumeOwnership, resumeFailure, resumeRefusal } from "./coordinationRelay.ts";
 import { COMPANION_INGRESS_PATH, handleDeviceInbox, handleInboxRequest, isDeviceInboxRoute } from "./companionInbox.ts";
 import { CompanionInboxStore } from "./companionInboxStore.ts";
@@ -258,6 +259,7 @@ export interface EdgeServerOptions {
   readonly authNow?: () => number;
   readonly remoteImageFetch?: typeof fetchRemoteImage;
   readonly outboxPollIntervalMs?: number;
+  readonly successionStopReconcileIntervalMs?: number;
   readonly attachmentUploadTimeoutMs?: number;
   readonly ordinaryRequestTimeoutMs?: number;
   readonly failedCreateLookupMs?: number;
@@ -521,6 +523,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     deviceActive: (id, principal) => deviceCredentials.activeDevice(id, principal),
     extensionGrantActive,
   }) : null;
+  const stopSuccessionStopReconciler = config.successionStopEnabled && outboxStore
+    ? startSuccessionStopReconciler(config, outboxStore, options.successionStopReconcileIntervalMs ?? 60_000) : undefined;
   const protectOutboxLifecycle = async (machine: MachineConfig, sessionId: string, incarnation: string | null,
     operation: "archive" | "delete" | "maintenance-delete", action: () => Promise<DaemonResult>) => {
     // Capture before observation: a replacement operation must never inherit
@@ -737,7 +741,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     });
   }) as EdgeServer;
   server.once("close", () => {
-    outboxDispatcher?.stop(); outboxStore?.close();
+    stopSuccessionStopReconciler?.(); outboxDispatcher?.stop(); outboxStore?.close();
     if (credentialRevocationTimer) clearInterval(credentialRevocationTimer);
     store.close(); testCredentials?.close(); deviceCredentials.close(); companionInbox.close();
   });
@@ -869,7 +873,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           await create();
         }
         return true;
-      }, principal => machinePreferences?.disabled(principal.id) ?? new Set(), decorateBoard, projectCreateSessionBody);
+      }, principal => machinePreferences?.disabled(principal.id) ?? new Set(), decorateBoard, projectCreateSessionBody, outboxStore);
       return;
     }
 

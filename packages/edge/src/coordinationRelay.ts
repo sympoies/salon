@@ -12,6 +12,8 @@ import { InboxError, type CompanionInboxStore } from "./companionInboxStore.ts";
 import { BoardQueryError, type BoardView } from "./board/query.ts";
 import { boardViewForRequest } from "./board/routes.ts";
 import type { BoardService } from "./board/service.ts";
+import type { OutboxStore } from "./outboxStore.ts";
+import { handleSuccessionStop, handleSuccessionStopGrant, isSuccessionStopGrantPath, isSuccessionStopPath } from "./successionStop.ts";
 
 import {
   moveRefusal, parseResumeMoveRead, parseResumeMoveRequest, projectResumeMoveReply, reconcileResumeMove, resumeMoveBindingHeader,
@@ -910,13 +912,17 @@ async function attestedCreate(config: EdgeConfig, store: AccessStore, source: Ma
 }
 
 export function isCoordinationRoute(path: string): boolean { return path.startsWith("/api/coordination/"); }
-export async function handleCoordinationRelay(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse, url: URL, board: BoardService | null = null, createSession: OwnedSessionCreator | null = null, disabledMachines: (principal: PrincipalConfig) => ReadonlySet<string> = () => new Set(), decorateBoard: (principal: PrincipalConfig, view: import("./board/query.ts").BoardView) => import("./board/query.ts").BoardView = (_principal, view) => view, projectCreate?: (body: unknown) => Record<string, unknown> | null): Promise<void> {
+export async function handleCoordinationRelay(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse, url: URL, board: BoardService | null = null, createSession: OwnedSessionCreator | null = null, disabledMachines: (principal: PrincipalConfig) => ReadonlySet<string> = () => new Set(), decorateBoard: (principal: PrincipalConfig, view: import("./board/query.ts").BoardView) => import("./board/query.ts").BoardView = (_principal, view) => view, projectCreate?: (body: unknown) => Record<string, unknown> | null, outbox: OutboxStore | null = null): Promise<void> {
   try {
+    const successionStop = { config, store, outbox, disabledMachines };
+    // The grant routes authenticate their own service credential, never a relay or machine one.
+    if (config.successionStopEnabled && isSuccessionStopGrantPath(url.pathname)) return await handleSuccessionStopGrant(successionStop, req, res, url);
     if (config.resumeMove && url.pathname === RESUME_MOVE_ROUTE) {
       if (req.method === "POST") return await handleResumeMoveStart(config, store, req, res);
       if (req.method === "GET") return await handleResumeMoveCapability(config, store, req, res, url);
     }
     const relay = relayForRequest(config, req);
+    if (config.successionStopEnabled && isSuccessionStopPath(url.pathname)) return await handleSuccessionStop(successionStop, relay ?? null, req, res, url);
     if (!relay) return fail(401, "unauthorized", "daemon relay authentication required");
     if (!store || !config.multiUser) return fail(503, "federation-disabled", "remote messaging is disabled");
     const source = config.machines.find(m => m.name === relay.machine);

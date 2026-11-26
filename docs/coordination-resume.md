@@ -238,3 +238,56 @@ a lost fence store is outside this proof; operator repair is required.
 A fence store created after the operation began refuses both to reconcile and to dispatch
 again. Removing a grant takes effect after the relay restarts. The grant and credential
 environment variables are validated at startup even when the capability is off.
+
+## Console succession stop
+
+Succession stop relays a fenced stop of a successor's predecessor under one Console owner.
+It follows the frozen [console succession stop contract][succession-stop]. The feature is off
+by default. Enable `AGENT_CONSOLE_SUCCESSION_STOP=1` only after every destination daemon
+supports the contract.
+
+Set `AGENT_CONSOLE_SUCCESSION_STOP_ISSUER_TOKEN` to a dedicated bearer of at least 32 bytes. It
+must differ from every machine, relay, ingress, browser and attested-create credential. It
+authorizes only the two grant routes, and every other caller is refused before the request is
+parsed.
+
+Set `AGENT_CONSOLE_SUCCESSION_STOP_DESTINATIONS` to a JSON array of configured machine names. It defaults to empty.
+Listing a machine is an operator assertion that it runs a v1 succession stop destination runtime. The relay does
+not probe it. An unlisted machine is only read and never receives a repeat copy. Startup fails for an unknown or
+duplicate name.
+
+The coordinating service registers a grant with
+`POST /api/coordination/succession-stop-delegations/v1` and withdraws it with
+`DELETE /api/coordination/succession-stop-delegations/v1/{delegation_id}`. Both use the
+contract's media type. The relay derives the owner from its ownership grants, records the
+grant durably and keeps it after revocation. `delegation_id` is the issue idempotency key,
+and one active grant may exist for a predecessor tuple.
+
+A managed successor stops its predecessor through its source daemon at
+`POST /api/coordination/sessions/{machine}/{id}/stop/v1` and reads the receipt at
+`GET /api/coordination/sessions/{machine}/{id}/stop/v1/{operation_id}`. Each request is
+checked against the exact caller and predecessor tuples, one shared owner and the one active
+grant bound to that operation. The relay checks again before it returns a result.
+
+The relay claims the operation durably before it contacts the destination, using the
+operation store beside the outbox. A claim is refused while input could still reach the
+predecessor. A verified terminal receipt becomes an admission block for that incarnation and
+is kept indefinitely. A relay refusal before the claim leaves no operation entry.
+
+The relay
+forwards the exact body bytes once with the destination bearer, its ingress token and a
+binding, and never follows a redirect. Only an exact, typed reply bound to the operation is
+trusted, and any other reply leaves the operation unresolved.
+
+An exact retry before the deadline first reads the destination receipt. A recorded operation
+settles from that receipt and no second stop is sent. Only a verified absence of that exact ID,
+at a destination the operator has listed, permits one more copy of the request under the same
+fence, because the destination deduplicates on the operation ID. A failed or malformed read, a
+retry after the deadline and the internal reconcile never send a stop.
+
+At startup and every minute the relay also reads every unresolved operation with the internal
+`reconcile` scope, even after revocation. A receipt learned after revocation is stored, but never shown
+to the successor. Absence never settles an operation, and pending or unknown operations stay unresolved
+past the deadline. The deadline is 24 hours after issuance by the relay clock.
+
+[succession-stop]: https://github.com/sympoies/nils-cli/blob/f723809fe5df744caba335a060c113ceb6c88cbd/crates/agent-session/docs/specs/console-succession-stop-v1.md
