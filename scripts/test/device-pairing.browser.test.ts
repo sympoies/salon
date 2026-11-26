@@ -1,9 +1,9 @@
 import { strict as assert } from "node:assert";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 const uiRequire = createRequire(new URL("../../packages/ui/package.json", import.meta.url));
@@ -39,6 +39,29 @@ before(async () => {
 });
 after(() => rmSync(dir, { recursive: true }));
 
+function resources(t: TestContext) {
+  const servers: Server[] = [];
+  const pages: Page[] = [];
+  t.after(async () => {
+    const closing = servers.map(server => new Promise<void>(resolve => {
+      server.closeAllConnections();
+      server.close(() => resolve());
+    }));
+    const results = await Promise.allSettled(pages.map(page => page.close()));
+    await Promise.all(closing);
+    for (const result of results) if (result.status === "rejected") throw result.reason;
+  });
+  return {
+    server<T extends Server>(server: T): T { servers.push(server); return server; },
+    async page(): Promise<Page> {
+      const page = await launchPage();
+      if (t.signal.aborted) { await page.close(); throw new Error("Test ended during browser startup"); }
+      pages.push(page);
+      return page;
+    },
+  };
+}
+
 async function until(page: Page, expression: string, description: string): Promise<void> {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
@@ -64,12 +87,13 @@ async function capture(page: Page, name: string, selector: string): Promise<void
   }
 }
 
-for (const native of [false, true]) for (const width of [390, 1280]) test(`${native ? "native adapter" : "two browsers"} pair, confirm, ${native ? "" : "rename, "}renew and revoke through the real edge at ${width}px`, async () => {
+for (const native of [false, true]) for (const width of [390, 1280]) test(`${native ? "native adapter" : "two browsers"} pair, confirm, ${native ? "" : "rename, "}renew and revoke through the real edge at ${width}px`, { timeout: 120_000 }, async t => {
+  const fixture = resources(t);
   let now = Date.now();
-  const edge = createEdgeServer(loadConfig({ AGENT_CONSOLE_INSECURE_COOKIE: "1", AGENT_CONSOLE_UI_DIR: dir,
+  const edge = fixture.server(createEdgeServer(loadConfig({ AGENT_CONSOLE_INSECURE_COOKIE: "1", AGENT_CONSOLE_UI_DIR: dir,
     AGENT_CONSOLE_STATE_DB: join(dir, `state-${native}-${width}.sqlite`), AGENT_CONSOLE_PRINCIPALS: JSON.stringify([
       { id: "example-principal", token: "main-fixture", machines: [], permissions: [] },
-    ]) }), { authNow: () => now });
+    ]) }), { authNow: () => now }));
   // Capture only the synthetic device cookie in memory so the same issued credential
   // can exercise the native bearer adapter without weakening HTTPS pairing rules.
   let deviceCredential = "";
@@ -84,9 +108,8 @@ for (const native of [false, true]) for (const width of [390, 1280]) test(`${nat
     };
   });
   const { base } = await listenOnLoopback(edge);
-  const sender = await launchPage();
-  const recipient = await launchPage();
-  try {
+  const sender = await fixture.page();
+  const recipient = await fixture.page();
     const height = width === 390 ? 844 : 900;
     for (const page of [sender, recipient]) {
       await page.setViewport(width, height, 1);
@@ -212,17 +235,12 @@ for (const native of [false, true]) for (const width of [390, 1280]) test(`${nat
       assert.equal(await recipient.evaluate("localStorage.getItem('ac:server-url')"), base, "server URL is retained");
     }
     if (process.env.SALON_UI_EVIDENCE_DIR) writeFileSync(join(process.env.SALON_UI_EVIDENCE_DIR, `signed-out-${native ? "native" : "browser"}-${width}.png`), await recipient.screenshot());
-  } finally {
-    const browsers = await Promise.allSettled([recipient.close(), sender.close()]);
-    edge.closeAllConnections();
-    await new Promise<void>(resolve => edge.close(() => resolve()));
-    for (const browser of browsers) if (browser.status === "rejected") throw browser.reason;
-  }
 });
 
-test("browser pairing refuses redirects before forwarding its claim body", async () => {
+test("browser pairing refuses redirects before forwarding its claim body", { timeout: 30_000 }, async t => {
+  const fixture = resources(t);
   const forwarded: string[] = [];
-  const server = createServer(async (req, res) => {
+  const server = fixture.server(createServer(async (req, res) => {
     if (req.url === "/api/auth/pairings/claim" || req.url === "/redirect-control") {
       res.writeHead(307, { location: "/redirected-claim" }); res.end(); return;
     }
@@ -240,10 +258,9 @@ test("browser pairing refuses redirects before forwarding its claim body", async
       res.setHeader("content-type", name.endsWith(".js") ? "application/javascript" : name.endsWith(".css") ? "text/css" : "text/html");
       res.end(readFileSync(join(dir, name)));
     } catch { res.writeHead(404); res.end(); }
-  });
+  }));
   const { base } = await listenOnLoopback(server);
-  const page = await launchPage();
-  try {
+  const page = await fixture.page();
     await page.navigate(base);
     assert.equal(await page.evaluate("fetch('/redirect-control',{method:'POST',body:'control'}).then(response=>response.status)"), 200);
     assert.deepEqual(forwarded, ["control"], "the fixture and browser can follow a 307 and forward a POST body");
@@ -255,25 +272,22 @@ test("browser pairing refuses redirects before forwarding its claim body", async
     assert.match(await page.evaluate<string>("document.querySelector('[role=alert]').textContent"), /Pairing unavailable/);
     assert.deepEqual(forwarded, [], "the pairing code and verifier challenge never reach the redirected endpoint");
     assert.equal(await page.evaluate("Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes('Sign in as'))"), false);
-  } finally {
-    await page.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
-  }
 });
 
 
-for (const native of [false, true]) test(`upstream 401 keeps a valid ${native ? "native bearer" : "browser cookie"} signed in`, async () => {
-  const daemon = createServer((_req, res) => {
+for (const native of [false, true]) test(`upstream 401 keeps a valid ${native ? "native bearer" : "browser cookie"} signed in`, { timeout: 30_000 }, async t => {
+  const fixture = resources(t);
+  const daemon = fixture.server(createServer((_req, res) => {
     res.setHeader("content-type", "application/json");
     res.statusCode = _req.url?.startsWith("/workdirs") ? 401 : 200;
     res.end(JSON.stringify(res.statusCode === 401 ? { ok: false, error: { message: "upstream refused" } }
       : { ok: true, data: { sessions: [] } }));
-  });
+  }));
   const upstream = await listenOnLoopback(daemon);
-  const edge = createEdgeServer(loadConfig({ AGENT_CONSOLE_TOKEN: "main-fixture", AGENT_CONSOLE_UI_DIR: dir,
-    AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: "fixture", url: upstream.base, token: "upstream-fixture" }]) }));
+  const edge = fixture.server(createEdgeServer(loadConfig({ AGENT_CONSOLE_TOKEN: "main-fixture", AGENT_CONSOLE_UI_DIR: dir,
+    AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: "fixture", url: upstream.base, token: "upstream-fixture" }]) })));
   const { base } = await listenOnLoopback(edge);
-  const page = await launchPage();
-  try {
+  const page = await fixture.page();
     await page.setViewport(1280, 1000, 1);
     if (native) await page.addInitScript(`window.__TAURI_INTERNALS__={};localStorage.setItem('ac:server-url',location.origin);localStorage.setItem('ac:token','main-fixture');`);
     await page.navigate(base);
@@ -286,15 +300,12 @@ for (const native of [false, true]) test(`upstream 401 keeps a valid ${native ? 
     assert.equal(await page.evaluate("Boolean(document.querySelector('.login-card'))"), false, "upstream refusal does not end edge authentication");
     if (native) assert.equal(await page.evaluate("localStorage.getItem('ac:token')"), "main-fixture");
     assert.equal(await page.evaluate(`fetch('/api/auth/status',{headers:${native ? "{Authorization:'Bearer main-fixture'}" : "{}"}}).then(response=>response.json()).then(value=>value.authenticated)`), true);
-  } finally {
-    await page.close();
-    for (const server of [edge, daemon]) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
-  }
 });
 
-test("delayed browser logout cannot overwrite a replacement login cookie", { timeout: 30_000 }, async () => {
+test("delayed browser logout cannot overwrite a replacement login cookie", { timeout: 30_000 }, async t => {
+  const fixture = resources(t);
   let now = Date.now();
-  const edge = createEdgeServer(loadConfig({ AGENT_CONSOLE_TOKEN: "main-fixture", AGENT_CONSOLE_UI_DIR: dir }), { authNow: () => now });
+  const edge = fixture.server(createEdgeServer(loadConfig({ AGENT_CONSOLE_TOKEN: "main-fixture", AGENT_CONSOLE_UI_DIR: dir }), { authNow: () => now }));
   let releaseLogout = () => {};
   let received!: () => void;
   const logoutReceived = new Promise<void>(resolve => { received = resolve; });
@@ -307,7 +318,7 @@ test("delayed browser logout cannot overwrite a replacement login cookie", { tim
     };
   });
   const { base } = await listenOnLoopback(edge);
-  const page = await launchPage();
+  const page = await fixture.page();
   try {
     await page.navigate(base);
     assert.equal(await page.evaluate(`fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'main-fixture'})}).then(response=>response.status)`), 200);
@@ -328,6 +339,6 @@ test("delayed browser logout cannot overwrite a replacement login cookie", { tim
     await until(page, "document.querySelector('header') && !document.querySelector('.login-card')", "replacement authenticated dashboard");
     assert.equal(await page.evaluate("fetch('/api/auth/status').then(response=>response.json()).then(value=>value.authenticated)"), true, "replacement cookie remains authorized");
   } finally {
-    releaseLogout(); await page.close(); edge.closeAllConnections(); await new Promise<void>(resolve => edge.close(() => resolve()));
+    releaseLogout();
   }
 });
