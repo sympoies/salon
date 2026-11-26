@@ -40,8 +40,8 @@ export function conversationImageSourceOrigin(value: unknown): string | undefine
 export function sanitizeAttachmentName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const leaf = value.split(/[\\/]/).at(-1)!;
-  const name = Array.from(leaf.replace(/\p{Cc}/gu, "")).slice(0, 255).join("").trim();
-  return name && name !== "." && name !== ".." ? name : undefined;
+  const name = Array.from(leaf.replace(/[\p{Cc}\p{Bidi_Control}]/gu, "")).slice(0, 255).join("").trim();
+  return name && name !== "." && name !== ".." && name.replace(/[\p{Default_Ignorable_Code_Point}\s]/gu, "") ? name : undefined;
 }
 export function isConversationImageId(value: unknown): value is string {
   if (typeof value !== "string" || value.length > 96) return false;

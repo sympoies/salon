@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { conversationImageFilename, normalizeConversationImages } from "../src/conversationImages.ts";
+import { conversationImageFilename, normalizeConversationImages, sanitizeAttachmentName } from "../src/conversationImages.ts";
 
 test("image selectors reject paths, URLs and malformed indices", () => {
   const id = `${"a".repeat(16)}.0.0.${"b".repeat(32)}`;
@@ -76,4 +76,12 @@ test("owned image upload paths retain exact spaces and quoting without using oth
   for (const origin of [undefined, "tool_result", "future-origin"]) {
     assert.ok(!("upload_path" in normalizeConversationImages([{id, origin, upload_path}])[0]!));
   }
+});
+
+test("attachment names strip bidi controls and reject invisible-only names", () => {
+  assert.equal(sanitizeAttachmentName("safe\u202Ename\u2066.png\u2069"), "safename.png");
+  for (const name of ["\u200B", "\u200C\u200D\uFEFF", " \u200B ", "\u180E\uFE0F"]) {
+    assert.equal(sanitizeAttachmentName(name), undefined);
+  }
+  assert.equal(sanitizeAttachmentName("a\u200Db.png"), "a\u200Db.png");
 });
