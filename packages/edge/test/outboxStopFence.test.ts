@@ -231,3 +231,15 @@ test("receipt access and operation replay bind exact issuer and target", t => {
   assert.deepEqual(store.beginStop(target, "operation-a"), { state: "stopped" });
   assert.throws(() => store.resolveStop(target, "operation-a", "refused"), /operation-id-conflict/);
 });
+
+test("a retained stop block rejects a new operation while the original receipt replays", t => {
+  const dir = mkdtempSync(join(tmpdir(), "outbox-stop-replay-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const first = new OutboxStore(join(dir, "state.sqlite"));
+  const second = new OutboxStore(join(dir, "state.sqlite"));
+  t.after(() => { first.close(); second.close(); });
+  first.beginStop(target, "operation-a");
+  first.resolveStop(target, "operation-a", "stopped");
+  assert.throws(() => second.beginStop(target, "operation-b"), /outbox-lifecycle-pending/);
+  assert.deepEqual(second.beginStop(target, "operation-a"), { state: "stopped" });
+});

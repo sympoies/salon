@@ -425,6 +425,9 @@ export class OutboxStore {
           throw new OutboxError("operation-id-conflict", 409);
         return { state: existing.state };
       }
+      if (this.#db.prepare("SELECT 1 FROM outbox_stop_blocks WHERE machine=? AND session_id=? AND incarnation=?")
+        .get(target.machine, target.sessionId, target.incarnation))
+        throw new OutboxError("outbox-lifecycle-pending", 409);
       for (const candidate of this.targets().filter(value => value.machine === target.machine &&
         value.sessionId === target.sessionId && value.incarnation === target.incarnation)) {
         if (this.#rows(candidate).some(mayReachProvider)) throw new OutboxError("outbox-pending-replies", 409);
