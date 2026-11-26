@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type { MachineConfig } from "./config.ts";
 
 const SCHEMA = "agent-session.console-resume-move.v1";
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
@@ -81,30 +80,57 @@ export interface ResumeMoveReply extends WireReply {
     | { readonly schema_version: typeof SCHEMA; readonly ok: false; readonly error: { readonly code: MoveCode; readonly details: MoveDetails } };
 }
 
-// Internal fixture seam only. No capability advertisement, transport binding,
-// or status/expiry wire format is defined here.
-export interface ResumeMoveDestination {
-  connect(machine: MachineConfig, binding: {
-    readonly originMachine: string;
-    readonly callerId: string;
-    readonly callerIncarnation: string;
-    readonly owner: string;
-  }): Promise<{
-      readonly signer: string;
-      inspect(moveId: string): Promise<{
-        // Supply this only from independently verified proof evidence that
-        // permits checking this move for a first submission.
-        readonly proofExpiresAt: number | null;
-        // A verified native result translated to the frozen start envelope.
-        readonly outcome: WireReply | null;
-      } | null>;
-      forward(request: ResumeMoveRequest): Promise<WireReply | null>;
-    } | null>;
+export interface ResumeMoveStatus {
+  readonly state: MoveState;
+  readonly proof: "fresh" | "expired" | "missing" | "unverified";
+  // Verified stop-proof expiry in Unix seconds. Present only for fresh and expired.
+  readonly proofExpiresAt: number | null;
+  readonly sessionId: string | null;
+  readonly sessionIncarnation: string | null;
 }
 
-export const unavailableResumeMoveDestination: ResumeMoveDestination = {
-  async connect() { return null; },
+// One validated destination read: a durable status, a typed read refusal already
+// projected to the start envelope, or null when nothing trustworthy came back.
+export type ResumeMoveRead =
+  | { readonly status: ResumeMoveStatus }
+  | { readonly refusal: ResumeMoveReply }
+  | null;
+
+export interface ResumeMoveRoute {
+  readonly signer: string;
+  inspect(moveId: string): Promise<ResumeMoveRead>;
+  forward(request: ResumeMoveRequest): Promise<WireReply | null>;
+}
+
+const STATUS_SCHEMA = "agent-session.console-resume-move-status.v1";
+const BINDING_SCHEMA = "agent-session.console-resume-move-binding.v1";
+const MAX_BINDING_BYTES = 2048;
+const PROOF_FRESHNESS: ReadonlySet<unknown> = new Set(["fresh", "expired", "missing", "unverified"]);
+// The only read refusals and the HTTP status each is sent with.
+const READ_REFUSAL_STATUS: Readonly<Record<string, readonly number[]>> = {
+  "resume-move-unavailable": [401, 503],
+  "resume-move-binding-mismatch": [403],
+  "resume-unsupported": [400],
+  "resume-move-proof-missing": [404],
+  "resume-move-target-mismatch": [422],
+  "resume-move-session-mismatch": [422],
+  "resume-move-state-unavailable": [503],
 };
+
+/**
+ * The relay-built delegated caller binding: unpadded base64url JSON, at most
+ * 2 KiB. An encoding, not a signature. Returns null when it cannot be sent.
+ */
+export function resumeMoveBindingHeader(binding: {
+  readonly originMachine: string; readonly callerId: string; readonly callerIncarnation: string; readonly owner: string;
+}, destination: string, moveId: string, scope: "read" | "start", operationId?: string): string | null {
+  const encoded = Buffer.from(JSON.stringify({
+    schema_version: BINDING_SCHEMA, origin_machine: binding.originMachine, caller_session_id: binding.callerId,
+    caller_session_incarnation: binding.callerIncarnation, owner: binding.owner, destination_machine: destination,
+    move_id: moveId, scope, ...(scope === "start" ? { operation_id: operationId } : {}),
+  }), "utf8").toString("base64url");
+  return encoded.length <= MAX_BINDING_BYTES ? encoded : null;
+}
 
 function object(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -213,4 +239,62 @@ export function projectResumeMoveReply(reply: WireReply | null, request: ResumeM
     ...(noCreate ? { session_created: false } : {}),
     next_action: nextAction,
   } } } };
+}
+
+export function parseResumeMoveRead(reply: WireReply | null, machine: string, moveId: string): ResumeMoveRead {
+  const root = object(reply?.body);
+  if (!reply || !root || root.schema_version !== STATUS_SCHEMA) return null;
+  if (root.ok === true) {
+    const data = object(root.data);
+    if (reply.status !== 200 || !exact(root, ["schema_version", "ok", "data"]) || !data
+      || !exact(data, ["machine", "move_id", "state", "session_id", "session_incarnation", "proof_freshness", "proof_expires_at_epoch"])
+      || data.machine !== machine || data.move_id !== moveId || !STATES.has(data.state) || !PROOF_FRESHNESS.has(data.proof_freshness)) return null;
+    const timed = data.proof_freshness === "fresh" || data.proof_freshness === "expired";
+    const expires = data.proof_expires_at_epoch;
+    if (data.state === "created" ? data.session_id !== `move-${moveId}` || !uuid(data.session_incarnation)
+      : data.session_id !== null || data.session_incarnation !== null) return null;
+    if (timed ? typeof expires !== "number" || !Number.isSafeInteger(expires) || expires < 0 : expires !== null) return null;
+    return { status: {
+      state: data.state as MoveState, proof: data.proof_freshness as ResumeMoveStatus["proof"], proofExpiresAt: expires as number | null,
+      sessionId: data.session_id as string | null, sessionIncarnation: data.session_incarnation as string | null,
+    } };
+  }
+  if (root.ok !== false || !exact(root, ["schema_version", "ok", "error"])) return null;
+  const error = object(root.error);
+  const details = object(error?.details);
+  if (!error || !details || !exact(error, ["code", "details"]) || typeof error.code !== "string"
+    || !Object.hasOwn(READ_REFUSAL_STATUS, error.code) || !READ_REFUSAL_STATUS[error.code]!.includes(reply.status)
+    || !Object.keys(details).every(key => ["move_id", "state", "safe_to_retry", "next_action"].includes(key))
+    || details.safe_to_retry !== false || details.next_action !== NEXT_ACTION[error.code as MoveCode]
+    || (Object.hasOwn(details, "move_id") && details.move_id !== moveId)
+    || (Object.hasOwn(details, "state") && !STATES.has(details.state))) return null;
+  const code = error.code as MoveCode;
+  // A read never asserts that no session was created.
+  return { refusal: { status: reply.status, body: { schema_version: SCHEMA, ok: false, error: { code, details: {
+    move_id: moveId, safe_to_retry: false,
+    ...(details.state !== undefined ? { state: details.state as MoveState } : {}),
+    next_action: NEXT_ACTION[code],
+  } } } } };
+}
+
+/** The start-decision table for a first submission. Only a fresh staged proof may forward. */
+export function startDecision(status: ResumeMoveStatus, moveId: string): { readonly forward: number } | { readonly refuse: ResumeMoveReply } {
+  const { state, proof, proofExpiresAt } = status;
+  if (state === "staged" && proof === "fresh") return { forward: proofExpiresAt! };
+  if (state === "staged" && proof === "expired") return { refuse: moveRefusal(409, "resume-move-proof-expired", moveId) };
+  if (state === "prepared" || (state === "staged" && proof === "missing")) return { refuse: moveRefusal(409, "resume-move-proof-missing", moveId) };
+  if (state === "staged") return { refuse: moveRefusal(503, "resume-move-unavailable", moveId, "unknown") };
+  if (state === "writer_admitted") return { refuse: moveRefusal(502, "resume-move-outcome-unknown", moveId, "unknown") };
+  if (state === "created") return { refuse: moveRefusal(409, "resume-move-destination-writer-present", moveId, "unknown") };
+  return { refuse: moveRefusal(409, "resume-move-aborted", moveId) };
+}
+
+/** After possible dispatch only a durable created or aborted_no_writer outcome resolves. */
+export function reconcileResumeMove(status: ResumeMoveStatus, request: ResumeMoveRequest): ResumeMoveReply | null {
+  const { move_id } = request.session;
+  if (status.state === "aborted_no_writer") return moveRefusal(409, "resume-move-aborted", move_id);
+  if (status.state !== "created") return null;
+  return projectResumeMoveReply({ status: 201, body: { schema_version: SCHEMA, ok: true, data: {
+    machine: request.machine, move_id, state: "created", session_id: status.sessionId, session_incarnation: status.sessionIncarnation,
+  } } }, request);
 }

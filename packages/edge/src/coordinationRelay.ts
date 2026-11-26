@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { OUTSIDE_COORDINATOR_TREE, type AccessStore, type SessionStartMark, type ResumeMoveReceiptKey } from "./accessStore.ts";
 import { bearerToken, timingSafeEqualStr } from "./auth.ts";
-import type { ConsoleStartServiceConfig, CrossOwnerMessagingRule, EdgeConfig, MachineConfig, MessagingSelector, PrincipalConfig, ServiceCapability } from "./config.ts";
+import type { ConsoleStartServiceConfig, CoordinationRelayConfig, CrossOwnerMessagingRule, EdgeConfig, MachineConfig, MessagingSelector, PrincipalConfig, ServiceCapability } from "./config.ts";
 import { readJsonBody, readRawBody, sendJson } from "./http.ts";
 import { handleInboxRequest, readInboxJson } from "./companionInbox.ts";
 import { InboxError, type CompanionInboxStore } from "./companionInboxStore.ts";
@@ -14,8 +14,8 @@ import { boardViewForRequest } from "./board/routes.ts";
 import type { BoardService } from "./board/service.ts";
 
 import {
-  moveRefusal, parseResumeMoveRequest, projectResumeMoveReply, resumeMoveDigest, unavailableResumeMoveDestination,
-  type ResumeMoveDestination, type ResumeMoveReply,
+  moveRefusal, parseResumeMoveRead, parseResumeMoveRequest, projectResumeMoveReply, reconcileResumeMove, resumeMoveBindingHeader,
+  resumeMoveDigest, startDecision, type ResumeMoveReply, type ResumeMoveRequest, type ResumeMoveRoute,
 } from "./resumeMove.ts";
 
 const MESSAGE_SCHEMA_V1 = "agent-session.remote-message.v1";
@@ -187,13 +187,14 @@ function fail(status: number, code: string, message: string, details?: Record<st
 // Dedicated bounded transport: neither request/response content nor raw upstream
 // errors enter the browser debug ring or the process logger. Redirects cannot
 // export the operator/ingress credential to an unconfigured destination.
-async function requestJson(machine: MachineConfig, path: string, body?: Envelope | Record<string, unknown>, ingressToken?: string, timeoutMs = 10_000): Promise<{ status: number; body: unknown }> {
+async function requestJson(machine: MachineConfig, path: string, body?: Envelope | Record<string, unknown>, ingressToken?: string, timeoutMs = 10_000, headers: Record<string, string> = {}): Promise<{ status: number; body: unknown }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${machine.url}${path}`, {
       method: body ? "POST" : "GET", redirect: "error", signal: controller.signal,
-      headers: { authorization: `Bearer ${machine.token}`, ...(body ? { "content-type": "application/json", ...(ingressToken ? { "x-agent-session-relay-token": ingressToken } : {}) } : {}) },
+      headers: { authorization: `Bearer ${machine.token}`, ...(ingressToken ? { "x-agent-session-relay-token": ingressToken } : {}),
+        ...(body ? { "content-type": "application/json" } : {}), ...headers },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const reader = response.body?.getReader();
@@ -632,18 +633,76 @@ export function handleCompanionIngress(config: EdgeConfig, access: AccessStore |
   });
 }
 
+const RESUME_MOVE_ROUTE = "/api/coordination/resume-move/v1";
+// Only this relay builds the destination credentials and binding; a caller never supplies them.
+const CALLER_FORBIDDEN_HEADERS = ["x-agent-session-relay-token", "x-agent-session-resume-move-binding"];
+
+interface ResumeMoveBinding {
+  readonly originMachine: string;
+  readonly callerId: string;
+  readonly callerIncarnation: string;
+  readonly owner: string;
+}
+
 /**
- * Preparatory handler only. Do not register it until the destination capability,
- * authenticated binding, and read-only status/freshness transport are frozen.
+ * Discover `resume-move-start/v1` on the pinned destination for this operation
+ * only, then expose its status read and start POST. Both carry the machine
+ * bearer, the relay ingress token and the relay-built binding. Nothing is
+ * cached, no redirect is followed and no other route is ever tried.
  */
-export async function handleResumeMoveStart(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse,
-  destination: ResumeMoveDestination = unavailableResumeMoveDestination): Promise<void> {
-  const send = ({ status, body }: ResumeMoveReply) => sendJson(res, status, body);
+async function connectResumeMoveDestination(machine: MachineConfig, ingressToken: string, binding: ResumeMoveBinding,
+  request: ResumeMoveRequest): Promise<ResumeMoveRoute | null> {
+  const { move_id } = request.session;
+  const read = resumeMoveBindingHeader(binding, machine.name, move_id, "read");
+  const start = resumeMoveBindingHeader(binding, machine.name, move_id, "start", request.operation_id);
+  if (!read || !start) return null;
+  try {
+    const result = await requestJson(machine, "/sessions");
+    const root = object(result.body);
+    const data = object(root?.data);
+    if (result.status !== 200 || root?.ok !== true || data?.machine !== machine.name
+      || object(data.capabilities)?.resume_move_start_v1 !== true) return null;
+  } catch { return null; }
+  const headers = (binding: string) => ({ "x-agent-session-resume-move-binding": binding });
+  return {
+    // The relay's only pin of the destination is its configured machine.
+    signer: machine.name,
+    async inspect(moveId) {
+      try {
+        return parseResumeMoveRead(await requestJson(machine, `/sessions/resume-move/${moveId}/status/v1`, undefined, ingressToken, 10_000, headers(read)),
+          machine.name, moveId);
+      } catch { return null; }
+    },
+    forward: body => requestJson(machine, "/sessions/resume-move/v1", body as unknown as Record<string, unknown>, ingressToken, 10_000, headers(start)),
+  };
+}
+
+function resumeMoveRelay(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage): { relay: CoordinationRelayConfig } | { refusal: ResumeMoveReply } {
   const relay = relayForRequest(config, req);
-  if (!relay) return send(moveRefusal(401, "resume-move-unavailable"));
+  if (!relay) return { refusal: moveRefusal(401, "resume-move-unavailable") };
   if (!store || !config.multiUser || !config.machines.some(machine => machine.name === relay.machine)) {
-    return send(moveRefusal(503, "resume-move-unavailable"));
+    return { refusal: moveRefusal(503, "resume-move-unavailable") };
   }
+  if (CALLER_FORBIDDEN_HEADERS.some(name => req.headers[name] !== undefined)) return { refusal: moveRefusal(400, "resume-unsupported") };
+  return { relay };
+}
+
+/** Origin capability handshake: the relay authenticates the origin machine and confirms relay support. */
+async function handleResumeMoveCapability(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  const admitted = resumeMoveRelay(config, store, req);
+  if ("refusal" in admitted) return sendJson(res, admitted.refusal.status, admitted.refusal.body);
+  const bodyless = await readRawBody(req, 0).then(() => true, () => false);
+  if (url.search || !bodyless) return sendJson(res, 400, moveRefusal(400, "resume-unsupported").body);
+  sendJson(res, 200, { schema_version: "agent-session.console-resume-move-capability.v1", ok: true,
+    data: { machine: admitted.relay.machine, capability: "resume-move-start/v1" } });
+}
+
+async function handleResumeMoveStart(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const send = ({ status, body }: ResumeMoveReply) => sendJson(res, status, body);
+  const admitted = resumeMoveRelay(config, store, req);
+  if ("refusal" in admitted) return send(admitted.refusal);
+  if (!store) return send(moveRefusal(503, "resume-move-unavailable"));
+  const { relay } = admitted;
   const request = await readRawBody(req, 64 * 1024).then(parseResumeMoveRequest, () => null);
   if (!request) return send(moveRefusal(400, "resume-unsupported"));
   const { move_id } = request.session;
@@ -664,8 +723,9 @@ export async function handleResumeMoveStart(config: EdgeConfig, store: AccessSto
   const unknown = moveRefusal(502, "resume-move-outcome-unknown", move_id, "unknown");
   const binding = { originMachine: caller.machine, callerId: caller.session_id,
     callerIncarnation: caller.session_incarnation, owner: principal.id };
-  const route = await destination.connect(machine, binding).catch(() => null);
-  if (!route || !route.signer) return send(unavailable);
+  const ingress = config.coordinationRelays?.find(entry => entry.machine === machine.name);
+  const route = ingress ? await connectResumeMoveDestination(machine, ingress.ingress_token, binding, request).catch(() => null) : null;
+  if (!route) return send(unavailable);
   const key: ResumeMoveReceiptKey = {
     ...binding, machine: machine.name, signer: route.signer, moveId: move_id,
     operationId: request.operation_id, digest: resumeMoveDigest(request),
@@ -677,20 +737,20 @@ export async function handleResumeMoveStart(config: EdgeConfig, store: AccessSto
     if (receipt.kind === "conflict") return send(moveRefusal(409, "resume-move-binding-mismatch", move_id, "unknown"));
     if (receipt.kind !== "repeat" && receipt.kind !== "missing") return send(unavailable);
     possibleDispatch = receipt.kind === "repeat";
-    const observation = await route.inspect(move_id);
+    const read = await route.inspect(move_id);
     const reconcile = (): ResumeMoveReply => {
-      const reply = projectResumeMoveReply(observation?.outcome ?? null, request);
-      if (!reply || (!reply.body.ok && (reply.body.error.code !== "resume-move-aborted"
-        || reply.body.error.details.session_created !== false))) return unknown;
-      return store.completeResumeMove(key, reply) ?? unknown;
+      const reply = read && "status" in read ? reconcileResumeMove(read.status, request) : null;
+      return reply ? store.completeResumeMove(key, reply) ?? unknown : unknown;
     };
     if (receipt.kind === "repeat") return send(reconcile());
 
-    // A native outcome without this relay's original owner-bound receipt
-    // cannot authenticate the requester as the Console owner of the result.
-    if (observation?.outcome) return send(unknown);
-    if (observation?.proofExpiresAt == null) return send(unavailable);
-    const admission = store.claimResumeMove(key, observation.proofExpiresAt);
+    // Only a valid read of the pinned move can permit the first start. Every
+    // refusal here precedes any dispatch, so it reserves nothing.
+    if (!read) return send(unavailable);
+    if ("refusal" in read) return send(read.refusal);
+    const decision = startDecision(read.status, move_id);
+    if ("refuse" in decision) return send(decision.refuse);
+    const admission = store.claimResumeMove(key, decision.forward);
     if (admission.kind === "repeat") {
       possibleDispatch = true;
       return send(admission.outcome ?? reconcile());
@@ -710,6 +770,10 @@ export async function handleResumeMoveStart(config: EdgeConfig, store: AccessSto
 export function isCoordinationRoute(path: string): boolean { return path.startsWith("/api/coordination/"); }
 export async function handleCoordinationRelay(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse, url: URL, board: BoardService | null = null, createSession: OwnedSessionCreator | null = null, disabledMachines: (principal: PrincipalConfig) => ReadonlySet<string> = () => new Set(), decorateBoard: (principal: PrincipalConfig, view: import("./board/query.ts").BoardView) => import("./board/query.ts").BoardView = (_principal, view) => view): Promise<void> {
   try {
+    if (config.resumeMove && url.pathname === RESUME_MOVE_ROUTE) {
+      if (req.method === "POST") return await handleResumeMoveStart(config, store, req, res);
+      if (req.method === "GET") return await handleResumeMoveCapability(config, store, req, res, url);
+    }
     const relay = relayForRequest(config, req);
     if (!relay) return fail(401, "unauthorized", "daemon relay authentication required");
     if (!store || !config.multiUser) return fail(503, "federation-disabled", "remote messaging is disabled");
