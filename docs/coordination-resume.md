@@ -202,3 +202,25 @@ This procedure adds no relay endpoint or automatic re-bind.
 
 [move-start]: https://github.com/sympoies/nils-cli/blob/77a6e22bd3a524716f24d81b243f95b0f8bf11f0/crates/agent-session/docs/specs/console-resume-move-v1.md
 [move-transport]: https://github.com/sympoies/nils-cli/blob/77a6e22bd3a524716f24d81b243f95b0f8bf11f0/crates/agent-session/docs/specs/console-resume-move-transport-v1.md
+
+## Attested Console roots
+
+Attested creation is off by default. Enable `AGENT_CONSOLE_ATTESTED_CREATE=1` only after
+all target daemons support attested admission. Configure
+`AGENT_CONSOLE_ATTESTED_CREATE_GRANTS` as a JSON array of objects containing `machine`,
+`session_id`, and `role` (which must be `steward`). Each grant names an origin relay and
+caller session; every request also checks the caller's live incarnation. Removing a grant
+revokes it on the next request.
+
+Configure `AGENT_CONSOLE_ATTESTED_CREATE_CREDENTIALS` as a JSON object mapping each
+destination machine to its dedicated credential. Each destination needs a distinct
+credential, separate from machine, relay, ingress, and browser credentials. Configure the
+matching `AGENT_SESSION_CONSOLE_ATTESTED_CREATE_TOKEN` on the destination daemon and
+restart that daemon after rotation. Protect both hops with HTTPS; loopback HTTP is supported
+for local fixtures.
+
+The authenticated capability endpoint is `GET /api/coordination/attested-create/v1`.
+The relay sends an attested create once, verifies its returned identity and context before
+claiming ownership, and retains a durable destination-and-ID fence. An uncertain outcome
+requires inspection; retrying does not start another session. The relay never falls back to
+ordinary creation.
