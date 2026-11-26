@@ -631,3 +631,23 @@ test("last-prompt previews unwrap one paste wrapper before detecting notices", (
   assert.equal(preview('<pasted_content id="x">\n\n</pasted_content id="x">')?.text,
     '<pasted_content id="x"> </pasted_content id="x">');
 });
+
+test("public session records project only the frozen resume-move lineage", () => {
+  const move = "a104eeba-a046-4b7b-87fb-12dcdafea110";
+  const lineage = {
+    schema_version: "agent-session.resume-move-lineage.v1",
+    move_id: move,
+    source_host: "source-signer",
+    source_session_id: "source-session",
+    source_incarnation: "e6153b07-f8c8-462c-92c2-2711683923c2",
+    source_generation: 4,
+    provider: "codex",
+    provider_session_id: "783683ba-a24b-4342-a6f4-b571cb26a022",
+  };
+  const record = { id: `move-${move}`, resume_move: { ...lineage, proof: "private", owner: "private", checkout: "private" } };
+  assert.deepEqual(projectPublicAgentSession(record), { id: record.id, resume_move: lineage });
+  for (const patch of [
+    { schema_version: "unknown" }, { source_generation: -1 }, { source_host: null },
+    { source_incarnation: "wrong" }, { provider: "unsupported" },
+  ]) assert.equal(projectPublicAgentSession({ ...record, resume_move: { ...lineage, ...patch } }).resume_move, undefined);
+});

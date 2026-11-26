@@ -3,15 +3,20 @@ import { normalizeAccountNickname } from "@agent-console/shared/api";
 import {normalizeSessionRole} from "@agent-console/shared/lineage";
 import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { OUTSIDE_COORDINATOR_TREE, type AccessStore, type SessionStartMark } from "./accessStore.ts";
+import { OUTSIDE_COORDINATOR_TREE, type AccessStore, type SessionStartMark, type ResumeMoveReceiptKey } from "./accessStore.ts";
 import { bearerToken, timingSafeEqualStr } from "./auth.ts";
 import type { ConsoleStartServiceConfig, CrossOwnerMessagingRule, EdgeConfig, MachineConfig, MessagingSelector, PrincipalConfig, ServiceCapability } from "./config.ts";
-import { readJsonBody, sendJson } from "./http.ts";
+import { readJsonBody, readRawBody, sendJson } from "./http.ts";
 import { handleInboxRequest, readInboxJson } from "./companionInbox.ts";
 import { InboxError, type CompanionInboxStore } from "./companionInboxStore.ts";
 import { BoardQueryError, type BoardView } from "./board/query.ts";
 import { boardViewForRequest } from "./board/routes.ts";
 import type { BoardService } from "./board/service.ts";
+
+import {
+  moveRefusal, parseResumeMoveRequest, projectResumeMoveReply, resumeMoveDigest, unavailableResumeMoveDestination,
+  type ResumeMoveDestination, type ResumeMoveReply,
+} from "./resumeMove.ts";
 
 const MESSAGE_SCHEMA_V1 = "agent-session.remote-message.v1";
 const MESSAGE_SCHEMA_V2 = "agent-session.remote-message.v2";
@@ -625,6 +630,81 @@ export function handleCompanionIngress(config: EdgeConfig, access: AccessStore |
     () => { grantedOwner(owner); });
     sendJson(res, 201, { ok: true, data });
   });
+}
+
+/**
+ * Preparatory handler only. Do not register it until the destination capability,
+ * authenticated binding, and read-only status/freshness transport are frozen.
+ */
+export async function handleResumeMoveStart(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse,
+  destination: ResumeMoveDestination = unavailableResumeMoveDestination): Promise<void> {
+  const send = ({ status, body }: ResumeMoveReply) => sendJson(res, status, body);
+  const relay = relayForRequest(config, req);
+  if (!relay) return send(moveRefusal(401, "resume-move-unavailable"));
+  if (!store || !config.multiUser || !config.machines.some(machine => machine.name === relay.machine)) {
+    return send(moveRefusal(503, "resume-move-unavailable"));
+  }
+  const request = await readRawBody(req, 64 * 1024).then(parseResumeMoveRequest, () => null);
+  if (!request) return send(moveRefusal(400, "resume-unsupported"));
+  const { move_id } = request.session;
+  const caller = identity({ machine: relay.machine, session_id: request.caller.session_id, session_incarnation: request.caller.session_incarnation });
+  if (!caller) return send(moveRefusal(400, "resume-unsupported"));
+  const principal = (() => {
+    try { return principalFor(config, store, caller); }
+    catch { return null; }
+  })();
+  if (!principal) return send(moveRefusal(403, "resume-move-unavailable"));
+  if (request.caller.owner !== principal.id) return send(moveRefusal(409, "resume-move-binding-mismatch", move_id));
+  const machine = config.machines.find(machine => machine.name === request.machine && principal.machines.includes(machine.name));
+  if (!machine) return send(moveRefusal(403, "resume-move-unavailable", move_id));
+
+  // Without an intact receipt and destination evidence, unavailability
+  // cannot establish that an earlier submission did not create a session.
+  const unavailable = moveRefusal(503, "resume-move-unavailable", move_id, "unknown");
+  const unknown = moveRefusal(502, "resume-move-outcome-unknown", move_id, "unknown");
+  const binding = { originMachine: caller.machine, callerId: caller.session_id,
+    callerIncarnation: caller.session_incarnation, owner: principal.id };
+  const route = await destination.connect(machine, binding).catch(() => null);
+  if (!route || !route.signer) return send(unavailable);
+  const key: ResumeMoveReceiptKey = {
+    ...binding, machine: machine.name, signer: route.signer, moveId: move_id,
+    operationId: request.operation_id, digest: resumeMoveDigest(request),
+  };
+  let possibleDispatch = false;
+  try {
+    const receipt = store.claimResumeMove(key);
+    if (receipt.kind === "repeat" && receipt.outcome) return send(receipt.outcome);
+    if (receipt.kind === "conflict") return send(moveRefusal(409, "resume-move-binding-mismatch", move_id, "unknown"));
+    if (receipt.kind !== "repeat" && receipt.kind !== "missing") return send(unavailable);
+    possibleDispatch = receipt.kind === "repeat";
+    const observation = await route.inspect(move_id);
+    const reconcile = (): ResumeMoveReply => {
+      const reply = projectResumeMoveReply(observation?.outcome ?? null, request);
+      if (!reply || (!reply.body.ok && (reply.body.error.code !== "resume-move-aborted"
+        || reply.body.error.details.session_created !== false))) return unknown;
+      return store.completeResumeMove(key, reply) ?? unknown;
+    };
+    if (receipt.kind === "repeat") return send(reconcile());
+
+    // A native outcome without this relay's original owner-bound receipt
+    // cannot authenticate the requester as the Console owner of the result.
+    if (observation?.outcome) return send(unknown);
+    if (observation?.proofExpiresAt == null) return send(unavailable);
+    const admission = store.claimResumeMove(key, observation.proofExpiresAt);
+    if (admission.kind === "repeat") {
+      possibleDispatch = true;
+      return send(admission.outcome ?? reconcile());
+    }
+    if (admission.kind === "conflict") return send(moveRefusal(409, "resume-move-binding-mismatch", move_id, "unknown"));
+    if (admission.kind === "expired") return send(moveRefusal(409, "resume-move-proof-expired", move_id));
+    if (admission.kind !== "claimed") return send(unavailable);
+
+    possibleDispatch = true;
+    const reply = projectResumeMoveReply(await route.forward(request), request);
+    return send(reply ? store.completeResumeMove(key, reply) ?? unknown : unknown);
+  } catch {
+    return send(possibleDispatch ? unknown : unavailable);
+  }
 }
 
 export function isCoordinationRoute(path: string): boolean { return path.startsWith("/api/coordination/"); }
