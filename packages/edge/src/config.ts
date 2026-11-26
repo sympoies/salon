@@ -143,6 +143,9 @@ export interface EdgeConfig {
   readonly openAccess: boolean;
   readonly machines: readonly MachineConfig[];
   readonly coordinationRelays?: readonly CoordinationRelayConfig[];
+  // Operator opt-in (AGENT_CONSOLE_RESUME_MOVE) for the resume-move start relay
+  // routes under /api/coordination/resume-move/v1. Off unless set.
+  readonly resumeMove?: boolean;
   readonly crossOwnerMessaging?: readonly CrossOwnerMessagingRule[];
   readonly crossOwnerSessionAccess?: readonly CrossOwnerSessionAccessRule[];
   readonly consoleStartServices?: readonly ConsoleStartServiceConfig[];
@@ -689,6 +692,7 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
     openAccess,
     machines,
     coordinationRelays,
+    resumeMove: truthy(env.AGENT_CONSOLE_RESUME_MOVE),
     consoleStartServices: parseConsoleStartServices(env.AGENT_CONSOLE_CONSOLE_START_SERVICES, machines, principals, coordinationRelays),
     crossOwnerMessaging: parseCrossOwnerMessaging(env.AGENT_CONSOLE_CROSS_OWNER_MESSAGING, principals),
     crossOwnerSessionAccess: parseCrossOwnerSessionAccess(env.AGENT_CONSOLE_CROSS_OWNER_SESSION_ACCESS, machines, principals),

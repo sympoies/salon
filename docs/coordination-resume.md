@@ -86,6 +86,36 @@ pre-create refusal codes and their no-create/no-retry details survive this hop. 
 unsupported endpoints refuse without falling back to legacy `/sessions` or provider-import
 creation.
 
+## Start a prepared move
+
+The edge relays a prepared cross-host move under the frozen
+[start contract](https://github.com/sympoies/nils-cli/blob/2ff54e3a6e60b45fedf61ba2d886bd91df2a9946/crates/agent-session/docs/specs/console-resume-move-v1.md)
+and its
+[transport supplement](https://github.com/sympoies/nils-cli/blob/12a8dc4926da51ae43e8ef1655effc896d5489f8/crates/agent-session/docs/specs/console-resume-move-transport-v1.md).
+The routes exist only when the operator sets `AGENT_CONSOLE_RESUME_MOVE=1`; without it they
+return 404. The destination machine also needs its own `AGENT_CONSOLE_COORDINATION_RELAYS`
+entry, whose ingress token the relay sends to it.
+
+- `GET /api/coordination/resume-move/v1` is the origin capability handshake. It takes no
+  query, body, relay-token header or binding header, and answers with the authenticated
+  origin machine and the capability `resume-move-start/v1`.
+- `POST /api/coordination/resume-move/v1` starts the move. The relay derives the owner from
+  the caller grant and refuses any other owner assertion before contacting the destination.
+
+For each operation the relay asks the pinned destination's `GET /sessions` for the
+`resume_move_start_v1` capability and matching machine name. It never reuses a positive
+answer, follows a redirect or falls back to another route. The status read and the start
+POST then send the machine bearer, the ingress token and a relay-built binding header whose
+scope is `read` or `start`.
+
+Before the first start the relay reads the move status. Only a staged move with a fresh
+proof is forwarded, once, under the durable dispatch fence. Other observations refuse
+without reserving the move: an expired proof, a prepared move or a missing proof, an
+unverified proof, an admitted writer, an existing session and an aborted move each map to the
+frozen refusal code. After a start may have been dispatched, only a durable `created` or
+`aborted_no_writer` status resolves the outcome. Anything else stays unknown and the start
+is never forwarded again.
+
 ## Recover a stale mailbox ownership binding
 
 An authenticated running-session snapshot may include `provider_continuity` with

@@ -330,6 +330,17 @@ test("loadConfig requires both dedicated relay credentials to contain at least 3
   }
 });
 
+test("the resume-move relay is off unless the operator enables it", () => {
+  const env = {
+    AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: "cedar", url: "https://daemon.example.test", token: "operator" }]),
+    AGENT_CONSOLE_PRINCIPALS: JSON.stringify([{ id: "tess", token: "browser", machines: ["cedar"], permissions: [] }]),
+    AGENT_CONSOLE_STATE_DB: "/tmp/relay-config-test.sqlite",
+  };
+  assert.equal(loadConfig(env).resumeMove, false);
+  assert.equal(loadConfig({ ...env, AGENT_CONSOLE_RESUME_MOVE: "0" }).resumeMove, false);
+  assert.equal(loadConfig({ ...env, AGENT_CONSOLE_RESUME_MOVE: "1" }).resumeMove, true);
+});
+
 test("loadConfig wires agent-session serve usage and reset paths", () => {
   const cfg = loadConfig({
     AGENT_CONSOLE_TOKEN: "t",
