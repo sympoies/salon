@@ -869,7 +869,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           await create();
         }
         return true;
-      }, principal => machinePreferences?.disabled(principal.id) ?? new Set(), decorateBoard);
+      }, principal => machinePreferences?.disabled(principal.id) ?? new Set(), decorateBoard, projectCreateSessionBody);
       return;
     }
 

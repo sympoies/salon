@@ -143,6 +143,9 @@ export interface EdgeConfig {
   readonly openAccess: boolean;
   readonly machines: readonly MachineConfig[];
   readonly coordinationRelays?: readonly CoordinationRelayConfig[];
+  readonly attestedCreateEnabled?: boolean;
+  readonly attestedCreateGrants?: readonly { readonly machine: string; readonly session_id: string; readonly role: "steward" }[];
+  readonly attestedCreateCredentials?: Readonly<Record<string, string>>;
   // Operator opt-in (AGENT_CONSOLE_RESUME_MOVE) for the resume-move start relay
   // routes under /api/coordination/resume-move/v1. Off unless set.
   readonly resumeMove?: boolean;
@@ -622,6 +625,25 @@ export function parseBoard(env: Env): BoardConfig | null {
   return { dbPath, retention };
 }
 
+function parseAttestedCreateConfig(env: Env, machines: readonly MachineConfig[], relays: readonly CoordinationRelayConfig[], principals: readonly PrincipalConfig[], clientToken: string): Pick<EdgeConfig, "attestedCreateGrants" | "attestedCreateCredentials"> {
+  let grants: unknown, credentials: unknown;
+  try {
+    grants = JSON.parse(env.AGENT_CONSOLE_ATTESTED_CREATE_GRANTS ?? "[]");
+    credentials = JSON.parse(env.AGENT_CONSOLE_ATTESTED_CREATE_CREDENTIALS ?? "{}");
+  } catch { throw new Error("attested create configuration must be valid JSON"); }
+  if (!Array.isArray(grants) || !grants.every(value => value && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).sort().join(",") === "machine,role,session_id" && value.role === "steward"
+    && typeof value.session_id === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value.session_id)
+    && relays.some(relay => relay.machine === value.machine))) throw new Error("invalid attested create grants");
+  if (!credentials || typeof credentials !== "object" || Array.isArray(credentials)) throw new Error("invalid attested create credentials");
+  const entries = Object.entries(credentials);
+  const reserved = new Set([...machines.map(machine => machine.token), ...relays.flatMap(relay => [relay.token, relay.ingress_token]), ...principals.map(principal => principal.token), clientToken]);
+  if (entries.some(([name, token]) => !machines.some(machine => machine.name === name)
+    || typeof token !== "string" || token.length === 0 || reserved.has(token))
+    || new Set(entries.map(([, token]) => token)).size !== entries.length) throw new Error("invalid attested create credentials");
+  return { attestedCreateGrants: grants, attestedCreateCredentials: credentials as Record<string, string> };
+}
+
 export interface LoadConfigOptions {
   /** Permissions declared by the distribution's edge extensions. */
   readonly extraPermissions?: readonly string[];
@@ -693,6 +715,8 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
     machines,
     coordinationRelays,
     resumeMove: truthy(env.AGENT_CONSOLE_RESUME_MOVE),
+    attestedCreateEnabled: truthy(env.AGENT_CONSOLE_ATTESTED_CREATE),
+    ...parseAttestedCreateConfig(env, machines, coordinationRelays, principals, clientToken),
     consoleStartServices: parseConsoleStartServices(env.AGENT_CONSOLE_CONSOLE_START_SERVICES, machines, principals, coordinationRelays),
     crossOwnerMessaging: parseCrossOwnerMessaging(env.AGENT_CONSOLE_CROSS_OWNER_MESSAGING, principals),
     crossOwnerSessionAccess: parseCrossOwnerSessionAccess(env.AGENT_CONSOLE_CROSS_OWNER_SESSION_ACCESS, machines, principals),

@@ -202,3 +202,39 @@ This procedure adds no relay endpoint or automatic re-bind.
 
 [move-start]: https://github.com/sympoies/nils-cli/blob/77a6e22bd3a524716f24d81b243f95b0f8bf11f0/crates/agent-session/docs/specs/console-resume-move-v1.md
 [move-transport]: https://github.com/sympoies/nils-cli/blob/77a6e22bd3a524716f24d81b243f95b0f8bf11f0/crates/agent-session/docs/specs/console-resume-move-transport-v1.md
+
+## Attested Console roots
+
+Attested creation is off by default. Enable `AGENT_CONSOLE_ATTESTED_CREATE=1` only after
+all target daemons support attested admission. Configure
+`AGENT_CONSOLE_ATTESTED_CREATE_GRANTS` as a JSON array of objects containing `machine`,
+`session_id`, and `role` (which must be `steward`). Each grant names an origin relay and
+caller session; every request also checks the caller's live incarnation. Removing a grant
+revokes it on the next request.
+
+Configure `AGENT_CONSOLE_ATTESTED_CREATE_CREDENTIALS` as a JSON object mapping each
+destination machine to its dedicated credential. Each destination needs a distinct
+credential, separate from machine, relay, ingress, and browser credentials. Configure the
+matching `AGENT_SESSION_CONSOLE_ATTESTED_CREATE_TOKEN` on the destination daemon and
+restart that daemon after rotation. Protect both hops with HTTPS; loopback HTTP is supported
+for local fixtures.
+
+The authenticated capability endpoint is `GET /api/coordination/attested-create/v1`.
+The relay sends an attested create once, verifies its returned identity and context before
+claiming ownership, and retains a durable destination-and-ID fence. Definitive typed 4xx
+refusals, and a 415 reported as `console-create-attestation-unavailable`, are recorded and
+replayed on an exact retry. A 5xx, a 408, 425 or 429, a transport failure, a timeout or a
+malformed reply stays unconfirmed.
+
+An exact retry then reads the pinned destination once the first request has
+settled, without sending another create. It claims ownership only for a record with the exact ID,
+role and attested context, and only when the fence row belongs to that operation. The relay never falls back
+to ordinary creation. A reused ID from another operation returns a conflict.
+
+Reconciliation depends on one relay per destination credential, a durable fence store, and a
+destination that reserves the attested initiator. A compromised credential, a second relay or
+a lost fence store is outside this proof; operator repair is required.
+
+A fence store created after the operation began refuses both to reconcile and to dispatch
+again. Removing a grant takes effect after the relay restarts. The grant and credential
+environment variables are validated at startup even when the capability is off.

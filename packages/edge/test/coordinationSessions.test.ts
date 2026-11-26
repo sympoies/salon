@@ -104,7 +104,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
   return { server, creates, sessions, state, history, listCalls: () => listCalls };
 }
 
-async function fixture(options: EdgeServerOptions = {}) {
+async function fixture(options: EdgeServerOptions = {}, attestedCreate = false) {
   const ownerToken = "browser-tess";
   const otherMachine = "cedar";
   const dir = mkdtempSync(join(tmpdir(), "owned-create-test-"));
@@ -123,6 +123,7 @@ async function fixture(options: EdgeServerOptions = {}) {
   access.close();
   const edge = createEdgeServer(makeEdgeConfig({
     openAccess: false, multiUser: true, accessDbPath: db,
+    ...(attestedCreate ? { attestedCreateEnabled: true } : {}),
     principals: [
       { id: "tess", token: ownerToken, machines: ["summit", otherMachine], permissions: [] },
       { id: "dana", token: "browser-dana", machines: ["summit", "maple"], permissions: [] },
@@ -835,5 +836,18 @@ test("an unreachable create remains fast when parent metadata stalls", async () 
     assert.ok(Date.now() - started < 5_000, "best-effort parent metadata cannot consume the failed-create lookup budget");
     assert.notEqual(result.body.error?.code, "create-outcome-unknown");
     assert.equal(result.body.ok, false);
+  } finally { await f.cleanup(); }
+});
+
+
+test("attested create capability requires the authenticated origin and operator opt-in", async () => {
+  const f = await fixture({}, true);
+  try {
+    const endpoint = `${f.base}/api/coordination/attested-create/v1`;
+    const denied = await fetch(endpoint);
+    assert.equal(denied.status, 401);
+    const response = await fetch(endpoint, { headers: { authorization: "Bearer source-relay" } });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { schema_version: "agent-session.console-attested-create-capability.v1", ok: true, data: { machine: "summit", capability: "console-attested-create/v1" } });
   } finally { await f.cleanup(); }
 });

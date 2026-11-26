@@ -227,6 +227,14 @@ export class AccessStore {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (relay_machine, service_id, operation_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS attested_create_fence (
+        machine TEXT NOT NULL, session_id TEXT NOT NULL,
+        operation_id TEXT NOT NULL UNIQUE, origin_machine TEXT NOT NULL, caller_id TEXT NOT NULL,
+        caller_incarnation TEXT NOT NULL, owner TEXT NOT NULL, digest TEXT NOT NULL, outcome TEXT, created_epoch INTEGER NOT NULL,
+        PRIMARY KEY (machine, session_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS attested_store_marker (initialized_epoch INTEGER NOT NULL) STRICT;
+      INSERT INTO attested_store_marker (initialized_epoch) SELECT CAST(strftime('%s', 'now') AS INTEGER) WHERE NOT EXISTS (SELECT 1 FROM attested_store_marker);
       CREATE TABLE IF NOT EXISTS resume_move_receipt (
         machine TEXT NOT NULL,
         move_id TEXT NOT NULL UNIQUE,
@@ -346,6 +354,60 @@ export class AccessStore {
       WHERE relay_machine = ? AND service_id = ? AND operation_id = ?
     `).get(input.relayMachine, input.serviceId, input.operationId) as unknown as ServiceStartRow;
     return { sessionId: row.session_id, machine: row.machine, agent: row.agent, fingerprint: row.fingerprint };
+  }
+
+  claimAttestedCreate(key: { machine: string; sessionId: string; operationId: string; originMachine: string; callerId: string; incarnation: string; owner: string; digest: string; fresh: boolean; operationEpoch: number }): { kind: "new" | "repeat" | "conflict" | "fenced" | "expired" | "unproven"; outcome?: string; reconcilable?: boolean } {
+    return this.#resumeMoveWrite(() => {
+      const byOperation = this.#db.prepare("SELECT * FROM attested_create_fence WHERE operation_id = ?").get(key.operationId);
+      const byId = this.#db.prepare("SELECT * FROM attested_create_fence WHERE machine = ? AND session_id = ?").get(key.machine, key.sessionId);
+      if (byOperation) {
+        if (byOperation.machine !== key.machine || byOperation.session_id !== key.sessionId || byOperation.origin_machine !== key.originMachine
+          || byOperation.caller_id !== key.callerId || byOperation.caller_incarnation !== key.incarnation || byOperation.owner !== key.owner || byOperation.digest !== key.digest) return { kind: "conflict" };
+        if (typeof byOperation.created_epoch !== "number" || byOperation.created_epoch <= Math.floor(Date.now() / 1000) - 86400) {
+          this.#db.prepare("UPDATE attested_create_fence SET outcome = NULL WHERE operation_id = ?").run(key.operationId);
+          return { kind: "expired" };
+        }
+        // A store created after the operation began cannot prove it holds this operation's fence history.
+        const marker = this.#db.prepare("SELECT initialized_epoch FROM attested_store_marker").get() as { initialized_epoch: number } | undefined;
+        const reconcilable = typeof marker?.initialized_epoch === "number" && marker.initialized_epoch <= key.operationEpoch + 60;
+        return { kind: "repeat", reconcilable, ...(typeof byOperation.outcome === "string" ? { outcome: byOperation.outcome } : {}) };
+      }
+      if (byId) return { kind: "fenced" };
+      if (!key.fresh) return { kind: "expired" };
+      // A store created after the operation began cannot prove that no earlier dispatch happened.
+      const marker = this.#db.prepare("SELECT initialized_epoch FROM attested_store_marker").get() as { initialized_epoch: number } | undefined;
+      if (typeof marker?.initialized_epoch !== "number" || marker.initialized_epoch > key.operationEpoch + 60) return { kind: "unproven" };
+      this.#db.prepare("INSERT INTO attested_create_fence (machine, session_id, operation_id, origin_machine, caller_id, caller_incarnation, owner, digest, created_epoch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(key.machine, key.sessionId, key.operationId, key.originMachine, key.callerId, key.incarnation, key.owner, key.digest, Math.floor(Date.now() / 1000));
+      return { kind: "new" };
+    });
+  }
+
+  completeAttestedCreate(key: { machine: string; sessionId: string; operationId: string; originMachine: string; callerId: string; incarnation: string; owner: string; digest: string }, session: Record<string, unknown>): boolean {
+    return this.#resumeMoveWrite(() => {
+      const row = this.#db.prepare("SELECT * FROM attested_create_fence WHERE operation_id = ?").get(key.operationId);
+      if (!row || row.machine !== key.machine || row.session_id !== key.sessionId || row.origin_machine !== key.originMachine
+        || row.caller_id !== key.callerId || row.caller_incarnation !== key.incarnation || row.owner !== key.owner || row.digest !== key.digest
+        || row.outcome !== null || !this.ownsSession(key.owner, key.originMachine, key.callerId, key.incarnation) || typeof session.session_incarnation !== "string") return false;
+      const existing = this.sessionGrant(key.machine, key.sessionId);
+      if (existing && (existing.principalId !== key.owner || existing.incarnation !== session.session_incarnation)) return false;
+      this.claimSession({ principalId: key.owner, machine: key.machine, sessionId: key.sessionId, incarnation: session.session_incarnation,
+        launcher: { machine: key.originMachine, sessionId: key.callerId }, treeDepth: OUTSIDE_COORDINATOR_TREE });
+      this.#db.prepare("UPDATE attested_create_fence SET outcome = ? WHERE operation_id = ?").run(JSON.stringify({ status: 201, body: { ok: true, data: { session } } }), key.operationId);
+      return true;
+    });
+  }
+
+  refuseAttestedCreate(key: { machine: string; sessionId: string; operationId: string; originMachine: string; callerId: string; incarnation: string; owner: string; digest: string }, status: number, code: string): boolean {
+    return this.#resumeMoveWrite(() => {
+      const row = this.#db.prepare("SELECT * FROM attested_create_fence WHERE operation_id = ?").get(key.operationId);
+      if (!row || row.machine !== key.machine || row.session_id !== key.sessionId || row.origin_machine !== key.originMachine
+        || row.caller_id !== key.callerId || row.caller_incarnation !== key.incarnation || row.owner !== key.owner || row.digest !== key.digest
+        || row.outcome !== null || !this.ownsSession(key.owner, key.originMachine, key.callerId, key.incarnation)) return false;
+      this.#db.prepare("UPDATE attested_create_fence SET outcome = ? WHERE operation_id = ?")
+        .run(JSON.stringify({ status, body: { ok: false, error: { code, message: "destination rejected attested create" } } }), key.operationId);
+      return true;
+    });
   }
 
   #resumeMoveWrite<T>(write: () => T): T {

@@ -407,3 +407,23 @@ test("root terminal permission is an explicit opt-in independent of its fleet vi
   assert.equal(principalCanAccessMachine(root!, "maple"), true);
   assert.equal(principalCanUseTerminal(root!), true);
 });
+
+test("attested create configuration is opt-in and credentials are destination-specific", () => {
+  const env = {
+    AGENT_CONSOLE_MACHINES: JSON.stringify([{ name: "source", url: "https://source.example.test", token: "machine-source" }, { name: "target", url: "https://target.example.test", token: "machine-target" }]),
+    AGENT_CONSOLE_PRINCIPALS: JSON.stringify([{ id: "owner", token: "browser", machines: ["source", "target"], permissions: [] }]),
+    AGENT_CONSOLE_STATE_DB: "/tmp/relay-config-test.sqlite",
+    AGENT_CONSOLE_COORDINATION_RELAYS: JSON.stringify([{ machine: "source", token: "r".repeat(32), ingress_token: "i".repeat(32) }]),
+  };
+  assert.equal(loadConfig(env).attestedCreateEnabled, false);
+  const grants = [{ machine: "source", session_id: "caller", role: "steward" }];
+  const valid = { ...env, AGENT_CONSOLE_ATTESTED_CREATE: "1", AGENT_CONSOLE_ATTESTED_CREATE_GRANTS: JSON.stringify(grants), AGENT_CONSOLE_ATTESTED_CREATE_CREDENTIALS: JSON.stringify({ target: "dedicated" }) };
+  assert.deepEqual(loadConfig(valid).attestedCreateGrants, grants);
+  assert.equal(loadConfig(valid).attestedCreateEnabled, true);
+  for (const credentials of [{ target: "machine-target" }, { target: "i".repeat(32) }, { target: "same", source: "same" }, { missing: "dedicated" }]) {
+    assert.throws(() => loadConfig({ ...valid, AGENT_CONSOLE_ATTESTED_CREATE_CREDENTIALS: JSON.stringify(credentials) }));
+  }
+  for (const grant of [{ ...grants[0], incarnation: "unexpected" }, { ...grants[0], role: "other" }, { ...grants[0], machine: "missing" }]) {
+    assert.throws(() => loadConfig({ ...valid, AGENT_CONSOLE_ATTESTED_CREATE_GRANTS: JSON.stringify([grant]) }));
+  }
+});
