@@ -88,13 +88,11 @@ creation.
 
 ## Start a prepared move
 
-The edge relays a prepared cross-host move under the frozen
-[start contract](https://github.com/sympoies/nils-cli/blob/2ff54e3a6e60b45fedf61ba2d886bd91df2a9946/crates/agent-session/docs/specs/console-resume-move-v1.md)
-and its
-[transport supplement](https://github.com/sympoies/nils-cli/blob/12a8dc4926da51ae43e8ef1655effc896d5489f8/crates/agent-session/docs/specs/console-resume-move-transport-v1.md).
-The routes exist only when the operator sets `AGENT_CONSOLE_RESUME_MOVE=1`; without it they
-return 404. The destination machine also needs its own `AGENT_CONSOLE_COORDINATION_RELAYS`
-entry, whose ingress token the relay sends to it.
+The edge relays a prepared cross-host move under the frozen [start contract][move-start]
+and its [transport supplement][move-transport]. The routes exist only when the operator
+sets `AGENT_CONSOLE_RESUME_MOVE=1`; without it they return 404. The destination machine
+also needs its own `AGENT_CONSOLE_COORDINATION_RELAYS` entry, whose ingress token the
+relay sends to it.
 
 - `GET /api/coordination/resume-move/v1` is the origin capability handshake. It takes no
   query, body, relay-token header or binding header, and answers with the authenticated
@@ -194,3 +192,6 @@ If the runtime changes or ownership conflicts, stop and inspect the new state be
 The narrower `--repair-session` command requires the same provider conversation (or an
 unbound session); it cannot repair the changed conversation produced by clear then restart.
 This procedure adds no relay endpoint or automatic re-bind.
+
+[move-start]: https://github.com/sympoies/nils-cli/blob/2ff54e3a6e60b45fedf61ba2d886bd91df2a9946/crates/agent-session/docs/specs/console-resume-move-v1.md
+[move-transport]: https://github.com/sympoies/nils-cli/blob/12a8dc4926da51ae43e8ef1655effc896d5489f8/crates/agent-session/docs/specs/console-resume-move-transport-v1.md
