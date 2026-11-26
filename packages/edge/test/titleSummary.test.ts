@@ -1120,8 +1120,14 @@ test("summarizeTitle queues bounded concurrency and reports only queue saturatio
       prompt: `Prompt ${index + 1}`,
     });
   const running = [start(0), start(1)];
+  let readyTimer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await ready;
+    await Promise.race([
+      ready,
+      new Promise<never>((_resolve, reject) => {
+        readyTimer = setTimeout(() => reject(new Error("two summarizer workers did not connect")), 10000);
+      }),
+    ]);
     const queued = Array.from({ length: 8 }, (_, index) => start(index + 2));
     const excess = await start(10);
     assert.equal(excess.reason, "fallback_busy");
@@ -1132,6 +1138,7 @@ test("summarizeTitle queues bounded concurrency and reports only queue saturatio
 
     assert.equal(results.filter((item) => item.reason === "accepted").length, 10);
   } finally {
+    clearTimeout(readyTimer);
     for (const response of responses) response.end();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
