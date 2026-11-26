@@ -458,6 +458,25 @@ export function isAuthQuarantined(session: { readonly auth_incident?: PublicAuth
   return session.auth_incident?.status === "auth_failed";
 }
 
+const RESUME_MOVE_LINEAGE_SCHEMA = "agent-session.resume-move-lineage.v1";
+const MOVE_LINEAGE_UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+
+function normalizeResumeMoveLineage(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const source_host = publicSessionString(raw.source_host, 512);
+  const source_session_id = publicSessionString(raw.source_session_id, 512);
+  const { move_id, source_incarnation, source_generation, provider, provider_session_id } = raw;
+  if (raw.schema_version !== RESUME_MOVE_LINEAGE_SCHEMA || !source_host || !source_session_id
+    || typeof move_id !== "string" || !MOVE_LINEAGE_UUID.test(move_id)
+    || typeof source_incarnation !== "string" || !MOVE_LINEAGE_UUID.test(source_incarnation)
+    || typeof provider_session_id !== "string" || !MOVE_LINEAGE_UUID.test(provider_session_id)
+    || typeof source_generation !== "number" || !Number.isSafeInteger(source_generation) || source_generation < 0
+    || (provider !== "codex" && provider !== "claude")) return undefined;
+  return { schema_version: RESUME_MOVE_LINEAGE_SCHEMA, move_id, source_host, source_session_id,
+    source_incarnation, source_generation, provider, provider_session_id };
+}
+
 /**
  * Explicit public projection for daemon session records. Unknown fields and
  * unknown nested members are dropped so schema drift cannot expose host-only
@@ -524,6 +543,8 @@ export function projectPublicAgentSession(value: unknown): Record<string, unknow
   const authIncident = normalizePublicAuthIncident(raw.auth_incident);
   if (authIncident) out.auth_incident = authIncident;
 
+  const resumeMove = normalizeResumeMoveLineage(raw.resume_move);
+  if (resumeMove) out.resume_move = resumeMove;
   if (Object.hasOwn(raw, "provider_resume")) {
     out.provider_resume = normalizePublicProviderResume(raw.provider_resume);
   }

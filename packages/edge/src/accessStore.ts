@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { SessionDispatchedBy } from "@agent-console/shared/api";
+import type { ResumeMoveReply } from "./resumeMove.ts";
 
 // The session that started another one through the coordination start route.
 // Display-only metadata; never an authorization input.
@@ -57,6 +58,30 @@ interface ServiceStartRow {
   readonly machine: string;
   readonly agent: string;
   readonly fingerprint: string;
+}
+
+export interface ResumeMoveReceiptKey {
+  readonly machine: string;
+  readonly signer: string;
+  readonly moveId: string;
+  readonly owner: string;
+  readonly digest: string;
+  readonly operationId: string;
+  readonly originMachine: string;
+  readonly callerId: string;
+  readonly callerIncarnation: string;
+}
+
+type ResumeMoveClaim =
+  | { readonly kind: "repeat"; readonly outcome: ResumeMoveReply | null }
+  | { readonly kind: "claimed" | "unavailable" | "conflict" | "missing" | "expired" };
+
+interface ResumeMoveRow {
+  readonly machine: string;
+  readonly signer: string;
+  readonly owner: string;
+  readonly digest: string;
+  readonly outcome: string | null;
 }
 
 export interface SessionOwnershipInput {
@@ -202,6 +227,24 @@ export class AccessStore {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (relay_machine, service_id, operation_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS resume_move_receipt (
+        machine TEXT NOT NULL,
+        move_id TEXT NOT NULL UNIQUE,
+        signer TEXT NOT NULL,
+        owner TEXT NOT NULL,
+        digest TEXT NOT NULL,
+        proof_expires_at INTEGER,
+        outcome TEXT,
+        PRIMARY KEY (machine, move_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS resume_move_operation (
+        origin_machine TEXT NOT NULL,
+        caller_id TEXT NOT NULL,
+        caller_incarnation TEXT NOT NULL,
+        operation_id TEXT NOT NULL,
+        move_id TEXT NOT NULL REFERENCES resume_move_receipt(move_id),
+        PRIMARY KEY (origin_machine, caller_id, caller_incarnation, operation_id)
+      ) STRICT;
       -- Retired per-principal header account choice.
       DROP TABLE IF EXISTS principal_claude_display;
     `);
@@ -303,6 +346,97 @@ export class AccessStore {
       WHERE relay_machine = ? AND service_id = ? AND operation_id = ?
     `).get(input.relayMachine, input.serviceId, input.operationId) as unknown as ServiceStartRow;
     return { sessionId: row.session_id, machine: row.machine, agent: row.agent, fingerprint: row.fingerprint };
+  }
+
+  #resumeMoveWrite<T>(write: () => T): T {
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = write();
+      this.#db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      if (this.#db.isTransaction) this.#db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  #resumeMoveRow(moveId: string): ResumeMoveRow | undefined {
+    return this.#db.prepare("SELECT machine, signer, owner, digest, outcome FROM resume_move_receipt WHERE move_id = ?")
+      .get(moveId) as unknown as ResumeMoveRow | undefined;
+  }
+
+  #resumeMoveAuthorized(key: ResumeMoveReceiptKey): boolean {
+    return this.ownsSession(key.owner, key.originMachine, key.callerId, key.callerIncarnation);
+  }
+
+  /**
+   * Bind an operation to an exact retained move, or reserve the one dispatch
+   * after verified proof freshness. Without expiry evidence no row is created.
+   * The global move constraint prevents retargeting even with a new operation.
+   */
+  claimResumeMove(key: ResumeMoveReceiptKey, proofExpiresAt?: number): ResumeMoveClaim {
+    return this.#resumeMoveWrite(() => {
+      if (!this.#resumeMoveAuthorized(key)) return { kind: "unavailable" };
+      const row = this.#resumeMoveRow(key.moveId);
+      if (row && row.owner !== key.owner) return { kind: "unavailable" };
+      const scope = [key.originMachine, key.callerId, key.callerIncarnation, key.operationId] as const;
+      const operation = this.#db.prepare(`
+        SELECT move_id FROM resume_move_operation
+        WHERE origin_machine = ? AND caller_id = ? AND caller_incarnation = ? AND operation_id = ?
+      `).get(...scope);
+      if (operation && operation.move_id !== key.moveId) return { kind: "conflict" };
+      if (row && (row.machine !== key.machine || row.digest !== key.digest)) return { kind: "conflict" };
+      if (row && row.signer !== key.signer) return { kind: "unavailable" };
+      if (!row) {
+        if (proofExpiresAt === undefined) return { kind: "missing" };
+        if (!Number.isSafeInteger(proofExpiresAt)) return { kind: "unavailable" };
+        if (proofExpiresAt <= Math.floor(Date.now() / 1000)) return { kind: "expired" };
+        this.#db.prepare(`
+          INSERT INTO resume_move_receipt (machine, move_id, signer, owner, digest, proof_expires_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(key.machine, key.moveId, key.signer, key.owner, key.digest, proofExpiresAt);
+      }
+      if (!operation) this.#db.prepare(`
+        INSERT INTO resume_move_operation (origin_machine, caller_id, caller_incarnation, operation_id, move_id)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(...scope, key.moveId);
+      return row ? { kind: "repeat", outcome: row.outcome === null ? null : JSON.parse(row.outcome) as ResumeMoveReply }
+        : { kind: "claimed" };
+    });
+  }
+
+  /** Commit the terminal reply and any Console grant together. */
+  completeResumeMove(key: ResumeMoveReceiptKey, reply: ResumeMoveReply): ResumeMoveReply | null {
+    return this.#resumeMoveWrite(() => {
+      if (!this.#resumeMoveAuthorized(key)) return null;
+      const row = this.#resumeMoveRow(key.moveId);
+      if (!row || row.owner !== key.owner || row.machine !== key.machine
+        || row.digest !== key.digest || row.signer !== key.signer) return null;
+      if (row.outcome !== null) return JSON.parse(row.outcome) as ResumeMoveReply;
+      const { body } = reply;
+      if (body.ok) {
+        const result = body.data;
+        if (result.move_id !== key.moveId || result.machine !== key.machine || result.session_id !== `move-${key.moveId}`) return null;
+        const grant = this.sessionGrant(key.machine, result.session_id);
+        if (grant && (grant.principalId !== key.owner || grant.incarnation !== result.session_incarnation)) return null;
+        if (!grant?.launcher) this.claimSession({
+          principalId: key.owner, machine: key.machine, sessionId: result.session_id, incarnation: result.session_incarnation,
+          launcher: { machine: key.originMachine, sessionId: key.callerId },
+          ...(grant?.runtimeStartedAt ? { runtimeStartedAt: grant.runtimeStartedAt } : {}),
+        });
+      } else if (body.error.details.session_created !== false || body.error.details.move_id !== key.moveId) {
+        return reply;
+      }
+      this.#db.prepare("UPDATE resume_move_receipt SET outcome = ? WHERE move_id = ?")
+        .run(JSON.stringify(reply), key.moveId);
+      return reply;
+    });
+  }
+
+  // The verified expiry is dispensable once elapsed. Do not remove the
+  // dispatch fence, its operation bindings or the outcome (including unknown).
+  compactResumeMoveReceipts(now: number): void {
+    this.#db.prepare("UPDATE resume_move_receipt SET proof_expires_at = NULL WHERE proof_expires_at <= ?").run(now);
   }
 
   // Sessions a service started on `machine`, across its generations.
