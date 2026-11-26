@@ -48,7 +48,7 @@ test("stop fence persists, excludes lifecycle operations, and becomes an incarna
   assert.equal(second.admit({ ...other, incarnation: "incarnation-b" }, "intent-c", "message", "generation").created, true);
 });
 
-test("a proven refusal releases only its own fence and retry and claim remain blocked", t => {
+test("a proven refusal releases only its own fence and retry remains blocked", t => {
   const dir = mkdtempSync(join(tmpdir(), "outbox-stop-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const first = new OutboxStore(join(dir, "state.sqlite"));
@@ -59,7 +59,6 @@ test("a proven refusal releases only its own fence and retry and claim remain bl
   first.refuse(candidate, "refused");
   const refused = first.get(target, "intent-a")!;
   second.beginStop(target, "operation-a");
-  assert.equal(first.claim(candidate), undefined);
   assert.throws(() => first.actOnRefused(target, "intent-a", { operation: "retry_refused", base_revision: refused.revision }, "generation"), /outbox-lifecycle-pending/);
   assert.throws(() => second.resolveStop({ ...target, principalId: "principal-b" }, "operation-a", "refused"), /stop-operation-not-found/);
   assert.deepEqual(second.resolveStop(target, "operation-a", "refused"), { state: "refused" });
@@ -160,4 +159,75 @@ test("an unreadable store returns a fixed durability refusal", t => {
     assert.doesNotMatch(JSON.stringify(error), /private-canary/);
     return true;
   });
+});
+
+
+test("pending work and admission blocks match the complete target exactly", t => {
+  const variants = [
+    { ...target, incarnation: "incarnation-" }, { ...target, incarnation: "incarnation-a-extra" },
+    { ...target, incarnation: "INCARNATION-A" }, { ...target, incarnation: "incarnation-a " },
+    { ...target, machine: "machine-a-extra" }, { ...target, machine: "MACHINE-A" },
+    { ...target, sessionId: "session-a-extra" }, { ...target, sessionId: "SESSION-A" },
+  ];
+  for (const [index, other] of variants.entries()) {
+    const dir = mkdtempSync(join(tmpdir(), "outbox-stop-exact-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const first = new OutboxStore(join(dir, "state.sqlite"));
+    const second = new OutboxStore(join(dir, "state.sqlite"));
+    t.after(() => { first.close(); second.close(); });
+    first.admit({ ...other, principalId: "principal-b" }, `pending-${index}`, "message", "generation");
+    assert.deepEqual(second.beginStop(target, `operation-${index}`), { state: "pending" });
+    second.resolveStop(target, `operation-${index}`, "stopped");
+    assert.equal(first.admit(other, `new-${index}`, "message", "generation").created, true);
+  }
+});
+
+test("unknown work of another principal prevents stop", t => {
+  const dir = mkdtempSync(join(tmpdir(), "outbox-stop-unknown-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const first = new OutboxStore(join(dir, "state.sqlite"));
+  const second = new OutboxStore(join(dir, "state.sqlite"));
+  t.after(() => { first.close(); second.close(); });
+  const other = { ...target, principalId: "principal-b" };
+  first.admit(other, "intent-a", "message", "generation");
+  const attempt = first.claim(first.candidate(other)!)!;
+  first.settle(attempt, {});
+  assert.equal(first.get(other, "intent-a")!.state, "unknown");
+  assert.throws(() => second.beginStop(target, "operation-a"), /outbox-pending-replies/);
+});
+
+test("an active fence blocks claiming a different incarnation across connections", t => {
+  const dir = mkdtempSync(join(tmpdir(), "outbox-stop-claim-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const first = new OutboxStore(join(dir, "state.sqlite"));
+  const second = new OutboxStore(join(dir, "state.sqlite"));
+  t.after(() => { first.close(); second.close(); });
+  const newer = { ...target, principalId: "principal-b", incarnation: "incarnation-b" };
+  first.admit(newer, "intent-a", "message", "generation");
+  const candidate = first.candidate(newer)!;
+  assert.ok(candidate);
+  second.beginStop(target, "operation-a");
+  assert.equal(first.claim(candidate), undefined);
+  second.resolveStop(target, "operation-a", "refused");
+  assert.equal(first.claim(candidate)?.item.state, "sending");
+});
+
+test("receipt access and operation replay bind exact issuer and target", t => {
+  const dir = mkdtempSync(join(tmpdir(), "outbox-stop-receipt-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new OutboxStore(join(dir, "state.sqlite"));
+  t.after(() => store.close());
+  assert.deepEqual(store.beginStop(target, "operation-a"), { state: "pending" });
+  for (const other of [
+    { ...target, principalId: "PRINCIPAL-A" }, { ...target, principalId: "principal-a-extra" },
+    { ...target, machine: "MACHINE-A" }, { ...target, sessionId: "SESSION-A" },
+    { ...target, incarnation: "INCARNATION-A" }, { ...target, incarnation: "incarnation-a-extra" },
+    { ...target, incarnation: "incarnation-a " },
+  ]) {
+    assert.throws(() => store.stopReceipt(other, "operation-a"), /stop-operation-not-found/);
+    assert.throws(() => store.beginStop(other, "operation-a"), /operation-id-conflict/);
+  }
+  assert.deepEqual(store.resolveStop(target, "operation-a", "stopped"), { state: "stopped" });
+  assert.deepEqual(store.beginStop(target, "operation-a"), { state: "stopped" });
+  assert.throws(() => store.resolveStop(target, "operation-a", "refused"), /operation-id-conflict/);
 });
