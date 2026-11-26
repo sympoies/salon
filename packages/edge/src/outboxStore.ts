@@ -16,8 +16,10 @@ export interface OutboxLifecycle {
   readonly sessionId: string;
   readonly incarnation: string | null;
   readonly ownerToken: string;
-  readonly operation: "archive" | "maintenance-delete" | "delete" | null;
+  readonly operation: "archive" | "maintenance-delete" | "delete" | "stop" | null;
 }
+export type StopState = "pending" | "stopped" | "refused" | "unknown";
+export interface StopReceipt { readonly state: StopState }
 export interface ExtensionOutboxGrant {
   readonly routeKey: string;
   readonly permission: string;
@@ -75,58 +77,72 @@ export class OutboxStore {
   readonly #db: DatabaseSync;
   constructor(path: string) {
     if (path === ":memory:") throw new OutboxError("outbox-durability-unavailable", 503);
-    this.#db = new DatabaseSync(path);
-    this.#db.exec(`PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;
-      CREATE TABLE IF NOT EXISTS outbox_targets (
-        scope TEXT PRIMARY KEY, target TEXT NOT NULL, revision INTEGER NOT NULL, holds TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS outbox_items (
-        sequence INTEGER PRIMARY KEY, scope TEXT NOT NULL, id TEXT NOT NULL,
-        admission_hash TEXT NOT NULL, credential_generation TEXT NOT NULL,
-        next_attempt_at INTEGER NOT NULL, value TEXT NOT NULL, device_id TEXT, UNIQUE(scope,id)
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS outbox_items_scope ON outbox_items(scope,sequence);
-      CREATE TABLE IF NOT EXISTS outbox_attempts (
-        request_id TEXT PRIMARY KEY, scope TEXT NOT NULL, intent_id TEXT NOT NULL,
-        payload_hash TEXT NOT NULL, receipt TEXT
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS outbox_cancellations (
-        scope TEXT NOT NULL, id TEXT NOT NULL, admission_hash TEXT NOT NULL,
-        value TEXT NOT NULL, PRIMARY KEY(scope,id)
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS outbox_extension_inputs (
-        principal_id TEXT NOT NULL, extension_id TEXT NOT NULL, channel TEXT NOT NULL, input_id TEXT NOT NULL,
-        scope TEXT NOT NULL, intent_id TEXT NOT NULL, admission_hash TEXT NOT NULL, admission TEXT NOT NULL,
-        retired_item TEXT, PRIMARY KEY(principal_id,extension_id,channel,input_id), UNIQUE(scope,intent_id)
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS outbox_extension_inputs_intent
-        ON outbox_extension_inputs(principal_id,extension_id,intent_id);
-      CREATE TABLE IF NOT EXISTS outbox_lifecycle (
-        machine TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY(machine,session_id)
-      ) STRICT;
-    `);
-    // Old pending/held intentions retain their original policy and contents.
-    // Only newly admitted intentions opt into immediate native handoff.
-    this.#transaction(() => {
-      const columns = this.#db.prepare("PRAGMA table_info(outbox_items)").all() as { name: string }[];
-      if (!columns.some(column => column.name === "native_handoff")) {
-        this.#db.exec("ALTER TABLE outbox_items ADD COLUMN native_handoff INTEGER NOT NULL DEFAULT 0");
-      }
-      if (!columns.some(column => column.name === "device_id")) {
-        this.#db.exec("ALTER TABLE outbox_items ADD COLUMN device_id TEXT");
-      }
-      const lifecycle = this.#db.prepare("PRAGMA table_info(outbox_lifecycle)").all() as { name: string }[];
-      if (!lifecycle.some(column => column.name === "incarnation")) {
-        this.#db.exec("ALTER TABLE outbox_lifecycle ADD COLUMN incarnation TEXT");
-        this.#db.exec("ALTER TABLE outbox_lifecycle ADD COLUMN owner_token TEXT");
-        this.#db.exec("ALTER TABLE outbox_lifecycle ADD COLUMN operation TEXT");
-      }
-      // Legacy rows gain identity, never guessed operation provenance.
-      for (const row of this.#db.prepare("SELECT machine,session_id FROM outbox_lifecycle WHERE owner_token IS NULL").all() as { machine: string; session_id: string }[]) {
-        this.#db.prepare("UPDATE outbox_lifecycle SET owner_token=? WHERE machine=? AND session_id=?")
-          .run(randomUUID(), row.machine, row.session_id);
-      }
-    });
+    let db: DatabaseSync | undefined;
+    try {
+      this.#db = db = new DatabaseSync(path);
+      this.#db.exec(`PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL;
+        CREATE TABLE IF NOT EXISTS outbox_targets (
+          scope TEXT PRIMARY KEY, target TEXT NOT NULL, revision INTEGER NOT NULL, holds TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS outbox_items (
+          sequence INTEGER PRIMARY KEY, scope TEXT NOT NULL, id TEXT NOT NULL,
+          admission_hash TEXT NOT NULL, credential_generation TEXT NOT NULL,
+          next_attempt_at INTEGER NOT NULL, value TEXT NOT NULL, device_id TEXT, UNIQUE(scope,id)
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS outbox_items_scope ON outbox_items(scope,sequence);
+        CREATE TABLE IF NOT EXISTS outbox_attempts (
+          request_id TEXT PRIMARY KEY, scope TEXT NOT NULL, intent_id TEXT NOT NULL,
+          payload_hash TEXT NOT NULL, receipt TEXT
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS outbox_cancellations (
+          scope TEXT NOT NULL, id TEXT NOT NULL, admission_hash TEXT NOT NULL,
+          value TEXT NOT NULL, PRIMARY KEY(scope,id)
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS outbox_extension_inputs (
+          principal_id TEXT NOT NULL, extension_id TEXT NOT NULL, channel TEXT NOT NULL, input_id TEXT NOT NULL,
+          scope TEXT NOT NULL, intent_id TEXT NOT NULL, admission_hash TEXT NOT NULL, admission TEXT NOT NULL,
+          retired_item TEXT, PRIMARY KEY(principal_id,extension_id,channel,input_id), UNIQUE(scope,intent_id)
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS outbox_extension_inputs_intent
+          ON outbox_extension_inputs(principal_id,extension_id,intent_id);
+        CREATE TABLE IF NOT EXISTS outbox_stop_operations (
+          operation_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, machine TEXT NOT NULL,
+          session_id TEXT NOT NULL, incarnation TEXT NOT NULL, state TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS outbox_stop_blocks (
+          machine TEXT NOT NULL, session_id TEXT NOT NULL, incarnation TEXT NOT NULL,
+          operation_id TEXT NOT NULL, PRIMARY KEY(machine,session_id,incarnation)
+        ) STRICT;
+        CREATE TABLE IF NOT EXISTS outbox_lifecycle (
+          machine TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY(machine,session_id)
+        ) STRICT;
+      `);
+      // Old pending/held intentions retain their original policy and contents.
+      // Only newly admitted intentions opt into immediate native handoff.
+      this.#transaction(() => {
+        const columns = this.#db.prepare("PRAGMA table_info(outbox_items)").all() as { name: string }[];
+        if (!columns.some(column => column.name === "native_handoff")) {
+          this.#db.exec("ALTER TABLE outbox_items ADD COLUMN native_handoff INTEGER NOT NULL DEFAULT 0");
+        }
+        if (!columns.some(column => column.name === "device_id")) {
+          this.#db.exec("ALTER TABLE outbox_items ADD COLUMN device_id TEXT");
+        }
+        const lifecycle = this.#db.prepare("PRAGMA table_info(outbox_lifecycle)").all() as { name: string }[];
+        if (!lifecycle.some(column => column.name === "incarnation")) {
+          this.#db.exec("ALTER TABLE outbox_lifecycle ADD COLUMN incarnation TEXT");
+          this.#db.exec("ALTER TABLE outbox_lifecycle ADD COLUMN owner_token TEXT");
+          this.#db.exec("ALTER TABLE outbox_lifecycle ADD COLUMN operation TEXT");
+        }
+        // Legacy rows gain identity, never guessed operation provenance.
+        for (const row of this.#db.prepare("SELECT machine,session_id FROM outbox_lifecycle WHERE owner_token IS NULL").all() as { machine: string; session_id: string }[]) {
+          this.#db.prepare("UPDATE outbox_lifecycle SET owner_token=? WHERE machine=? AND session_id=?")
+            .run(randomUUID(), row.machine, row.session_id);
+        }
+      });
+    } catch {
+      try { db?.close(); } catch { /* Preserve the fixed refusal. */ }
+      throw new OutboxError("outbox-durability-unavailable", 503);
+    }
   }
   close(): void { this.#db.close(); }
   /** Read the attempt recorded before dispatch, even while its receipt is pending. */
@@ -188,7 +204,9 @@ export class OutboxStore {
   }
   #lifecycleBlocked(target: OutboxTarget): boolean {
     return Boolean(this.#db.prepare("SELECT 1 FROM outbox_lifecycle WHERE machine=? AND session_id=?")
-      .get(target.machine, target.sessionId));
+      .get(target.machine, target.sessionId)) || Boolean(this.#db.prepare(
+        "SELECT 1 FROM outbox_stop_blocks WHERE machine=? AND session_id=? AND incarnation=?")
+        .get(target.machine, target.sessionId, target.incarnation));
   }
   snapshot(target: OutboxTarget): SharedOutboxSnapshot {
     return this.#transaction(() => {
@@ -382,7 +400,7 @@ export class OutboxStore {
     return row ? { machine, sessionId, incarnation: row.incarnation, ownerToken: row.owner_token, operation: row.operation } : undefined;
   }
   /** Uncertain unguarded deletion cannot be retired by an incarnation change. */
-  beginLifecycle(machine: string, sessionId: string, incarnation: string | null, operation: NonNullable<OutboxLifecycle["operation"]>): OutboxLifecycle {
+  beginLifecycle(machine: string, sessionId: string, incarnation: string | null, operation: Exclude<OutboxLifecycle["operation"], null | "stop">): OutboxLifecycle {
     return this.#transaction(() => {
       for (const target of this.targets().filter(target => target.machine === machine && target.sessionId === sessionId)) {
         if (this.#rows(target).some(mayReachProvider)) throw new OutboxError("outbox-pending-replies", 409);
@@ -396,8 +414,65 @@ export class OutboxStore {
       return fence;
     });
   }
+  /** Bind an operation to its issuer and exact target while acquiring the shared lifecycle slot. */
+  beginStop(target: OutboxTarget, operationId: string): StopReceipt {
+    return this.#transaction(() => {
+      const existing = this.#db.prepare("SELECT * FROM outbox_stop_operations WHERE operation_id=?").get(operationId) as
+        { principal_id: string; machine: string; session_id: string; incarnation: string; state: StopState } | undefined;
+      if (existing) {
+        if (existing.principal_id !== target.principalId || existing.machine !== target.machine ||
+            existing.session_id !== target.sessionId || existing.incarnation !== target.incarnation)
+          throw new OutboxError("operation-id-conflict", 409);
+        return { state: existing.state };
+      }
+      if (this.#db.prepare("SELECT 1 FROM outbox_stop_blocks WHERE machine=? AND session_id=? AND incarnation=?")
+        .get(target.machine, target.sessionId, target.incarnation))
+        throw new OutboxError("outbox-lifecycle-pending", 409);
+      for (const candidate of this.targets().filter(value => value.machine === target.machine &&
+        value.sessionId === target.sessionId && value.incarnation === target.incarnation)) {
+        if (this.#rows(candidate).some(mayReachProvider)) throw new OutboxError("outbox-pending-replies", 409);
+      }
+      const acquired = this.#db.prepare("INSERT OR IGNORE INTO outbox_lifecycle(machine,session_id,incarnation,owner_token,operation) VALUES(?,?,?,?,'stop')")
+        .run(target.machine, target.sessionId, target.incarnation, operationId);
+      if (acquired.changes !== 1) {
+        const owner = this.lifecycle(target.machine, target.sessionId);
+        throw new OutboxError(owner?.operation === "stop" ? "session-stop-busy" : "outbox-lifecycle-pending", 409);
+      }
+      this.#db.prepare("INSERT INTO outbox_stop_operations VALUES(?,?,?,?,?,'pending')")
+        .run(operationId, target.principalId, target.machine, target.sessionId, target.incarnation);
+      return { state: "pending" };
+    });
+  }
+  stopReceipt(target: OutboxTarget, operationId: string): StopReceipt {
+    const row = this.#db.prepare("SELECT state FROM outbox_stop_operations WHERE operation_id=? AND principal_id=? AND machine=? AND session_id=? AND incarnation=?")
+      .get(operationId, target.principalId, target.machine, target.sessionId, target.incarnation) as { state: StopState } | undefined;
+    if (!row) throw new OutboxError("stop-operation-not-found", 404);
+    return { state: row.state };
+  }
+  /** Invoke only after verified stop or a proven refusal before any effect. */
+  resolveStop(target: OutboxTarget, operationId: string, result: "stopped" | "refused" | "unknown"): StopReceipt {
+    return this.#transaction(() => {
+      const receipt = this.stopReceipt(target, operationId);
+      if (receipt.state !== "pending" && receipt.state !== "unknown") {
+        if (receipt.state !== result) throw new OutboxError("operation-id-conflict", 409);
+        return receipt;
+      }
+      if (result === "unknown") {
+        this.#db.prepare("UPDATE outbox_stop_operations SET state='unknown' WHERE operation_id=?").run(operationId);
+        return { state: "unknown" };
+      }
+      const fence = this.#db.prepare("DELETE FROM outbox_lifecycle WHERE machine=? AND session_id=? AND incarnation=? AND owner_token=? AND operation='stop'")
+        .run(target.machine, target.sessionId, target.incarnation, operationId);
+      if (fence.changes !== 1) throw new OutboxError("outbox-lifecycle-pending", 409);
+      if (result === "stopped") this.#db.prepare("INSERT OR IGNORE INTO outbox_stop_blocks VALUES(?,?,?,?)")
+        .run(target.machine, target.sessionId, target.incarnation, operationId);
+      this.#db.prepare("UPDATE outbox_stop_operations SET state=? WHERE operation_id=?").run(result, operationId);
+      return { state: result };
+    });
+  }
   /** The snapshot must be captured before the asynchronous proof or operation. */
   releaseLifecycle(fence: OutboxLifecycle): boolean {
+    if (fence.operation === "stop") return false;
     return this.#db.prepare("DELETE FROM outbox_lifecycle WHERE machine=? AND session_id=? AND owner_token=? AND incarnation IS ? AND operation IS ?")
       .run(fence.machine, fence.sessionId, fence.ownerToken, fence.incarnation, fence.operation).changes === 1;
   }
