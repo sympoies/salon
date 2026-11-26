@@ -15,7 +15,7 @@ import type { BoardService } from "./board/service.ts";
 
 import {
   moveRefusal, parseResumeMoveRead, parseResumeMoveRequest, projectResumeMoveReply, reconcileResumeMove, resumeMoveBindingHeader,
-  resumeMoveDigest, startDecision, type ResumeMoveReply, type ResumeMoveRequest, type ResumeMoveRoute,
+  resumeMoveDigest, startDecision, uniqueKeys, type ResumeMoveReply, type ResumeMoveRequest, type ResumeMoveRoute,
 } from "./resumeMove.ts";
 
 const MESSAGE_SCHEMA_V1 = "agent-session.remote-message.v1";
@@ -767,8 +767,125 @@ async function handleResumeMoveStart(config: EdgeConfig, store: AccessStore | nu
   }
 }
 
+const ATTESTED_HEADERS = ["x-agent-session-attested-create-token", "x-agent-session-console-create-binding"];
+const ATTESTED_MEDIA = "application/vnd.agent-session.console-attested-create.v1";
+const LOWER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function attestedInvalid(): never { return fail(400, "console-create-invalid-body", "invalid attested create request"); }
+function attestedUnavailable(): never { return fail(503, "console-create-attestation-unavailable", "attested create is unavailable"); }
+function attestedForbidden(): never { return fail(403, "console-create-attestation-forbidden", "attested create is forbidden"); }
+function containsIntent(value: unknown, root = true): boolean {
+  if (Array.isArray(value)) return value.some(item => containsIntent(item, false));
+  const entry = object(value); if (!entry) return false;
+  return Object.entries(entry).some(([key, item]) => (key.toLowerCase() === "attest_role" && (!root || key !== "attest_role")) || containsIntent(item, false));
+}
+function identityKeys(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(identityKeys);
+  const entry = object(value); if (!entry) return false;
+  return Object.entries(entry).some(([key, item]) => ["role", "forge_context", "initiator", "attested_role"].includes(key) || identityKeys(item));
+}
+function secureDestination(machine: MachineConfig): boolean {
+  try { const url = new URL(machine.url); return !url.username && !url.password && (url.protocol === "https:" || (url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))); }
+  catch { return false; }
+}
+function confirmedAttested(value: unknown, id: string): Record<string, unknown> | null {
+  const session = object(value), lineage = object(session?.lineage), context = object(lineage?.forge_context);
+  if (!session || session.id !== id || session.role !== "steward" || typeof session.session_incarnation !== "string" || !session.session_incarnation
+    || context?.initiator !== "console-relay" || context.role !== "steward" || context.attested_role !== "steward") return null;
+  return { id, session_incarnation: session.session_incarnation, role: "steward", lineage: { forge_context: { initiator: "console-relay", role: "steward", attested_role: "steward" } },
+    ...(typeof session.agent === "string" ? { agent: session.agent } : {}), ...(typeof session.status === "string" ? { status: session.status } : {}) };
+}
+async function attestedCreate(config: EdgeConfig, store: AccessStore, source: MachineConfig, relay: CoordinationRelayConfig,
+  request: Record<string, unknown>, req: IncomingMessage, res: ServerResponse, disabledMachines: (principal: PrincipalConfig) => ReadonlySet<string>,
+  project: ((body: unknown) => Record<string, unknown> | null) | undefined): Promise<void> {
+  if (!config.attestedCreateEnabled) return attestedUnavailable();
+  if (ATTESTED_HEADERS.some(name => req.headers[name] !== undefined)) return fail(400, "identity_session_binding_untrusted", "caller attestation is untrusted");
+  const session = object(request.session);
+  if (!session || typeof session.id !== "string" || !SAFE_ID.test(session.id) || !project) return attestedInvalid();
+  if (identityKeys(session) || ["role", "forge_context", "initiator", "attested_role"].some(key => Object.hasOwn(request, key))) return fail(400, "identity_session_binding_untrusted", "caller identity is untrusted");
+  if (Object.keys(request).some(key => ![...CREATE_REQUEST_KEYS, "attest_role", "no_parent"].includes(key))) return attestedInvalid();
+  if (request.no_parent !== true || (session.lineage != null && (!object(session.lineage) || Object.keys(object(session.lineage)!).length > 0))) return fail(400, "role-requires-root", "attested create requires a root");
+  if (["resume", "resume_id", "provider_resume_id", "resume_account_explicit"].some(key => Object.hasOwn(session, key))) return fail(400, "resume-unsupported", "attested create cannot resume");
+  if (accountConflict(session)) return fail(400, "account-conflict", "conflicting account fields");
+  const body = project(session); if (!body) return attestedInvalid();
+  if (session.work !== undefined && session.work !== null) { if (!object(session.work)) return attestedInvalid(); body.work = session.work; }
+  if (session.title_mode !== undefined) { if (session.title_mode !== "auto" && session.title_mode !== "pinned") return attestedInvalid(); body.title_mode = session.title_mode; }
+  const caller = identity({ machine: relay.machine, session_id: request.source_session_id, session_incarnation: request.source_incarnation });
+  if (!caller || !LOWER_UUID.test(caller.session_incarnation) || caller.session_incarnation === "00000000-0000-0000-0000-000000000000") return attestedInvalid();
+  const admitted = () => (config.attestedCreateGrants ?? []).some(grant => grant.machine === caller.machine && grant.session_id === caller.session_id && grant.role === "steward");
+  if (!admitted()) return attestedForbidden();
+  let state: Snapshot, principal: PrincipalConfig;
+  try { state = await snapshot(source); } catch { return attestedUnavailable(); }
+  try { principal = principalFor(config, store, caller, state); } catch { return attestedForbidden(); }
+  if (!state.sessions.some(item => item.id === caller.session_id && item.session_incarnation === caller.session_incarnation && item.status === "running")) return attestedForbidden();
+  const name = request.machine ?? relay.machine;
+  const machine = config.machines.find(item => item.name === name && item.active !== false && principal.machines.includes(item.name) && !disabledMachines(principal).has(item.name));
+  if (!machine) return attestedForbidden();
+  const token = config.attestedCreateCredentials?.[machine.name];
+  const allTokens = Object.values(config.attestedCreateCredentials ?? {});
+  if (!token || allTokens.filter(value => value === token).length !== 1 || config.machines.some(item => item.token === token)
+    || (config.coordinationRelays ?? []).some(item => item.token === token || item.ingress_token === token)
+    || config.clientToken === token || config.principals.some(item => item.token === token) || !secureDestination(machine) || !secureDestination(source)) return attestedUnavailable();
+  const op = req.headers["x-agent-session-operation-id"];
+  if (typeof op !== "string" || !UUID_V7.test(op) || req.rawHeaders.filter((_, index) => index % 2 === 0 && req.rawHeaders[index]!.toLowerCase() === "x-agent-session-operation-id").length !== 1) return attestedInvalid();
+  const timestamp = parseInt(op.replaceAll("-", "").slice(0, 12), 16);
+  const fresh = timestamp <= Date.now() + 60_000 && timestamp >= Date.now() - 7 * 86400_000;
+  await translateAccount(machine, body);
+  body.id = session.id;
+  const wire = JSON.stringify(body);
+  const binding = Buffer.from(JSON.stringify({ schema_version: "agent-session.console-create-binding.v1", scope: "create", origin_machine: caller.machine,
+    caller_session_id: caller.session_id, caller_session_incarnation: caller.session_incarnation, destination_machine: machine.name,
+    attested_role: "steward", body_sha256: createHash("sha256").update(wire).digest("hex") })).toString("base64url");
+  if (binding.length > 2048) return attestedUnavailable();
+  const liveCaller = async (): Promise<boolean> => {
+    let latest: Snapshot; try { latest = await snapshot(source); } catch { return attestedUnavailable(); }
+    return admitted() && store.ownsSession(principal.id, caller.machine, caller.session_id, caller.session_incarnation)
+      && latest.sessions.some(item => item.id === caller.session_id && item.session_incarnation === caller.session_incarnation && item.status === "running");
+  };
+  const key = { machine: machine.name, sessionId: session.id, operationId: op, originMachine: caller.machine, callerId: caller.session_id,
+    incarnation: caller.session_incarnation, owner: principal.id, digest: createHash("sha256").update(JSON.stringify(request)).digest("hex"), fresh };
+  try {
+    if (!await liveCaller()) return attestedForbidden();
+    const claim = store.claimAttestedCreate(key);
+    if (claim.kind === "conflict") return fail(409, "console-start-operation-conflict", "operation conflicts with a previous request");
+    if (claim.kind === "expired") return fail(409, "console-start-operation-expired", "operation receipt expired; inspect the destination");
+    if (claim.kind === "fenced") return attestedUnavailable();
+    if (claim.kind === "repeat") {
+      if (claim.outcome) return sendJson(res, 201, { ok: true, data: { session: JSON.parse(claim.outcome) } });
+      // A destination listing does not prove which operation created a record.
+      // Without a confirmed reply, reconciliation remains unconfirmed.
+      return attestedUnavailable();
+    }
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 30_000);
+    let response: Response, result: unknown;
+    try {
+      response = await fetch(`${machine.url}/sessions`, { method: "POST", redirect: "error", signal: controller.signal,
+        headers: { authorization: `Bearer ${machine.token}`, "content-type": ATTESTED_MEDIA,
+          "x-agent-session-attested-create-token": token, "x-agent-session-console-create-binding": binding }, body: wire });
+      const reader = response.body?.getReader(); const chunks: Uint8Array[] = []; let size = 0;
+      if (reader) for (;;) {
+        const chunk = await reader.read(); if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > MAX_RESPONSE_BYTES) { await reader.cancel(); return attestedUnavailable(); }
+        chunks.push(chunk.value);
+      }
+      try { result = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { result = null; }
+    } finally { clearTimeout(timer); }
+    if (response.status === 415) return attestedUnavailable();
+    const root = object(result), data = object(root?.data), error = object(root?.error);
+    const refusals: Record<string, number> = { "unauthorized": 401, "token-not-configured": 503, "console-create-binding-mismatch": 403,
+      "console-create-role-forbidden": 403, "console-create-invalid-body": 400, "identity_session_binding_untrusted": 400,
+      "role-requires-root": 400, "resume-unsupported": 400, "session-exists": 409 };
+    if (root?.ok === false && typeof error?.code === "string" && refusals[error.code] === response.status) return fail(response.status, error.code, "destination rejected attested create");
+    const confirmed = response.status === 201 && root?.ok === true ? confirmedAttested(data?.session, session.id) : null;
+    if (!confirmed) return attestedUnavailable();
+    if (!await liveCaller()) return attestedForbidden();
+    if (!store.completeAttestedCreate(key, confirmed)) return attestedUnavailable();
+    sendJson(res, 201, { ok: true, data: { session: confirmed } });
+  } catch (error) { if (error instanceof RelayError) throw error; return attestedUnavailable(); }
+}
+
 export function isCoordinationRoute(path: string): boolean { return path.startsWith("/api/coordination/"); }
-export async function handleCoordinationRelay(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse, url: URL, board: BoardService | null = null, createSession: OwnedSessionCreator | null = null, disabledMachines: (principal: PrincipalConfig) => ReadonlySet<string> = () => new Set(), decorateBoard: (principal: PrincipalConfig, view: import("./board/query.ts").BoardView) => import("./board/query.ts").BoardView = (_principal, view) => view): Promise<void> {
+export async function handleCoordinationRelay(config: EdgeConfig, store: AccessStore | null, req: IncomingMessage, res: ServerResponse, url: URL, board: BoardService | null = null, createSession: OwnedSessionCreator | null = null, disabledMachines: (principal: PrincipalConfig) => ReadonlySet<string> = () => new Set(), decorateBoard: (principal: PrincipalConfig, view: import("./board/query.ts").BoardView) => import("./board/query.ts").BoardView = (_principal, view) => view, projectCreate?: (body: unknown) => Record<string, unknown> | null): Promise<void> {
   try {
     if (config.resumeMove && url.pathname === RESUME_MOVE_ROUTE) {
       if (req.method === "POST") return await handleResumeMoveStart(config, store, req, res);
@@ -779,6 +896,12 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
     if (!store || !config.multiUser) return fail(503, "federation-disabled", "remote messaging is disabled");
     const source = config.machines.find(m => m.name === relay.machine);
     if (!source) return fail(403, "machine-forbidden", "machine is not permitted");
+    if (config.attestedCreateEnabled && req.method === "GET" && url.pathname === "/api/coordination/attested-create/v1") {
+      if (ATTESTED_HEADERS.some(name => req.headers[name] !== undefined)) return fail(400, "identity_session_binding_untrusted", "caller attestation is untrusted");
+      if (url.search || !(await readRawBody(req, 0).then(() => true, () => false))) return attestedInvalid();
+      sendJson(res, 200, { schema_version: "agent-session.console-attested-create-capability.v1", ok: true,
+        data: { machine: relay.machine, capability: "console-attested-create/v1" } }); return;
+    }
     if (req.method === "GET" && url.pathname === "/api/coordination/peers/v1") {
       const params = url.searchParams;
       let sourceSnapshot: Snapshot | undefined;
@@ -905,7 +1028,21 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
       // a new managed id, including when the dedicated resume field selects
       // guarded provider history admission on the target daemon.
       if (!createSession) return fail(404, "route-not-found", "unknown coordination route");
-      const request = object(await readJsonBody(req).catch(() => null));
+      if (config.attestedCreateEnabled && ATTESTED_HEADERS.some(name => req.headers[name] !== undefined)) return fail(400, "identity_session_binding_untrusted", "caller attestation is untrusted");
+      let request: Record<string, unknown> | null = null; let text = ""; let raw: Buffer = Buffer.alloc(0);
+      if (config.attestedCreateEnabled) {
+        raw = await readRawBody(req, 64 * 1024).catch(() => Buffer.alloc(0));
+        try { text = raw.toString("utf8"); request = object(JSON.parse(text)); } catch { /* invalid JSON */ }
+      } else request = object(await readJsonBody(req).catch(() => null));
+      if (config.attestedCreateEnabled && request) {
+        const suspicious = containsIntent(request);
+        if (suspicious || (Object.hasOwn(request, "attest_role") && (typeof request.attest_role !== "boolean" || !uniqueKeys(text)))) return attestedInvalid();
+        if (request.attest_role === true) {
+          try { new TextDecoder("utf-8", { fatal: true }).decode(raw); } catch { return attestedInvalid(); }
+          return await attestedCreate(config, store, source, relay, request, req, res, disabledMachines, projectCreate);
+        }
+        if (request.attest_role === false) delete request.attest_role;
+      }
       if (request && Object.hasOwn(request, "source_service_id")) {
         return await serviceCreate(config, store, relay.machine, request, req.headers["x-agent-session-operation-id"], res, createSession);
       }

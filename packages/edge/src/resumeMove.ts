@@ -144,7 +144,7 @@ function uuid(value: unknown): value is string { return typeof value === "string
 // JSON.parse checks syntax and types but discards duplicate members. Scan
 // tokens in the validated input, comparing decoded keys per object, including
 // escaped equivalents. Quoted braces and brackets are not structure.
-function uniqueKeys(text: string): boolean {
+export function uniqueKeys(text: string): boolean {
   const tokens = /"(?:[^"\\]|\\.)*"|[{}\[\]]/gs;
   const colon = /\s*:/y;
   const stack: (Set<string> | null)[] = [];
