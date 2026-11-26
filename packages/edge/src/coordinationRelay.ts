@@ -862,7 +862,8 @@ async function attestedCreate(config: EdgeConfig, store: AccessStore, source: Ma
       // The durable destination-and-ID fence permits only this dispatch. The
       // destination reserves this context for its attested admission path.
       if (!claim.reconcilable) return attestedUnavailable();
-      const found = (await snapshot(machine)).sessions.find(item => item.id === session.id);
+      let found: Record<string, unknown> | undefined;
+      try { found = (await snapshot(machine)).sessions.find(item => item.id === session.id); } catch { return attestedUnavailable(); }
       const confirmed = confirmedAttested(found, session.id);
       if (!confirmed) return attestedUnavailable();
       if (!await liveCaller()) return attestedForbidden();

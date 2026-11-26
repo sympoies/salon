@@ -46,10 +46,12 @@ async function fixture(t: TestContext, enabled = true) {
     let holdCreate: Promise<void> | undefined;
     let notifyCreate: (() => void) | undefined;
     let notifyRead: (() => void) | undefined;
+    let listUnavailable = false;
     const server = createServer(async (req, res) => {
       res.setHeader("content-type", "application/json");
       if (req.method === "GET" && req.url === "/sessions") {
         notifyRead?.(); if (holdRead) await holdRead;
+        if (listUnavailable) return void res.writeHead(503).end(JSON.stringify({ ok: false, error: { code: "unavailable" } }));
         return void res.end(JSON.stringify({ ok: true, data: { sessions: records } }));
       }
       if (req.method !== "POST" || req.url !== "/sessions") return void res.writeHead(404).end();
@@ -111,7 +113,7 @@ async function fixture(t: TestContext, enabled = true) {
       });
       outgoing.on("error", () => res.destroy()); req.pipe(outgoing);
     });
-    return { server, proxy, seen, records, set mode(value: Mode) { mode = value; }, set upstream(value: string) { upstream = value; }, get upstream() { return upstream; }, set configured(value: boolean) { configured = value; },
+    return { server, proxy, seen, records, set mode(value: Mode) { mode = value; }, set upstream(value: string) { upstream = value; }, get upstream() { return upstream; }, set configured(value: boolean) { configured = value; }, set listUnavailable(value: boolean) { listUnavailable = value; },
       hold(promise: Promise<void>, notify: () => void) { holdRead = promise; notifyRead = notify; },
       holdPost(promise: Promise<void>, notify: () => void) { holdCreate = promise; notifyCreate = notify; } };
   }
@@ -361,6 +363,16 @@ test("a freshly created fence store refuses to reconcile", async t => {
   await f.restart();
   const db = new DatabaseSync(f.db); db.prepare("UPDATE attested_store_marker SET initialized_epoch = ?").run(Math.floor(Date.now() / 1000) + 3600); db.close();
   assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-unavailable");
+  const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined); store.close();
+  assert.equal(f.target.seen.length, 1);
+});
+
+test("a failed reconcile lookup stays unavailable and records no grant", async t => {
+  const f = await fixture(t); f.target.mode = "drop"; const op = operation();
+  assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-unavailable");
+  await f.restart(); f.target.listUnavailable = true;
+  const retry = await f.post(input, op);
+  assert.equal(retry.status, 503); assert.equal(retry.body.error.code, "console-create-attestation-unavailable");
   const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined); store.close();
   assert.equal(f.target.seen.length, 1);
 });
