@@ -92,7 +92,8 @@ The edge relays a prepared cross-host move under the frozen [start contract][mov
 and its [transport supplement][move-transport]. The routes exist only when the operator
 sets `AGENT_CONSOLE_RESUME_MOVE=1`; without it they return 404. The destination machine
 also needs its own `AGENT_CONSOLE_COORDINATION_RELAYS` entry, whose ingress token the
-relay sends to it.
+relay sends to it. The relay pins each move receipt to that configured machine name; the
+destination itself enforces its signer identity.
 
 - `GET /api/coordination/resume-move/v1` is the origin capability handshake. It takes no
   query, body, relay-token header or binding header, and answers with the authenticated

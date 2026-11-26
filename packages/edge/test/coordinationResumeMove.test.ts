@@ -103,9 +103,10 @@ async function fixture(t: import("node:test").TestContext, resumeMove = true) {
   let store = new AccessStore(db);
   store.claimSession({ principalId: "owner", machine: "source", sessionId: "caller", incarnation: callerInc });
   store.claimSession({ principalId: "other", machine: "source", sessionId: "other-caller", incarnation: callerInc });
-  const [target, alternative] = await Promise.all([destination("target", t), destination("alternative", t)]);
+  // "forbidden" is fully relay-enabled but outside every principal's machines.
+  const [target, alternative, forbidden] = await Promise.all(["target", "alternative", "forbidden"].map(name => destination(name, t)));
   const names = ["source", "target", "alternative", "forbidden"];
-  const urls: Record<string, string> = { target: target.origin, alternative: alternative.origin };
+  const urls: Record<string, string> = { target: target.origin, alternative: alternative.origin, forbidden: forbidden.origin };
   const options = {
     openAccess: false, multiUser: true, accessDbPath: db, resumeMove,
     machines: names.map(name => ({ name, url: urls[name] ?? "http://127.0.0.1:1", token: "fixture-operator" })),
@@ -114,6 +115,7 @@ async function fixture(t: import("node:test").TestContext, resumeMove = true) {
       { machine: "source", token: "fixture-relay", ingress_token: "fixture-ingress" },
       { machine: "target", token: "target-relay", ingress_token: target.state.ingress },
       { machine: "alternative", token: "alternative-relay", ingress_token: alternative.state.ingress },
+      { machine: "forbidden", token: "forbidden-relay", ingress_token: forbidden.state.ingress },
     ],
   };
   let config = makeEdgeConfig(options);
@@ -138,7 +140,7 @@ async function fixture(t: import("node:test").TestContext, resumeMove = true) {
   }
   const post = (input: object | string = request, token = "fixture-relay", headers: Record<string, string> = {}, publicEdge = false) =>
     send("POST", input, token, headers, publicEdge);
-  return { post, send, target, alternative, get store() { return store; },
+  return { post, send, target, alternative, forbidden, get store() { return store; },
     configure(overrides: Partial<typeof options>) { config = makeEdgeConfig({ ...options, ...overrides }); },
     restart() { store.close(); store = new AccessStore(db); } };
 }
@@ -299,6 +301,7 @@ test("only a fresh staged observation forwards, and the other observations follo
   const expired = staged({ proof_freshness: "expired", proof_expires_at_epoch: 1 });
   const notCreated = { move_id: moveId, safe_to_retry: false, session_created: false };
   const table: [string, Fixed, number, string, object][] = [
+    ["staged fresh but past the relay's own expiry check", staged({ proof_expires_at_epoch: 1 }), 409, "resume-move-proof-expired", { ...notCreated, next_action: "inspect_destination" }],
     ["staged expired", expired, 409, "resume-move-proof-expired", { ...notCreated, next_action: "inspect_destination" }],
     ["prepared", staged({ state: "prepared", proof_freshness: "missing", proof_expires_at_epoch: null }), 409, "resume-move-proof-missing", { ...notCreated, next_action: "inspect_destination" }],
     ["prepared with fresh proof", staged({ state: "prepared" }), 409, "resume-move-proof-missing", { ...notCreated, next_action: "inspect_destination" }],
@@ -363,6 +366,15 @@ test("move start grants the exact returned incarnation to the derived owner, and
   assert.equal(posts(f.target), 1);
 });
 
+test("a relay-enabled destination outside the caller's granted machines receives no request", async t => {
+  const f = await fixture(t);
+  const result = await f.post({ ...request, machine: "forbidden" });
+  assert.equal(result.status, 403);
+  assert.deepEqual(result.body.error, { code: "resume-move-unavailable",
+    details: { move_id: moveId, safe_to_retry: false, session_created: false, next_action: "inspect_destination" } });
+  assert.deepEqual(f.forbidden.seen, []);
+});
+
 test("invalid and unauthorized moves cannot reach the destination", async t => {
   const f = await fixture(t);
   const body = JSON.stringify(request);
@@ -384,7 +396,7 @@ test("invalid and unauthorized moves cannot reach the destination", async t => {
     [{ ...request, caller: { ...request.caller, owner: "other" } }, "resume-move-binding-mismatch"],
     [{ ...request, machine: "forbidden" }, "resume-move-unavailable"],
   ] as const) assert.equal((await f.post(input)).body.error.code, code);
-  assert.deepEqual([f.target.seen, f.alternative.seen], [[], []]);
+  assert.deepEqual([f.target.seen, f.alternative.seen, f.forbidden.seen], [[], [], []]);
 });
 
 test("retained typed refusal, changed binding, retarget and operation reuse never re-forward", async t => {
