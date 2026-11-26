@@ -51,7 +51,7 @@ export interface ResumeMoveRequest {
   readonly schema_version: typeof SCHEMA;
   readonly operation_id: string;
   readonly machine: string;
-  readonly caller: { readonly session_id: string; readonly session_incarnation: string; readonly owner: string };
+  readonly caller: { readonly session_id: string; readonly session_incarnation: string };
   readonly session: {
     readonly move_id: string;
     readonly agent: "codex" | "claude";
@@ -167,7 +167,7 @@ function uniqueKeys(text: string): boolean {
   return true;
 }
 
-export function parseResumeMoveRequest(bytes: Uint8Array): ResumeMoveRequest | null {
+export function parseResumeMoveRequest(bytes: Uint8Array): ResumeMoveRequest | "resume-move-binding-mismatch" | null {
   try {
     const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
     const root = object(JSON.parse(text));
@@ -176,21 +176,23 @@ export function parseResumeMoveRequest(bytes: Uint8Array): ResumeMoveRequest | n
       || !nonempty(root.machine)) return null;
     const caller = object(root.caller);
     const session = object(root.session);
-    if (!caller || !exact(caller, ["session_id", "session_incarnation", "owner"])
-      || !nonempty(caller.session_id) || !uuid(caller.session_incarnation) || !nonempty(caller.owner)
+    const hasOwner = caller !== null && Object.hasOwn(caller, "owner");
+    if (!caller || !exact(caller, hasOwner ? ["session_id", "session_incarnation", "owner"] : ["session_id", "session_incarnation"])
+      || !nonempty(caller.session_id) || !uuid(caller.session_incarnation)
       || !session || !exact(session, ["move_id", "agent", "resume", "account", "cwd"])
       || !uuid(session.move_id) || (session.agent !== "codex" && session.agent !== "claude")
       || !uuid(session.resume) || !nonempty(session.account) || !nonempty(session.cwd)
       || !uniqueKeys(text)) return null;
+    if (hasOwner) return "resume-move-binding-mismatch";
     return root as unknown as ResumeMoveRequest;
   } catch { return null; }
 }
 
 export function resumeMoveDigest(request: ResumeMoveRequest): string {
-  const { caller, machine, schema_version, session } = request;
+  const { caller, machine, session } = request;
   return createHash("sha256").update(JSON.stringify({
-    caller: { owner: caller.owner, session_id: caller.session_id, session_incarnation: caller.session_incarnation },
-    machine, schema_version,
+    caller: { session_id: caller.session_id, session_incarnation: caller.session_incarnation },
+    machine,
     session: { account: session.account, agent: session.agent, cwd: session.cwd, move_id: session.move_id, resume: session.resume },
   })).digest("hex");
 }

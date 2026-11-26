@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { AccessStore } from "../src/accessStore.ts";
 import * as relay from "../src/coordinationRelay.ts";
+import { resumeMoveDigest } from "../src/resumeMove.ts";
 import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
 
@@ -19,9 +20,9 @@ const request = {
   schema_version: schema,
   operation_id: "0194f350-aa43-7dbd-831e-ac16766f74c1",
   machine: "target",
-  caller: { session_id: "caller", session_incarnation: callerInc, owner: "owner" },
+  caller: { session_id: "caller", session_incarnation: callerInc },
   session: { move_id: moveId, agent: "codex", resume: "783683ba-a24b-4342-a6f4-b571cb26a022", account: "example", cwd: "example-checkout" },
-};
+} as const;
 const repeat = { ...request, operation_id: "0194f350-aa43-7dbd-831e-ac16766f74c2" };
 const created = { status: 201, body: { schema_version: schema, ok: true,
   data: { machine: "target", move_id: moveId, state: "created", session_id: sessionId, session_incarnation: resultInc } } };
@@ -197,10 +198,19 @@ test("discovery and both destination routes carry the credentials and exact bind
   assert.equal(start.headers["x-agent-session-relay-token"], "target-ingress");
 });
 
-test("a derived owner, never the body's assertion, is bound for the destination", async t => {
+test("a caller owner member is refused before destination discovery", async t => {
   const f = await fixture(t);
-  assert.equal((await f.post({ ...request, caller: { ...request.caller, owner: "other" } })).body.error.code, "resume-move-binding-mismatch");
-  assert.deepEqual(f.target.seen, []);
+  for (const owner of ["owner", "other", null]) {
+    const result = await f.post({ ...request, caller: { ...request.caller, owner } });
+    assert.equal(result.body.error?.code, "resume-move-binding-mismatch");
+    assert.equal(result.body.error.details.session_created, false);
+  }
+  assert.deepEqual([f.target.seen, f.alternative.seen, f.forbidden.seen], [[], [], []]);
+});
+
+test("the receipt digest covers only the v1.1 binding fields", () => {
+  // SHA-256 of the canonical JSON containing machine, both caller members and all five session members.
+  assert.equal(resumeMoveDigest(request), "0d2dac09d17bb4e4e69e9ff5e6178b649ce79386d5465de54da77e7e76268836");
 });
 
 test("a forged, dropped, misdirected or redirected discovery sends no status read, start or fallback", async t => {
@@ -384,7 +394,7 @@ test("invalid and unauthorized moves cannot reach the destination", async t => {
     { ...request, session: { ...request.session, resume: request.session.resume.toUpperCase() } },
     { ...request, operation_id: moveId }, { ...request, operation_id: null },
     body.replace('"machine":"target"', '"machine":"target","machine":"target"'),
-    body.replace('"owner":"owner"', '"owner":"owner","ow\\u006eer":"owner"'),
+    body.replace('"session_id":"caller"', '"session_id":"caller","session_\\u0069d":"caller"'),
     body.replace('"account":"example"', '"account":"example","account":"example"'),
   ]) assert.equal((await f.post(invalid)).body.error.code, "resume-unsupported");
   const badToken = await f.post(request, "browser-owner");
@@ -393,7 +403,6 @@ test("invalid and unauthorized moves cannot reach the destination", async t => {
   for (const [input, code] of [
     [{ ...request, caller: { ...request.caller, session_incarnation: resultInc } }, "resume-move-unavailable"],
     [{ ...request, caller: { ...request.caller, session_id: "not-owned" } }, "resume-move-unavailable"],
-    [{ ...request, caller: { ...request.caller, owner: "other" } }, "resume-move-binding-mismatch"],
     [{ ...request, machine: "forbidden" }, "resume-move-unavailable"],
   ] as const) assert.equal((await f.post(input)).body.error.code, code);
   assert.deepEqual([f.target.seen, f.alternative.seen, f.forbidden.seen], [[], [], []]);
@@ -410,7 +419,7 @@ test("retained typed refusal, changed binding, retarget and operation reuse neve
     { ...repeat, machine: "alternative" },
     { ...repeat, session: { ...request.session, move_id: "9aef6f79-28dd-43f9-a65b-2abb28c75d5b" } },
   ]) assert.equal((await f.post(changed)).body.error.code, "resume-move-binding-mismatch");
-  const foreign = await f.post({ ...repeat, caller: { ...request.caller, session_id: "other-caller", owner: "other" } });
+  const foreign = await f.post({ ...repeat, caller: { ...request.caller, session_id: "other-caller" } });
   assert.equal(foreign.body.error.code, "resume-move-unavailable");
   assert.equal(posts(f.target) + posts(f.alternative), 1);
   assert.equal(f.store.sessionGrant("target", sessionId), undefined);
