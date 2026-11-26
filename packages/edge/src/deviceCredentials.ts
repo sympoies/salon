@@ -218,6 +218,11 @@ export class DeviceCredentialStore {
       .run(this.now(), id, principal);
     if (!result.changes) throw new PairingError(404, "Not found.");
   }
+  rename(id: string, principal: string, name: string): void {
+    const result = this.#db.prepare("UPDATE device_credentials SET name=? WHERE id=? AND principal=?")
+      .run(name, id, principal);
+    if (!result.changes) throw new PairingError(404, "Not found.");
+  }
   renew(id: string, principal: string, kind: string) {
     this.#db.exec("BEGIN IMMEDIATE");
     try {

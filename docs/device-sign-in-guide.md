@@ -28,11 +28,15 @@ or its first recipient lost the page, create a new one. A copied link can be
 forwarded, so treat it as private until the pairing ends.
 Native link and camera integration depend on the consuming app and its operating-system setup.
 
-## Renew or revoke a device
+## Rename, renew or revoke a device
 
 **Settings → Devices** shows your account's device names, creation and last-use
 times, expiry and the current device marker. A device sign-in expires after
 30 days; using the application does not extend that deadline.
+
+To give a device a recognizable label, sign in with the main access token,
+choose **Rename** on its row, and save a name of 1–64 characters. The new name
+appears in the list on paired devices too.
 
 Sign in with the main access token and choose **Renew** before a device expires to
 give it 30 days from that action. Expired or revoked devices must pair again.
@@ -48,7 +52,7 @@ network failure keeps the credential and shows an unavailable state.
 Revoking the current device signs it out;
 signing out a paired browser also revokes its device sign-in. Native sign-out clears
 the locally saved credential; use **Revoke** to end that device authorization. Only a main-token
-sign-in can pair or Renew devices. A paired device can view the list and revoke
+sign-in can pair, rename or renew devices. A paired device can view the list and revoke
 devices belonging to the same account.
 
 The [protocol reference](device-sign-in.md) covers configuration, expiry metadata,

@@ -8136,6 +8136,7 @@ textarea {
 .device-list li { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between; padding: 1rem 0; border-bottom: 1px solid var(--border); }
 .device-list span { display: block; font-size: var(--text-md); margin-top: .3rem; }
 .device-actions { display: flex; align-items: center; flex-wrap: wrap; }
+.device-rename { flex: 0 0 100%; min-width: 0; }
 
 .conversation-tool-group { display: contents; }
 .conversation-tool-group-content { display: contents; }
