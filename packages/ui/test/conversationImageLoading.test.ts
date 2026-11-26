@@ -39,7 +39,10 @@ async function mount(t: TestContext, count: number, fetchImage: (path: string) =
   await beforeRender?.(cache);
   await act(async () => { root.render(createElement(ConversationImages,{machine:"fixture",history:"history",images:Array.from({length:count},(_,i) => ({id:imageId(i)}))})); });
   const visibility = async (visible: boolean, index = 0) => { await act(async () => { observers[index]!(visible); await flush(); }); };
-  return {window,visibility,observers,instances,cache,unmount};
+  const render = async (indices: number[], filenameLabels: "image-only" | "descriptors") => {
+    await act(async () => { root.render(createElement(ConversationImages,{machine:"fixture",history:"history",images:indices.map(i => ({id:imageId(i)})),filenameLabels})); await flush(); });
+  };
+  return {window,visibility,observers,instances,cache,unmount,render};
 }
 
 test("loaded image survives leaving and reentering the viewport and the viewer reuses it",async t => {
@@ -140,4 +143,40 @@ test("an error tile without a reason offers Retry and no reason text",async t =>
   const tile = window.document.querySelector(".conversation-image-thumbnail")!;
   assert.equal(tile.querySelector("[role=status]")?.textContent,"Couldn't load");
   assert.ok([...window.document.querySelectorAll("button")].some(button => button.textContent === "Retry"));
+});
+
+test("captions follow image identity through reordered responses, rerenders and cache clearing", async t => {
+  const pending = new Map<number,(value: Response) => void>();
+  const {window,cache,render,visibility} = await mount(t,2,path => new Promise(resolve => {
+    pending.set(Number(path.split("/").at(-1)!.split(".")[2]),resolve);
+  }),true);
+  await visibility(true,0); await visibility(true,1);
+  const label = () => window.document.querySelector(".history-image-label")?.textContent;
+  const named = (name: string) => new Response(new Uint8Array([137,80,78,71]), {headers:{
+    "content-type":"image/png", "content-disposition":`inline; filename*=UTF-8''${encodeURIComponent(name)}`,
+  }});
+  await render([0,1],"image-only");
+  await act(async () => { pending.get(1)!(named("second.png")); await flush(); });
+  assert.equal(label(),"Image · second.png");
+  await act(async () => { pending.get(0)!(named("first\u202E.png")); await flush(); });
+  assert.equal(label(),"first.png · second.png");
+  await render([1,0],"image-only");
+  assert.equal(label(),"second.png · first.png");
+  await render([1,0],"descriptors");
+  assert.equal(label(),"Image · Image","text-bearing rows do not use response names");
+  await render([1,0],"image-only");
+  assert.equal(label(),"second.png · first.png");
+  // Make the first thumbnail evictable, then fill the real cache with distinct images.
+  await visibility(false,0);
+  const handles: Array<ReturnType<typeof cache.watch>> = [];
+  t.after(() => handles.forEach(handle => handle.unsubscribe()));
+  for (let i = 0; i < 47; i++) {
+    const target = {machine:"fixture",history:"history",image:`${i.toString(16).padStart(16,"0")}.0.2.${"b".repeat(32)}`};
+    const handle = cache.watch(target,() => {}); handles.push(handle);
+    await act(async () => { handle.setVisible(true); await flush(); pending.get(2)!(named("other.png")); await flush(); handle.setVisible(false); });
+  }
+  assert.equal(label(),"second.png · Image","eviction drops the off-screen response name until reloaded");
+  // Clearing likewise returns response names to the neutral fallback until reloaded.
+  await act(async () => { cache.clear(); await flush(); });
+  assert.equal(label(),"Image · Image");
 });
