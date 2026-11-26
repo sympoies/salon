@@ -186,7 +186,7 @@ async function fixture() {
       { machine: "host-b", session_id: "resident" },
     ] }] },
   });
-  const edge: Server = createEdgeServer(config, { board: { autoStart: false, now: () => NOW } });
+  const edge: Server = createEdgeServer(config, { board: { autoStart: false, now: () => NOW }, outboxPollIntervalMs: 10 });
   const { base, port } = await listenOnLoopback(edge);
   // The first line of the edge's answer to a WebSocket upgrade.
   const upgrade = (path: string, headers = "Origin: http://tauri.localhost\r\n") => new Promise<string>(resolve => {
@@ -278,7 +278,9 @@ test("viewer messages and controls the selected sessions like their owner, and n
     assert.equal(starred.status, 200);
 
     // Unselected, other-owner and out-of-scope sessions stay closed on every route.
-    const closed = f.calls.length;
+    // Receipt reconciliation for the admitted resident outbox item runs in the background.
+    const testedCalls = () => f.calls.filter(call => !/^host-a GET \/sessions\/resident\/prompt\/v2\/receipts\//.test(call));
+    const closed = testedCalls().length;
     for (const id of ["unselected", "unselected-child", "foreign-child", "resident-2"]) {
       for (const [method, suffix] of [
         ["GET", "glance"], ["GET", "buffer"], ["POST", "send"], ["POST", "prompt"], ["POST", "attach-ticket"],
@@ -296,7 +298,8 @@ test("viewer messages and controls the selected sessions like their owner, and n
     // Another principal's history row bound to a selected session's provider session is not the owner's.
     assert.equal((await f.call("viewer-b", "/api/history/sessions/host-a/hist-foreign/messages")).status, 404);
     assert.equal((await f.call("viewer-b", "/api/history/sessions/host-a/hist-unselected/star", { method: "POST", body: JSON.stringify({ starred: true }) })).status, 404);
-    assert.equal(f.calls.length, closed, "no refused request reached a daemon");
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(testedCalls().length, closed, "no refused request reached a daemon");
 
     // Acting for the owner never makes the viewer an owner or moves an owner's row.
     const after = f.principalsByKey();
