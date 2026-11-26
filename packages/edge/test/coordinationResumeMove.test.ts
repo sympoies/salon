@@ -68,9 +68,12 @@ async function destination(machine: string, t: import("node:test").TestContext) 
     try {
       assert.equal(count(entry, "x-agent-session-resume-move-binding"), 1);
       assert.match(String(header), /^[A-Za-z0-9_-]{1,2048}$/);
-      assert.deepStrictEqual(JSON.parse(Buffer.from(String(header), "base64url").toString("utf8")), {
-        schema_version: "agent-session.console-resume-move-binding.v1", origin_machine: "source", caller_session_id: "caller",
-        caller_session_incarnation: callerInc, owner: "owner", destination_machine: machine, move_id: moveId, scope,
+      const binding = JSON.parse(Buffer.from(String(header), "base64url").toString("utf8"));
+      const owners: Record<string, string> = { caller: "owner", "other-caller": "other" };
+      assert.ok(Object.hasOwn(owners, binding.caller_session_id));
+      assert.deepStrictEqual(binding, {
+        schema_version: "agent-session.console-resume-move-binding.v1", origin_machine: "source", caller_session_id: binding.caller_session_id,
+        caller_session_incarnation: callerInc, owner: owners[binding.caller_session_id], destination_machine: machine, move_id: moveId, scope,
         ...(scope === "start" ? { operation_id: (JSON.parse(entry.body) as { operation_id: string }).operation_id } : {}),
       });
     } catch { return refuse(403, "resume-move-binding-mismatch"); }
@@ -196,6 +199,18 @@ test("discovery and both destination routes carry the credentials and exact bind
   assert.ok(!String(read.headers["x-agent-session-resume-move-binding"]).includes("="));
   assert.deepEqual(JSON.parse(start.body), request);
   assert.equal(start.headers["x-agent-session-relay-token"], "target-ingress");
+});
+
+test("each caller binding carries the owner derived from its grant", async t => {
+  for (const [caller, owner] of [["caller", "owner"], ["other-caller", "other"]] as const) {
+    const f = await fixture(t);
+    assert.deepEqual(await f.post({ ...request, caller: { ...request.caller, session_id: caller } }), created);
+    for (const entry of f.target.seen.slice(1)) {
+      const binding = JSON.parse(Buffer.from(String(entry.headers["x-agent-session-resume-move-binding"]), "base64url").toString("utf8"));
+      assert.equal(binding.caller_session_id, caller);
+      assert.equal(binding.owner, owner);
+    }
+  }
 });
 
 test("a caller owner member is refused before destination discovery", async t => {

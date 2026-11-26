@@ -93,7 +93,7 @@ async function startFixture(count: number, terminalTraffic = false, withOutbox =
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
     sockets.add(socket);
     socket.on("data", (frame: Buffer) => {
-      if ((frame[0]! & 0x0f) === 8) socket.end(Buffer.from([0x88, 0]));
+      if ((frame[0]! & 0x0f) === 8) { clearInterval(timer); socket.end(Buffer.from([0x88, 0])); }
     });
     const id = req.url!.split("/")[2]!;
     const timer = id !== "session-0" && terminalTraffic ? setInterval(() => {
