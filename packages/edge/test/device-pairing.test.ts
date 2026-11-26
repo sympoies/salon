@@ -43,25 +43,25 @@ async function fixture(multiUser = false, daemon?: string, options: EdgeServerOp
     });
     return { response, status: response.status, body: await response.json() as Data };
   };
-  const create = async () => {
-    const result = await call("pairings", {}, { cookie });
+  const create = async (auth = { cookie }) => {
+    const result = await call("pairings", {}, auth);
     assert.equal(result.status, 201, "main-authenticated pairing creation is available");
     return result.body.data;
   };
-  const claim = async (pair: Data, delivery = "native") => {
+  const claim = async (pair: Data, delivery = "native", name = "Test device") => {
     const verifier = randomBytes(32).toString("base64url");
     const challenge = createHash("sha256").update(verifier).digest("hex");
-    const result = await call("pairings/claim", { code: pair.code, challenge, name: "Test device", delivery });
+    const result = await call("pairings/claim", { code: pair.code, challenge, name, delivery });
     assert.equal(result.status, 200);
     return { code: pair.code, verifier, challenge, delivery, principal: result.body.data.principal,
       origin: base, confirmed: true };
   };
   const approve = (pair: Data, claim: Data, auth = { cookie }) => call(`pairings/${pair.id}/approve`,
     { code: pair.code, challenge: claim.challenge }, auth);
-  const issue = async (delivery = "native") => {
-    const pair = await create();
-    const bound = await claim(pair, delivery);
-    assert.equal((await approve(pair, bound)).status, 200);
+  const issue = async (delivery = "native", name = "Test device", auth = { cookie }) => {
+    const pair = await create(auth);
+    const bound = await claim(pair, delivery, name);
+    assert.equal((await approve(pair, bound, auth)).status, 200);
     const result = await call("pairings/exchange", bound);
     assert.equal(result.status, 200);
     return { pair, bound, result, token: result.body.data.credential as string, id: result.body.data.id as string };
@@ -461,6 +461,7 @@ test("an owner can rename a device without changing credentials or other metadat
 
     const renamed = await f.call(`devices/${id}/rename`, { name: "  Example tablet  " }, owner);
     assert.equal(renamed.status, 200, "owner can rename a device");
+    assert.equal(renamed.body.data.name, "Example tablet");
     assert.equal(renamed.response.headers.has("set-cookie"), false);
     assert.deepEqual(await devices(), before.map(device =>
       device.id === id ? { ...device, name: "Example tablet" } : device));
@@ -471,6 +472,61 @@ test("an owner can rename a device without changing credentials or other metadat
     assert.equal(deviceList.can_manage, false);
     assert.equal(deviceList.devices.find((device: Data) => device.id === id)?.name, "Example tablet");
     assert.equal(deviceList.devices.find((device: Data) => device.id === id)?.current, true);
+  } finally { await f.close(); }
+});
+
+test("rename preserves pairing names, returns stored text, and scopes writes to the authenticated owner", async () => {
+  const f = await fixture(true);
+  try {
+    const longName = "a".repeat(80);
+    const { id } = await f.issue("native", longName);
+    const owner = { cookie: f.cookie, origin: f.base };
+    const other = { cookie: await loginCookie(f.base, "other-fixture"), origin: f.base };
+    const route = `devices/${id}/rename`;
+    const unchanged = await f.call(route, { name: longName }, owner);
+    assert.equal(unchanged.status, 200);
+    assert.equal(unchanged.body.data.name, longName);
+    for (const name of ["a".repeat(63), "a".repeat(64), "😀".repeat(64)]) {
+      const result = await f.call(route, { name }, owner);
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.name, name);
+    }
+    assert.equal((await f.call(route, { name: "😀".repeat(65) }, owner)).status, 400);
+    const replaced = await f.call(route, { name: " x\ud800 " }, owner);
+    assert.equal(replaced.body.data.name, "x�");
+    assert.equal((await f.call(route, { name: "stolen", principal: "primary" }, other)).status, 404);
+    assert.equal((await f.call(route, { name: "owned", principal: "other" }, owner)).status, 200);
+    assert.equal((await f.call(`devices/${id}`, undefined, owner, "DELETE")).status, 200);
+    assert.equal((await f.call(route, { name: "revived" }, owner)).status, 404);
+    const devices = (await f.call("devices", undefined, owner)).body.data.devices as Data[];
+    assert.equal(devices.find(device => device.id === id)?.name, "owned");
+  } finally { await f.close(); }
+});
+
+test("rename lookup hides foreign and revoked devices for every submitted name", async () => {
+  const f = await fixture(true);
+  try {
+    const owner = { cookie: f.cookie, origin: f.base };
+    const other = { cookie: await loginCookie(f.base, "other-fixture"), origin: f.base };
+    const foreign = await f.issue("native", "Foreign device");
+    const own = await f.issue("native", "Own device", other);
+    const retired = await f.issue("native", "Retired device", other);
+    assert.equal((await f.call(`devices/${retired.id}`, undefined, other, "DELETE")).status, 200);
+
+    const missing = await f.call(`devices/${foreign.id}/rename`, { name: " " }, other);
+    assert.equal(missing.status, 404);
+    for (const [id, name] of [
+      [foreign.id, "Foreign device"], [foreign.id, "Own device"],
+      [retired.id, "Retired device"], [retired.id, "Changed device"],
+    ]) {
+      const result = await f.call(`devices/${id}/rename`, { name }, other);
+      assert.equal(result.status, 404);
+      assert.deepEqual(result.body, missing.body);
+    }
+    const unchanged = await f.call(`devices/${own.id}/rename`, { name: "Own device" }, other);
+    assert.equal(unchanged.status, 200);
+    assert.equal(unchanged.body.data.name, "Own device");
+    assert.equal((await f.call(`devices/${foreign.id}/rename`, { name: "Foreign device" }, owner)).status, 200);
   } finally { await f.close(); }
 });
 

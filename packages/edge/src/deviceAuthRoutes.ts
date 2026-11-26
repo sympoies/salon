@@ -130,12 +130,7 @@ export async function handleDeviceAuth(req: IncomingMessage, res: ServerResponse
       sendJson(res, 200, { ok: true, data }); return true;
     }
     if (device && method === "POST" && device[2] === "rename") {
-      const rawName = body.name;
-      const name = typeof rawName === "string" ? rawName.trim() : "";
-      if (typeof rawName !== "string" || !name || [...name].length > 64 || /\p{Cc}/u.test(rawName)) {
-        throw new PairingError(400, "Enter a device name with 1–64 characters and no control characters.");
-      }
-      ctx.store.rename(device[1]!, owner, name);
+      const name = ctx.store.rename(device[1]!, owner, body.name);
       sendJson(res, 200, { ok: true, data: { name } }); return true;
     }
     throw new PairingError(404, "Not found.");
