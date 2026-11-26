@@ -218,10 +218,19 @@ export class DeviceCredentialStore {
       .run(this.now(), id, principal);
     if (!result.changes) throw new PairingError(404, "Not found.");
   }
-  rename(id: string, principal: string, name: string): void {
-    const result = this.#db.prepare("UPDATE device_credentials SET name=? WHERE id=? AND principal=?")
-      .run(name, id, principal);
-    if (!result.changes) throw new PairingError(404, "Not found.");
+  rename(id: string, principal: string, rawName: unknown): string {
+    const row = this.#db.prepare("SELECT name FROM device_credentials WHERE id=? AND principal=? AND revoked IS NULL")
+      .get(id, principal) as { name: string } | undefined;
+    if (!row) throw new PairingError(404, "Not found.");
+    if (rawName === row.name) return row.name;
+    const name = typeof rawName === "string" ? rawName.trim() : "";
+    if (typeof rawName !== "string" || !name || [...name].length > 64 || /\p{Cc}/u.test(rawName)) {
+      throw new PairingError(400, "Enter a device name with 1–64 characters and no control characters.");
+    }
+    const updated = this.#db.prepare("UPDATE device_credentials SET name=? WHERE id=? AND principal=? AND revoked IS NULL RETURNING name")
+      .get(name, id, principal) as { name: string } | undefined;
+    if (!updated) throw new PairingError(404, "Not found.");
+    return updated.name;
   }
   renew(id: string, principal: string, kind: string) {
     this.#db.exec("BEGIN IMMEDIATE");
