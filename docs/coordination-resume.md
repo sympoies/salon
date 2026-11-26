@@ -221,6 +221,17 @@ for local fixtures.
 
 The authenticated capability endpoint is `GET /api/coordination/attested-create/v1`.
 The relay sends an attested create once, verifies its returned identity and context before
-claiming ownership, and retains a durable destination-and-ID fence. An uncertain outcome
-requires inspection; retrying does not start another session. The relay never falls back to
-ordinary creation.
+claiming ownership, and retains a durable destination-and-ID fence. Definitive typed 4xx
+refusals, and a 415 reported as `console-create-attestation-unavailable`, are recorded and
+replayed on an exact retry. A 5xx, transport failure, timeout or malformed reply stays
+unconfirmed.
+
+An exact retry then reads the pinned destination once the first request has
+settled, without sending another create. It claims ownership only for a record with the exact ID,
+role and attested context, and only when the fence row belongs to that operation. A
+fence store created after the operation began refuses to reconcile. The relay never falls back
+to ordinary creation. A reused ID from another operation returns a conflict.
+
+Reconciliation depends on one relay per destination credential, a durable fence store, and a
+destination that reserves the attested initiator. A compromised credential, a second relay or
+a lost fence store is outside this proof; operator repair is required.

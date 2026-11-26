@@ -21,7 +21,7 @@ function operation(): string {
 const input = { source_session_id: "caller", source_incarnation: incarnation, machine: "target", attest_role: true, no_parent: true, session: { id: sessionId, agent: "codex", cwd: "/workspace" } };
 const context = { initiator: "console-relay", role: "steward", attested_role: "steward" };
 
-type Mode = "normal" | "drop" | "wrong-id" | "wrong-role" | "wrong-context" | "strip-binding" | "rewrite-type" | "strip-all" | "unsupported" | "oversized" | "redirect";
+type Mode = "normal" | "drop" | "wrong-id" | "wrong-role" | "wrong-context" | "strip-binding" | "rewrite-type" | "strip-all" | "unsupported" | "oversized" | "redirect" | "capacity" | "internal-after-create" | "unavailable-after-create" | "existing-conflict" | "existing-drop";
 async function fixture(t: TestContext, enabled = true) {
   const dir = mkdtempSync(join(tmpdir(), "attested-relay-"));
   const db = join(dir, "access.sqlite");
@@ -43,6 +43,8 @@ async function fixture(t: TestContext, enabled = true) {
     let mode: Mode = "normal";
     let configured = true;
     let holdRead: Promise<void> | undefined;
+    let holdCreate: Promise<void> | undefined;
+    let notifyCreate: (() => void) | undefined;
     let notifyRead: (() => void) | undefined;
     const server = createServer(async (req, res) => {
       res.setHeader("content-type", "application/json");
@@ -83,9 +85,14 @@ async function fixture(t: TestContext, enabled = true) {
         if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.id !== "string" || !value.id
           || ["attest_role", "no_parent", "lineage", "role"].some(key => Object.hasOwn(value, key))) throw new Error();
       } catch { return void reject(400, "console-create-invalid-body"); }
+      if (mode === "capacity") return void reject(409, "session-capacity-exceeded");
+      if (mode === "existing-conflict") { notifyCreate?.(); if (holdCreate) await holdCreate; return void reject(409, "session-exists"); }
+      if (mode === "existing-drop") return void req.socket.destroy();
       const result = { id: mode === "wrong-id" ? "other" : value.id, agent: value.agent, status: "running", session_incarnation: stale,
         role: mode === "wrong-role" ? "other" : "steward", lineage: { forge_context: mode === "wrong-context" ? { ...context, initiator: "other" } : context } };
       records.push(result);
+      if (mode === "internal-after-create") return void reject(500, "internal");
+      if (mode === "unavailable-after-create") return void reject(503, "console-create-attestation-unavailable");
       if (mode === "drop") return void req.socket.destroy();
       res.writeHead(201).end(JSON.stringify({ ok: true, data: { session: result } }));
     });
@@ -105,7 +112,8 @@ async function fixture(t: TestContext, enabled = true) {
       outgoing.on("error", () => res.destroy()); req.pipe(outgoing);
     });
     return { server, proxy, seen, records, set mode(value: Mode) { mode = value; }, set upstream(value: string) { upstream = value; }, get upstream() { return upstream; }, set configured(value: boolean) { configured = value; },
-      hold(promise: Promise<void>, notify: () => void) { holdRead = promise; notifyRead = notify; } };
+      hold(promise: Promise<void>, notify: () => void) { holdRead = promise; notifyRead = notify; },
+      holdPost(promise: Promise<void>, notify: () => void) { holdCreate = promise; notifyCreate = notify; } };
   }
   const target = destination("target"), alternative = destination("alternative");
   const [targetUpstream, alternativeUpstream] = await Promise.all([listenOnLoopback(target.server), listenOnLoopback(alternative.server)]);
@@ -131,6 +139,9 @@ async function fixture(t: TestContext, enabled = true) {
 test("grant admits a verified root and revocation is checked before receipt replay", async t => {
   const f = await fixture(t); const op = operation();
   const first = await f.post(input, op); assert.equal(first.status, 201); assert.equal(first.body.data.session.id, sessionId);
+  assert.equal(f.target.seen.length, 1);
+  const replay = await f.post(input, op);
+  assert.equal(replay.status, 201); assert.equal(replay.body.data.session.role, "steward");
   assert.equal(f.target.seen.length, 1);
   f.grants.length = 0;
   assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-forbidden");
@@ -180,11 +191,16 @@ test("dropped reply and restart reconcile exact retries without a second create"
   const f = await fixture(t); f.target.mode = "drop"; const op = operation();
   assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-unavailable");
   await f.restart();
-  await f.post(input, op);
+  const replay = await f.post(input, op);
+  assert.equal(replay.status, 201);
+  assert.equal(replay.body.data.session.id, sessionId);
+  assert.equal(replay.body.data.session.role, "steward");
+  assert.deepEqual(replay.body.data.session.lineage.forge_context, context);
+  const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId)?.principalId, "owner"); store.close();
   assert.equal(f.target.seen.length, 1);
   const changed = await f.post({ ...input, session: { ...input.session, title: "changed" } }, op);
   assert.equal(changed.status, 409);
-  await f.post(input, operation());
+  assert.equal((await f.post(input, operation())).body.error.code, "console-start-operation-conflict");
   assert.equal(f.target.seen.length, 1);
 });
 
@@ -203,7 +219,7 @@ test("expired receipts and destination fences survive receipt expiry", async t =
   const f = await fixture(t); const op = operation(); assert.equal((await f.post(input, op)).status, 201);
   const db = new DatabaseSync(f.db); db.prepare("UPDATE attested_create_fence SET created_epoch = 1").run(); db.close();
   assert.equal((await f.post(input, op)).body.error.code, "console-start-operation-expired");
-  assert.equal((await f.post(input, operation())).body.error.code, "console-create-attestation-unavailable");
+  assert.equal((await f.post(input, operation())).body.error.code, "console-start-operation-conflict");
   assert.equal(f.target.seen.length, 1);
 });
 
@@ -247,4 +263,104 @@ test("destination fixture enforces attested admission in order", async t => {
   const invalid = "{}";
   assert.equal((await send({ "x-agent-session-console-create-binding": binding({ body_sha256: createHash("sha256").update(invalid).digest("hex") }) }, invalid)).body.error.code, "console-create-invalid-body");
   assert.equal(f.target.records.length, 0);
+});
+
+
+test("typed destination refusals survive restart and exact replay without another create", async t => {
+  const f = await fixture(t); f.target.mode = "capacity"; const op = operation();
+  const first = await f.post(input, op);
+  assert.equal(first.status, 409); assert.equal(first.body.error.code, "session-capacity-exceeded");
+  await f.restart(); f.target.mode = "normal";
+  const replay = await f.post(input, op);
+  assert.equal(replay.status, 409); assert.equal(replay.body.error.code, "session-capacity-exceeded");
+  assert.equal(f.target.seen.length, 1);
+  const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined); store.close();
+});
+
+
+test("an unconfirmed retry never claims a mismatched destination record", async t => {
+  const f = await fixture(t); f.target.mode = "wrong-context"; const op = operation();
+  assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-unavailable");
+  assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-unavailable");
+  assert.equal(f.target.seen.length, 1);
+  const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined); store.close();
+});
+
+test("grant revocation during reconciliation prevents an ownership claim", async t => {
+  const f = await fixture(t); f.target.mode = "drop"; const op = operation();
+  assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-unavailable");
+  let release!: () => void; let observed!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const read = new Promise<void>(resolve => { observed = resolve; });
+  f.target.hold(held, observed);
+  const pending = f.post(input, op);
+  await read; f.grants.length = 0; release();
+  assert.equal((await pending).body.error.code, "console-create-attestation-forbidden");
+  assert.equal(f.target.seen.length, 1);
+  const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined); store.close();
+});
+
+
+test("ambiguous destination errors remain reconcilable after a record was created", async t => {
+  for (const mode of ["internal-after-create", "unavailable-after-create"] as const) {
+    const f = await fixture(t); f.target.mode = mode; const op = operation();
+    assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-unavailable");
+    await f.restart();
+    const replay = await f.post(input, op);
+    assert.equal(replay.status, 201, mode);
+    assert.equal(replay.body.data.session.id, sessionId);
+    assert.equal(f.target.seen.length, 1);
+  }
+});
+
+test("unsupported media type is recorded and replayed without another create", async t => {
+  const f = await fixture(t); f.target.mode = "unsupported"; const op = operation();
+  const first = await f.post(input, op);
+  assert.equal(first.status, 503); assert.equal(first.body.error.code, "console-create-attestation-unavailable");
+  await f.restart(); f.target.mode = "normal";
+  f.target.records.push({ id: sessionId, agent: "codex", status: "running", session_incarnation: stale, role: "steward", lineage: { forge_context: context } });
+  const replay = await f.post(input, op);
+  assert.equal(replay.status, 503); assert.equal(replay.body.error.code, "console-create-attestation-unavailable");
+  assert.equal(f.target.seen.length, 1);
+  const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined); store.close();
+});
+
+
+test("a concurrent retry during a held create does no claim and a first-attempt session-exists is a refusal", async t => {
+  const f = await fixture(t); f.target.mode = "existing-conflict"; const op = operation();
+  f.target.records.push({ id: sessionId, agent: "codex", status: "running", session_incarnation: stale, role: "steward", lineage: { forge_context: context } });
+  let release!: () => void; let observed!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const observedPost = new Promise<void>(resolve => { observed = resolve; });
+  f.target.holdPost(held, observed);
+  const first = f.post(input, op);
+  await observedPost;
+  const concurrent = await f.post(input, op);
+  release();
+  const refusal = await first;
+  assert.notEqual(concurrent.status, 201);
+  assert.equal(refusal.status, 409); assert.equal(refusal.body.error.code, "session-exists");
+  assert.equal((await f.post(input, op)).body.error.code, "session-exists");
+  const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined); store.close();
+  assert.equal(f.target.seen.length, 1);
+});
+
+
+test("a claim requires this operation's own fence row", async t => {
+  const f = await fixture(t); f.target.mode = "existing-conflict"; const op = operation();
+  f.target.records.push({ id: sessionId, agent: "codex", status: "running", session_incarnation: stale, role: "steward", lineage: { forge_context: context } });
+  const db = new DatabaseSync(f.db); db.prepare("DELETE FROM attested_create_fence").run(); db.close();
+  const refused = await f.post(input, op);
+  assert.equal(refused.status, 409); assert.equal(refused.body.error.code, "session-exists");
+  const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined); store.close();
+});
+
+test("a freshly created fence store refuses to reconcile", async t => {
+  const f = await fixture(t); f.target.mode = "drop"; const op = operation();
+  assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-unavailable");
+  await f.restart();
+  const db = new DatabaseSync(f.db); db.prepare("UPDATE attested_store_marker SET initialized_epoch = ?").run(Math.floor(Date.now() / 1000) + 3600); db.close();
+  assert.equal((await f.post(input, op)).body.error.code, "console-create-attestation-unavailable");
+  const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined); store.close();
+  assert.equal(f.target.seen.length, 1);
 });

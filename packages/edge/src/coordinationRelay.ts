@@ -769,6 +769,7 @@ async function handleResumeMoveStart(config: EdgeConfig, store: AccessStore | nu
 
 const ATTESTED_HEADERS = ["x-agent-session-attested-create-token", "x-agent-session-console-create-binding"];
 const ATTESTED_MEDIA = "application/vnd.agent-session.console-attested-create.v1";
+const attestedInFlight = new Set<string>();
 const LOWER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function attestedInvalid(): never { return fail(400, "console-create-invalid-body", "invalid attested create request"); }
 function attestedUnavailable(): never { return fail(503, "console-create-attestation-unavailable", "attested create is unavailable"); }
@@ -842,19 +843,34 @@ async function attestedCreate(config: EdgeConfig, store: AccessStore, source: Ma
       && latest.sessions.some(item => item.id === caller.session_id && item.session_incarnation === caller.session_incarnation && item.status === "running");
   };
   const key = { machine: machine.name, sessionId: session.id, operationId: op, originMachine: caller.machine, callerId: caller.session_id,
-    incarnation: caller.session_incarnation, owner: principal.id, digest: createHash("sha256").update(JSON.stringify(request)).digest("hex"), fresh };
+    incarnation: caller.session_incarnation, owner: principal.id, digest: createHash("sha256").update(JSON.stringify(request)).digest("hex"), fresh,
+    operationEpoch: Math.floor(timestamp / 1000) };
   try {
     if (!await liveCaller()) return attestedForbidden();
     const claim = store.claimAttestedCreate(key);
     if (claim.kind === "conflict") return fail(409, "console-start-operation-conflict", "operation conflicts with a previous request");
     if (claim.kind === "expired") return fail(409, "console-start-operation-expired", "operation receipt expired; inspect the destination");
-    if (claim.kind === "fenced") return attestedUnavailable();
+    if (claim.kind === "fenced") return fail(409, "console-start-operation-conflict", "session id belongs to a previous operation");
+    const dispatchKey = `${machine.url}\0${session.id}`;
     if (claim.kind === "repeat") {
-      if (claim.outcome) return sendJson(res, 201, { ok: true, data: { session: JSON.parse(claim.outcome) } });
-      // A destination listing does not prove which operation created a record.
-      // Without a confirmed reply, reconciliation remains unconfirmed.
-      return attestedUnavailable();
+      if (attestedInFlight.has(dispatchKey)) return attestedUnavailable();
+      if (claim.outcome) {
+        const recorded = object(JSON.parse(claim.outcome));
+        if (typeof recorded?.status !== "number" || !object(recorded.body)) return attestedUnavailable();
+        return sendJson(res, recorded.status, recorded.body);
+      }
+      // The durable destination-and-ID fence permits only this dispatch. The
+      // destination reserves this context for its attested admission path.
+      if (!claim.reconcilable) return attestedUnavailable();
+      const found = (await snapshot(machine)).sessions.find(item => item.id === session.id);
+      const confirmed = confirmedAttested(found, session.id);
+      if (!confirmed) return attestedUnavailable();
+      if (!await liveCaller()) return attestedForbidden();
+      if (!store.completeAttestedCreate(key, confirmed)) return attestedUnavailable();
+      return sendJson(res, 201, { ok: true, data: { session: confirmed } });
     }
+    attestedInFlight.add(dispatchKey);
+    try {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 30_000);
     let response: Response, result: unknown;
     try {
@@ -870,17 +886,24 @@ async function attestedCreate(config: EdgeConfig, store: AccessStore, source: Ma
       }
       try { result = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { result = null; }
     } finally { clearTimeout(timer); }
-    if (response.status === 415) return attestedUnavailable();
+    if (response.status === 415) {
+      if (!await liveCaller()) return attestedForbidden();
+      if (!store.refuseAttestedCreate(key, 503, "console-create-attestation-unavailable")) return attestedUnavailable();
+      return fail(503, "console-create-attestation-unavailable", "destination rejected attested create");
+    }
     const root = object(result), data = object(root?.data), error = object(root?.error);
-    const refusals: Record<string, number> = { "unauthorized": 401, "token-not-configured": 503, "console-create-binding-mismatch": 403,
-      "console-create-role-forbidden": 403, "console-create-invalid-body": 400, "identity_session_binding_untrusted": 400,
-      "role-requires-root": 400, "resume-unsupported": 400, "session-exists": 409 };
-    if (root?.ok === false && typeof error?.code === "string" && refusals[error.code] === response.status) return fail(response.status, error.code, "destination rejected attested create");
+    if (response.status >= 400 && response.status < 500 && root?.ok === false && typeof error?.code === "string"
+      && /^[a-z][a-z0-9_-]{0,127}$/.test(error.code)) {
+      if (!await liveCaller()) return attestedForbidden();
+      if (!store.refuseAttestedCreate(key, response.status, error.code)) return attestedUnavailable();
+      return fail(response.status, error.code, "destination rejected attested create");
+    }
     const confirmed = response.status === 201 && root?.ok === true ? confirmedAttested(data?.session, session.id) : null;
     if (!confirmed) return attestedUnavailable();
     if (!await liveCaller()) return attestedForbidden();
     if (!store.completeAttestedCreate(key, confirmed)) return attestedUnavailable();
     sendJson(res, 201, { ok: true, data: { session: confirmed } });
+    } finally { attestedInFlight.delete(dispatchKey); }
   } catch (error) { if (error instanceof RelayError) throw error; return attestedUnavailable(); }
 }
 
