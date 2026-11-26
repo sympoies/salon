@@ -11,16 +11,16 @@ Application access continues through that principal's current permissions, machi
 Explicit bearer credentials remain authoritative over ambient cookies.
 
 Only the configured main credential, or a live browser session authenticated directly with it, may create,
-approve or revoke pairings and Renew devices. Paired-device bearers, device cookies and device-derived login
-sessions cannot perform those actions. A device bearer plus an ambient main cookie cannot gain main authority.
+approve or revoke pairings and rename or renew devices. Paired-device bearers, device cookies and
+device-derived login sessions cannot perform those actions. A device bearer plus an ambient main cookie
+cannot gain main authority.
 Preserve credential kind and device identity through token login; do not mint a principal-only session from a
 device credential. No configurable enrollment permission or descendant credential graph is added.
 
 Authenticated devices may read their own principal's device metadata and use principal-scoped device
-revocation. Revoking a device does not rotate the main token or revoke other devices. Device sessions cannot
-enroll successors or renew themselves or others. The UI explains that enrollment and renewal require a main
-credential login. Pairing is unavailable in no-auth mode and for managed tester principals; those modes retain
-their existing authentication behavior. The configured single-token principal may pair through its main token.
+revocation. Revoking a device does not rotate the main token or revoke other devices. The UI explains that
+pairing, renaming and renewal require a main credential login. Pairing is unavailable in no-auth mode and
+for managed tester principals. The configured single-token principal may pair through its main token.
 
 ## Create, claim and confirm on both devices
 
@@ -173,6 +173,11 @@ target or an expired target is refused. A prior revoke/expiry cannot be resurrec
 Audit records contain acting principal, credential kind, target identifier, time and previous/new expiry;
 never bearer/cookie values or hashes. Return metadata only. Device credentials cannot call Renew, including
 through derived cookies/login or with an ambient main cookie.
+
+`POST /api/auth/devices/:id/rename` uses the same main authentication and write/origin gate as Renew.
+Send a JSON object with a string `name`. The edge trims surrounding whitespace and accepts 1–64 Unicode
+code points. Control characters anywhere in the submitted name are invalid. The write updates only the
+selected row's name within the current principal and returns the stored name.
 
 Authenticated `GET /api/auth/devices` lists only that principal's device identifiers, display names, principal,
 created, last-used and `expires_at` timestamps, revocation state and current-device marker. Device credentials

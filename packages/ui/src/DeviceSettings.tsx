@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import qrcode from "qrcode-generator";
 import { AsyncButton } from "./AsyncButton.tsx";
-import { deviceRequest, pairingOrigin, type DeviceList, type PairingCreated, type PairingStatus } from "./deviceSignIn.ts";
+import { deviceRequest, DeviceSignInError, pairingOrigin, type DeviceList, type DeviceMetadata, type PairingCreated, type PairingStatus } from "./deviceSignIn.ts";
+import { useAsyncAction } from "./useAsyncAction.ts";
 import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 
 function PairingQr({ value }: { readonly value: string }) {
@@ -15,8 +16,42 @@ function PairingQr({ value }: { readonly value: string }) {
   </svg>;
 }
 
+function DeviceRenameForm({ device, onSaved, onCancel }: {
+  readonly device: DeviceMetadata;
+  readonly onSaved: (name: string) => void;
+  readonly onCancel: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+  const { pending, run } = useAsyncAction(async (name: string) => {
+    setError(null);
+    try {
+      const saved = await deviceRequest<{ name: string }>(`devices/${device.id}/rename`, { name });
+      onSaved(saved.name);
+    } catch (error) {
+      setError(error instanceof DeviceSignInError && error.status === 400
+        ? "Enter a device name with 1–64 characters and no control characters."
+        : "Could not rename the device. Try again.");
+    }
+  }, { showDelayMs: 0, minVisibleMs: 0 });
+
+  return <form className="device-rename" onSubmit={event => {
+    event.preventDefault();
+    void run(String(new FormData(event.currentTarget).get("name")));
+  }}>
+    <label>Device name
+      <input name="name" defaultValue={device.name} autoFocus disabled={pending}
+        aria-invalid={error ? true : undefined} aria-describedby={error ? errorId : undefined} />
+    </label>
+    {error ? <p id={errorId} className="err" role="alert">{error}</p> : null}
+    <AsyncButton type="submit" className="btn primary" pending={pending}>Save name</AsyncButton>
+    <button type="button" className="btn ghost" disabled={pending} onClick={onCancel}>Cancel</button>
+  </form>;
+}
+
 export function DeviceSettings({ onSignedOut }: { readonly onSignedOut: () => void }) {
   const [list, setList] = useState<DeviceList | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [pair, setPair] = useState<PairingCreated | null>(null);
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -49,7 +84,7 @@ export function DeviceSettings({ onSignedOut }: { readonly onSignedOut: () => vo
   return <section className="settings-section device-pairing" aria-label="Signed-in devices">
     <h2 className="settings-section-title">Devices</h2>
     <p>Device sign-ins expire after 30 days. Renew explicitly before expiry, or revoke a device you no longer use.</p>
-    {!list.can_manage ? <p>Main access token sign-in is required to pair or Renew devices.</p> : null}
+    {!list.can_manage ? <p>Sign in with your main access token to pair, rename or renew devices.</p> : null}
     {list.can_manage && !pair ? <AsyncButton className="btn primary" onClick={() => action(async () => {
       setPair(await deviceRequest<PairingCreated>("pairings", {})); setStatus(null);
     })}>Sign in another device</AsyncButton> : null}
@@ -79,14 +114,26 @@ export function DeviceSettings({ onSignedOut }: { readonly onSignedOut: () => vo
         <span>Last used {new Date(device.last_used).toLocaleString()}</span>
         <span>{device.revoked !== null ? "Revoked" : `${device.expires_at <= Date.now() ? "Expired" : "Expires"} ${new Date(device.expires_at).toLocaleString()}`}</span>
       </div>
-      {device.revoked === null ? <div className="device-actions">
-        {list.can_manage && device.expires_at > Date.now() ? <AsyncButton className="btn" onClick={() => action(async () => {
+      {list.can_manage && renaming === device.id ? <DeviceRenameForm
+        device={device}
+        onCancel={() => setRenaming(null)}
+        onSaved={name => {
+          setList(current => current && { ...current, devices: current.devices.map(entry =>
+            entry.id === device.id ? { ...entry, name } : entry) });
+          setRenaming(current => current === device.id ? null : current);
+          setNotice("Device renamed.");
+        }}
+      /> : list.can_manage || device.revoked === null ? <div className="device-actions">
+        {list.can_manage ? <button type="button" className="btn" onClick={() => {
+          setNotice(null); setError(null); setRenaming(device.id);
+        }}>Rename</button> : null}
+        {list.can_manage && device.revoked === null && device.expires_at > Date.now() ? <AsyncButton className="btn" onClick={() => action(async () => {
           await deviceRequest(`devices/${device.id}/renew`, {}); await load(); setNotice("Device renewed for 30 days.");
         })}>Renew</AsyncButton> : null}
-        <AsyncButton className="btn ghost" onClick={() => action(async () => {
+        {device.revoked === null ? <AsyncButton className="btn ghost" onClick={() => action(async () => {
           await deviceRequest(`devices/${device.id}`, undefined, "DELETE");
           if (device.current) onSignedOut(); else await load();
-        })}>Revoke</AsyncButton>
+        })}>Revoke</AsyncButton> : null}
       </div> : null}
     </li>)}</ul>
     {list.devices.length === 0 ? <p>No paired devices.</p> : null}

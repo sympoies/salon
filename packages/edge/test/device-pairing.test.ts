@@ -450,6 +450,57 @@ test("device identity cannot escape through login, mixed credentials, pairing ma
   } finally { await f.close(); }
 });
 
+test("an owner can rename a device without changing credentials or other metadata", async () => {
+  const f = await fixture();
+  try {
+    const { id, token } = await f.issue();
+    await f.issue();
+    const owner = { cookie: f.cookie, origin: f.base };
+    const devices = async (auth = owner) => (await f.call("devices", undefined, auth)).body.data.devices as Data[];
+    const before = await devices();
+
+    const renamed = await f.call(`devices/${id}/rename`, { name: "  Example tablet  " }, owner);
+    assert.equal(renamed.status, 200, "owner can rename a device");
+    assert.equal(renamed.response.headers.has("set-cookie"), false);
+    assert.deepEqual(await devices(), before.map(device =>
+      device.id === id ? { ...device, name: "Example tablet" } : device));
+
+    await f.restart();
+    const paired = { authorization: `Bearer ${token}` };
+    const deviceList = (await f.call("devices", undefined, paired)).body.data;
+    assert.equal(deviceList.can_manage, false);
+    assert.equal(deviceList.devices.find((device: Data) => device.id === id)?.name, "Example tablet");
+    assert.equal(deviceList.devices.find((device: Data) => device.id === id)?.current, true);
+  } finally { await f.close(); }
+});
+
+test("device rename rejects invalid names and unauthorized writes", async () => {
+  const f = await fixture(true);
+  try {
+    const { id, token } = await f.issue();
+    const route = `devices/${id}/rename`;
+    const owner = { cookie: f.cookie, origin: f.base };
+    const before = (await f.call("devices", undefined, owner)).body.data;
+    const name = { name: "Example tablet" };
+    const deviceLogin = await f.call("login", { token });
+    const pairedBearer = { authorization: `Bearer ${token}` };
+    assert.equal((await f.call(route, name)).status, 401);
+    assert.equal((await f.call(route, name, { ...owner, origin: "https://example.invalid" })).status, 403);
+    for (const auth of [pairedBearer, { cookie: cookieFrom(deviceLogin.response) }, { ...owner, ...pairedBearer }]) {
+      assert.equal((await f.call(route, name, auth)).status, 403, "a paired credential lacks rename authority");
+    }
+    const other = { cookie: await loginCookie(f.base, "other-fixture"), origin: f.base };
+    assert.equal((await f.call(route, name, other)).status, 404);
+
+    for (const invalid of ["    ", "a".repeat(65), "Example\u0085tablet", "\tExample tablet", 42]) {
+      const result = await f.call(route, { name: invalid }, owner);
+      assert.equal(result.status, 400);
+      assert.match(result.body.error.message, /1.*64.*control characters/i);
+    }
+    assert.deepEqual((await f.call("devices", undefined, owner)).body.data, before);
+  } finally { await f.close(); }
+});
+
 test("browser expiry is server-authoritative, explicit Renew is audited and cannot resurrect expiry", async () => {
   const f = await fixture();
   try {

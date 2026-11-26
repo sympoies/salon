@@ -64,7 +64,7 @@ async function capture(page: Page, name: string, selector: string): Promise<void
   }
 }
 
-for (const native of [false, true]) for (const width of [390, 1280]) test(`${native ? "native adapter" : "two browsers"} pair, confirm, renew and revoke through the real edge at ${width}px`, async () => {
+for (const native of [false, true]) for (const width of [390, 1280]) test(`${native ? "native adapter" : "two browsers"} pair, confirm, ${native ? "" : "rename, "}renew and revoke through the real edge at ${width}px`, async () => {
   let now = Date.now();
   const edge = createEdgeServer(loadConfig({ AGENT_CONSOLE_INSECURE_COOKIE: "1", AGENT_CONSOLE_UI_DIR: dir,
     AGENT_CONSOLE_STATE_DB: join(dir, `state-${native}-${width}.sqlite`), AGENT_CONSOLE_PRINCIPALS: JSON.stringify([
@@ -87,8 +87,9 @@ for (const native of [false, true]) for (const width of [390, 1280]) test(`${nat
   const sender = await launchPage();
   const recipient = await launchPage();
   try {
+    const height = width === 390 ? 844 : 900;
     for (const page of [sender, recipient]) {
-      await page.setViewport(width, 1000, 1);
+      await page.setViewport(width, height, 1);
       await page.setEnvironment("UTC", "en-US");
       await page.addInitScript(`localStorage.setItem('ac.themeMode','paper');window.exchangeCount=0;window.authHashClean=true;
         const originalFetch=window.fetch;window.fetch=(input,init)=>{const route=String(input);if(route.includes('/api/auth/'))window.authHashClean&&=!location.hash;
@@ -149,6 +150,43 @@ for (const native of [false, true]) for (const width of [390, 1280]) test(`${nat
     assert.equal(await recipient.evaluate("document.cookie.includes('ac_session')"), false, "device secret is HttpOnly");
     await until(sender, "document.querySelectorAll('.device-list li').length === 1", "device list refresh");
     await capture(sender, `device-list-${width}`, ".device-pairing");
+    if (!native) {
+      // Reload so the Settings screenshot contains only device metadata and no pairing panel.
+      await sender.navigate(base);
+      await click(sender, "More"); await click(sender, "Settings");
+      await until(sender, "document.querySelector('.device-list strong')?.textContent === 'Example tablet'", "original device name");
+      await capture(sender, `device-rename-list-${width}x${height}`, ".device-list");
+      assert.equal(await sender.evaluate("Array.from(document.querySelectorAll('.device-list button')).some(button=>button.textContent.trim()==='Rename')"),
+        true, "owner has an inline Rename action");
+      await click(sender, "Rename");
+      const fillName = (name: string) => sender.evaluate(`(() => {
+        const input=document.querySelector('.device-list input');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(name)});
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+      })()`);
+      await fillName("   ");
+      await click(sender, "Save name");
+      await until(sender, "document.querySelector('.device-list [role=alert]')?.textContent.includes('64 characters')", "inline name validation");
+      assert.equal(await sender.evaluate(`(() => {
+        const row=document.querySelector('.device-list li');
+        const input=row.querySelector('input').getBoundingClientRect();
+        const overlay=row.closest('.page-overlay');
+        return input.width > 0 && input.left >= 0 && input.right <= innerWidth && overlay.scrollWidth <= overlay.clientWidth;
+      })()`), true, "the editor fits inside Settings");
+      await capture(sender, `device-rename-validation-${width}x${height}`, ".device-list");
+      await fillName("  Example reading tablet  ");
+      await click(sender, "Save name");
+      await until(sender, "document.querySelector('.device-list strong')?.textContent === 'Example reading tablet'", "updated device name");
+      await sender.navigate(base);
+      await click(sender, "More"); await click(sender, "Settings");
+      await until(sender, "document.querySelector('.device-list strong')?.textContent === 'Example reading tablet'", "saved device name after reload");
+      await capture(sender, `device-rename-saved-${width}x${height}`, ".device-list");
+
+      await click(recipient, "More"); await click(recipient, "Settings");
+      await until(recipient, "document.querySelector('.device-list strong')?.textContent === 'Example reading tablet'", "paired session sees the updated name");
+      assert.equal(await recipient.evaluate("Array.from(document.querySelectorAll('.device-list button')).some(button=>button.textContent.trim()==='Rename')"),
+        false, "paired session has no Rename action");
+    }
     const expiry = await sender.evaluate<number>("fetch('/api/auth/devices').then(response=>response.json()).then(value=>value.data.devices[0].expires_at)");
     now += 86_400_000;
     // The main session expires after 12 hours; use the original login path to regain main authority.
