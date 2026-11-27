@@ -3,7 +3,7 @@
 // with the client token). This module is the only place that knows the
 // difference.
 import { isTauri as isTauriRuntime } from "@tauri-apps/api/core";
-import { getPrincipalStorageNamespace, unscopedLocalStorageGetItem, unscopedLocalStorageSetItem } from "./storage.ts";
+import { getPrincipalStorageNamespace, resolveLocalStorage, unscopedLocalStorageGetItem, unscopedLocalStorageSetItem } from "./storage.ts";
 import { conversationImageCache } from "./conversationImageCache.ts";
 import { withRequestDeadline } from "./requestDeadline.ts";
 
@@ -16,8 +16,8 @@ export function waitForBrowserCookieCleanup(): Promise<void> {
   return browserCookieCleanup;
 }
 let connectionConfigGeneration = 0;
-const authenticationRejectedListeners = new Set<() => void>();
-export function subscribeAuthenticationRejected(listener: () => void): () => void {
+const authenticationRejectedListeners = new Set<(storageFailed: boolean) => void>();
+export function subscribeAuthenticationRejected(listener: (storageFailed: boolean) => void): () => void {
   authenticationRejectedListeners.add(listener);
   return () => { authenticationRejectedListeners.delete(listener); };
 }
@@ -76,7 +76,7 @@ export function recordNativeAuthentication(generation: number, authenticated: bo
 // Saving credentials invalidates the generation immediately. A successful auth
 // check must also match the activated principal before its durable queue can run.
 export function nativePrincipalIsActive(): boolean {
-  return !isTauri() || (authenticatedConnection?.generation === connectionConfigGeneration
+  return !isTauri() || (pendingAdapterWrites === 0 && authenticatedConnection?.generation === connectionConfigGeneration
     && authenticatedConnection.principal === getPrincipalStorageNamespace());
 }
 
@@ -99,19 +99,24 @@ export function isMacTauri(): boolean {
   if (!isTauri() || typeof navigator === "undefined") {
     return false;
   }
-  // The shipped native shells are macOS and Android. WKWebView may omit both
-  // navigator.platform and the macOS tokens from its user agent, so treat any
-  // non-Android Tauri runtime as the desktop shell instead of depending on
-  // browser-controlled platform hints.
-  return !isAndroidTauri();
+  // Desktop WKWebView may omit platform hints.
+  return !isAndroidTauri() && !isIosTauri();
 }
 
 export function isAndroidTauri(): boolean {
   if (!isTauri() || typeof navigator === "undefined") {
     return false;
   }
+  if (connectionAdapter?.platform === "ios") return false;
   const userAgent = window.navigator?.userAgent ?? navigator.userAgent;
   return userAgent.toLowerCase().includes("android");
+}
+
+export function isIosTauri(): boolean {
+  if (!isTauri() || typeof navigator === "undefined") return false;
+  if (connectionAdapter?.platform === "ios") return true;
+  const nav = window.navigator ?? navigator;
+  return /iphone|ipad|ipod/i.test(`${nav.userAgent} ${nav.platform}`);
 }
 
 export interface AndroidSafeAreaBridge {
@@ -176,23 +181,114 @@ export function normalizeServerUrl(raw: string): string {
   }
 }
 
-export function loadServerUrl(): string {
-  return unscopedLocalStorageGetItem(SERVER_KEY) ?? "";
+export class NativeConnectionStorageError extends Error {
+  constructor(operation: "load" | "save") { super(`Could not ${operation} native connection storage.`); }
 }
-export function saveServerUrl(raw: string): void {
-  if (loadServerUrl() !== normalizeServerUrl(raw)) conversationImageCache.clear();
-  unscopedLocalStorageSetItem(SERVER_KEY, normalizeServerUrl(raw));
+
+export interface NativeConnectionAdapter {
+  readonly platform?: "ios";
+  load(): Promise<{ serverUrl: string; token: string }>;
+  save(connection: { serverUrl: string; token: string }): Promise<void>;
+}
+let connectionAdapter: NativeConnectionAdapter | undefined;
+let adapterConnection = { serverUrl: "", token: "" };
+let adapterReady = false;
+let adapterWrites: Promise<void> = Promise.resolve();
+let pendingAdapterWrites = 0;
+
+/** Register and load before mounting; failures never use WebView storage. */
+export async function registerNativeConnectionAdapter(adapter: NativeConnectionAdapter): Promise<void> {
+  connectionAdapter = adapter;
+  adapterReady = false;
+  adapterConnection = { serverUrl: "", token: "" };
+  try {
+    const loaded = await adapter.load();
+    let connection = { serverUrl: normalizeServerUrl(loaded.serverUrl), token: loaded.token.trim() };
+    const storage = resolveLocalStorage();
+    const legacyServer = storage?.getItem(SERVER_KEY) ?? null;
+    const legacyToken = storage?.getItem(TOKEN_KEY) ?? null;
+    if (!connection.serverUrl && !connection.token) {
+      const legacy = { serverUrl: normalizeServerUrl(legacyServer ?? ""), token: (legacyToken ?? "").trim() };
+      if (legacy.serverUrl || legacy.token) {
+        await adapter.save({ ...legacy });
+        connection = legacy;
+      }
+    }
+    if (storage && !storage.removeItem && (legacyToken !== null || legacyServer !== null)) throw new Error();
+    if (legacyToken !== null) storage?.removeItem?.(TOKEN_KEY);
+    if (legacyServer !== null) storage?.removeItem?.(SERVER_KEY);
+    adapterConnection = connection;
+    adapterReady = true;
+  } catch { throw new NativeConnectionStorageError("load"); }
+}
+
+export function loadServerUrl(): string {
+  return connectionAdapter ? adapterConnection.serverUrl : unscopedLocalStorageGetItem(SERVER_KEY) ?? "";
+}
+export function saveServerUrl(raw: string): void | Promise<void> {
+  const serverUrl = normalizeServerUrl(raw);
+  if (loadServerUrl() !== serverUrl) conversationImageCache.clear();
+  if (connectionAdapter) {
+    return saveAdapterConnection(current => ({ serverUrl, token: serverUrl === current.serverUrl ? current.token : "" }));
+  }
+  unscopedLocalStorageSetItem(SERVER_KEY, serverUrl);
   connectionConfigGeneration += 1;
   clearPairingLink();
 }
 export function loadToken(): string {
-  return unscopedLocalStorageGetItem(TOKEN_KEY) ?? "";
+  return connectionAdapter ? adapterConnection.token : unscopedLocalStorageGetItem(TOKEN_KEY) ?? "";
 }
-export function saveToken(v: string): void {
-  if (loadToken() !== v.trim()) conversationImageCache.clear();
-  unscopedLocalStorageSetItem(TOKEN_KEY, v.trim());
+export function saveToken(v: string): void | Promise<void> {
+  const token = v.trim();
+  if (loadToken() !== token) conversationImageCache.clear();
+  if (connectionAdapter) return saveAdapterConnection(current => ({ ...current, token }));
+  unscopedLocalStorageSetItem(TOKEN_KEY, token);
   connectionConfigGeneration += 1;
   clearPairingLink();
+}
+export function saveConnectionValues(raw: string, token?: string): void | Promise<void> {
+  const serverUrl = normalizeServerUrl(raw);
+  if (connectionAdapter) {
+    conversationImageCache.clear();
+    return saveAdapterConnection(current => ({
+      serverUrl,
+      token: token === undefined && serverUrl === current.serverUrl ? current.token : (token ?? "").trim(),
+    }));
+  }
+  saveServerUrl(serverUrl);
+  if (token !== undefined) saveToken(token);
+}
+function saveAdapterConnection(update: (current: { serverUrl: string; token: string }) => { serverUrl: string; token: string }): Promise<void> {
+  const adapter = connectionAdapter!;
+  if (!adapterReady) return Promise.reject(new NativeConnectionStorageError("save"));
+  pendingAdapterWrites += 1;
+  const write = adapterWrites.then(async () => {
+    const connection = update(adapterConnection);
+    try { await adapter.save({ ...connection }); }
+    catch { throw new NativeConnectionStorageError("save"); }
+    adapterConnection = connection;
+    connectionConfigGeneration += 1;
+    clearPairingLink();
+  });
+  const completed = write.finally(() => { pendingAdapterWrites -= 1; });
+  adapterWrites = completed.catch(() => {});
+  return completed;
+}
+
+/** Clear an invalidated credential even if its host store cannot be updated. */
+export async function rejectNativeAuthentication(): Promise<void> {
+  let storageFailed = false;
+  authenticatedConnection = undefined;
+  try { await saveToken(""); }
+  catch {
+    storageFailed = true;
+    if (connectionAdapter) {
+      adapterConnection = { ...adapterConnection, token: "" };
+      connectionConfigGeneration += 1;
+      clearPairingLink();
+    }
+  }
+  for (const listener of authenticationRejectedListeners) listener(storageFailed);
 }
 
 // Native clients need a configured server URL + token before they can talk to
@@ -241,12 +337,17 @@ export async function appFetch(path: string, init?: RequestInit): Promise<Respon
     }, AUTH_TRANSITION_TIMEOUT_MS).catch(() => false);
     if (!rejected || authenticated !== authenticatedConnection
       || generation !== nativeConnectionConfigGeneration()) return response;
-    authenticatedConnection = undefined;
-    if (native) saveToken("");
-    else browserCookieCleanup = withRequestDeadline(signal =>
+    if (native) {
+      await adapterWrites;
+      if (generation !== nativeConnectionConfigGeneration()) return response;
+      await rejectNativeAuthentication();
+    } else {
+      authenticatedConnection = undefined;
+      browserCookieCleanup = withRequestDeadline(signal =>
       fetch("/api/auth/logout", { method: "POST", credentials: "include", signal }),
     AUTH_TRANSITION_TIMEOUT_MS).then(() => {}, () => {});
-    for (const listener of authenticationRejectedListeners) listener();
+      for (const listener of authenticationRejectedListeners) listener(false);
+    }
   }
   return response;
 }

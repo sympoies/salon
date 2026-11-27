@@ -3,7 +3,7 @@ import { BrandTitle } from "./BrandTitle.tsx";
 import { AsyncButton } from "./AsyncButton.tsx";
 import { deviceRequest, pairingConnection, pairingConnectionCurrent, installNativePairing, recipientVerifier,
   type PairingConnection, type DeviceExchange, type PairingStatus } from "./deviceSignIn.ts";
-import { clearPairingLink, isTauri, loadServerUrl, pendingPairingLink, type ImportedPairingLink } from "./runtime.ts";
+import { clearPairingLink, isTauri, loadServerUrl, NativeConnectionStorageError, pendingPairingLink, type ImportedPairingLink } from "./runtime.ts";
 import { clearLandingPairingCode, landingPairingCode } from "./pairingLanding.ts";
 import { OpenPairingLinkInAppButton } from "./PairingLinkActions.tsx";
 
@@ -19,6 +19,8 @@ export function PairingRecipient({ onSignedIn, onCancel, imported }: {
   const [consented, setConsented] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savePending, setSavePending] = useState(false);
+  const issuedCredential = useRef<{ issued: DeviceExchange; target: PairingConnection } | null>(null);
   const secrets = useRef<{ code: string; verifier: string; challenge: string } | null>(null);
   const alive = useRef(true);
   const signedIn = useRef(onSignedIn); signedIn.current = onSignedIn;
@@ -51,6 +53,18 @@ export function PairingRecipient({ onSignedIn, onCancel, imported }: {
     return () => { active = false; };
   }, [imported]);
 
+  const saveIssued = async (issued: DeviceExchange, target: PairingConnection) => {
+    try {
+      await installNativePairing(issued, target);
+      issuedCredential.current = null; setSavePending(false);
+      secrets.current = null; clearLandingPairingCode(); clearPairingLink(imported); setConsented(false); setClaim(null); signedIn.current();
+    } catch (error) {
+      if (!(error instanceof NativeConnectionStorageError)) throw error;
+      issuedCredential.current = { issued, target }; setConsented(false); setSavePending(true);
+      setError("The device was added but not stored. Retry saving the connection.");
+    }
+  };
+
   useEffect(() => {
     if (!consented || !claim || !secrets.current || !connection.current || !current()) return;
     const target = connection.current;
@@ -62,9 +76,10 @@ export function PairingRecipient({ onSignedIn, onCancel, imported }: {
         const issued = await deviceRequest<DeviceExchange>("pairings/exchange", bound, "POST", controller.signal, target);
         if (controller.signal.aborted || !current()) return;
         if (issued.principal !== claim.principal) throw new Error("Unexpected account");
-        if (native) installNativePairing(issued, target);
+        if (native) { await saveIssued(issued, target); return; }
         secrets.current = null; clearLandingPairingCode(); clearPairingLink(imported); setConsented(false); setClaim(null); signedIn.current();
-      } catch {
+      } catch (error) {
+        if (error instanceof NativeConnectionStorageError) { setError("Could not save native connection storage. Try again."); return; }
         if (controller.signal.aborted || !current()) return;
         if (!pairingConnectionCurrent(target)) {
           secrets.current = null; clearLandingPairingCode(); setConsented(false); setClaim(null);
@@ -95,10 +110,16 @@ export function PairingRecipient({ onSignedIn, onCancel, imported }: {
       <p>Account <strong>{claim.principal}</strong></p>
       <p>Compare this with your signed-in device:</p><output className="pairing-verification">{claim.verification}</output>
       <p>Approve only a device you have with you. Continue only if this is the account you intend to use.</p>
-      {consented ? <p role="status">Waiting for approval on your signed-in device…</p>
+      {savePending ? <AsyncButton className="btn primary" onClick={async () => {
+        const pending = issuedCredential.current;
+        if (!pending) return;
+        setError(null);
+        try { await saveIssued(pending.issued, pending.target); }
+        catch { setError("Connection changed. Start with a new pairing code."); }
+      }}>Retry saving</AsyncButton> : consented ? <p role="status">Waiting for approval on your signed-in device…</p>
         : <button className="btn primary" type="button" onClick={() => setConsented(true)}>Sign in as {claim.principal}</button>}
     </>}
     {error ? <p className="err" role="alert">{error}</p> : null}
-    <button className="btn ghost" type="button" onClick={() => { alive.current = false; clearLandingPairingCode(); clearPairingLink(imported); secrets.current = null; onCancel(); }}>Cancel</button>
+    <button className="btn ghost" type="button" onClick={() => { alive.current = false; clearLandingPairingCode(); clearPairingLink(imported); secrets.current = null; issuedCredential.current = null; onCancel(); }}>Cancel</button>
   </section></div>;
 }

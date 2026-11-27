@@ -336,11 +336,11 @@ export default function App() {
     setView({ kind: "dashboard" });
   }, []);
 
-  useEffect(() => subscribeAuthenticationRejected(() => {
+  useEffect(() => subscribeAuthenticationRejected((storageFailed) => {
     onSignedOut();
     setLandingPairing(undefined);
     clearPairingLink();
-    setSignedOutReason("This device was signed out.");
+    setSignedOutReason(storageFailed ? "This device was signed out, but secure storage could not be cleared." : "This device was signed out.");
   }), [onSignedOut]);
 
   if (importedPairing) return <PairingRecipient key={importedPairing.revision} imported={importedPairing}

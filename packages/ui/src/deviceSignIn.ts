@@ -1,4 +1,4 @@
-import { isTauri, loadServerUrl, loadToken, nativeConnectionConfigGeneration, saveServerUrl, saveToken, waitForBrowserCookieCleanup } from "./runtime.ts";
+import { isTauri, loadServerUrl, loadToken, nativeConnectionConfigGeneration, saveConnectionValues, waitForBrowserCookieCleanup } from "./runtime.ts";
 
 export interface PairingCreated { readonly id: string; readonly code: string; readonly expires_at: number; }
 export interface PairingStatus {
@@ -38,10 +38,10 @@ export function pairingConnection(server?: string): PairingConnection {
 export function pairingConnectionCurrent(connection: PairingConnection): boolean {
   return !isTauri() || connection.generation === nativeConnectionConfigGeneration();
 }
-export function installNativePairing(issued: DeviceExchange, connection: PairingConnection): void {
+export async function installNativePairing(issued: DeviceExchange, connection: PairingConnection): Promise<void> {
   if (!isTauri() || !pairingConnectionCurrent(connection) || pairingOrigin(connection.origin) !== connection.origin
     || !/^salon_device_[A-Za-z0-9_-]{43}$/.test(issued.credential ?? "")) throw new DeviceSignInError(0);
-  saveServerUrl(connection.origin); saveToken(issued.credential!);
+  await saveConnectionValues(connection.origin, issued.credential!);
 }
 
 // Pairing traffic bypasses generic debug/error capture. Only fixed diagnostics leave this boundary.

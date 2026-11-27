@@ -13,8 +13,58 @@ import { normalizeConversationImages, type ConversationImage } from "@agent-cons
 import { normalizeRefusedOutboxAction, type RefusedOutboxAction } from "@agent-console/shared/shared-outbox";
 import * as nativeConnectionApi from "@agent-console/ui/native-connection";
 
-assert.deepEqual(Object.keys(nativeConnectionApi), ["nativeConnection"]);
+assert.deepEqual(Object.keys(nativeConnectionApi), ["nativeConnection", "registerNativeConnectionAdapter"]);
 assert.deepEqual(nativeConnectionApi.nativeConnection(), { unavailable: true });
+// Exercise the compiled runtime used by the installed host entrypoint.
+const runtime = await import(new URL("./runtime.js", import.meta.resolve("@agent-console/ui/native-connection")).href);
+const writes: unknown[] = [];
+const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { protocol: "tauri:" } } });
+for (const [platform, userAgent, mac, android] of [
+  ["iPhone", "iPhone", false, false], ["MacIntel", "Macintosh", true, false],
+  ["Linux", "Android", false, true],
+] as const) {
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { platform, userAgent } });
+  assert.equal(runtime.isMacTauri(), mac);
+  assert.equal(runtime.isAndroidTauri(), android);
+}
+if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+else Reflect.deleteProperty(globalThis, "window");
+if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator);
+else Reflect.deleteProperty(globalThis, "navigator");
+const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+const previousSessionStorage = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+  getItem: () => null, setItem: (...args: unknown[]) => writes.push(args), removeItem: (...args: unknown[]) => writes.push(args),
+} });
+Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: globalThis.localStorage });
+let stored = { serverUrl: "https://old.example.test", token: "fixture-credential" };
+let fail = false;
+await nativeConnectionApi.registerNativeConnectionAdapter({
+  async load() { return stored; },
+  async save(value) { if (fail) throw new Error("private adapter detail"); stored = value; },
+});
+assert.deepEqual(nativeConnectionApi.nativeConnection(), stored);
+await runtime.saveServerUrl("https://new.example.test/path");
+assert.deepEqual(stored, { serverUrl: "https://new.example.test", token: "" });
+await runtime.saveToken(" replacement ");
+assert.deepEqual(nativeConnectionApi.nativeConnection(), { serverUrl: "https://new.example.test", token: "replacement" });
+await runtime.saveToken("");
+assert.deepEqual(stored, { serverUrl: "https://new.example.test", token: "" });
+fail = true;
+await assert.rejects(runtime.saveToken("not-persisted"), /^Error: Could not save native connection storage\.$/);
+assert.deepEqual(stored, { serverUrl: "https://new.example.test", token: "" });
+assert.deepEqual(writes, []);
+await assert.rejects(nativeConnectionApi.registerNativeConnectionAdapter({
+  async load() { throw new Error("private adapter detail"); }, async save() {},
+}), /^Error: Could not load native connection storage\.$/);
+assert.deepEqual(nativeConnectionApi.nativeConnection(), { unavailable: true });
+assert.deepEqual(writes, []);
+if (previousStorage) Object.defineProperty(globalThis, "localStorage", previousStorage);
+else Reflect.deleteProperty(globalThis, "localStorage");
+if (previousSessionStorage) Object.defineProperty(globalThis, "sessionStorage", previousSessionStorage);
+else Reflect.deleteProperty(globalThis, "sessionStorage");
 assert.deepEqual(normalizeOrder({ order: ["a", "a", ""] }), ["a"]);
 const launch_env = { AGENT_RUNTIME_SUPPRESS_MEMORY: "1", AGENT_RUNTIME_SUPPRESS_HEALTH: "", AGENT_RUNTIME_CUSTOM_SWITCH: "a=b" };
 assert.deepEqual(projectPublicAgentSession({ launch_env, env: { PRIVATE_TOKEN: "fixture-only" } }), { launch_env });
