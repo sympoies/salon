@@ -240,8 +240,10 @@ a lost fence store is outside this proof; operator repair is required.
 A fence store created more than 60 seconds after the operation was minted refuses both to
 reconcile and to dispatch again. Within that 60-second skew window, a replacement store
 can dispatch again because the operation ID timestamp is the only clock. A conforming
-destination rejects the duplicate managed ID. Removing a grant takes effect after the relay restarts. The grant and credential
-environment variables are validated at startup even when the capability is off.
+destination rejects the duplicate managed ID.
+
+Removing a grant takes effect after the relay restarts. The grant and credential environment
+variables are validated at startup even when the capability is off.
 
 ## Console succession stop
 
