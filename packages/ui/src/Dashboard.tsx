@@ -3277,7 +3277,7 @@ export function Dashboard({
                   sessionListDisplay: tileListDisplay,
                   conversationActive: conversationKey === null,
                   contentActive: visibleDocument,
-                  contentVisible: paneContentVisible && (!focusedKey || focused) && (!conversationKey || viewport.width >= 1100),
+                  contentVisible: !showHistory && !showCreate && (!focusedKey || focused) && (!conversationKey || viewport.width >= 1100),
                   phoneConversation: Boolean(focused && viewport.mobile && phoneConversationMode && s
                     && historyMachineNames.has(s.machine)),
                   conversationReplyDrafts: conversationReplyDrafts.current,
