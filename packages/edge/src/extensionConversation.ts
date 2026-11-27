@@ -12,7 +12,10 @@ import { objectProp } from "./normalize.ts";
 import { aggregateSessions, daemonFetch } from "./upstream.ts";
 
 interface ConversationOptions extends Pick<ExtensionOutboxOptions, "store" | "extensionId" | "principalId" | "authorizeRequest" | "authorizeTarget"> {
-  canReadHistory(machine: string, historyId: string, provider: string, providerSessionId: string): boolean;
+  /** The route declares `outboxOwnerReplyRead`. */
+  readonly ownerReplyRead: boolean;
+  /** `ownerPrincipalId` is set for an on-behalf record, whose history access is the owner's. */
+  canReadHistory(machine: string, historyId: string, provider: string, providerSessionId: string, ownerPrincipalId?: string): boolean;
 }
 
 type Unavailable = Extract<EdgeFirstReplyResult, { status: "unavailable" }>;
@@ -124,7 +127,7 @@ function firstInPage(data: Record<string, unknown>, historyId: string, target: E
 }
 
 export function createExtensionConversation(options: ConversationOptions): EdgeConversation {
-  const { store, principalId, extensionId } = options;
+  const { store, principalId, extensionId, ownerReplyRead } = options;
   const requestDenial = () => {
     const failure = options.authorizeRequest(false);
     return failure ? { status: failure.status === 401 ? "unauthenticated" : "forbidden" } as const : undefined;
@@ -151,8 +154,9 @@ export function createExtensionConversation(options: ConversationOptions): EdgeC
         if (!entry || entry.target.machine !== exactTarget.machine || entry.target.sessionId !== exactTarget.sessionId) {
           return unavailable("receipt_missing");
         }
-        // Reading an owner's replies is not part of the on-behalf capability.
-        if (entry.grant.callerPrincipalId !== undefined) return { status: "forbidden" };
+        // An on-behalf record is readable only through a route with the separate read capability.
+        const onBehalfOwner = entry.grant.callerPrincipalId === undefined ? undefined : entry.target.principalId;
+        if (onBehalfOwner !== undefined && !ownerReplyRead) return { status: "forbidden" };
         const access = options.authorizeTarget(entry.target, entry.grant);
         if ("code" in access) return { status: "forbidden" };
         if (entry.target.incarnation !== exactTarget.sessionIncarnation) return wrongIncarnation;
@@ -183,7 +187,7 @@ export function createExtensionConversation(options: ConversationOptions): EdgeC
         if (matches.length !== 1 || typeof historyId !== "string" || !/^h-[a-f0-9]{64}$/.test(historyId)) {
           return unavailable("history_unavailable");
         }
-        const canRead = () => options.canReadHistory(exactTarget.machine, historyId, provider, providerSessionId);
+        const canRead = () => options.canReadHistory(exactTarget.machine, historyId, provider, providerSessionId, onBehalfOwner);
         if (!canRead()) return { status: "forbidden" };
 
         // One daemon read keeps the receipt and order proof in the same snapshot.

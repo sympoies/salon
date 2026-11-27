@@ -3,9 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import { AccessStore } from "../src/accessStore.ts";
-import type { EdgeExtension, EdgeFirstReplyQuery } from "../src/extensions.ts";
+import type { EdgeExtension, EdgeFirstReplyQuery, EdgeRoute } from "../src/extensions.ts";
 import { OutboxStore } from "../src/outboxStore.ts";
 import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
@@ -22,7 +23,15 @@ const pathPrefix = "/api/ext/fixture";
 const assistant = (order: number, text: string, timestamp = replyAt) =>
   ({ id: `${historyId}-${order}`, role: "assistant", text, timestamp });
 
-async function fixture(t: TestContext, provider: "codex" | "claude" = "codex", historyOwner = principalId) {
+interface Variant {
+  readonly readCapability?: boolean;
+  readonly admitCapability?: boolean;
+  readonly bridge?: { readonly machines?: string[]; readonly permissions?: string[] } | null;
+}
+
+/** `onBehalf` stores the input as an owner-bound record admitted by the bridge principal. */
+async function fixture(t: TestContext, provider: "codex" | "claude" = "codex", historyOwner = principalId,
+  onBehalf?: Variant) {
   const directory = mkdtempSync(join(tmpdir(), "extension-conversation-"));
   const path = join(directory, "state.sqlite");
   const ownership = new AccessStore(path);
@@ -32,10 +41,11 @@ async function fixture(t: TestContext, provider: "codex" | "claude" = "codex", h
 
   const store = new OutboxStore(path);
   const { entry } = store.admitExtensionInput(
-    { principalId, extensionId: "fixture", channel: "companion", inputId: "fixture-input" },
+    { principalId: onBehalf ? "bridge" : principalId, extensionId: "fixture", channel: "companion", inputId: "fixture-input" },
     { target: { principalId, machine: target.machine, sessionId: target.sessionId, incarnation: target.sessionIncarnation },
       source: { channel: "companion", label: "Companion", prefix: "" },
-      grant: { routeKey: "fixture:inputs", permission: "debug" } },
+      grant: onBehalf ? { routeKey: "fixture:relay", permission: "relay", callerPrincipalId: "bridge" }
+        : { routeKey: "fixture:inputs", permission: "debug" } },
     "Example question", "fixture-generation", null,
   );
   const attempt = store.claim(store.candidate(entry.target)!)!;
@@ -71,22 +81,32 @@ async function fixture(t: TestContext, provider: "codex" | "claude" = "codex", h
     res.writeHead(data ? 200 : 404, { "content-type": "application/json" }).end(JSON.stringify({ ok: !!data, data }));
   });
   const upstream = await listenOnLoopback(daemon);
-  const extension: EdgeExtension = { id: "fixture", routes: [
-    { id: "inputs", pattern: `${pathPrefix}/inputs`, methods: ["PUT"], permission: "debug", handle() {} },
-    { id: "reply", pattern: `${pathPrefix}/reply`, methods: ["POST"], permission: "debug",
-      async handle(ctx) {
-        ctx.sendJson(200, await ctx.conversation.firstReplyAfter(await ctx.readJsonBody() as EdgeFirstReplyQuery));
-      },
-    },
-  ] };
-  const edge = createEdgeServer(makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: path,
-    principals: [
-      { id: principalId, token: "owner-fixture", machines: [target.machine], permissions: ["debug"] },
-      { id: "other", token: "other-fixture", machines: [target.machine], permissions: ["debug"] },
-      { id: "limited", token: "limited-fixture", machines: [target.machine], permissions: [] },
-    ],
-    machines: [{ name: target.machine, url: upstream.base, token: "daemon-fixture" }],
-  }), { extensions: [extension] });
+  const startEdge = (variant: Variant = {}) => {
+    const reply: EdgeRoute["handle"] = async ctx => {
+      ctx.sendJson(200, await ctx.conversation.firstReplyAfter(await ctx.readJsonBody() as EdgeFirstReplyQuery));
+    };
+    const extension: EdgeExtension = { id: "fixture", permissions: ["relay"], routes: [
+      { id: "inputs", pattern: `${pathPrefix}/inputs`, methods: ["PUT"], permission: "debug", handle() {} },
+      { id: "reply", pattern: `${pathPrefix}/reply`, methods: ["POST"], permission: "debug", handle: reply },
+      { id: "relay", pattern: `${pathPrefix}/relay`, methods: ["PUT"], permission: "relay",
+        ...(variant.admitCapability !== false && { outboxOwnerDispatch: true }), handle() {} },
+      { id: "reply-read", pattern: `${pathPrefix}/reply-read`, methods: ["POST"], permission: "relay",
+        ...(variant.readCapability !== false && { outboxOwnerReplyRead: true }), handle: reply },
+      { id: "reply-plain", pattern: `${pathPrefix}/reply-plain`, methods: ["POST"], permission: "relay", handle: reply },
+    ] };
+    const bridge = variant.bridge === undefined ? {} : variant.bridge;
+    return createEdgeServer(makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: path,
+      principals: [
+        { id: principalId, token: "owner-fixture", machines: [target.machine], permissions: ["debug"] },
+        { id: "other", token: "other-fixture", machines: [target.machine], permissions: ["debug"] },
+        { id: "limited", token: "limited-fixture", machines: [target.machine], permissions: [] },
+        ...(bridge ? [{ id: "bridge", token: "bridge-fixture", machines: bridge.machines ?? [target.machine],
+          permissions: bridge.permissions ?? ["relay"] }] : []),
+      ],
+      machines: [{ name: target.machine, url: upstream.base, token: "daemon-fixture" }],
+    }), { extensions: [extension] });
+  };
+  let edge = startEdge(onBehalf);
   t.after(async () => {
     for (const server of [edge, daemon]) {
       server.closeAllConnections();
@@ -95,13 +115,27 @@ async function fixture(t: TestContext, provider: "codex" | "claude" = "codex", h
     ownership.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  const { base } = await listenOnLoopback(edge);
-  const call = (value: EdgeFirstReplyQuery = query, token = "owner-fixture") =>
-    fetch(base + pathPrefix + "/reply", {
+  let { base } = await listenOnLoopback(edge);
+  const call = (value: EdgeFirstReplyQuery = query, token = "owner-fixture", route = "reply") =>
+    fetch(base + pathPrefix + "/" + route, {
       method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(value),
     });
-  return { call, input, query, receipt, historyReads: () => historyReads,
+  return { call, input, query,
+    /** Read as the bridge through a route that declares the reply-read capability. */
+    callRead: (value: EdgeFirstReplyQuery = query, token = "bridge-fixture", route = "reply-read") => call(value, token, route),
+    async restart(variant: Variant) {
+      edge.closeAllConnections();
+      await new Promise<void>(resolve => edge.close(() => resolve()));
+      edge = startEdge(variant);
+      ({ base } = await listenOnLoopback(edge));
+    },
+    transferSession() {
+      const other = new DatabaseSync(path);
+      try { other.prepare("UPDATE session_ownership SET principal_id=? WHERE machine=? AND session_id=?")
+        .run("other", target.machine, target.sessionId); }
+      finally { other.close(); }
+    }, receipt, historyReads: () => historyReads,
     setMessages: (...rows: unknown[]) => { messages = rows; },
     markEarlierRows: () => { olderCursor = "100"; },
     replaceIncarnation: () => { current = { ...current, session_incarnation: "replacement" }; },
@@ -191,4 +225,60 @@ test("Claude history without a receipt binding is unavailable", async t => {
   f.setMessages(f.input, assistant(300, "Unattributed reply"));
   assert.deepEqual(await (await f.call()).json(), { status: "unavailable", reason: "provider_order_unavailable" });
   assert.equal(f.historyReads(), 0);
+});
+
+const forbidden = { status: "forbidden" };
+
+test("an on-behalf record yields the first reply after its own receipt through a route with the read capability", async t => {
+  const f = await fixture(t, "codex", principalId, {});
+  f.setMessages(assistant(100, "Earlier reply", "2026-01-01T00:01:00Z"), f.input, assistant(300, "First reply"),
+    assistant(400, "Later reply", "2026-01-01T00:04:00Z"));
+  const result = await (await f.callRead()).json();
+  assert.equal(result.status, "found");
+  assert.equal(result.reply.text, "First reply");
+  assert.deepEqual(await (await f.callRead({ target, receiptRequestId: f.receipt.request_id })).json(), result);
+});
+
+test("an on-behalf read is refused without the read capability, for another namespace or receipt, and for another incarnation", async t => {
+  const f = await fixture(t, "codex", principalId, {});
+  f.setMessages(f.input, assistant(300, "First reply"));
+  assert.deepEqual(await (await f.callRead(f.query, "bridge-fixture", "reply-plain")).json(), forbidden);
+  assert.deepEqual(await (await f.callRead(f.query, "owner-fixture", "reply")).json(), { status: "unavailable", reason: "receipt_missing" });
+  assert.deepEqual(await (await f.callRead({ target, receiptRequestId: "unrelated-receipt" })).json(),
+    { status: "unavailable", reason: "receipt_missing" });
+  assert.deepEqual(await (await f.callRead({ ...f.query, target: { ...target, sessionIncarnation: "replacement" } })).json(),
+    { status: "wrong_incarnation" });
+  assert.equal(f.historyReads(), 0);
+  await f.restart({ readCapability: false });
+  assert.deepEqual(await (await f.callRead()).json(), forbidden);
+  assert.equal(f.historyReads(), 0);
+});
+
+test("an on-behalf read is refused after the owner changes", async t => {
+  const f = await fixture(t, "codex", principalId, {});
+  f.setMessages(f.input, assistant(300, "First reply"));
+  f.transferSession();
+  assert.deepEqual(await (await f.callRead()).json(), forbidden);
+  assert.equal(f.historyReads(), 0);
+});
+
+test("an on-behalf read is refused when the admission route, the caller permission or the caller machine access is lost", async t => {
+  const f = await fixture(t, "codex", principalId, {});
+  f.setMessages(f.input, assistant(300, "First reply"));
+  for (const variant of [{ admitCapability: false }, { bridge: { machines: [] } }, { bridge: null }] satisfies Variant[]) {
+    await f.restart(variant);
+    const response = await f.callRead();
+    // A removed caller is unauthenticated; the others reach the facade and are refused.
+    if (variant.bridge === null) assert.equal(response.status, 401);
+    else assert.deepEqual(await response.json(), forbidden);
+  }
+  await f.restart({ bridge: { permissions: [] } });
+  assert.equal((await f.callRead()).status, 403);
+  assert.equal(f.historyReads(), 0);
+});
+
+test("an on-behalf read needs the owner's history access, not the caller's", async t => {
+  const f = await fixture(t, "codex", "other", {});
+  f.setMessages(f.input, assistant(300, "First reply"));
+  assert.deepEqual(await (await f.callRead()).json(), forbidden);
 });

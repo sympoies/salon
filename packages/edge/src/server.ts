@@ -1158,15 +1158,19 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     const outbox = createExtensionOutbox(outboxOptions);
     const conversation = createExtensionConversation({
       ...outboxOptions,
-      canReadHistory(machineName, historyId, provider, providerSessionId) {
-        if (!config.multiUser || isRootPrincipal(principal)) return true;
+      ownerReplyRead: route.outboxOwnerReplyRead === true,
+      canReadHistory(machineName, historyId, provider, providerSessionId, ownerPrincipalId) {
+        // An on-behalf read is judged as the owner, who is never root (the grant check refuses a root owner).
+        const subject = ownerPrincipalId === undefined ? principal : principalById(ownerPrincipalId);
+        if (!subject) return false;
+        if (!config.multiUser || isRootPrincipal(subject)) return true;
         const grant = accessStore?.historyGrant(machineName, historyId);
         // For an unlisted history, require the same provider claim that
         // authorizes its discovery. The facade never creates a history grant.
         return grant
           ? grant.provider === provider && grant.providerSessionId === providerSessionId
-            && canReadHistory(principal, machineName, historyId)
-          : historyClaimant(principal, machineName, provider, providerSessionId) !== undefined;
+            && canReadHistory(subject, machineName, historyId)
+          : historyClaimant(subject, machineName, provider, providerSessionId) !== undefined;
       },
     });
     try {
