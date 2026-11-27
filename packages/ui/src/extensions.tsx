@@ -64,7 +64,7 @@ export interface CopyFormat {
 }
 
 // Ids of core's own copy action (sessionCardCopy.ts).
-const CORE_COPY_IDS = ["resume", "provider-session-id"];
+const CORE_COPY_IDS = ["attach", "resume", "provider-session-id"];
 
 /** An installed distribution's device-local ordering policy. */
 export interface SessionOrdering {

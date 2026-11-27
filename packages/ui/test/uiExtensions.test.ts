@@ -104,7 +104,7 @@ test("copy formats come from extensions; core keeps none and rejects bad entries
   const format = { id: "watch", label: "Copy watch command", value };
   assert.throws(() => createUiExtensionRegistry([{ id: "one", copyFormats: [format] }, { id: "two", copyFormats: [format] }]),
     /duplicate copy format "watch"/);
-  for (const id of ["resume", "provider-session-id"]) {
+  for (const id of ["attach", "resume", "provider-session-id"]) {
     assert.throws(() => createUiExtensionRegistry([{ id: "core", copyFormats: [{ ...format, id }] }]), new RegExp(`duplicate copy format "${id}"`));
   }
   assert.throws(() => createUiExtensionRegistry([{ id: "bad", copyFormats: [{ ...format, id: "Bad id" }] }]), /invalid copy format id "Bad id"/);
