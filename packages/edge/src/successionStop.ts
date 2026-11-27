@@ -338,7 +338,9 @@ async function readDestination(config: EdgeConfig, owner: string, operationId: s
   const destination = destinationFor(config, target.machine);
   const header = bindingHeader(scope, owner, operationId, target, binding, new Uint8Array());
   if (!destination || !header) return { kind: "unknown" };
-  return classify(await exchange(destination.machine, readPath(target, operationId), destinationHeaders(destination.ingress, header), null, READ_TIMEOUT_MS), operationId, target, binding);
+  const outcome = classify(await exchange(destination.machine, readPath(target, operationId), destinationHeaders(destination.ingress, header), null, READ_TIMEOUT_MS), operationId, target, binding);
+  // A bare typed refusal on a read proves nothing about the operation. Only a POST reply or a recorded refused projection may settle it.
+  return outcome.kind === "refused" || outcome.kind === "already-stopped" ? { kind: "unknown" } : outcome;
 }
 
 /** Records what a verified reply establishes. The block is durable before anything is projected. */
@@ -424,7 +426,9 @@ export async function handleSuccessionStop(ctx: SuccessionStopContext, relay: Co
           outcome = await readDestination(ctx.config, owner, operationId, target, binding, "receipt");
           // Only a verified absence of this exact ID, before the deadline, at a destination the operator asserts runs v1, permits one more copy under
           // the same fence. The destination deduplicates on the operation ID, so a late first copy cannot add an effect.
-          send = outcome.kind === "not-found" && nowEpoch() < binding.retryUntilEpoch && !!ctx.config.successionStopDestinations?.includes(target.machine);
+          send = outcome.kind === "not-found" && !!ctx.config.successionStopDestinations?.includes(target.machine);
+          // Authority and the deadline are checked again with no await before the copy leaves.
+          if (send) { authorize(ctx, store, outbox, caller, predecessor, operationId, false); send = nowEpoch() < binding.retryUntilEpoch; }
         }
         if (send) {
           const destination = destinationFor(ctx.config, target.machine);

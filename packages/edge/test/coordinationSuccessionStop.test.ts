@@ -46,9 +46,11 @@ async function fixture(t: TestContext, options: { enabled?: boolean; reconcileMs
   function sid(identity: typeof caller) { return { machine: identity.machine, sessionId: identity.session_id, incarnation: identity.session_incarnation }; }
 
   const native = new Map<string, Native>();
-  const seen = { posts: [] as { body: string; headers: Record<string, unknown> }[], gets: [] as { scope: string; url: string; headers: Record<string, unknown> }[], effects: 0 };
+  const seen = { other: 0, posts: [] as { body: string; headers: Record<string, unknown> }[], gets: [] as { scope: string; url: string; headers: Record<string, unknown> }[], effects: 0 };
   let mode: PostMode = "normal";
   let supported = true;
+  let getError: { status: number; code: string } | null = null;
+  const gates: { post?: { arrived: () => void; wait: Promise<void> }; get?: { arrived: () => void; wait: Promise<void> } } = {};
   const projection = (op: string, entry: Native, overrides: Record<string, unknown> = {}) => ({
     operation_id: op, caller: { machine: entry.binding.caller_machine, session_id: entry.binding.caller_session_id, session_incarnation: entry.binding.caller_session_incarnation },
     predecessor: { machine: entry.binding.machine, session_id: entry.binding.session_id, session_incarnation: entry.binding.session_incarnation },
@@ -76,9 +78,10 @@ async function fixture(t: TestContext, options: { enabled?: boolean; reconcileMs
     } catch { return void error(403, "succession-stop-delegation-mismatch"); }
     const url = new URL(req.url ?? "/", "http://destination");
     const match = /^\/sessions\/predecessor\/succession-stop\/v1(?:\/([0-9a-f-]+))?$/.exec(url.pathname);
-    if (!match) return void error(404, "route-not-found");
+    if (!match) { seen.other++; return void error(404, "route-not-found"); }
     if (req.method === "POST" && !match[1]) {
       seen.posts.push({ body: raw.toString("utf8"), headers: { ...req.headers } });
+      if (gates.post) { gates.post.arrived(); await gates.post.wait; }
       if (mode === "unsupported" || req.headers["content-type"] !== MEDIA) return void error(415, "unsupported-media-type");
       assert.equal(binding.scope, "stop");
       const op = JSON.parse(raw.toString("utf8")).operation_id as string;
@@ -106,6 +109,8 @@ async function fixture(t: TestContext, options: { enabled?: boolean; reconcileMs
     if (req.method === "GET" && match[1]) {
       seen.gets.push({ scope: String(binding.scope), url: req.url ?? "", headers: { ...req.headers } });
       assert.equal(raw.length, 0);
+      if (gates.get) { gates.get.arrived(); await gates.get.wait; }
+      if (getError) return void error(getError.status, getError.code);
       const entry = native.get(match[1]);
       if (!entry) return void error(404, "stop-operation-not-found");
       return void send(200, { schema_version: STOP_SCHEMA, ok: true, data: projection(match[1], entry) });
@@ -138,7 +143,9 @@ async function fixture(t: TestContext, options: { enabled?: boolean; reconcileMs
     { headers: { authorization: "Bearer relay-token", "x-agent-session-succession-caller": callerHeader(), ...o.headers } }));
   const granted = async () => { const body = grantBody(); const result = await issue(body); assert.equal(result.status, 200, JSON.stringify(result.body)); return body; };
   const sql = (fn: (db: DatabaseSync) => void) => { const handle = new DatabaseSync(db); try { fn(handle); } finally { handle.close(); } };
-  return { issue, revoke, stop, receipt, grantBody, granted, sql, restart, seen, native, db, config, set mode(value: PostMode) { mode = value; }, set supported(value: boolean) { supported = value; },
+  return { issue, revoke, stop, receipt, grantBody, granted, sql, restart, seen, native, db, config, set mode(value: PostMode) { mode = value; }, set supported(value: boolean) { supported = value; }, set getError(value: { status: number; code: string } | null) { getError = value; },
+    hold(kind: "post" | "get") { let release!: () => void; let arrive!: () => void; const arrived = new Promise<void>(resolve => { arrive = resolve; });
+      gates[kind] = { arrived: arrive, wait: new Promise<void>(resolve => { release = resolve; }) }; return { arrived, release: () => { delete gates[kind]; release(); } }; },
     get base() { return base; }, destinationBase };
 }
 
@@ -377,7 +384,7 @@ test("a redirect is never followed and the destination sees one request", async 
   const f = await fixture(t); f.mode = "redirect";
   const grant = await f.granted();
   assert.equal((await f.stop(grant.operation_id)).body.error.code, "session-stop-outcome-unknown");
-  assert.equal(f.seen.posts.length, 1); assert.equal(f.seen.gets.length, 0);
+  assert.equal(f.seen.posts.length, 1); assert.equal(f.seen.gets.length, 0); assert.equal(f.seen.other, 0);
 });
 
 test("a dropped reply reconciles an exact retry read-only with one destination effect", async t => {
@@ -516,3 +523,62 @@ async function waitFor(condition: () => boolean, ms = 8000): Promise<void> {
   const deadline = Date.now() + ms;
   while (!condition()) { if (Date.now() > deadline) throw new Error("timed out"); await new Promise(resolve => setTimeout(resolve, 25)); }
 }
+
+test("a revocation during the receipt read stops the retransmit", async t => {
+  const f = await fixture(t); f.mode = "lost";
+  const grant = await f.granted(); const op = grant.operation_id;
+  await f.stop(op);
+  const gate = f.hold("get");
+  const retry = f.stop(op);
+  await gate.arrived;
+  await f.revoke(grant.delegation_id);
+  gate.release();
+  assert.equal((await retry).body.error.code, "succession-stop-delegation-revoked");
+  assert.equal(f.seen.posts.length, 1); assert.equal(f.seen.effects, 0);
+});
+
+test("a revocation during the first exchange keeps the stored result and projects nothing", async t => {
+  const f = await fixture(t);
+  const grant = await f.granted(); const op = grant.operation_id;
+  const gate = f.hold("post");
+  const first = f.stop(op);
+  await gate.arrived;
+  await f.revoke(grant.delegation_id);
+  gate.release();
+  assert.equal((await first).body.error.code, "succession-stop-delegation-revoked");
+  let state = ""; f.sql(db => { state = (db.prepare("SELECT state FROM outbox_stop_operations WHERE operation_id = ?").get(op) as any).state; });
+  assert.equal(state, "stopped");
+});
+
+test("a typed refusal on a receipt or reconcile read never settles an unresolved operation", async t => {
+  const f = await fixture(t); f.mode = "drop";
+  const grant = await f.granted(); const op = grant.operation_id;
+  await f.stop(op);
+  f.native.clear();
+  for (const [status, code] of [[503, "session-mailbox-unknown"], [409, "session-stop-busy"], [409, "session-already-stopped"]] as const) {
+    f.getError = { status, code };
+    const read = await f.receipt(op);
+    assert.equal(read.status, 200); assert.notEqual(read.body.data.state, "refused"); assert.notEqual(read.body.data.state, "stopped");
+    assert.equal((await f.stop(op)).body.error.code, "session-stop-outcome-unknown");
+    await f.restart();
+    const reads = f.seen.gets.length;
+    await waitFor(() => f.seen.gets.length > reads);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    let state = ""; f.sql(db => { state = (db.prepare("SELECT state FROM outbox_stop_operations WHERE operation_id = ?").get(op) as any).state; });
+    assert.equal(state, "unknown", code);
+    const outbox = new OutboxStore(f.db);
+    try { assert.throws(() => outbox.admit({ principalId: "owner", machine: "dest", sessionId: "predecessor", incarnation: PRED_INC }, "intent", "message", "generation"), /outbox-lifecycle-pending/, code); } finally { outbox.close(); }
+  }
+  assert.equal(f.seen.posts.length, 1);
+});
+
+test("the retransmit deadline is exclusive", async t => {
+  const f = await fixture(t); f.mode = "lost";
+  const grant = await f.granted(); const op = grant.operation_id;
+  await f.stop(op);
+  const now = Math.floor(Date.now() / 1000) + 3;
+  f.sql(db => { db.prepare("UPDATE outbox_stop_operations SET retry_until_epoch = ? WHERE operation_id = ?").run(now, op); db.prepare("UPDATE succession_stop_grant SET retry_until_epoch = ? WHERE delegation_id = ?").run(now, grant.delegation_id); });
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, now * 1000 - Date.now()) + 50));
+  assert.equal((await f.stop(op)).body.error.code, "session-stop-outcome-unknown");
+  assert.equal(f.seen.posts.length, 1);
+});
