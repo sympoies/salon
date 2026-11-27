@@ -87,9 +87,14 @@ test("installed compiled core starts an authenticated edge and composes a generi
     );
     // Node 24 rejects TypeScript modules in node_modules on the source-only base.
     run(process.execPath, ["--input-type=module", "--eval", "await import('@agent-console/edge/start')"]);
+    const consumerPrefix = `${realpathSync(consumer)}/`;
+    const assertContained = (path: string, name: string) => {
+      assert.ok(realpathSync(path).startsWith(consumerPrefix), `${name} escaped the isolated consumer`);
+    };
+    assert.throws(() => assertContained(temporary, "outside"), /outside escaped the isolated consumer/);
     for (const name of ["shared", "edge", "ui"]) {
       const installed = realpathSync(join(consumer, "node_modules/@agent-console", name));
-      assert.ok(installed.startsWith(`${consumer}/`), `${name} escaped the isolated consumer`);
+      assertContained(installed, name);
       const payload = readdirSync(installed, { recursive: true, encoding: "utf8" });
       assert.ok(payload.some(path => path.endsWith(".d.ts")), `${name} has no declarations`);
       assert.ok(!payload.some(path => /\.tsx?$/.test(path) && !path.endsWith(".d.ts")), `${name} ships TypeScript source`);
