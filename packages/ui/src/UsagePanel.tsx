@@ -624,7 +624,7 @@ export function ProviderCard({
       {presentation.retainedStatus ? <RetainedUsageStatus status={presentation.retainedStatus} /> : null}
       {presentation.freshness ? <p className="usage-provider-updated">{presentation.freshness}</p> : null}
       {p.provider === "codex" && account && p.reset_credits && onReset ? (
-        <CodexResetAction account={account} count={p.reset_credits.available_count} onReset={onReset} />
+        <CodexResetAction account={p.switch_key ?? account} count={p.reset_credits.available_count} onReset={onReset} />
       ) : null}
       {p.provider === "claude" ? (
         <ClaudeLimitResetSection
