@@ -12,14 +12,16 @@ afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()?.();
 });
 
-async function renderMarkdown(text: string, props: { readonly uploadSessionId?: string } = {}) {
+async function renderMarkdown(text: string, props: { readonly uploadSessionId?: string } = {}, beforeRender?: (window: Window) => void) {
   const window = new Window({ url: "http://localhost" });
   const previous = {
     window: globalThis.window,
     document: globalThis.document,
     IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT,
+    fetch: globalThis.fetch,
   };
   Object.assign(globalThis, { window, document: window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  beforeRender?.(window);
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
@@ -49,12 +51,17 @@ test("message Markdown renders raw HTML as literal text instead of elements", as
 });
 
 test("message Markdown keeps only http(s) links and opens them outside the console", async () => {
+  const opened: unknown[][] = [];
+  const requests: unknown[] = [];
   const { window, container } = await renderMarkdown(
     "[bad](javascript:alert(1)) [data](data:text/html,hi) [rel](src/app.ts) [ok](https://example.com/a) "
-      + "![shot](https://example.com/shot.png)",
+      + "![shot](https://example.com/shot.png)", {}, window => {
+      Object.assign(window, { open: (...args: unknown[]) => { opened.push(args); return {}; } });
+      globalThis.fetch = (async (...args: unknown[]) => { requests.push(args); return new Response(); }) as typeof fetch;
+    },
   );
   const anchors = [...container.querySelectorAll("a")];
-  assert.deepEqual(anchors.map((anchor) => anchor.getAttribute("href")), ["https://example.com/a"]);
+  assert.deepEqual(anchors.map((anchor) => anchor.getAttribute("href")), ["https://example.com/a", "https://example.com/shot.png"]);
   for (const anchor of anchors) {
     assert.equal(anchor.getAttribute("target"), "_blank");
     assert.equal(anchor.getAttribute("rel"), "noopener noreferrer");
@@ -62,12 +69,17 @@ test("message Markdown keeps only http(s) links and opens them outside the conso
   assertNoElement(container, "img", "unsupported sources never fetch an external image");
   assert.match(container.textContent ?? "", /bad data rel ok Image unavailable/);
 
-  const opened: unknown[][] = [];
-  Object.assign(window, { open: (...args: unknown[]) => { opened.push(args); return {}; } });
+  assert.deepEqual(opened,[]);
+  assert.deepEqual(requests,[]);
   const click = new window.MouseEvent("click", { bubbles: true, cancelable: true });
   anchors[0]?.dispatchEvent(click);
   assert.equal(click.defaultPrevented, true);
   assert.deepEqual(opened, [["https://example.com/a", "_blank", "noopener,noreferrer"]]);
+  const imageClick = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+  anchors[1]?.dispatchEvent(imageClick);
+  assert.equal(imageClick.defaultPrevented,true);
+  assert.deepEqual(opened[1], ["https://example.com/shot.png", "_blank", "noopener,noreferrer"]);
+  assert.deepEqual(requests,[],"opening the image source sends no request");
 });
 
 test("message Markdown renders compact headings, tables, and soft line breaks", async () => {

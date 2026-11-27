@@ -6,9 +6,9 @@ export type ConversationImageData = {
   /** Present only when the response supplies a validated filename. */
   readonly responseFilename?: string;
 }
-  | { readonly state: "unavailable"; readonly reason?: "outside-allowed-roots" | "remote-url-not-fetched"; readonly sourceOrigin?: string; readonly remoteReason?: string }
+  | { readonly state: "unavailable"; readonly reason?: "outside-allowed-roots" | "remote-url-not-fetched" | "unsupported-type" | "too-large"; readonly sourceOrigin?: string; readonly remoteReason?: string }
   | { readonly state: "error"; readonly remoteReason?: string }
-  | { readonly state: "loading" | "deleted" };
+  | { readonly state: "loading" } | { readonly state: "deleted" };
 
 interface ImageRequest {
   readonly signal: AbortSignal;
@@ -58,7 +58,7 @@ async function readConversationImage(machine: string, history: string, image: st
     if (response.status === 422) {
       const error = await response.json().catch(() => null) as { error?: { code?: unknown; reason?: unknown; source_origin?: unknown } } | null;
       if (error?.error?.code === "history-image-unavailable") {
-        if (error.error.reason === "outside-allowed-roots") return {state:"unavailable",reason:"outside-allowed-roots"};
+        if (error.error.reason === "outside-allowed-roots" || error.error.reason === "unsupported-type" || error.error.reason === "too-large") return {state:"unavailable",reason:error.error.reason};
         if (error.error.reason === "remote-url-not-fetched") {
           const sourceOrigin = conversationImageSourceOrigin(error.error.source_origin);
           const fallback: ConversationImageData = {state:"unavailable",reason:"remote-url-not-fetched",...(sourceOrigin ? {sourceOrigin} : {})};

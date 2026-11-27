@@ -31,7 +31,7 @@ async function readBounded(response: Response, limit: number): Promise<Buffer> {
 export async function forwardHistoryImage(res: ServerResponse, machine: MachineConfig, history: string, image: string, remote?: (url: string) => Promise<void>): Promise<void> {
   res.setHeader("cache-control","private, no-store");
   res.setHeader("x-content-type-options","nosniff");
-  const unavailable = (reason?: "outside-allowed-roots" | "remote-url-not-fetched", sourceOrigin?: string) => sendJson(res,422,{ok:false,error:{code:"history-image-unavailable",message:"Image unavailable",...(reason ? {reason} : {}),...(sourceOrigin ? {source_origin:sourceOrigin} : {})}});
+  const unavailable = (reason?: "outside-allowed-roots" | "remote-url-not-fetched" | "unsupported-type" | "too-large", sourceOrigin?: string) => sendJson(res,422,{ok:false,error:{code:"history-image-unavailable",message:"Image unavailable",...(reason ? {reason} : {}),...(sourceOrigin ? {source_origin:sourceOrigin} : {})}});
   const failed = () => sendJson(res,502,{ok:false,error:{code:"history-image-read-failed",message:"Image service unavailable"}});
   if (!isConversationImageId(image)) { unavailable(); return; }
   const controller = new AbortController();
@@ -46,7 +46,7 @@ export async function forwardHistoryImage(res: ServerResponse, machine: MachineC
         try { ({code,reason,source_origin,source_url} = (JSON.parse(bytes.toString("utf8")) as {error?:{code?:unknown;reason?:unknown;source_origin?:unknown;source_url?:unknown}}).error ?? {}); } catch { /* old daemon or malformed upstream */ }
         if (response.status === 404 && code === "history-image-deleted") {
           sendJson(res,404,{ok:false,error:{code:"history-image-deleted",message:"Image deleted"}});
-        } else if (response.status === 422 && code === "history-image-unavailable" && (reason === "outside-allowed-roots" || reason === "remote-url-not-fetched")) {
+        } else if (response.status === 422 && code === "history-image-unavailable" && (reason === "outside-allowed-roots" || reason === "remote-url-not-fetched" || reason === "unsupported-type" || reason === "too-large")) {
           if (remote && reason === "remote-url-not-fetched" && typeof source_url === "string") await remote(source_url);
           else unavailable(reason,reason === "remote-url-not-fetched" ? conversationImageSourceOrigin(source_origin) : undefined);
         } else unavailable();
@@ -54,7 +54,7 @@ export async function forwardHistoryImage(res: ServerResponse, machine: MachineC
       }
       if (remote) { await response.body?.cancel(); unavailable(); return; }
       const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
-      if (!CONVERSATION_IMAGE_TYPES.some(type => type === mime)) { await response.body?.cancel(); unavailable(); return; }
+      if (!CONVERSATION_IMAGE_TYPES.some(type => type === mime)) { await response.body?.cancel(); unavailable("unsupported-type"); return; }
       const bytes = await readBounded(response,CONVERSATION_IMAGE_MAX_BYTES);
       const filename = conversationImageFilename(response.headers.get("content-disposition"));
       if (filename) res.setHeader("content-disposition",`inline; filename*=UTF-8''${encodeFilename(filename)}`);
@@ -62,6 +62,6 @@ export async function forwardHistoryImage(res: ServerResponse, machine: MachineC
       res.end(bytes);
     },{token:machine.token,timeoutMs:10_000,redirect:"error",signal:controller.signal});
   } catch (error) {
-    if (!res.destroyed && !res.headersSent) { if (error instanceof ImageUnavailableError) unavailable(); else failed(); }
+    if (!res.destroyed && !res.headersSent) { if (error instanceof ImageUnavailableError) unavailable("too-large"); else failed(); }
   } finally { res.off("close",onClose); }
 }

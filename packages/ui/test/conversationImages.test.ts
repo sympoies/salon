@@ -12,7 +12,7 @@ afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 const imageId = (index: number) => `${"a".repeat(16)}.0.${index}.${"b".repeat(32)}`;
 
 async function mountImages(responseFor?: (path: string) => Response, nested = false,
-  images: Array<{id:string}> = [{id:imageId(0)},{id:imageId(1)}], messages?: unknown[], uploadSessionId?: string) {
+  images: Array<{id:string}> = [{id:imageId(0)},{id:imageId(1)}], messages?: unknown[], uploadSessionId?: string, beforeRender?: (window: Window) => void) {
   const window = new Window({ url: "http://localhost" });
   const saved = { window: globalThis.window, document: globalThis.document, HTMLElement: globalThis.HTMLElement,
     IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT, fetch: globalThis.fetch };
@@ -24,6 +24,7 @@ async function mountImages(responseFor?: (path: string) => Response, nested = fa
       return path.includes(`.${1}.`) ? new Response(JSON.stringify({ok:false,error:{code:"history-image-deleted"}}),{status:404})
         : new Response(new Uint8Array([137,80,78,71,13,10,26,10]),{headers:{"content-type":"image/png"}});
     } });
+  beforeRender?.(window);
   const ssr = createUiSsrHarness();
   const root = createRoot(window.document.body.appendChild(window.document.createElement("div")));
   cleanups.push(async () => { await act(async () => root.unmount()); await ssr.close(); Object.assign(globalThis,saved); window.close(); });
@@ -254,7 +255,7 @@ test("decode failure immediately releases its object URL exactly once",async () 
   const img = thumbnail.querySelector("img")!;
   const url = img.src;
   await act(async () => img.dispatchEvent(new window.Event("error")));
-  assert.match(thumbnail.textContent ?? "",/Couldn't load/);
+  assert.match(window.document.querySelector(".conversation-image-thumbnail")?.textContent ?? "",/Couldn't load/);
   assert.deepEqual(revoked,[url],"decode failure releases the blob before unmount");
   await cleanups.pop()?.();
   assert.deepEqual(revoked,[url],"unmount does not release the failed URL twice");
@@ -481,9 +482,6 @@ for (const [reason,status,expected] of [
   assert.equal(window.document.querySelector('.conversation-image-thumbnail [role="status"]')?.textContent,expected);
   assert.doesNotMatch(window.document.body.innerHTML,/restricted/);
   assert.deepEqual(requests,[`/api/history/sessions/fixture/history/images/${imageId(0)}`]);
-  await act(async () => window.document.querySelector<HTMLButtonElement>('[aria-label="Open image 1"]')!.click());
-  assert.equal(window.document.querySelector('.conversation-image-canvas [role="status"]')?.textContent,expected);
-  assert.doesNotMatch(window.document.body.innerHTML,/restricted/);
   assertNoElement(window.document,'.conversation-image-retry');
 });
 
@@ -503,25 +501,27 @@ test("Markdown refusal names stay with their descriptors when tool images leave 
 test("refused remote Markdown images explain the source and open links only on request",async () => {
   const urls = Array.from({length:6},(_,index) => `https://images.example.invalid/chart-${index + 1}.png`);
   const images = urls.map((_,index) => ({id:imageId(index),origin:"tool_result"}));
+  const opened: unknown[][] = [];
   const {window,requests} = await mountImages(() => new Response(JSON.stringify({error:{code:"history-image-unavailable"}}),{status:422}),
-    false,[],[{id:"remote-result",role:"assistant",text:urls.map(url => `![](<${url}>)`).join("\n"),images}]);
+    false,[],[{id:"remote-result",role:"assistant",text:urls.map(url => `![](<${url}>)`).join("\n"),images}],undefined,
+    window => { window.open = ((...args: unknown[]) => { opened.push(args); return null; }) as never; });
   const group = window.document.querySelector(".history-tool-output");
   assert.ok(group);
   assert.deepEqual([...group.querySelectorAll('[role="status"]')].map(node => node.textContent),
-    urls.map(() => "External image, not loaded · https://images.example.invalid"));
+    urls.map(() => "Image unavailable"));
   const links = [...group.querySelectorAll<HTMLAnchorElement>("a")];
   assert.deepEqual(links.map(link => link.href),urls);
-  assert.ok(links.every(link => link.textContent === "Open link" && link.target === "_blank" && link.rel === "noopener noreferrer"));
+  assert.ok(links.every(link => link.textContent === "Open in browser" && link.target === "_blank" && link.rel === "noopener noreferrer"));
   assertNoElement(group,"img, button a");
   assert.deepEqual(requests.map(path => path.split("/").at(-1)).sort(),images.map(image => image.id).sort());
   assert.ok(requests.every(path => path.startsWith("/api/history/sessions/fixture/history/images/")),"rendering never fetches external images");
-  const opened: unknown[][] = [];
-  window.open = ((...args: unknown[]) => { opened.push(args); return null; }) as never;
   assert.deepEqual(opened,[]);
+  const requestsBeforeClick = [...requests];
   const click = new window.MouseEvent("click",{bubbles:true,cancelable:true});
   await act(async () => links[3]!.dispatchEvent(click));
   assert.equal(click.defaultPrevented,true);
   assert.deepEqual(opened,[[urls[3],"_blank","noopener,noreferrer"]]);
+  assert.deepEqual(requests,requestsBeforeClick,"opening the source sends no image request");
   assertNoElement(window.document,'[role="dialog"]');
 });
 
@@ -687,20 +687,20 @@ for (const [reason,phrase] of [
   ["too-large","Image is too large"], ["timeout","Request timed out"],
   ["not-image","Response is not an image"], ["network","Network error"],
   ["busy","Image service is busy"], ["future-reason","Image could not be loaded"],
-] as const) for (const uploadSessionId of [undefined,"sample"]) test(`remote image refusal explains ${reason} (${uploadSessionId ?? "shared"})`,async () => {
+] as const) for (const uploadSessionId of [undefined,"sample"]) for (const withUrl of [false,true]) test(`remote image refusal explains ${reason} (${uploadSessionId ?? "shared"}, source ${withUrl})`,async () => {
   const url = "https://images.example.invalid/chart.png";
   const {window} = await mountImages(path => path.includes('/remote-image/')
     ? new Response(JSON.stringify({error:{code:"remote-image-unavailable",reason}}),{status:reason === "busy" ? 429 : 422})
     : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched",source_origin:"https://images.example.invalid"}}),{status:422}),false,[],
-    [{id:"remote",role:"assistant",text:`![](${url})`,images:[{id:imageId(0)}]}],uploadSessionId);
+    [{id:"remote",role:"assistant",text:withUrl ? `![](${url})` : "Remote chart",images:[{id:imageId(0)}]}],uploadSessionId);
   const tile = window.document.querySelector('.conversation-image-thumbnail')!;
   assert.match(tile.textContent ?? "",new RegExp(phrase));
   if (["upstream-status","timeout","network","busy"].includes(reason)) {
     // Transient: retryable error with the reason, not a final external tile.
     assert.match(tile.textContent ?? "",/Couldn't load/);
-    assertNoElement(window.document,'.is-external');
+    if (withUrl) assert.equal(tile.querySelector("a")?.href,url); else assertNoElement(tile,"a");
     assert.ok([...window.document.querySelectorAll('button')].some(button => button.textContent === "Retry"));
-  } else assert.equal(tile.querySelector('a')?.href,url);
+  } else if (withUrl) assert.equal(tile.querySelector('a')?.href,url); else assertNoElement(tile,"a");
 });
 
 test("older edges keep the external image placeholder",async () => {
@@ -725,4 +725,52 @@ test("a transient remote image failure retries and displays the image",async () 
   await act(async () => { await new Promise(resolve => setTimeout(resolve,1200)); });
   assert.equal(attempts,2);
   assert.ok(window.document.querySelector('.conversation-image-thumbnail img'));
+});
+
+for (const [reason, expected] of [
+  ["outside-allowed-roots", "Not shared: outside the session folder"],
+  ["unsupported-type", "Unsupported image type"],
+  ["too-large", "Image is too large"],
+  ["unknown-reason", "Image unavailable"],
+] as const) for (const withUrl of [false,true]) test(`unavailable image reason ${reason} with source ${withUrl}`,async () => {
+  const url = "https://images.example.invalid/a-long-image-name.png";
+  const {window} = await mountImages(() => new Response(JSON.stringify({error:{code:"history-image-unavailable",reason}}),{status:422}),false,[],
+    [{id:"reply",role:"assistant",text:withUrl ? `![](${url})` : "![](/restricted/mock.png)",images:[{id:imageId(0)}]}]);
+  const tile = window.document.querySelector('.conversation-image-thumbnail')!;
+  assert.match(tile.textContent ?? "",new RegExp(expected));
+  if (withUrl) {
+    assert.match(tile.textContent ?? "",/images\.example\.invalid/);
+    assert.equal(tile.querySelector('a')?.href,url);
+    assert.match(tile.textContent ?? "",/Open in browser/);
+  } else assertNoElement(tile,'a');
+});
+
+for (const withUrl of [false,true]) for (const [status,expected] of [[404,"Image deleted"],[503,"Couldn't load"]] as const) test(`image ${status} with source ${withUrl}`,async () => {
+  const url = "https://images.example.invalid/chart.png";
+  const {window} = await mountImages(() => new Response(JSON.stringify({error:{code:status === 404 ? "history-image-deleted" : "history-image-read-failed"}}),{status}),false,[],
+    [{id:"reply",role:"assistant",text:withUrl ? `![](${url})` : "![](/restricted/mock.png)",images:[{id:imageId(0)}]}]);
+  const tile = window.document.querySelector('.conversation-image-thumbnail')!;
+  assert.match(tile.textContent ?? "",new RegExp(expected));
+  if (withUrl) assert.equal(tile.querySelector('a')?.href,url); else assertNoElement(tile,'a');
+  if (status === 503) assert.ok(tile.querySelector('.conversation-image-retry')); else assertNoElement(tile,'.conversation-image-retry');
+});
+
+for (const withUrl of [false,true]) test(`remote access refusal explains authentication with source ${withUrl}`,async () => {
+  const url = "https://images.example.invalid/chart.png";
+  const {window} = await mountImages(path => path.includes('/remote-image/')
+    ? new Response(JSON.stringify({error:{code:"remote-image-unavailable",reason:"access-denied"}}),{status:422})
+    : new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"remote-url-not-fetched"}}),{status:422}),false,[],
+    [{id:"reply",role:"assistant",text:withUrl ? `![](${url})` : "Remote chart",images:[{id:imageId(0)}]}]);
+  const tile = window.document.querySelector('.conversation-image-thumbnail')!;
+  assert.match(tile.textContent ?? "",/Access denied or authentication required/);
+  if (withUrl) assert.equal(tile.querySelector('a')?.href,url); else assertNoElement(tile,'a');
+});
+
+for (const role of ["user","assistant"] as const) for (const tool of [false,true]) test(`unavailable source in ${role} ${tool ? "tool output" : "message"}`,async () => {
+  const url = "https://images.example.invalid/chart.png";
+  const {window} = await mountImages(() => new Response(JSON.stringify({error:{code:"history-image-unavailable",reason:"too-large"}}),{status:422}),false,[],
+    [{id:"reply",role,text:`![](${url})`,images:[{id:imageId(0),...(tool ? {origin:"tool_result"} : {})}]}]);
+  const tile = window.document.querySelector('.conversation-image-thumbnail')!;
+  assert.match(tile.textContent ?? "",/Image is too large/);
+  assert.equal(tile.querySelector('a')?.href,url);
 });

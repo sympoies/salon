@@ -144,7 +144,7 @@ test("session notices render Markdown bodies that stay selectable and wrap at ph
       assert.equal(measured.topItems,2);
       assert.ok(!measured.text.includes('- Parent')&&!measured.text.includes('`'),'Markdown syntax is not shown literally');
       assert.deepEqual(measured.code,['inline code']);
-      assert.deepEqual(measured.links,['https://example.com/a'],'only the http link becomes an anchor');
+      assert.deepEqual(measured.links,['https://example.com/a','https://example.com/x.png'],'safe links and image sources become anchors');
       assert.equal(measured.images,0,'notice images never load');
       assert.ok(measured.text.includes('Image unavailable'));
       assert.ok(measured.text.includes(long));

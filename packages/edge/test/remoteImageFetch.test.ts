@@ -84,12 +84,15 @@ test("enforces body size, deadline and image signatures", async () => {
     if (req.url === "/large") { res.end(Buffer.alloc(100)); return; }
     if (req.url === "/svg") { res.end("<svg></svg>"); return; }
     if (req.url === "/text") { res.end("hello"); return; }
+    if (req.url === "/auth") { res.writeHead(401); res.end(); return; }
+    if (req.url === "/forbidden") { res.writeHead(403); res.end(); return; }
     if (req.url === "/status") { res.writeHead(404); res.end(); return; }
     res.end(images[Number(req.url?.slice(1))]?.[1]);
   }, async (url, options) => {
     assert.deepEqual(await fetchRemoteImage(`${url}/large`, { ...options, maxBytes: 20 }), { ok: false, reason: "too-large" });
     assert.deepEqual(await fetchRemoteImage(`${url}/slow`, { ...options, timeoutMs: 30 }), { ok: false, reason: "timeout" });
     for (const path of ["svg", "text"]) assert.deepEqual(await fetchRemoteImage(`${url}/${path}`, options), { ok: false, reason: "not-image" });
+    for (const path of ["auth", "forbidden"]) assert.deepEqual(await fetchRemoteImage(`${url}/${path}`, options), { ok: false, reason: "access-denied" });
     assert.deepEqual(await fetchRemoteImage(`${url}/status`, options), { ok: false, reason: "upstream-status" });
     for (const [i, [contentType, bytes]] of images.entries()) assert.deepEqual(await fetchRemoteImage(`${url}/${i}`, options), { ok: true, contentType, bytes });
     assert.deepEqual(await fetchRemoteImage("file:///image", options), { ok: false, reason: "invalid-url" });
