@@ -17,6 +17,7 @@ import {
   loadToken,
   saveToken,
   normalizeServerUrl,
+  rejectNativeAuthentication,
   isTauri,
 } from "./runtime.ts";
 import { getServerVersion, logout, type AuthStatus, type ConnectFailure } from "./api.ts";
@@ -385,7 +386,7 @@ export function Settings({
           {versionCopyStatus ? <p className="settings-hint" role="status">{versionCopyStatus}</p> : null}
         </section>
         {!openAccess ? <DeviceSettings key={getPrincipalStorageNamespace() ?? "anonymous"} onSignedOut={() => {
-          void (async () => { if (!native || await clearSavedToken()) onSignedOut(); })();
+          if (native) void rejectNativeAuthentication(); else onSignedOut();
         }} /> : null}
         {native ? (
           <section className="settings-section">

@@ -13,7 +13,7 @@ import { normalizeConversationImages, type ConversationImage } from "@agent-cons
 import { normalizeRefusedOutboxAction, type RefusedOutboxAction } from "@agent-console/shared/shared-outbox";
 import * as nativeConnectionApi from "@agent-console/ui/native-connection";
 
-assert.ok("registerNativeConnectionAdapter" in nativeConnectionApi, "installed hosts can register secure storage");
+assert.deepEqual(Object.keys(nativeConnectionApi), ["nativeConnection", "registerNativeConnectionAdapter"]);
 assert.deepEqual(nativeConnectionApi.nativeConnection(), { unavailable: true });
 // Exercise the compiled runtime used by the installed host entrypoint.
 const runtime = await import(new URL("./runtime.js", import.meta.resolve("@agent-console/ui/native-connection")).href);

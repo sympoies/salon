@@ -10,7 +10,7 @@ declare global {
   var __nativePairingFetch: ((url: string, init: RequestInit & { maxRedirections?: number }) => Promise<Response>) | undefined;
 }
 
-for (const interruption of ["none", "connection", "cancel"]) test(`native pairing requires local consent and preserves connection identity (${interruption})`, async () => {
+for (const interruption of ["none", "connection", "cancel", "storage-failure"]) test(`native pairing requires local consent and preserves connection identity (${interruption})`, async () => {
   const window = new Window({ url: "http://tauri.localhost" });
   const globals = { window, document: window.document, navigator: window.navigator, localStorage: window.localStorage,
     Element: window.Element, HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement, Event: window.Event, IS_REACT_ACT_ENVIRONMENT: true };
@@ -42,6 +42,11 @@ for (const interruption of ["none", "connection", "cancel"]) test(`native pairin
   try {
     const runtime = await harness.loadModule<typeof import("../src/runtime.ts")>("/src/runtime.ts");
     runtime.saveServerUrl("https://previous.example.test"); runtime.saveToken("previous-synthetic-token");
+    let failStorage = interruption === "storage-failure";
+    if (failStorage) await runtime.registerNativeConnectionAdapter({
+      async load() { return { serverUrl: "https://previous.example.test", token: "previous-synthetic-token" }; },
+      async save() { if (failStorage) throw Error("storage unavailable"); },
+    });
     const { Settings } = await harness.loadModule<typeof import("../src/Settings.tsx")>("/src/Settings.tsx");
     await act(async () => root.render(createElement(Settings, { variant: "connect", onSaved() { installed++; },
       machines: [], machineColors: {}, terminalRenderMode: "realtime", terminalSelectedPaneRealtime: true,
@@ -65,8 +70,16 @@ for (const interruption of ["none", "connection", "cancel"]) test(`native pairin
     if (interruption === "connection") runtime.saveServerUrl("https://changed.example.test");
     if (interruption === "cancel") await act(async () => Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Cancel")!.click());
     await act(async () => { release(); await new Promise(resolve => setTimeout(resolve, 30)); });
-    assert.equal(installed, interruption === "none" ? 1 : 0);
-    assert.equal(runtime.loadToken(), interruption === "none" ? credential : "previous-synthetic-token");
+    if (interruption === "storage-failure") {
+      assert.match(container.textContent ?? "", /device was added but not stored/i);
+      const retry = Array.from(container.querySelectorAll("button")).find(button => /retry saving/i.test(button.textContent ?? ""));
+      assert.ok(retry, "the issued credential can be saved again without a new exchange");
+      failStorage = false;
+      await act(async () => { retry.click(); await new Promise(resolve => setTimeout(resolve, 30)); });
+      assert.equal(calls.length, 2, "retry must not exchange again");
+    }
+    assert.equal(installed, interruption === "none" || interruption === "storage-failure" ? 1 : 0);
+    assert.equal(runtime.loadToken(), interruption === "none" || interruption === "storage-failure" ? credential : "previous-synthetic-token");
     assert.equal(runtime.loadServerUrl(), interruption === "connection" ? "https://changed.example.test"
       : interruption === "cancel" ? "https://previous.example.test" : "https://console.example.test");
     for (const call of calls) {
