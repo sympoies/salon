@@ -1,5 +1,7 @@
 import { HEADER_COMPACT_STAGES, chooseHeaderCompactStage, updateHeaderCompaction } from "../../src/headerResponsive.ts";
-import { measureUiMarkup } from "./browserLayout.ts";
+import { readFileSync } from "node:fs";
+import { launchPage, type Page } from "./browserPage.ts";
+import { measureUiMarkup, phoneTierScript } from "./browserLayout.ts";
 import { createUiSsrHarness, renderComponent } from "./ssr.ts";
 import { CLEAR_SESSION_FILTERS } from "../../src/sessionFilters.ts";
 
@@ -67,4 +69,32 @@ export const headerMeasure = `
 export function measureHeaderMarkup<T>(markup: string, width: number, script: string, reducedMotion = false, height = 800, chromeArgs: readonly string[] = [], beforeCompaction = ""): T {
   const prelude = `${beforeCompaction}const HEADER_COMPACT_STAGES=${JSON.stringify(HEADER_COMPACT_STAGES)};const chooseHeaderCompactStage=${chooseHeaderCompactStage.toString()};const workspaceHeader=document.querySelector('.workspace-head');if(workspaceHeader)(${updateHeaderCompaction.toString()})(workspaceHeader);`;
   return measureUiMarkup<T>(markup, width, prelude + script, reducedMotion, height, chromeArgs);
+}
+
+let measurementPage: Promise<Page> | undefined;
+export async function closeHeaderMeasurementPage(): Promise<void> {
+  if (measurementPage) await (await measurementPage).close();
+  measurementPage = undefined;
+}
+
+/** Wait for the header measurement rather than relying on Chrome's virtual-time dump. */
+export async function measureHeaderMarkupWhenReady<T>(markup: string, width: number, script: string, beforeCompaction: string): Promise<T> {
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const prelude = `${beforeCompaction}const HEADER_COMPACT_STAGES=${JSON.stringify(HEADER_COMPACT_STAGES)};const chooseHeaderCompactStage=${chooseHeaderCompactStage.toString()};const workspaceHeader=document.querySelector('.workspace-head');if(workspaceHeader)(${updateHeaderCompaction.toString()})(workspaceHeader);`;
+  const frame = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>:root{--ac-safe-area-top:24px}</style>${phoneTierScript}${markup}<script>
+    (async()=>{try {${prelude}${script};result.viewportWidth=innerWidth;parent.document.querySelector('#measurement').textContent=JSON.stringify(result);}
+    catch(error){parent.document.querySelector('#measurement').textContent=JSON.stringify({error:String(error)});}})();</script>`;
+  const page = await (measurementPage ??= launchPage({ protocolWaitMs: 15_000 }));
+  const measured = await page.evaluate<T & { error?: string; viewportWidth: number }>(`new Promise((resolve, reject) => {
+      document.body.replaceChildren();const target=document.createElement('pre');target.id='measurement';document.body.append(target);
+      const finish=()=>{if(!target.textContent)return false;clearTimeout(timer);observer.disconnect();resolve(JSON.parse(target.textContent));return true;};
+      const observer=new MutationObserver(finish);
+      const timer=setTimeout(()=>{observer.disconnect();reject(new Error('Timed out waiting for production header markup measurement'));}, 10000);
+      observer.observe(target,{childList:true,characterData:true,subtree:true});
+      const frame=document.createElement('iframe');frame.style.cssText='display:block;border:0;width:${width}px;height:800px';
+      frame.srcdoc=${JSON.stringify(frame)};document.body.append(frame);
+    })`);
+  if (measured.error) throw new Error(measured.error);
+  if (measured.viewportWidth !== width) throw new Error(`Expected viewport width ${width}, got ${measured.viewportWidth}`);
+  return measured;
 }
