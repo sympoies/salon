@@ -109,6 +109,48 @@ export interface HistoryOwnershipInput extends ProviderOwnershipInput {
   readonly historyId: string;
 }
 
+export interface SuccessionStopIdentity {
+  readonly machine: string;
+  readonly session_id: string;
+  readonly session_incarnation: string;
+}
+export interface SuccessionStopRequest {
+  readonly delegation_id: string;
+  readonly operation_id: string;
+  readonly caller: SuccessionStopIdentity;
+  readonly predecessor: SuccessionStopIdentity;
+}
+export interface SuccessionStopGrant extends SuccessionStopRequest {
+  readonly scope: "succession_stop";
+  readonly owner: string;
+  readonly state: "active" | "revoked";
+  readonly issued_at_epoch: number;
+  readonly retry_until_epoch: number;
+  readonly revoked_at_epoch: number | null;
+}
+export type SuccessionStopIssue =
+  | { readonly kind: "issued" | "repeat"; readonly grant: SuccessionStopGrant }
+  | { readonly kind: "conflict" | "mismatch" | "owner-mismatch"; readonly grant?: undefined };
+
+interface SuccessionStopRow {
+  readonly delegation_id: string; readonly operation_id: string; readonly owner: string;
+  readonly caller_machine: string; readonly caller_session_id: string; readonly caller_incarnation: string;
+  readonly pred_machine: string; readonly pred_session_id: string; readonly pred_incarnation: string;
+  readonly state: "active" | "revoked"; readonly issued_at_epoch: number; readonly retry_until_epoch: number; readonly revoked_at_epoch: number | null;
+}
+
+const SUCCESSION_STOP_RETRY_SECONDS = 24 * 3600;
+
+function successionStopGrant(row: SuccessionStopRow): SuccessionStopGrant {
+  return {
+    delegation_id: row.delegation_id, operation_id: row.operation_id,
+    caller: { machine: row.caller_machine, session_id: row.caller_session_id, session_incarnation: row.caller_incarnation },
+    predecessor: { machine: row.pred_machine, session_id: row.pred_session_id, session_incarnation: row.pred_incarnation },
+    scope: "succession_stop", owner: row.owner, state: row.state,
+    issued_at_epoch: row.issued_at_epoch, retry_until_epoch: row.retry_until_epoch, revoked_at_epoch: row.revoked_at_epoch,
+  };
+}
+
 export interface OwnershipImportInput {
   readonly principalId: string;
   readonly sessions: readonly SessionOwnershipInput[];
@@ -233,6 +275,16 @@ export class AccessStore {
         caller_incarnation TEXT NOT NULL, owner TEXT NOT NULL, digest TEXT NOT NULL, outcome TEXT, created_epoch INTEGER NOT NULL,
         PRIMARY KEY (machine, session_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS succession_stop_grant (
+        delegation_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE, owner TEXT NOT NULL,
+        caller_machine TEXT NOT NULL, caller_session_id TEXT NOT NULL, caller_incarnation TEXT NOT NULL,
+        pred_machine TEXT NOT NULL, pred_session_id TEXT NOT NULL, pred_incarnation TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('active', 'revoked')),
+        issued_at_epoch INTEGER NOT NULL, retry_until_epoch INTEGER NOT NULL, revoked_at_epoch INTEGER
+      ) STRICT;
+      -- One active grant per predecessor tuple; revoked records stay for audit and replay.
+      CREATE UNIQUE INDEX IF NOT EXISTS succession_stop_grant_active
+        ON succession_stop_grant (pred_machine, pred_session_id, pred_incarnation) WHERE state = 'active';
       CREATE TABLE IF NOT EXISTS attested_store_marker (initialized_epoch INTEGER NOT NULL) STRICT;
       INSERT INTO attested_store_marker (initialized_epoch) SELECT CAST(strftime('%s', 'now') AS INTEGER) WHERE NOT EXISTS (SELECT 1 FROM attested_store_marker);
       CREATE TABLE IF NOT EXISTS resume_move_receipt (
@@ -408,6 +460,58 @@ export class AccessStore {
         .run(JSON.stringify({ status, body: { ok: false, error: { code, message: "destination rejected attested create" } } }), key.operationId);
       return true;
     });
+  }
+
+  /**
+   * Registers a grant once. `resolveOwner` runs inside the write transaction so the
+   * ownership check and the one-active-grant check cannot be interleaved with another issue.
+   */
+  issueSuccessionStopGrant(request: SuccessionStopRequest, nowEpoch: number,
+    resolveOwner: () => string | "mismatch" | "owner-mismatch"): SuccessionStopIssue {
+    return this.#resumeMoveWrite(() => {
+      const byId = this.#db.prepare("SELECT * FROM succession_stop_grant WHERE delegation_id = ?").get(request.delegation_id) as unknown as SuccessionStopRow | undefined;
+      if (byId) {
+        const stored = successionStopGrant(byId);
+        const same = stored.operation_id === request.operation_id
+          && (["machine", "session_id", "session_incarnation"] as const).every(key => stored.caller[key] === request.caller[key] && stored.predecessor[key] === request.predecessor[key]);
+        return same ? { kind: "repeat", grant: stored } : { kind: "conflict" };
+      }
+      if (this.#db.prepare("SELECT 1 FROM succession_stop_grant WHERE operation_id = ?").get(request.operation_id)) return { kind: "conflict" };
+      const owner = resolveOwner();
+      if (owner === "mismatch" || owner === "owner-mismatch") return { kind: owner };
+      const active = this.#db.prepare(`SELECT 1 FROM succession_stop_grant WHERE state = 'active'
+        AND pred_machine = ? AND pred_session_id = ? AND pred_incarnation = ?`)
+        .get(request.predecessor.machine, request.predecessor.session_id, request.predecessor.session_incarnation);
+      if (active) return { kind: "mismatch" };
+      this.#db.prepare(`INSERT INTO succession_stop_grant (delegation_id, operation_id, owner, caller_machine, caller_session_id, caller_incarnation,
+        pred_machine, pred_session_id, pred_incarnation, state, issued_at_epoch, retry_until_epoch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`)
+        .run(request.delegation_id, request.operation_id, owner, request.caller.machine, request.caller.session_id, request.caller.session_incarnation,
+          request.predecessor.machine, request.predecessor.session_id, request.predecessor.session_incarnation, nowEpoch, nowEpoch + SUCCESSION_STOP_RETRY_SECONDS);
+      return { kind: "issued", grant: this.successionStopGrant(request.delegation_id)! };
+    });
+  }
+
+  /** Revokes the exact grant once and keeps the record. */
+  revokeSuccessionStopGrant(delegationId: string, nowEpoch: number): SuccessionStopGrant | undefined {
+    return this.#resumeMoveWrite(() => {
+      this.#db.prepare("UPDATE succession_stop_grant SET state = 'revoked', revoked_at_epoch = ? WHERE delegation_id = ? AND state = 'active'").run(nowEpoch, delegationId);
+      return this.successionStopGrant(delegationId);
+    });
+  }
+
+  successionStopGrant(delegationId: string): SuccessionStopGrant | undefined {
+    const row = this.#db.prepare("SELECT * FROM succession_stop_grant WHERE delegation_id = ?").get(delegationId) as unknown as SuccessionStopRow | undefined;
+    return row ? successionStopGrant(row) : undefined;
+  }
+
+  /** Every grant, active or revoked, that binds exactly these two tuples under the owner. */
+  successionStopMatches(owner: string, caller: SuccessionStopIdentity, predecessor: SuccessionStopIdentity): readonly SuccessionStopGrant[] {
+    const rows = this.#db.prepare(`SELECT * FROM succession_stop_grant WHERE owner = ?
+      AND caller_machine = ? AND caller_session_id = ? AND caller_incarnation = ?
+      AND pred_machine = ? AND pred_session_id = ? AND pred_incarnation = ?`)
+      .all(owner, caller.machine, caller.session_id, caller.session_incarnation,
+        predecessor.machine, predecessor.session_id, predecessor.session_incarnation) as unknown as SuccessionStopRow[];
+    return rows.map(successionStopGrant);
   }
 
   #resumeMoveWrite<T>(write: () => T): T {

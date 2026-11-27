@@ -20,6 +20,26 @@ export interface OutboxLifecycle {
 }
 export type StopState = "pending" | "stopped" | "refused" | "unknown";
 export interface StopReceipt { readonly state: StopState }
+/** The delegated successor and the absolute retry deadline an operation is bound to. */
+export interface StopBinding {
+  readonly delegationId: string;
+  readonly callerMachine: string;
+  readonly callerSessionId: string;
+  readonly callerIncarnation: string;
+  readonly retryUntilEpoch: number;
+}
+export interface StopOutcome { readonly stopResult?: "exited" | "already_stopped"; readonly code?: string }
+export interface StopOperation extends StopBinding {
+  readonly state: StopState;
+  readonly stopResult: "exited" | "already_stopped" | null;
+  readonly code: string | null;
+}
+export interface UnresolvedStop { readonly target: OutboxTarget; readonly operationId: string; readonly binding: StopBinding }
+interface StopRow {
+  principal_id: string; machine: string; session_id: string; incarnation: string; state: StopState;
+  delegation_id: string; caller_machine: string; caller_session_id: string; caller_incarnation: string;
+  retry_until_epoch: number; stop_result: "exited" | "already_stopped" | null; code: string | null;
+}
 export interface ExtensionOutboxGrant {
   readonly routeKey: string;
   readonly permission: string;
@@ -126,6 +146,14 @@ export class OutboxStore {
         }
         if (!columns.some(column => column.name === "device_id")) {
           this.#db.exec("ALTER TABLE outbox_items ADD COLUMN device_id TEXT");
+        }
+        const stops = this.#db.prepare("PRAGMA table_info(outbox_stop_operations)").all() as { name: string }[];
+        for (const column of ["delegation_id", "caller_machine", "caller_session_id", "caller_incarnation"]) {
+          if (!stops.some(existing => existing.name === column)) this.#db.exec(`ALTER TABLE outbox_stop_operations ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
+        }
+        if (!stops.some(column => column.name === "retry_until_epoch")) this.#db.exec("ALTER TABLE outbox_stop_operations ADD COLUMN retry_until_epoch INTEGER NOT NULL DEFAULT 0");
+        for (const column of ["stop_result", "code"]) {
+          if (!stops.some(existing => existing.name === column)) this.#db.exec(`ALTER TABLE outbox_stop_operations ADD COLUMN ${column} TEXT`);
         }
         const lifecycle = this.#db.prepare("PRAGMA table_info(outbox_lifecycle)").all() as { name: string }[];
         if (!lifecycle.some(column => column.name === "incarnation")) {
@@ -414,15 +442,12 @@ export class OutboxStore {
       return fence;
     });
   }
-  /** Bind an operation to its issuer and exact target while acquiring the shared lifecycle slot. */
-  beginStop(target: OutboxTarget, operationId: string): StopReceipt {
+  /** Bind an operation to its issuer, exact target, delegated successor and deadline while acquiring the shared lifecycle slot. */
+  beginStop(target: OutboxTarget, operationId: string, binding: StopBinding): StopReceipt {
     return this.#transaction(() => {
-      const existing = this.#db.prepare("SELECT * FROM outbox_stop_operations WHERE operation_id=?").get(operationId) as
-        { principal_id: string; machine: string; session_id: string; incarnation: string; state: StopState } | undefined;
+      const existing = this.#stopRow(operationId);
       if (existing) {
-        if (existing.principal_id !== target.principalId || existing.machine !== target.machine ||
-            existing.session_id !== target.sessionId || existing.incarnation !== target.incarnation)
-          throw new OutboxError("operation-id-conflict", 409);
+        if (!this.#sameStop(existing, target, binding)) throw new OutboxError("operation-id-conflict", 409);
         return { state: existing.state };
       }
       if (this.#db.prepare("SELECT 1 FROM outbox_stop_blocks WHERE machine=? AND session_id=? AND incarnation=?")
@@ -438,35 +463,56 @@ export class OutboxStore {
         const owner = this.lifecycle(target.machine, target.sessionId);
         throw new OutboxError(owner?.operation === "stop" ? "session-stop-busy" : "outbox-lifecycle-pending", 409);
       }
-      this.#db.prepare("INSERT INTO outbox_stop_operations VALUES(?,?,?,?,?,'pending')")
-        .run(operationId, target.principalId, target.machine, target.sessionId, target.incarnation);
+      this.#db.prepare(`INSERT INTO outbox_stop_operations(operation_id,principal_id,machine,session_id,incarnation,state,
+        delegation_id,caller_machine,caller_session_id,caller_incarnation,retry_until_epoch) VALUES(?,?,?,?,?,'pending',?,?,?,?,?)`)
+        .run(operationId, target.principalId, target.machine, target.sessionId, target.incarnation,
+          binding.delegationId, binding.callerMachine, binding.callerSessionId, binding.callerIncarnation, binding.retryUntilEpoch);
       return { state: "pending" };
     });
   }
+  #stopRow(operationId: string): StopRow | undefined {
+    return this.#db.prepare("SELECT * FROM outbox_stop_operations WHERE operation_id=?").get(operationId) as unknown as StopRow | undefined;
+  }
+  #sameStop(row: StopRow, target: OutboxTarget, binding: StopBinding): boolean {
+    return row.principal_id === target.principalId && row.machine === target.machine && row.session_id === target.sessionId
+      && row.incarnation === target.incarnation && row.delegation_id === binding.delegationId && row.caller_machine === binding.callerMachine
+      && row.caller_session_id === binding.callerSessionId && row.caller_incarnation === binding.callerIncarnation && row.retry_until_epoch === binding.retryUntilEpoch;
+  }
   stopReceipt(target: OutboxTarget, operationId: string): StopReceipt {
-    const row = this.#db.prepare("SELECT state FROM outbox_stop_operations WHERE operation_id=? AND principal_id=? AND machine=? AND session_id=? AND incarnation=?")
-      .get(operationId, target.principalId, target.machine, target.sessionId, target.incarnation) as { state: StopState } | undefined;
+    return { state: this.stopOperation(target, operationId).state };
+  }
+  stopOperation(target: OutboxTarget, operationId: string): StopOperation {
+    const row = this.#db.prepare("SELECT * FROM outbox_stop_operations WHERE operation_id=? AND principal_id=? AND machine=? AND session_id=? AND incarnation=?")
+      .get(operationId, target.principalId, target.machine, target.sessionId, target.incarnation) as unknown as StopRow | undefined;
     if (!row) throw new OutboxError("stop-operation-not-found", 404);
-    return { state: row.state };
+    return { state: row.state, stopResult: row.stop_result, code: row.code, delegationId: row.delegation_id, callerMachine: row.caller_machine,
+      callerSessionId: row.caller_session_id, callerIncarnation: row.caller_incarnation, retryUntilEpoch: row.retry_until_epoch };
+  }
+  /** Operations whose outcome is not settled, for read-only reconciliation. */
+  unresolvedStops(): UnresolvedStop[] {
+    const rows = this.#db.prepare("SELECT * FROM outbox_stop_operations WHERE state IN ('pending','unknown')").all() as unknown as (StopRow & { operation_id: string })[];
+    return rows.map(row => ({ operationId: row.operation_id, target: { principalId: row.principal_id, machine: row.machine, sessionId: row.session_id, incarnation: row.incarnation },
+      binding: { delegationId: row.delegation_id, callerMachine: row.caller_machine, callerSessionId: row.caller_session_id, callerIncarnation: row.caller_incarnation, retryUntilEpoch: row.retry_until_epoch } }));
   }
   /** Invoke only after verified stop or a proven refusal before any effect. */
-  resolveStop(target: OutboxTarget, operationId: string, result: "stopped" | "refused" | "unknown"): StopReceipt {
+  resolveStop(target: OutboxTarget, operationId: string, result: "stopped" | "refused" | "unknown", outcome: StopOutcome = {}): StopReceipt {
     return this.#transaction(() => {
-      const receipt = this.stopReceipt(target, operationId);
+      const receipt = this.stopOperation(target, operationId);
       if (receipt.state !== "pending" && receipt.state !== "unknown") {
-        if (receipt.state !== result) throw new OutboxError("operation-id-conflict", 409);
-        return receipt;
+        if (receipt.state !== result || (outcome.stopResult ?? null) !== receipt.stopResult || (outcome.code ?? null) !== receipt.code) throw new OutboxError("operation-id-conflict", 409);
+        return { state: receipt.state };
       }
       if (result === "unknown") {
         this.#db.prepare("UPDATE outbox_stop_operations SET state='unknown' WHERE operation_id=?").run(operationId);
         return { state: "unknown" };
       }
+      if (result === "stopped" ? !outcome.stopResult || outcome.code !== undefined : !outcome.code || outcome.stopResult !== undefined) throw new Error("stop outcome does not match its state");
       const fence = this.#db.prepare("DELETE FROM outbox_lifecycle WHERE machine=? AND session_id=? AND incarnation=? AND owner_token=? AND operation='stop'")
         .run(target.machine, target.sessionId, target.incarnation, operationId);
       if (fence.changes !== 1) throw new OutboxError("outbox-lifecycle-pending", 409);
       if (result === "stopped") this.#db.prepare("INSERT OR IGNORE INTO outbox_stop_blocks VALUES(?,?,?,?)")
         .run(target.machine, target.sessionId, target.incarnation, operationId);
-      this.#db.prepare("UPDATE outbox_stop_operations SET state=? WHERE operation_id=?").run(result, operationId);
+      this.#db.prepare("UPDATE outbox_stop_operations SET state=?,stop_result=?,code=? WHERE operation_id=?").run(result, outcome.stopResult ?? null, outcome.code ?? null, operationId);
       return { state: result };
     });
   }

@@ -144,6 +144,11 @@ export interface EdgeConfig {
   readonly machines: readonly MachineConfig[];
   readonly coordinationRelays?: readonly CoordinationRelayConfig[];
   readonly attestedCreateEnabled?: boolean;
+  readonly successionStopEnabled?: boolean;
+  // The coordinating service's bearer, scoped to the succession stop grant routes only.
+  readonly successionStopIssuerToken?: string;
+  // Machines whose operator asserts a v1 succession stop destination runtime; only these may receive a retransmit.
+  readonly successionStopDestinations?: readonly string[];
   readonly attestedCreateGrants?: readonly { readonly machine: string; readonly session_id: string; readonly role: "steward" }[];
   readonly attestedCreateCredentials?: Readonly<Record<string, string>>;
   // Operator opt-in (AGENT_CONSOLE_RESUME_MOVE) for the resume-move start relay
@@ -644,6 +649,18 @@ function parseAttestedCreateConfig(env: Env, machines: readonly MachineConfig[],
   return { attestedCreateGrants: grants, attestedCreateCredentials: credentials as Record<string, string> };
 }
 
+function parseSuccessionStop(env: Env, reserved: readonly string[], machines: readonly MachineConfig[]): Pick<EdgeConfig, "successionStopEnabled" | "successionStopIssuerToken" | "successionStopDestinations"> {
+  let destinations: unknown;
+  try { destinations = JSON.parse(env.AGENT_CONSOLE_SUCCESSION_STOP_DESTINATIONS ?? "[]"); } catch { throw new Error("succession stop destinations must be valid JSON"); }
+  if (!Array.isArray(destinations) || !destinations.every(name => typeof name === "string" && machines.some(machine => machine.name === name)) || new Set(destinations).size !== destinations.length) {
+    throw new Error("succession stop destinations must list distinct configured machines");
+  }
+  if (!truthy(env.AGENT_CONSOLE_SUCCESSION_STOP)) return { successionStopEnabled: false, successionStopDestinations: destinations };
+  const token = env.AGENT_CONSOLE_SUCCESSION_STOP_ISSUER_TOKEN;
+  if (!isNonEmptyString(token) || Buffer.byteLength(token) < 32 || reserved.includes(token)) throw new Error("succession stop needs a dedicated issuer credential");
+  return { successionStopEnabled: true, successionStopIssuerToken: token, successionStopDestinations: destinations };
+}
+
 export interface LoadConfigOptions {
   /** Permissions declared by the distribution's edge extensions. */
   readonly extraPermissions?: readonly string[];
@@ -699,6 +716,7 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
     globalConcurrency: positive("AGENT_CONSOLE_REMOTE_IMAGE_GLOBAL_CONCURRENCY", remoteImageDefaults.globalConcurrency),
     principalConcurrency: positive("AGENT_CONSOLE_REMOTE_IMAGE_PRINCIPAL_CONCURRENCY", remoteImageDefaults.principalConcurrency),
   };
+  const attestedCreate = parseAttestedCreateConfig(env, machines, coordinationRelays, principals, clientToken);
   return {
     remoteImage,
     host: env.AGENT_CONSOLE_EDGE_HOST ?? "127.0.0.1",
@@ -716,7 +734,9 @@ export function loadConfig(env: Env, options: LoadConfigOptions = {}): EdgeConfi
     coordinationRelays,
     resumeMove: truthy(env.AGENT_CONSOLE_RESUME_MOVE),
     attestedCreateEnabled: truthy(env.AGENT_CONSOLE_ATTESTED_CREATE),
-    ...parseAttestedCreateConfig(env, machines, coordinationRelays, principals, clientToken),
+    ...attestedCreate,
+    ...parseSuccessionStop(env, [...machines.map(machine => machine.token), ...coordinationRelays.flatMap(relay => [relay.token, relay.ingress_token]),
+      ...principals.map(principal => principal.token), clientToken, ...Object.values(attestedCreate.attestedCreateCredentials ?? {})], machines),
     consoleStartServices: parseConsoleStartServices(env.AGENT_CONSOLE_CONSOLE_START_SERVICES, machines, principals, coordinationRelays),
     crossOwnerMessaging: parseCrossOwnerMessaging(env.AGENT_CONSOLE_CROSS_OWNER_MESSAGING, principals),
     crossOwnerSessionAccess: parseCrossOwnerSessionAccess(env.AGENT_CONSOLE_CROSS_OWNER_SESSION_ACCESS, machines, principals),
