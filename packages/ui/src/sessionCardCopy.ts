@@ -3,20 +3,22 @@ import { sessionCopyAction, type SessionLike } from "./format.ts";
 import { writeTerminalClipboardText } from "./terminalClipboard.ts";
 
 export interface SessionCardCopyAction {
-  /** "resume" or "provider-session-id" for core's action, else a copy format id. */
+  /** Core action id or a registered copy format id. */
   readonly id: string;
   readonly label: string;
   readonly value: string;
 }
 
-// Core's own action first, then each registered copy format with a value (#918).
+// Core actions first, then each registered copy format with a value (#918).
 export function sessionCardCopyActions(session: SessionLike, formats: readonly CopyFormat[] = []): readonly SessionCardCopyAction[] {
   const actions: SessionCardCopyAction[] = [];
+  const attach = session.ssh_attach_command || session.attach_command;
+  if (attach) actions.push({ id: "attach", label: "Copy attach command", value: attach });
   const existing = sessionCopyAction(session);
   if (existing) {
     actions.push({
       id: existing.kind === "command" ? "resume" : "provider-session-id",
-      label: existing.kind === "command" ? "Copy resume command" : "Copy provider session ID",
+      label: existing.kind === "command" ? (session.status === "running" ? "Copy resume command (new copy)" : "Copy resume command") : "Copy provider session ID",
       value: existing.value,
     });
   }
