@@ -124,6 +124,22 @@ async function discoverService(base: string, query: Record<string, string> = SER
     { headers: { authorization: `Bearer ${token}` } });
 }
 
+test("peer discovery logs only the count of running sessions without ownership", async t => {
+  const f = await fixture();
+  const logged = t.mock.method(console, "warn", () => {});
+  try {
+    f.state.sourceExtra.push(
+      { id: "unowned-running", session_incarnation: "orphan-inc", status: "running" },
+      { id: "unowned-stopped", session_incarnation: "stopped-inc", status: "stopped" },
+    );
+    const response = await discover(f);
+    assert.equal(response.status, 200);
+    assert.deepEqual(logged.mock.calls.map(call => call.arguments), [
+      [JSON.stringify({ code: "ownership-unknown", count: 1 })],
+    ]);
+  } finally { await f.cleanup(); }
+});
+
 test("admitted service peer discovery uses the admission's owner and machine scope", async () => {
   const f = await fixture();
   try {

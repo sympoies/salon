@@ -40,6 +40,18 @@ export interface SessionStartMark {
   readonly treeDepth?: number;
 }
 
+export interface PendingSessionClaim {
+  readonly machine: string;
+  readonly sessionId: string;
+  readonly principalId: string;
+  readonly parentMachine: string;
+  readonly parentId: string;
+  readonly parentIncarnation: string;
+  readonly operationId: string;
+  readonly startMark: SessionStartMark;
+  readonly expiresAt: number;
+}
+
 export interface ServiceStartOperation {
   readonly sessionId: string;
   readonly machine: string;
@@ -257,6 +269,12 @@ export class AccessStore {
         order_json TEXT NOT NULL,
         revision INTEGER NOT NULL CHECK (revision >= 0),
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS pending_session_claim (
+        machine TEXT NOT NULL, session_id TEXT NOT NULL, principal_id TEXT NOT NULL,
+        parent_machine TEXT NOT NULL, parent_id TEXT NOT NULL, parent_incarnation TEXT NOT NULL,
+        operation_id TEXT NOT NULL, start_mark TEXT NOT NULL, expires_at INTEGER NOT NULL,
+        PRIMARY KEY (machine, session_id)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS service_start_operation (
         relay_machine TEXT NOT NULL,
@@ -899,6 +917,64 @@ export class AccessStore {
       SELECT principal_id FROM history_ownership WHERE machine = ? AND history_id = ?
     `).get(machine, historyId) as unknown as OwnerRow | undefined;
     return row?.principal_id === principalId;
+  }
+
+  savePendingSessionClaim(claim: PendingSessionClaim): boolean {
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      this.#db.prepare("DELETE FROM pending_session_claim WHERE expires_at <= ?").run(Date.now());
+      const row = this.#db.prepare("SELECT count(*) AS count FROM pending_session_claim WHERE principal_id = ?").get(claim.principalId);
+      if (Number(row?.count) >= 128) { this.#db.exec("ROLLBACK"); return false; }
+      this.#db.prepare(`INSERT INTO pending_session_claim VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(claim.machine, claim.sessionId, claim.principalId, claim.parentMachine, claim.parentId,
+          claim.parentIncarnation, claim.operationId, JSON.stringify(claim.startMark), claim.expiresAt);
+      this.#db.exec("COMMIT"); return true;
+    } catch (error) { this.#db.exec("ROLLBACK"); throw error; }
+  }
+
+  pendingSessionClaims(): PendingSessionClaim[] {
+    this.#db.prepare("DELETE FROM pending_session_claim WHERE expires_at <= ?").run(Date.now());
+    const claims: PendingSessionClaim[] = [];
+    let invalid = 0;
+    for (const row of this.#db.prepare("SELECT * FROM pending_session_claim").all() as Array<Record<string, unknown>>) {
+      try {
+        claims.push({ machine: String(row.machine), sessionId: String(row.session_id), principalId: String(row.principal_id),
+          parentMachine: String(row.parent_machine), parentId: String(row.parent_id), parentIncarnation: String(row.parent_incarnation),
+          operationId: String(row.operation_id), startMark: JSON.parse(String(row.start_mark)) as SessionStartMark, expiresAt: Number(row.expires_at) });
+      } catch { invalid++; }
+    }
+    if (invalid) console.warn(JSON.stringify({ code: "pending-session-recovery-failed", count: invalid }));
+    return claims;
+  }
+
+  removePendingSessionClaim(claim: PendingSessionClaim): void {
+    this.#db.prepare("DELETE FROM pending_session_claim WHERE machine = ? AND session_id = ? AND operation_id = ?")
+      .run(claim.machine, claim.sessionId, claim.operationId);
+  }
+
+  removeMatchingPendingSessionClaim(claim: PendingSessionClaim, incarnation: string): void {
+    this.#db.prepare(`DELETE FROM pending_session_claim WHERE machine = ? AND session_id = ? AND operation_id = ?
+      AND EXISTS (SELECT 1 FROM session_ownership WHERE machine = ? AND session_id = ? AND principal_id = ? AND incarnation = ?)`)
+      .run(claim.machine, claim.sessionId, claim.operationId, claim.machine, claim.sessionId, claim.principalId, incarnation);
+  }
+
+  settlePendingSessionClaim(claim: PendingSessionClaim, input: OwnershipImportInput): boolean {
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      const pending = this.#db.prepare("SELECT operation_id FROM pending_session_claim WHERE machine = ? AND session_id = ? AND expires_at > ?")
+        .get(claim.machine, claim.sessionId, Date.now());
+      if (!pending || pending.operation_id !== claim.operationId
+        || !this.ownsSession(claim.principalId, claim.parentMachine, claim.parentId, claim.parentIncarnation)
+        || this.#db.prepare("SELECT 1 FROM machine_preferences WHERE principal_id = ? AND machine = ? AND enabled = 0").get(claim.principalId, claim.machine)
+        || this.sessionGrant(claim.machine, claim.sessionId)) {
+        this.#db.exec("ROLLBACK"); return false;
+      }
+      for (const session of input.sessions) this.claimSession(session);
+      for (const provider of input.providers) this.claimProvider(input.principalId, provider.machine, provider.provider, provider.providerSessionId);
+      this.#db.prepare("DELETE FROM pending_session_claim WHERE machine = ? AND session_id = ? AND operation_id = ?")
+        .run(claim.machine, claim.sessionId, claim.operationId);
+      this.#db.exec("COMMIT"); return true;
+    } catch (error) { this.#db.exec("ROLLBACK"); throw error; }
   }
 
   claimImport(input: OwnershipImportInput, checkOnly = false): void {
