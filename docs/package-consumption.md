@@ -108,7 +108,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.111 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.112 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -214,7 +214,17 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.111`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.112`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.112
+
+Native hosts can register a connection storage adapter before mount. Credentials load and save
+through the adapter without entering WebView storage, URLs or logs; legacy WebView tokens migrate
+into the adapter. Sign-out retains the origin, and changing the origin clears the previous
+credential. Storage errors are reported without falling back to WebView storage, including a
+retry for pairing saves. Rejected writes on authorization failure or self-revocation still sign
+out. Hosts can declare iOS to avoid Android and macOS routing. Existing browser, Android and
+macOS behavior remains unchanged without an adapter (#773).
 
 ### Changes retained in SDK 0.1.111
 
