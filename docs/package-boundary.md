@@ -108,6 +108,31 @@ success, use `record`. On failure, use the typed `error.code`. An accepted
 input enters the shared dispatcher, where its state and receipt reflect
 provider submission.
 
+### Admit on behalf of the target's owner
+
+A route whose recipient authority is external can set `outboxOwnerDispatch: true`.
+The capability is off by default and applies only to that route. The route must then pass
+`ownerPrincipalId` to `admit`, the owner that its authority asserts for the exact target.
+Without the capability, any `ownerPrincipalId` returns `403 forbidden`. With it, a missing
+value returns `400 invalid-request`; there is no wildcard and no fallback to the caller.
+
+The edge accepts the input only when the caller holds the route permission and can access the
+target machine, and the asserted owner currently owns that exact session incarnation.
+The record is dispatched as the owner and stores the caller for audit.
+Every dispatch attempt checks again that the capability exists, the caller still holds the
+permission and machine access, and the owner still owns the incarnation.
+An ownership change refuses the queued item with `outbox-authorization-changed`.
+On-behalf records are not readable through `ctx.conversation`.
+
+Residual risk: a holder of the route permission on a capability route can queue prompts into any
+exact session incarnation it can name, for that session's current owner. This applies on every
+machine the caller and the owner can both access. Grant the permission only to an adapter
+that enforces its own recipient policy.
+
+The outbox store keeps the caller in the existing admission record, so there is no schema
+change and no migration. Rolling back to a build without the capability leaves the item
+queued under the owner. That build refuses it unless the owner also holds the route permission.
+
 See [package consumption](package-consumption.md) for the local producer and isolated
 installed-package check.
 

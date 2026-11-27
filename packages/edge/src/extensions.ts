@@ -38,6 +38,8 @@ export interface EdgeOutboxInput {
   readonly target: EdgeOutboxTarget;
   readonly text: string;
   readonly source: EdgeOutboxSource;
+  /** Only for a route with `outboxOwnerDispatch`: the target's owner as asserted by the extension's authority. */
+  readonly ownerPrincipalId?: string;
 }
 
 export interface EdgeOutboxRecord {
@@ -138,6 +140,11 @@ export interface EdgeRoute {
   readonly methods: readonly EdgeRouteMethod[];
   /** A core permission or one this extension declares; multi-user principals need it. */
   readonly permission: string;
+  /**
+   * Default off. When true, `outbox.admit` requires `ownerPrincipalId` and admits for that
+   * principal only while it owns the exact target session incarnation; the caller is kept for audit.
+   */
+  readonly outboxOwnerDispatch?: boolean;
   handle(ctx: EdgeRouteContext): Promise<void> | void;
 }
 
@@ -241,6 +248,9 @@ export function createEdgeExtensionRegistry(extensions: readonly EdgeExtension[]
         throw new Error(`${key}: methods must be a non-empty subset of GET, POST, PUT, DELETE`);
       }
       if (typeof route.permission !== "string") throw new Error(`${key}: permission is required`);
+      if (route.outboxOwnerDispatch !== undefined && typeof route.outboxOwnerDispatch !== "boolean") {
+        throw new Error(`${key}: outboxOwnerDispatch must be a boolean`);
+      }
       if (!CORE_PERMISSIONS.has(route.permission) && !own.has(route.permission)) {
         throw new Error(`${key}: undeclared permission "${route.permission}"`);
       }

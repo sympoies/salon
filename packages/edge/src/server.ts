@@ -513,11 +513,22 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
         && !principalMayUseSession(principal, target.machine, target.sessionId, target.incarnation))) return null;
     return { principal, machine };
   };
-  const extensionGrantActive = (target: OutboxTarget, grant: ExtensionOutboxGrant, principal: PrincipalConfig): boolean =>
-    extensions.routes.some(route => route.key === grant.routeKey && route.permission === grant.permission
-      && route.methods.some(method => method !== "GET"))
-    && (!config.multiUser || (principal.permissions.includes(grant.permission)
-      && principalMayUseSession(principal, target.machine, target.sessionId, target.incarnation)));
+  // `principal` is the target principal. An on-behalf grant needs the route capability, the caller still
+  // holding the route permission and machine access, and the owner exactly owning the incarnation (root owns nothing here).
+  const extensionGrantActive = (target: OutboxTarget, grant: ExtensionOutboxGrant, principal: PrincipalConfig): boolean => {
+    const route = extensions.routes.find(route => route.key === grant.routeKey && route.permission === grant.permission
+      && route.methods.some(method => method !== "GET"));
+    if (!route) return false;
+    if (grant.callerPrincipalId !== undefined) {
+      const caller = principalById(grant.callerPrincipalId);
+      return route.outboxOwnerDispatch === true && config.multiUser && caller !== undefined && !caller.managedCredential
+        && caller.permissions.includes(grant.permission)
+        && principalCanAccessMachine(caller, target.machine)
+        && accessStore?.ownsSession(principal.id, target.machine, target.sessionId, target.incarnation) === true;
+    }
+    return !config.multiUser || (principal.permissions.includes(grant.permission)
+      && principalMayUseSession(principal, target.machine, target.sessionId, target.incarnation));
+  };
   const outboxDispatcher = outboxStore ? new SharedOutboxDispatcher({
     store: outboxStore, access: outboxAccess, intervalMs: options.outboxPollIntervalMs,
     deviceActive: (id, principal) => deviceCredentials.activeDevice(id, principal),
@@ -1077,6 +1088,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     const outboxOptions: ExtensionOutboxOptions = {
       store: outboxStore, principalId: principal.id, extensionId: route.key.split(":")[0]!,
       grant: { routeKey: route.key, permission: route.permission },
+      ownerDispatch: route.outboxOwnerDispatch === true,
       authorizeRequest,
       authorizeTarget(target, grant) {
         const allowed = outboxAccess(target, "dispatch");
@@ -1086,7 +1098,8 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
           return { status: 403, code: "forbidden" } as const;
         }
         return { machine: allowed.machine, credentialGeneration: outboxCredentialGeneration(allowed.principal, allowed.machine),
-          deviceId: devicePrincipals.get(principal)?.id ?? null };
+          // A device identity belongs to the caller, not to the owner the item is dispatched as.
+          deviceId: grant.callerPrincipalId === undefined ? devicePrincipals.get(principal)?.id ?? null : null };
       },
       dispatch: () => { void outboxDispatcher?.tick(); },
     };

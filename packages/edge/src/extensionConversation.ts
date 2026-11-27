@@ -151,6 +151,8 @@ export function createExtensionConversation(options: ConversationOptions): EdgeC
         if (!entry || entry.target.machine !== exactTarget.machine || entry.target.sessionId !== exactTarget.sessionId) {
           return unavailable("receipt_missing");
         }
+        // Reading an owner's replies is not part of the on-behalf capability.
+        if (entry.grant.callerPrincipalId !== undefined) return { status: "forbidden" };
         const access = options.authorizeTarget(entry.target, entry.grant);
         if ("code" in access) return { status: "forbidden" };
         if (entry.target.incarnation !== exactTarget.sessionIncarnation) return wrongIncarnation;
