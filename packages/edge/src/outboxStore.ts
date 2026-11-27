@@ -77,6 +77,7 @@ interface ItemRow {
 }
 interface TargetRow { scope: string; target: string; revision: number; holds: string }
 const key = (target: OutboxTarget) => JSON.stringify([target.principalId, target.machine, target.sessionId, target.incarnation]);
+const sqliteText = (value: string) => Buffer.from(value, "utf8").toString("utf8");
 const fingerprint = (text: string) => createHash("sha256").update(text).digest("hex");
 const STORE_MAX_ITEMS = 10_000;
 const item = (row: ItemRow): SharedOutboxItem => JSON.parse(row.value) as SharedOutboxItem;
@@ -445,6 +446,8 @@ export class OutboxStore {
   /** Bind an operation to its issuer, exact target, delegated successor and deadline while acquiring the shared lifecycle slot. */
   beginStop(target: OutboxTarget, operationId: string, binding: StopBinding): StopReceipt {
     return this.#transaction(() => {
+      if ([target.principalId, target.machine, target.sessionId, target.incarnation].some(value => sqliteText(value) !== value))
+        throw new OutboxError("outbox-lifecycle-pending", 409);
       const existing = this.#stopRow(operationId);
       if (existing) {
         if (!this.#sameStop(existing, target, binding)) throw new OutboxError("operation-id-conflict", 409);
@@ -453,8 +456,9 @@ export class OutboxStore {
       if (this.#db.prepare("SELECT 1 FROM outbox_stop_blocks WHERE machine=? AND session_id=? AND incarnation=?")
         .get(target.machine, target.sessionId, target.incarnation))
         throw new OutboxError("outbox-lifecycle-pending", 409);
-      for (const candidate of this.targets().filter(value => value.machine === target.machine &&
-        value.sessionId === target.sessionId && value.incarnation === target.incarnation)) {
+      // SQLite replaces lone surrogates when binding text; older JSON targets retain them.
+      for (const candidate of this.targets().filter(value => sqliteText(value.machine) === target.machine &&
+        sqliteText(value.sessionId) === target.sessionId && sqliteText(value.incarnation) === target.incarnation)) {
         if (this.#rows(candidate).some(mayReachProvider)) throw new OutboxError("outbox-pending-replies", 409);
       }
       const acquired = this.#db.prepare("INSERT OR IGNORE INTO outbox_lifecycle(machine,session_id,incarnation,owner_token,operation) VALUES(?,?,?,?,'stop')")
@@ -482,6 +486,8 @@ export class OutboxStore {
     return { state: this.stopOperation(target, operationId).state };
   }
   stopOperation(target: OutboxTarget, operationId: string): StopOperation {
+    if ([target.principalId, target.machine, target.sessionId, target.incarnation].some(value => sqliteText(value) !== value))
+      throw new OutboxError("stop-operation-not-found", 404);
     const row = this.#db.prepare("SELECT * FROM outbox_stop_operations WHERE operation_id=? AND principal_id=? AND machine=? AND session_id=? AND incarnation=?")
       .get(operationId, target.principalId, target.machine, target.sessionId, target.incarnation) as unknown as StopRow | undefined;
     if (!row) throw new OutboxError("stop-operation-not-found", 404);

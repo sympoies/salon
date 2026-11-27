@@ -34,7 +34,8 @@ running incarnation: a legacy fence could protect a later uncertain operation th
 admitted no replies.
 
 All edge writers must be upgraded together; do not run an old writer against the migrated
-store.
+store. After any verified stop, do not roll the edge back to a version before the stop
+fence introduced in #693: older writers ignore the retained stop blocks.
 
 A legacy fence stays closed until an operator verifies its provenance. Automatic recovery
 of arbitrary legacy operations would need authoritative lifecycle evidence from the
