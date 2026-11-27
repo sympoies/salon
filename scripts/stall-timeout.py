@@ -42,6 +42,11 @@ def stop(process: subprocess.Popen) -> None:
             os.killpg(pgid, sig)
         except ProcessLookupError:
             break
+        except PermissionError:
+            # macOS can report EPERM for an exited-only process group.
+            if sys.platform != "darwin":
+                raise
+            break
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             process.poll()  # reap the leader so only live members keep the group
