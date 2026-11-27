@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if (( BASH_VERSINFO[0] < 4 )); then
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  rm -f "$repo_root/.cache/agent-validation/project-dev.ok"
+  printf 'Bash 4 or newer is required. Install a modern Bash and put it first on PATH, then run bash .agents/scripts/pre-pr.sh.\n' >&2
+  exit 2
+fi
+
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo_root"
 # Run the configured command under this shell's `set -euo pipefail` rather

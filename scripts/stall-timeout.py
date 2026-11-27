@@ -26,6 +26,11 @@ def group_alive(pgid: int) -> bool:
         os.killpg(pgid, 0)
     except ProcessLookupError:
         return False
+    except PermissionError:
+        # macOS can report EPERM when the group contains only exited processes.
+        if sys.platform != "darwin":
+            raise
+        return False
     return True
 
 

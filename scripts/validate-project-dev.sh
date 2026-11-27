@@ -6,6 +6,12 @@ cd "$repo_root"
 marker=".cache/agent-validation/project-dev.ok"
 rm -f "$marker"
 
+if (( BASH_VERSINFO[0] < 4 )); then
+  printf 'Bash 4 or newer is required. Install a modern Bash and put it first on PATH, then run the validation again.\n' >&2
+  exit 2
+fi
+
+
 scope=full
 suite=""
 case "${1:-}" in
@@ -25,6 +31,9 @@ if [[ -n "$suite" ]]; then
 fi
 case "$scope" in docs|edge|ui|full) ;; *) exit 2 ;; esac
 printf 'Validation scope: %s\n' "$scope"
+if [[ "$(uname -s)" == Darwin ]]; then
+  printf 'macOS partial validation: hosted Linux CI is the full gate; no validation tests are skipped on macOS.\n'
+fi
 
 for tool in git python3 shellcheck devlog; do
   command -v "$tool" >/dev/null || {
@@ -57,6 +66,10 @@ step "workspace build" pnpm --filter @salon/workspace run build
 
 if [[ "$scope" != full ]]; then
   printf 'Scoped package validation passed; full validation marker not written.\n'
+  exit 0
+fi
+if [[ "$(uname -s)" == Darwin ]]; then
+  printf 'macOS partial validation passed; full validation marker not written.\n'
   exit 0
 fi
 mkdir -p "$(dirname "$marker")"

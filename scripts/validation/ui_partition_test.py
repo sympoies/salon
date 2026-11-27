@@ -133,7 +133,7 @@ with open(os.environ["CALLS"], "a") as output:
             # A memory-scope wrapper first on PATH re-resolves `node` by name,
             # like the host's wrapper: the self-test's own node must not re-enter it.
             scope = Path(scope_directory) / "node"
-            scope.write_text('''#!/bin/bash
+            scope.write_text('''#!/usr/bin/env bash
 PATH="${PATH//${BASH_SOURCE[0]%/*}:/}"
 exec node "$@"
 ''')
