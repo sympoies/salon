@@ -283,7 +283,11 @@ export class SharedOutboxClient {
     if (running) return running;
     if (!this.active() || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
     const operation = this.synchronize(target).catch(error => {
-      if (this.active()) { this.errors.set(key, errorText(error)); this.changed(); }
+      if (this.active()) {
+        if (this.state(target).admissions.length) this.errors.set(key, errorText(error));
+        else this.errors.delete(key);
+        this.changed();
+      }
     }).finally(() => this.working.delete(key));
     this.working.set(key, operation); return operation;
   }
@@ -292,6 +296,7 @@ export class SharedOutboxClient {
     // before contacting the server; ready also resolves after a storage failure.
     await this.ready; await this.db; this.requireActive();
     let row = await this.acceptSnapshot(target, await readSharedOutbox(target)); this.requireActive();
+    if (!row.admissions.length && this.errors.delete(this.key(target))) this.changed();
     // The active host snapshot can disprove this target. Never upload an old
     // local intention to a replacement; historical server reads remain useful.
     const live = this.currentSessions?.find(session => session.machine === target.machine && session.id === target.id);
@@ -334,6 +339,7 @@ export class SharedOutboxClient {
     if (!this.timer) {
       this.timer = setInterval(() => { void this.tick(); }, 3_000);
       window.addEventListener("online", this.wake); window.addEventListener("focus", this.wake);
+      document.addEventListener("visibilitychange", this.wake);
       void this.tick();
     }
     return () => {
@@ -341,6 +347,7 @@ export class SharedOutboxClient {
       if (this.users <= 0 && this.timer) {
         clearInterval(this.timer); this.timer = undefined;
         window.removeEventListener("online", this.wake); window.removeEventListener("focus", this.wake);
+        document.removeEventListener("visibilitychange", this.wake);
       }
     };
   }
@@ -353,7 +360,7 @@ export class SharedOutboxClient {
     return () => { const current = this.watched.get(key); if (current && current.count > 1) current.count--; else this.watched.delete(key); stop(); };
   }
   observe(sessions: readonly Session[]) { this.currentSessions = sessions; }
-  close() { this.stopped = true; if (this.timer) clearInterval(this.timer); window.removeEventListener("online", this.wake); window.removeEventListener("focus", this.wake); }
+  close() { this.stopped = true; if (this.timer) clearInterval(this.timer); window.removeEventListener("online", this.wake); window.removeEventListener("focus", this.wake); document.removeEventListener("visibilitychange", this.wake); }
 }
 const clients = new Map<string, SharedOutboxClient>();
 export function sharedOutboxClient(): SharedOutboxClient {

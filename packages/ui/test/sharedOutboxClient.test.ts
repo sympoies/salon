@@ -110,6 +110,7 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
   const module = await ssr.loadModule<typeof import("../src/sharedOutboxClient.ts")>("/src/sharedOutboxClient.ts");
   const client = module.sharedOutboxClient(), target = module.sharedOutboxTarget(session);
   return { admissions, patches, requests, principalHeaders, remotePrincipal(value: string) { remotePrincipal = value; }, ssr, container, editor, snapshot: () => snapshot, settle, client, target, module,
+    failRead() { nextRead = async () => { throw new TypeError("Synthetic read failure"); }; },
     blockRead() {
       let release = () => {}, started = () => {};
       const entered = new Promise<void>(resolve => { started = resolve; });
@@ -194,6 +195,56 @@ test("fixture setup failure releases resources", async () => {
   assert.equal(child.error, undefined, `fixture subprocess did not exit: ${child.error?.message}`);
   assert.equal(child.status, 0, child.stderr || child.stdout);
   assert.match(child.stdout, /fixture setup failure releases resources/);
+});
+
+test("failed background reads without admissions do not claim text is kept", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    h.failRead(); await h.client.sync(h.target);
+    assert.equal(h.client.error(h.target), undefined);
+    await h.client.sync(h.target);
+    assert.equal(h.client.error(h.target), undefined);
+  } finally { await h.close(); }
+});
+
+test("retry reconciles a pending admission with its original intent", async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    h.online(false);
+    const id = await h.client.enqueue(session, "pending reply");
+    await h.showReplies(); await h.settle();
+    h.online(true); h.failRead(); await act(async () => { await h.client.sync(h.target); });
+    assert.match(h.container.textContent ?? "", /text is kept/);
+    const retry = [...h.container.querySelectorAll("button")].find(button => button.textContent === "Retry now");
+    assert.ok(retry);
+    await act(async () => retry.click()); await h.settle();
+    assert.equal(h.admissions[0]?.id, id);
+    assert.equal(h.client.error(h.target), undefined);
+  } finally { await h.close(); }
+});
+
+for (const recovery of ["online", "focus", "visibilitychange"] as const) test(`${recovery} reconciles a pending warning`, async () => {
+  const h = await fixture(new IDBFactory(), false);
+  try {
+    h.online(false);
+    const id = await h.client.enqueue(session, "pending reply");
+    await h.showReplies(); await h.settle();
+    h.online(true); h.failRead(); await act(async () => { await h.client.sync(h.target); });
+    assert.match(h.client.error(h.target) ?? "", /text is kept/);
+    h.server({ revision: 1, compose_holds: [], items: [{ id, text: "pending reply", state: "queued", revision: 1,
+      session_incarnation: "inc-1", created_at: 1, updated_at: 1, request_id: null, edit_hold: null, receipt: null, error_code: null }] });
+    const view = h.container.ownerDocument.defaultView!;
+    if (recovery === "online") h.online(false);
+    if (recovery === "visibilitychange") Object.defineProperty(view.document, "visibilityState", { configurable: true, value: "hidden" });
+    await h.settle();
+    if (recovery === "online") h.online(true);
+    if (recovery === "visibilitychange") Object.defineProperty(view.document, "visibilityState", { configurable: true, value: "visible" });
+    await act(async () => { (recovery === "visibilitychange" ? view.document : view).dispatchEvent(new view.Event(recovery)); });
+    await h.settle();
+    assert.equal(h.client.error(h.target), undefined);
+    assert.equal(h.client.state(h.target).admissions.length, 0);
+    assert.equal(h.admissions.length, 0);
+  } finally { await h.close(); }
 });
 
 test("an admitted reply shows Sending without editing controls", async () => {

@@ -102,7 +102,8 @@ export function SharedOutgoingReplies({ session, messages = [] }: {
       <OutgoingBubble text={draft.text} uploadSessionId={session.id} />
     </div>)}
     {visibleRows.map(row => <div key={row.key}>
-      {client.error(row.target) ? <p role="alert" className="history-outgoing-note">{client.error(row.target)}</p> : null}
+      {client.error(row.target) ? <div><p role="alert" className="history-outgoing-note">{client.error(row.target)}</p>
+        {row.admissions.length ? <button type="button" className="btn ghost" onClick={() => void client.sync(row.target)}>Retry now</button> : null}</div> : null}
       {row.admissions.map(item => <article key={item.id} className="history-message is-user history-outgoing-reply" data-status="uploading">
         <div className="history-outgoing-body">
           <OutgoingBubble text={item.text} uploadSessionId={session.id} attachments={row.attachments?.[item.id]} />
