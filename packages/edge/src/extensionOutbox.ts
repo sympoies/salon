@@ -18,6 +18,8 @@ export interface ExtensionOutboxOptions {
   readonly extensionId: string;
   readonly principalId: string;
   readonly grant: ExtensionOutboxGrant;
+  /** The route declares the on-behalf capability. */
+  readonly ownerDispatch: boolean;
   authorizeRequest(write: boolean): EdgeOutboxError | undefined;
   authorizeTarget(target: OutboxTarget, grant: ExtensionOutboxGrant): TargetAccess | EdgeOutboxError;
   dispatch(): void;
@@ -51,7 +53,7 @@ async function run<Status extends 200 | 201>(action: () => Promise<EdgeOutboxRes
 }
 
 export function createExtensionOutbox(options: ExtensionOutboxOptions): EdgeOutbox {
-  const { store, principalId, extensionId, grant } = options;
+  const { store, principalId, extensionId, ownerDispatch } = options;
   const unavailable = { status: 503, code: "durability-unavailable" } as const;
   const missing = { status: 404, code: "input-not-found" } as const;
   const invalid = { status: 400, code: "invalid-request" } as const;
@@ -86,7 +88,10 @@ export function createExtensionOutbox(options: ExtensionOutboxOptions): EdgeOutb
       const requestError = options.authorizeRequest(true);
       if (requestError) return failure(requestError);
       if (!store) return failure(unavailable);
-      const { inputId, target, text, source } = input ?? {};
+      const { inputId, target, text, source, ownerPrincipalId } = input ?? {};
+      // Without the capability an asserted owner is refused, never ignored; with it the owner is mandatory.
+      if (!ownerDispatch && ownerPrincipalId !== undefined) return failure({ status: 403, code: "forbidden" });
+      if (ownerDispatch && (typeof ownerPrincipalId !== "string" || !ownerPrincipalId)) return failure(invalid);
       if (!isPromptRequestId(inputId) || !target || typeof target.machine !== "string" || !target.machine
         || !isPromptRequestId(target.sessionId) || !isPromptIncarnation(target.sessionIncarnation)
         || typeof text !== "string" || !source || !inputChannel(source.channel)
@@ -99,16 +104,17 @@ export function createExtensionOutbox(options: ExtensionOutboxOptions): EdgeOutb
 
       const identity = scopedKey(source.channel, inputId);
       const admission = {
-        target: { machine: target.machine, sessionId: target.sessionId, incarnation: target.sessionIncarnation, principalId },
+        target: { machine: target.machine, sessionId: target.sessionId, incarnation: target.sessionIncarnation,
+          principalId: ownerDispatch ? ownerPrincipalId! : principalId },
         source: { channel: source.channel, label: source.label, prefix: source.prefix },
-        grant,
+        grant: ownerDispatch ? { ...options.grant, callerPrincipalId: principalId } : options.grant,
       };
       const existing = store.extensionInput(identity);
       const observedTarget = existing?.target ?? admission.target;
       // Capture the fence before the network observation so a late result
       // cannot clear a newer lifecycle operation.
       const fence = existing ? undefined : store.lifecycle(observedTarget.machine, observedTarget.sessionId);
-      return withSession<200 | 201>(observedTarget, existing?.grant ?? grant, existing ? "replay" : "admit", (access, running) => {
+      return withSession<200 | 201>(observedTarget, existing?.grant ?? admission.grant, existing ? "replay" : "admit", (access, running) => {
         if (fence && running) store.releaseObsoleteLifecycle(fence, observedTarget.incarnation);
         const result = store.admitExtensionInput(identity, admission, text, access.credentialGeneration, access.deviceId);
         if (result.created) options.dispatch();

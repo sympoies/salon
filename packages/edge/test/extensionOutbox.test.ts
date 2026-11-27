@@ -8,7 +8,7 @@ import { SHARED_OUTBOX_MAX_ITEMS } from "@agent-console/shared/shared-outbox";
 import test, { type TestContext } from "node:test";
 import { AccessStore } from "../src/accessStore.ts";
 import { credentialHash, DeviceCredentialStore } from "../src/deviceCredentials.ts";
-import type { EdgeOutboxInput, EdgeOutboxResult, EdgeExtension } from "../src/extensions.ts";
+import type { EdgeOutboxInput, EdgeOutboxResult, EdgeExtension, EdgeRoute } from "../src/extensions.ts";
 import { OutboxStore } from "../src/outboxStore.ts";
 import { createEdgeServer } from "../src/server.ts";
 import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
@@ -22,6 +22,7 @@ const input: EdgeOutboxInput = {
 const key = { inputId: input.inputId, channel: input.source.channel };
 const primaryToken = "primary-fixture";
 const secondaryToken = "secondary-fixture";
+const bridgeToken = "bridge-fixture";
 
 async function fixture(t: TestContext, outboxPollIntervalMs = 60_000) {
   const directory = mkdtempSync(join(tmpdir(), "extension-outbox-"));
@@ -61,19 +62,23 @@ async function fixture(t: TestContext, outboxPollIntervalMs = 60_000) {
   });
   const upstream = await listenOnLoopback(daemon);
   const results: EdgeOutboxResult<200 | 201>[] = [];
-  const extension: EdgeExtension = { id: "fixture", routes: [{
-    id: "inputs", pattern: "/api/ext/fixture/inputs/:inputId", methods: ["PUT", "GET"], permission: "debug",
-    async handle(ctx) {
-      const result = ctx.method === "PUT" ? await ctx.outbox.admit(await ctx.readJsonBody() as EdgeOutboxInput)
-        : await ctx.outbox.get({ channel: input.source.channel, inputId: ctx.params.inputId! });
-      results.push(result);
-      ctx.sendJson(result.status, result);
-    },
-  }] };
+  const handle: EdgeRoute["handle"] = async ctx => {
+    const result = ctx.method === "PUT" ? await ctx.outbox.admit(await ctx.readJsonBody() as EdgeOutboxInput)
+      : await ctx.outbox.get({ channel: input.source.channel, inputId: ctx.params.inputId! });
+    results.push(result);
+    ctx.sendJson(result.status, result);
+  };
+  const extension: EdgeExtension = { id: "fixture", permissions: ["relay"], routes: [
+    { id: "inputs", pattern: "/api/ext/fixture/inputs/:inputId", methods: ["PUT", "GET"], permission: "debug", handle },
+    { id: "relay", pattern: "/api/ext/fixture/relay/:inputId", methods: ["PUT", "GET"], permission: "relay",
+      outboxOwnerDispatch: true, handle },
+    { id: "plain-relay", pattern: "/api/ext/fixture/plain-relay/:inputId", methods: ["PUT", "GET"], permission: "relay", handle },
+  ] };
   const config = makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: path,
     principals: [
       { id: "primary", token: primaryToken, machines: ["fixture"], permissions: ["debug"] },
       { id: "secondary", token: secondaryToken, machines: ["fixture"], permissions: ["debug"] },
+      { id: "bridge", token: bridgeToken, machines: ["fixture"], permissions: ["relay"] },
       { id: "viewer", token: "viewer-fixture", machines: ["fixture"], permissions: [] },
     ],
     machines: [{ name: "fixture", url: upstream.base, token: "upstream-fixture" }] });
@@ -88,13 +93,13 @@ async function fixture(t: TestContext, outboxPollIntervalMs = 60_000) {
     devices.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  const call = (method: string, token: string, value?: EdgeOutboxInput) => fetch(
-    `${base}/api/ext/fixture/inputs/${value?.inputId ?? key.inputId}`, {
+  const call = (method: string, token: string, value?: EdgeOutboxInput, route = "inputs") => fetch(
+    `${base}/api/ext/fixture/${route}/${value?.inputId ?? key.inputId}`, {
       method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: value && JSON.stringify(value),
     });
   return {
-    call, posts, results, initialDispatchObserved: initialDispatchObserved.promise, startSession: () => { running = true; },
+    call, path, posts, results, initialDispatchObserved: initialDispatchObserved.promise, startSession: () => { running = true; },
     issueDevice() {
       const { id, code } = devices.create("primary", primaryToken, undefined, 60_000);
       const verifier = "a".repeat(43);
@@ -223,4 +228,80 @@ test("extension records retain their receipt and idempotency after outbox compac
     { created: false, entry: submitted });
   assert.throws(() => store.admitExtensionInput(identity, admission, "Changed text", "fixture-generation", null),
     /outbox-intent-conflict/);
+});
+
+const owned = { ...input, ownerPrincipalId: "primary" };
+type OwnerInput = EdgeOutboxInput & { ownerPrincipalId?: string };
+const relay = (f: Awaited<ReturnType<typeof fixture>>, method: string, token: string, value?: OwnerInput, route = "relay") =>
+  f.call(method, token, value as EdgeOutboxInput | undefined, route);
+function stored(path: string) {
+  const db = new DatabaseSync(path);
+  try {
+    const admission = db.prepare("SELECT admission FROM outbox_extension_inputs").all() as Array<{ admission: string }>;
+    const items = db.prepare("SELECT scope, value FROM outbox_items").all() as Array<{ scope: string; value: string }>;
+    return { admissions: admission.map(row => JSON.parse(row.admission)), items: items.map(row => ({ scope: row.scope, ...JSON.parse(row.value) })) };
+  } finally { db.close(); }
+}
+async function until(condition: () => boolean, message: string) {
+  const deadline = Date.now() + 3000;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, message);
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
+
+test("an on-behalf route admits for the true owner, dispatches in the owner's scope and stores owner and caller", async t => {
+  const f = await fixture(t, 50);
+  const admitted = await relay(f, "PUT", bridgeToken, owned);
+  assert.equal(admitted.status, 201, JSON.stringify(await admitted.clone().json()));
+  const { record } = await admitted.json();
+  assert.deepEqual(record.target, input.target);
+  const [admission] = stored(f.path).admissions;
+  assert.equal(admission.target.principalId, "primary", "the dispatch principal is the owner");
+  assert.deepEqual(admission.grant, { routeKey: "fixture:relay", permission: "relay", callerPrincipalId: "bridge" });
+  assert.equal(stored(f.path).items[0]!.scope, JSON.stringify(["primary", input.target.machine, input.target.sessionId, input.target.sessionIncarnation]));
+  assert.equal((await relay(f, "PUT", bridgeToken, owned)).status, 200, "replay by the same caller");
+  await expectError(await relay(f, "PUT", bridgeToken, { ...owned, text: "Changed" }), 409, "input-id-conflict");
+
+  f.startSession();
+  await until(() => f.posts.length > 0, "the owner-bound item must dispatch");
+  assert.deepEqual(f.posts, [input.source.prefix + input.text]);
+  const read = await relay(f, "GET", bridgeToken);
+  assert.equal((await read.json()).record.state, "submitted");
+});
+
+test("an on-behalf route refuses a wrong owner, a stale incarnation, a missing owner and a caller without the route permission", async t => {
+  const f = await fixture(t);
+  await expectError(await relay(f, "PUT", bridgeToken, { ...owned, ownerPrincipalId: "secondary" }), 403, "forbidden");
+  await expectError(await relay(f, "PUT", bridgeToken, { ...owned, ownerPrincipalId: "bridge" }), 403, "forbidden");
+  await expectError(await relay(f, "PUT", bridgeToken, { ...owned, target: { ...input.target, sessionIncarnation: "stale-incarnation" } }), 403, "forbidden");
+  await expectError(await relay(f, "PUT", bridgeToken, input), 400, "invalid-request");
+  await expectError(await relay(f, "PUT", bridgeToken, { ...owned, ownerPrincipalId: "*" }), 403, "forbidden");
+  // Core refuses a principal without the route permission before the extension runs.
+  assert.equal((await relay(f, "PUT", secondaryToken, owned)).status, 403);
+  assert.equal((await relay(f, "PUT", primaryToken, owned)).status, 403);
+  assert.deepEqual(stored(f.path).admissions, [], "no refused request leaves a record");
+});
+
+test("a route without the capability refuses an asserted owner and keeps plain admission unchanged", async t => {
+  const f = await fixture(t);
+  await expectError(await relay(f, "PUT", bridgeToken, owned, "plain-relay"), 403, "forbidden");
+  await expectError(await relay(f, "PUT", bridgeToken, input, "plain-relay"), 403, "forbidden");
+  await expectError(await relay(f, "PUT", primaryToken, owned, "inputs"), 403, "forbidden");
+  assert.equal((await f.call("PUT", primaryToken, input)).status, 201);
+  assert.deepEqual(stored(f.path).admissions, [{
+    target: { machine: input.target.machine, sessionId: input.target.sessionId, incarnation: input.target.sessionIncarnation, principalId: "primary" },
+    source: input.source, grant: { routeKey: "fixture:inputs", permission: "debug" },
+  }]);
+});
+
+test("dispatch stops after the owner changes", async t => {
+  const f = await fixture(t, 50);
+  assert.equal((await relay(f, "PUT", bridgeToken, owned)).status, 201);
+  f.transferSession();
+  f.startSession();
+  await until(() => stored(f.path).items[0]?.state === "refused", "ownership change must refuse the queued item");
+  assert.equal(stored(f.path).items[0]!.error_code, "outbox-authorization-changed");
+  assert.deepEqual(f.posts, []);
+  await expectError(await relay(f, "GET", bridgeToken), 403, "forbidden");
 });

@@ -43,6 +43,8 @@ interface StopRow {
 export interface ExtensionOutboxGrant {
   readonly routeKey: string;
   readonly permission: string;
+  /** Present only for an on-behalf admission, whose target principal is the owner. */
+  readonly callerPrincipalId?: string;
 }
 export interface ExtensionOutboxKey extends EdgeOutboxInputKey {
   readonly principalId: string;
