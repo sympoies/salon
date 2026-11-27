@@ -215,7 +215,8 @@ popover stays within its panel (#763), and Codex rate-limit resets use the accou
 
 Pending session recovery claims expire sooner when the child is absent and settle when another
 principal owns the session (#767). On-behalf outbox limits document credential rotation and
-per-caller quotas (#765).
+per-caller quotas (#765). Test coverage also adds on-behalf reply ordering boundaries (#766)
+and protects key row scrollbar styles (#764).
 
 ### Changes retained in SDK 0.1.110
 
