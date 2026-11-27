@@ -212,8 +212,9 @@ The release sanitizes attachment display names (#692), fences outbox stops acros
 principals (#693), preserves paired device names on rename (#701), and adds
 attested root and succession-stop relays (#703, #719). Both relays require an
 operator flag and remain disabled by default. It rejects duplicate authorization
-headers on coordination relay routes (#733), improves macOS validation cleanup (#721, #727), explains unavailable conversation images and offers their
-source (#731), and adds a disclosure cue for clipped status notices (#732).
+headers on coordination relay routes (#733), improves macOS validation cleanup
+(#721, #727), explains unavailable conversation images and offers their source
+(#731), and adds a disclosure cue for clipped status notices (#732).
 
 ### Changes retained in SDK 0.1.107
 
