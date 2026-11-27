@@ -8,11 +8,13 @@ import react from "@vitejs/plugin-react";
 import { build } from "vite";
 import { launchPage } from "./support/browserPage.ts";
 
+const longMessage = "A long status message that cannot fit in the available notice space and should show its full details when opened.";
+
 const fixture = `import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {StatusNotice} from '/src/StatusNotice.tsx';
 import '/src/styles.css';
-const message = location.hash === '#short' ? 'Ready' : 'A long status message that cannot fit in the available notice space and should show its full details when opened.';
+const message = location.hash === '#short' ? 'Ready' : ${JSON.stringify(longMessage)};
 const root = createRoot(document.getElementById('root'));
 window.renderNotice = (kind, inline) => root.render(React.createElement(StatusNotice,{inline,notice:{kind,message},onDismiss(){}}));
 window.renderNotice('attention', true);`;
@@ -49,6 +51,7 @@ test("notice disclosure follows clipping and keyboard focus", async t => {
     }
     const state = await page.evaluate(`(() => { const b=document.querySelector('.connection-notice-trigger'); return {button:!!b, cue:!!b?.querySelector('.connection-notice-cue') && getComputedStyle(b.querySelector('.connection-notice-cue')).transform === 'none', decoration:b && getComputedStyle(b).textDecorationLine}; })()`);
     assert.deepEqual(state, {button:true,cue:true,decoration:"none"}, `${width} ${theme} clipped`);
+    assert.equal(await page.accessibilityTextCount(longMessage), 1, "clipped notice is announced once");
     assert.deepEqual(await page.evaluate(`(() => { const cue=document.querySelector('.connection-notice-cue'), notice=cue.closest('.connection-notice'), dismiss=notice.querySelector('.connection-notice-dismiss'); const c=cue.getBoundingClientRect(), n=notice.getBoundingClientRect(), d=dismiss.getBoundingClientRect(); return {tone:getComputedStyle(cue).color===getComputedStyle(notice).color, inside:c.right<=n.right, width:d.width, height:d.height}; })()`), {tone:true,inside:true,width:16,height:16}, "cue stays inside the notice and dismiss remains usable");
     await page.evaluate(`(() => { const root=document.querySelector('#root'), message=document.querySelector('.connection-notice-message'), full=message.querySelector('.connection-notice-message-full'); root.style.width = (root.clientWidth + full.scrollWidth - message.clientWidth - 4) + 'px'; })()`);
     await page.evaluate("new Promise(resolve => setTimeout(resolve, 200))");
@@ -59,7 +62,7 @@ test("notice disclosure follows clipping and keyboard focus", async t => {
     await page.evaluate("document.querySelector('#root').style.width = '200px'");
     await page.evaluate("new Promise(resolve => setTimeout(resolve, 100))");
     await page.pressTab();
-    assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.connection-notice-trigger')).outlineStyle !== 'none'"), true);
+    assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.connection-notice-trigger')).outlineWidth"), "2px", "keyboard focus uses the notice focus ring");
     const point = await page.evaluate<[number, number]>("(() => { const r = document.querySelector('.connection-notice-trigger').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()");
     await page.tap(...point);
     assert.equal(await page.evaluate("document.querySelector('.connection-notice-trigger').getAttribute('aria-expanded') === 'true' && getComputedStyle(document.querySelector('.connection-notice-cue')).transform !== 'none' && !!document.querySelector('.connection-notice-detail')"), true);
@@ -84,6 +87,7 @@ test("notice disclosure follows clipping and keyboard focus", async t => {
     await page.navigate(`${pathToFileURL(file).href}?short#short`);
     await page.evaluate("new Promise(resolve => setTimeout(resolve, 150))");
     assert.equal(await page.evaluate("!!document.querySelector('.connection-notice-trigger')"), false, `${width} ${theme} short`);
+    assert.equal(await page.accessibilityTextCount("Ready"), 1, "short notice is announced once");
     await page.evaluate("document.querySelector('#root').style.width = '135px'");
     await page.evaluate("new Promise(resolve => setTimeout(resolve, 100))");
     assert.equal(await page.evaluate("!!document.querySelector('.connection-notice-trigger')"), false, `${width} ${theme} short at compact width`);

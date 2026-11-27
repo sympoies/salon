@@ -10,6 +10,7 @@ export interface Page {
   tap(x: number, y: number): Promise<void>;
   pressEnter(): Promise<void>;
   pressTab(): Promise<void>;
+  accessibilityTextCount(value: string): Promise<number>;
   pressEscape(): Promise<void>;
   navigate(url: string): Promise<void>;
   evaluate<T>(expression: string): Promise<T>;
@@ -103,6 +104,10 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
     await send("Page.enable");
     await send("Runtime.enable");
     return {
+      async accessibilityTextCount(value) {
+        const { nodes } = await send<{ nodes: { ignored: boolean; role?: { value: string }; name?: { value: string } }[] }>("Accessibility.getFullAXTree");
+        return nodes.filter(node => !node.ignored && node.role?.value === "StaticText" && node.name?.value === value).length;
+      },
       async pressTab() {
         const key = { key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 };
         await send("Input.dispatchKeyEvent", { type: "keyDown", ...key });

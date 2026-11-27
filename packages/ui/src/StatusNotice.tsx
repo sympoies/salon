@@ -69,7 +69,7 @@ export function StatusNotice({ notice, onDismiss, surface = "dashboard", inline 
         ) : <span className="connection-notice-message">{notice.message}</span>}
         {unreachable ? <><span className="connection-notice-retrying">Reconnecting</span><span className="connection-notice-spinner" aria-hidden="true" /></> : null}
         <IconButton preset="compact" className="connection-notice-dismiss" type="button" aria-label="Dismiss status notice" onClick={onDismiss}><CloseIcon /></IconButton>
-        {expandable ? <span className="sr-only">{notice.message}</span> : null}
+        {expandable && clipped ? <span className="sr-only">{notice.message}</span> : null}
       </span>
       {notice.kind === "host-offline" ? <button type="button" className="connection-notice-dot" {...detailControl}>
         <span className="sr-only">{detailControl["aria-label"]}</span>
