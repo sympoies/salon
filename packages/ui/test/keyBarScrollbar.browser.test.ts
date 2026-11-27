@@ -6,14 +6,14 @@ interface KeyBarGeometry {
   readonly coarse: boolean;
   readonly overflows: boolean;
   readonly overflowX: string;
+  readonly scrollLeft: number;
   readonly scrollbarThickness: number;
   readonly rowHeight: number;
   readonly expectedRowHeight: number;
 }
 
 // #946: the phone key row scrolls by touch but must not draw a scrollbar track.
-// Chrome runs with classic scrollbars here (no --hide-scrollbars) so a drawn
-// track takes layout height exactly as it does in the Android WebView.
+// A classic scrollbar takes layout height; overlay scrollbars do not.
 const keys = ["Upload", "Voice", "Esc", "Tab", "←", "→", "↑", "↓"]
   .map((label) => `<button type="button" class="control-key key">${label}</button>`).join("");
 const markup = `<div class="terminal-pane with-key-bar" style="position:static;width:100%"><div class="key-bar-group"><div class="key-bar" aria-label="Special keys">${keys}</div></div></div>`;
@@ -26,10 +26,12 @@ function measureKeyBar(width: number, chromeArgs: readonly string[]): KeyBarGeom
     const cs=getComputedStyle(bar);
     const keyHeight=Math.max(...[...bar.querySelectorAll('.key')].map(k=>k.getBoundingClientRect().height));
     const padding=parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom)+parseFloat(cs.borderTopWidth)+parseFloat(cs.borderBottomWidth);
+    bar.scrollLeft=50;
     const result={
       coarse:matchMedia('(pointer: coarse)').matches,
       overflows:bar.scrollWidth>bar.clientWidth,
       overflowX:cs.overflowX,
+      scrollLeft:bar.scrollLeft,
       scrollbarThickness:bar.offsetHeight-bar.clientHeight-parseFloat(cs.borderTopWidth)-parseFloat(cs.borderBottomWidth),
       rowHeight:bar.getBoundingClientRect().height,
       expectedRowHeight:keyHeight+padding,
@@ -49,10 +51,11 @@ for (const width of [360, 384, 430]) {
   });
 }
 
-test("a fine-pointer window keeps the key row scrollbar so a mouse can still scroll it", (t) => {
+test("a fine-pointer window can scroll the overflowing key row", (t) => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
   const m = measureKeyBar(384, []);
   assert.equal(m.coarse, false, `the browser uses a fine pointer: ${JSON.stringify(m)}`);
   assert.equal(m.overflowX, "auto", `the row stays scrollable: ${JSON.stringify(m)}`);
-  assert.ok(m.scrollbarThickness > 0, `desktop keeps its scrollbar: ${JSON.stringify(m)}`);
+  assert.equal(m.overflows, true, `the row overflows horizontally: ${JSON.stringify(m)}`);
+  assert.ok(m.scrollLeft > 0, `the row can scroll horizontally: ${JSON.stringify(m)}`);
 });
