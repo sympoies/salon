@@ -211,9 +211,14 @@ for (const native of [false, true]) for (const width of [390, 1280]) test(`${nat
         false, "paired session has no Rename action");
     }
     const expiry = await sender.evaluate<number>("fetch('/api/auth/devices').then(response=>response.json()).then(value=>value.data.devices[0].expires_at)");
+    // Stop sender polling before advancing past the main session's expiry.
+    await sender.navigate("about:blank");
     now += 86_400_000;
-    // The main session expires after 12 hours; use the original login path to regain main authority.
-    await sender.evaluate("fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'main-fixture'})})");
+    await sender.navigate(base);
+    assert.equal(await sender.evaluate("fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'main-fixture'})}).then(response=>response.status)"), 200);
+    await sender.navigate(base);
+    await click(sender, "More"); await click(sender, "Settings");
+    await until(sender, "document.querySelector('.device-list li')", "device list after replacement login");
     await click(sender, "Renew");
     await until(sender, "document.body.textContent.includes('Device renewed for 30 days.')", "explicit renewal");
     assert.equal(await sender.evaluate("fetch('/api/auth/devices').then(response=>response.json()).then(value=>value.data.devices[0].expires_at)"), expiry + 86_400_000);
