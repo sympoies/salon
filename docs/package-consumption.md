@@ -46,11 +46,12 @@ or `{ unavailable: true }` when either is missing. Reading the snapshot leaves s
 A native host can call and await `registerNativeConnectionAdapter({ load, save })` from the same
 entrypoint before mounting the UI. Both functions return promises; `load` returns
 `{ serverUrl, token }` and `save` persists that complete value in host storage. Set the optional
-`platform: "ios"` field when the host runs on iOS, including desktop-class iPad user agents. An empty token
-clears the credential while retaining the origin. Storage errors reject with a fixed message and
-never fall back to WebView storage. On registration, legacy connection values migrate when the
-adapter is empty, then are removed from WebView storage. Hosts must provide secure storage and keep credentials out of
-error messages.
+`platform: "ios"` field when the host runs on iOS, including desktop-class iPad user agents.
+
+An empty token clears the credential while retaining the origin. Storage errors reject with a fixed
+message and never fall back to WebView storage. On registration, legacy connection values migrate
+when the adapter is empty, then are removed from WebView storage. Hosts must provide secure storage
+and keep credentials out of error messages.
 
 Use the credential only in the authorization header of a request to the configured server's origin.
 Keep it out of URLs, logs, diagnostics and error messages.
