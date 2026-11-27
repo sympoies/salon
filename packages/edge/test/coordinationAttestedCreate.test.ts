@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer, request as httpRequest } from "node:http";
+import { createServer, request as httpRequest, type Server } from "node:http";
+import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { AccessStore } from "../src/accessStore.ts";
 import { createEdgeServer } from "../src/server.ts";
-import { listenOnLoopback, makeEdgeConfig } from "./support.ts";
+import { makeEdgeConfig } from "./support.ts";
 
 const incarnation = "e6153b07-f8c8-462c-92c2-2711683923c2";
 const stale = "a5158fa3-8a3d-4fc4-aaad-e01548905353";
@@ -30,6 +31,38 @@ const context = { initiator: "console-relay", role: "steward", attested_role: "s
 type Mode = "normal" | "drop" | "wrong-id" | "wrong-role" | "wrong-context" | "strip-binding" | "rewrite-type" | "strip-all" | "unsupported" | "oversized" | "transient-after-create" | "context-role" | "context-attested" | "redirect" | "capacity" | "internal-after-create" | "unavailable-after-create" | "existing-conflict" | "existing-drop";
 async function fixture(t: TestContext, enabled = true) {
   const dir = mkdtempSync(join(tmpdir(), "attested-relay-"));
+  const servers: Server[] = [];
+  const sockets = new Set<Socket>();
+  const teardown = new AbortController();
+  function track(server: Server): Server {
+    servers.push(server);
+    server.on("connection", socket => {
+      sockets.add(socket);
+      socket.once("close", () => sockets.delete(socket));
+    });
+    return server;
+  }
+  t.after(async () => {
+    teardown.abort();
+    for (const socket of sockets) socket.destroy();
+    await Promise.all(servers.map(server => server.listening
+      ? within(new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())), "fixture server close")
+      : Promise.resolve()));
+    rmSync(dir, { recursive: true, force: true });
+  });
+  async function listen(server: Server, host = "127.0.0.1") {
+    const controller = new AbortController();
+    try {
+      await within(new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen({ port: 0, host, signal: controller.signal }, () => { server.off("error", reject); resolve(); });
+      }), `fixture server listen on ${host}`);
+    } catch (error) {
+      controller.abort();
+      throw error;
+    }
+    return `http://${host.includes(":") ? `[${host}]` : host}:${(server.address() as { port: number }).port}`;
+  }
   const db = join(dir, "access.sqlite");
   const store = new AccessStore(db);
   store.claimSession({ principalId: "owner", machine: "source", sessionId: "caller", incarnation });
@@ -39,11 +72,11 @@ async function fixture(t: TestContext, enabled = true) {
   const credentials: Record<string, string> = { target: "target-attested", alternative: "alternative-attested" };
   let sourceIncarnation = incarnation;
   let sourceStatus = "running";
-  const source = createServer((_req, res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, data: { sessions: [
+  const source = track(createServer((_req, res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, data: { sessions: [
     { id: "caller", session_incarnation: sourceIncarnation, status: sourceStatus },
     { id: "ungranted", session_incarnation: incarnation, status: "running", role: "steward" },
-  ] } })));
-  const sourceUrl = (await listenOnLoopback(source)).base;
+  ] } }))));
+  const sourceUrl = await listen(source);
   function destination(name: string) {
     const seen: { body: string; headers: Record<string, unknown>; raw: string[] }[] = [];
     const records: Record<string, unknown>[] = [];
@@ -54,10 +87,18 @@ async function fixture(t: TestContext, enabled = true) {
     let notifyCreate: (() => void) | undefined;
     let notifyRead: (() => void) | undefined;
     let listUnavailable = false;
-    const server = createServer(async (req, res) => {
+    async function waitForRelease(held: Promise<void>): Promise<boolean> {
+      try {
+        await within(Promise.race([held, new Promise<void>(resolve => teardown.signal.addEventListener("abort", () => resolve(), { once: true }))]), "held destination response");
+        return !teardown.signal.aborted;
+      } catch {
+        return false;
+      }
+    }
+    const server = track(createServer(async (req, res) => {
       res.setHeader("content-type", "application/json");
       if (req.method === "GET" && req.url === "/sessions") {
-        notifyRead?.(); if (holdRead) await holdRead;
+        notifyRead?.(); if (holdRead && !await waitForRelease(holdRead)) return void res.destroy(new Error("timed out waiting for held destination read"));
         if (listUnavailable) return void res.writeHead(503).end(JSON.stringify({ ok: false, error: { code: "unavailable" } }));
         return void res.end(JSON.stringify({ ok: true, data: { sessions: records } }));
       }
@@ -65,7 +106,7 @@ async function fixture(t: TestContext, enabled = true) {
       const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk));
       const body = Buffer.concat(chunks).toString("utf8");
       seen.push({ body, headers: { ...req.headers }, raw: req.rawHeaders });
-      notifyCreate?.(); if (holdCreate) await holdCreate;
+      notifyCreate?.(); if (holdCreate && !await waitForRelease(holdCreate)) return void res.destroy(new Error("timed out waiting for held destination create"));
       const reject = (status: number, code: string) => res.writeHead(status).end(JSON.stringify({ ok: false, error: { code } }));
       const count = (name: string) => req.rawHeaders.filter((value, index) => index % 2 === 0 && value.toLowerCase() === name).length;
       if (req.headers.authorization !== "Bearer target-machine" || count("authorization") !== 1) return void reject(401, "unauthorized");
@@ -106,11 +147,11 @@ async function fixture(t: TestContext, enabled = true) {
       if (mode === "unavailable-after-create") return void reject(503, "console-create-attestation-unavailable");
       if (mode === "drop") return void req.socket.destroy();
       res.writeHead(201).end(JSON.stringify({ ok: true, data: { session: result } }));
-    });
+    }));
     let upstream = "";
     let redirected = false;
     let transientStatus = 429;
-    const proxy = createServer((req, res) => {
+    const proxy = track(createServer((req, res) => {
       const headers = { ...req.headers };
       if (req.method === "POST" && mode === "redirect" && !redirected) { redirected = true; return void res.writeHead(307, { location: "/sessions" }).end(); }
       if (req.method === "POST" && mode === "oversized") {
@@ -128,30 +169,28 @@ async function fixture(t: TestContext, enabled = true) {
         res.writeHead(incoming.statusCode ?? 500, incoming.headers); incoming.pipe(res);
       });
       outgoing.on("error", () => res.destroy()); req.pipe(outgoing);
-    });
+    }));
     return { server, proxy, seen, records, set mode(value: Mode) { mode = value; redirected = false; }, set upstream(value: string) { upstream = value; }, get upstream() { return upstream; }, set configured(value: boolean) { configured = value; }, set transientStatus(value: number) { transientStatus = value; }, set listUnavailable(value: boolean) { listUnavailable = value; },
       hold(promise: Promise<void>, notify: () => void) { holdRead = promise; notifyRead = notify; },
       holdPost(promise: Promise<void>, notify: () => void) { holdCreate = promise; notifyCreate = notify; } };
   }
   const plainHits: string[] = [];
-  const plain = createServer((req, res) => { plainHits.push(`${req.method} ${req.url}`); res.writeHead(500).end(); });
-  await new Promise<void>(resolve => plain.listen(0, "127.0.0.2", resolve));
-  const plainUrl = `http://127.0.0.2:${(plain.address() as { port: number }).port}`;
+  const plain = track(createServer((req, res) => { plainHits.push(`${req.method} ${req.url}`); res.writeHead(500).end(); }));
+  const plainUrl = await listen(plain, "::ffff:127.0.0.1");
   credentials.plain = "plain-attested";
   const target = destination("target"), alternative = destination("alternative");
-  const [targetUpstream, alternativeUpstream] = await Promise.all([listenOnLoopback(target.server), listenOnLoopback(alternative.server)]);
-  target.upstream = targetUpstream.base; alternative.upstream = alternativeUpstream.base;
-  const [targetUrl, alternativeUrl] = await Promise.all([listenOnLoopback(target.proxy), listenOnLoopback(alternative.proxy)]);
+  const [targetUpstream, alternativeUpstream] = await Promise.all([listen(target.server), listen(alternative.server)]);
+  target.upstream = targetUpstream; alternative.upstream = alternativeUpstream;
+  const [targetUrl, alternativeUrl] = await Promise.all([listen(target.proxy), listen(alternative.proxy)]);
   const config = makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: db,
     attestedCreateEnabled: enabled, attestedCreateGrants: grants, attestedCreateCredentials: credentials,
     principals: [{ id: "owner", token: "browser-token", machines: ["source", "target", "alternative", "plain"], permissions: [] }],
-    machines: [{ name: "source", url: sourceUrl, token: "source-machine" }, { name: "target", url: targetUrl.base, token: "target-machine" }, { name: "alternative", url: alternativeUrl.base, token: "target-machine" }, { name: "forbidden", url: targetUrl.base, token: "target-machine" }, { name: "plain", url: plainUrl, token: "plain-machine" }],
+    machines: [{ name: "source", url: sourceUrl, token: "source-machine" }, { name: "target", url: targetUrl, token: "target-machine" }, { name: "alternative", url: alternativeUrl, token: "target-machine" }, { name: "forbidden", url: targetUrl, token: "target-machine" }, { name: "plain", url: plainUrl, token: "plain-machine" }],
     coordinationRelays: [{ machine: "source", token: "relay-token", ingress_token: "ingress-token" }],
   });
-  let edge = createEdgeServer(config);
-  let base = (await listenOnLoopback(edge)).base;
-  async function restart() { await new Promise<void>(resolve => { edge.closeAllConnections(); edge.close(() => resolve()); }); edge = createEdgeServer(config); base = (await listenOnLoopback(edge)).base; }
-  t.after(async () => { await Promise.all([edge, source, plain, target.server, alternative.server, target.proxy, alternative.proxy].map(server => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }))); rmSync(dir, { recursive: true, force: true }); });
+  let edge = track(createEdgeServer(config));
+  let base = await listen(edge);
+  async function restart() { edge.closeAllConnections(); await within(new Promise<void>(resolve => edge.close(() => resolve())), "edge restart"); edge = track(createEdgeServer(config)); base = await listen(edge); }
   async function post(value: unknown = input, op = operation(), headers: Record<string, string> = {}) {
     const response = await fetch(`${base}/api/coordination/sessions/v1`, { method: "POST", signal: AbortSignal.timeout(10_000), headers: { authorization: "Bearer relay-token", "content-type": "application/json", "x-agent-session-operation-id": op, ...headers }, body: typeof value === "string" ? value : JSON.stringify(value) });
     return { status: response.status, body: await response.json() as any };
@@ -274,7 +313,7 @@ test("destination fixture enforces attested admission in order", async t => {
   const body = JSON.stringify({ id: sessionId, agent: "codex" });
   const binding = (overrides: Record<string, unknown> = {}) => Buffer.from(JSON.stringify({ schema_version: "agent-session.console-create-binding.v1", scope: "create", origin_machine: "source", caller_session_id: "caller", caller_session_incarnation: incarnation, destination_machine: "target", attested_role: "steward", body_sha256: createHash("sha256").update(body).digest("hex"), ...overrides })).toString("base64url");
   const headers: Record<string, string> = { authorization: "Bearer target-machine", "content-type": media, "x-agent-session-attested-create-token": "target-attested", "x-agent-session-console-create-binding": binding() };
-  async function send(changes: Record<string, string>, payload = body) { const response = await fetch(`${f.target.upstream}/sessions`, { method: "POST", headers: { ...headers, ...changes }, body: payload }); return { status: response.status, body: await response.json() as any }; }
+  async function send(changes: Record<string, string>, payload = body) { const response = await fetch(`${f.target.upstream}/sessions`, { method: "POST", signal: AbortSignal.timeout(10_000), headers: { ...headers, ...changes }, body: payload }); return { status: response.status, body: await response.json() as any }; }
   f.target.configured = false;
   assert.equal((await send({ authorization: "Bearer invalid" })).status, 401);
   assert.equal((await send({})).body.error.code, "token-not-configured");
@@ -422,7 +461,7 @@ test("a caller revoked while the create is in flight gets no confirmation and no
   }
 });
 
-test("a plain non-loopback HTTP destination is never dispatched", async t => {
+test("a plain HTTP destination outside the allowed origins is never dispatched", async t => {
   const f = await fixture(t);
   const result = await f.post({ ...input, machine: "plain" });
   assert.equal(result.body.error.code, "console-create-attestation-unavailable");
