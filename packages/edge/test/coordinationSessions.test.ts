@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { PROMPT_CREATE_TIMEOUT_MS } from "@agent-console/shared/api";
 import { AccessStore } from "../src/accessStore.ts";
@@ -26,7 +27,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
     listDelayMs?: number;
     stallList?: boolean;
     createFailure?: { status: number; code: string } | "drop" | "drop-then-appear";
-    createNothing?: { status: number; code: string };
+    createNothing?: { status: number; code: string; details?: unknown };
     createHold?: Promise<void>;
   } = { failList: false };
   const history: Array<Record<string, unknown>> = [];
@@ -64,7 +65,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
       creates.push(body);
       if (state.createNothing) {
         res.writeHead(state.createNothing.status);
-        res.end(JSON.stringify({ ok: false, error: { code: state.createNothing.code, message: "failed" } }));
+        res.end(JSON.stringify({ ok: false, error: { code: state.createNothing.code, message: "failed", ...(state.createNothing.details ? { details: state.createNothing.details } : {}) } }));
         return;
       }
       // A lineage-aware daemon (agent-session 1.31.9+) records and echoes
@@ -267,6 +268,9 @@ test("recovery refuses invalid pending claims and never rebinds an owner", async
   const variants = [
     { id: "missing-parent", parentId: "absent" },
     { id: "stale-parent", parentIncarnation: "old-inc" },
+    { id: "foreign-parent", parentId: "other-parent" },
+    { id: "wrong-parent-machine", lineage: { ...childLineage, parent: { ...callerRef, machine: "elsewhere" } } },
+    { id: "wrong-parent-id", lineage: { ...childLineage, parent: { ...callerRef, session_id: "another" } } },
     { id: "wrong-id", actualId: "different-id" },
     { id: "missing-lineage", lineage: {} },
     { id: "wrong-lineage", lineage: { ...childLineage, parent: { ...callerRef, session_incarnation: "old-inc" } } },
@@ -275,15 +279,18 @@ test("recovery refuses invalid pending claims and never rebinds an owner", async
     { id: "stopped", status: "stopped" },
     { id: "expired", expiresAt: now - 1 },
     { id: "already-owned", owned: true },
+    { id: "owned-same", ownedSelf: true },
     { id: "valid" },
   ];
   const store = new AccessStore(f.db);
   try {
+    store.claimSession({ principalId: "dana", machine: "summit", sessionId: "other-parent", incarnation: "disp-inc" });
     for (const item of variants) {
       store.savePendingSessionClaim({ machine: "cedar", sessionId: item.id, principalId: "tess", parentMachine: "summit",
         parentId: item.parentId ?? "dispatcher", parentIncarnation: item.parentIncarnation ?? "disp-inc", operationId: item.id,
         startMark: { treeDepth: 1 }, expiresAt: item.expiresAt ?? now + 60_000 });
       if (item.owned) store.claimSession({ principalId: "dana", machine: "cedar", sessionId: item.id, incarnation: "existing" });
+      if (item.ownedSelf) store.claimSession({ principalId: "tess", machine: "cedar", sessionId: item.id, incarnation: `inc-${item.id}` });
       f.other.sessions.push({ id: item.actualId ?? item.id, status: item.status ?? "running", session_incarnation: item.incarnation ?? `inc-${item.id}`,
         lineage: item.lineage ?? childLineage });
     }
@@ -301,10 +308,10 @@ test("recovery refuses invalid pending claims and never rebinds an owner", async
     assert.equal(valid?.principalId, "tess");
     const check = new AccessStore(f.db);
     try {
-      for (const item of variants.filter(item => item.id !== "valid" && !item.owned)) assert.equal(check.sessionGrant("cedar", item.id), undefined, item.id);
+      for (const item of variants.filter(item => item.id !== "valid" && !item.owned && !item.ownedSelf)) assert.equal(check.sessionGrant("cedar", item.id), undefined, item.id);
       assert.equal(check.sessionGrant("cedar", "already-owned")?.principalId, "dana");
       assert.equal(check.sessionGrant("cedar", "already-owned")?.incarnation, "existing");
-      assert.equal(check.pendingSessionClaims().some(item => item.sessionId === "valid" || item.sessionId === "expired"), false);
+      assert.equal(check.pendingSessionClaims().some(item => item.sessionId === "valid" || item.sessionId === "expired" || item.sessionId === "owned-same"), false);
     } finally { check.close(); }
   } finally {
     await new Promise<void>(resolve => { restarted.closeAllConnections(); restarted.close(() => resolve()); });
@@ -362,6 +369,89 @@ test("recovery refuses a destination disabled during its snapshot", async () => 
     await new Promise(resolve => setTimeout(resolve, 50));
     const check = new AccessStore(f.db);
     try { assert.equal(check.sessionGrant("cedar", "late-disable"), undefined); } finally { check.close(); }
+  } finally {
+    await new Promise<void>(resolve => { restarted.closeAllConnections(); restarted.close(() => resolve()); });
+    await f.cleanup();
+  }
+});
+
+test("a definitive create refusal settles its pending claim", async () => {
+  const f = await fixture();
+  try {
+    f.other.state.createNothing = { status: 409, code: "cwd-unavailable" };
+    const result = await create(f.base, { ...caller, machine: "cedar", session: { agent: "claude", cwd: "/missing", lineage: childLineage } });
+    assert.equal(result.status, 409);
+    const store = new AccessStore(f.db);
+    try { assert.deepEqual(store.pendingSessionClaims(), []); } finally { store.close(); }
+  } finally { await f.cleanup(); }
+});
+
+test("a proven capacity refusal settles its pending claim", async () => {
+  const f = await fixture();
+  try {
+    f.other.state.createNothing = { status: 429, code: "session-capacity-exceeded",
+      details: { max_active_sessions: 2, active_sessions: 2, retryable: true, recovery: { safe_to_retry: true } } };
+    const result = await create(f.base, { ...caller, machine: "cedar", session: { agent: "claude", cwd: "/tmp", lineage: childLineage } });
+    assert.equal(result.status, 429);
+    const store = new AccessStore(f.db);
+    try { assert.deepEqual(store.pendingSessionClaims(), []); } finally { store.close(); }
+  } finally { await f.cleanup(); }
+});
+
+test("an inconsistent capacity refusal retains its pending claim", async () => {
+  const f = await fixture();
+  try {
+    f.other.state.createNothing = { status: 429, code: "session-capacity-exceeded",
+      details: { max_active_sessions: 2, active_sessions: 1, retryable: true, recovery: { safe_to_retry: true } } };
+    const result = await create(f.base, { ...caller, machine: "cedar", session: { agent: "claude", cwd: "/tmp", lineage: childLineage } });
+    assert.equal(result.status, 429);
+    const store = new AccessStore(f.db);
+    try { assert.equal(store.pendingSessionClaims().length, 1); } finally { store.close(); }
+  } finally { await f.cleanup(); }
+});
+
+test("pending claim limit refuses creates before contacting the daemon", async () => {
+  const f = await fixture();
+  const store = new AccessStore(f.db);
+  try {
+    for (let n = 0; n < 128; n++) store.savePendingSessionClaim({ machine: "cedar", sessionId: `pending-${n}`,
+      principalId: "tess", parentMachine: "summit", parentId: "dispatcher", parentIncarnation: "disp-inc",
+      operationId: `operation-${n}`, startMark: {}, expiresAt: Date.now() + 60_000 });
+  } finally { store.close(); }
+  try {
+    const result = await create(f.base, { ...caller, machine: "cedar", session: { agent: "claude", cwd: "/tmp", lineage: childLineage } });
+    assert.equal(result.status, 503);
+    assert.equal(f.other.creates.length, 0);
+  } finally { await f.cleanup(); }
+});
+
+test("a conflicting pending row cannot starve later claims or multiply snapshot reads", async () => {
+  const f = await fixture();
+  const store = new AccessStore(f.db);
+  try {
+    store.claimProvider("dana", "cedar", "codex", "foreign-provider");
+    for (const id of ["corrupt", "conflict", "valid-later"]) {
+      store.savePendingSessionClaim({ machine: "cedar", sessionId: id, principalId: "tess", parentMachine: "summit",
+        parentId: "dispatcher", parentIncarnation: "disp-inc", operationId: id, startMark: {}, expiresAt: Date.now() + 60_000 });
+      f.other.sessions.push({ id, status: "running", session_incarnation: `inc-${id}`, lineage: childLineage,
+        ...(id === "conflict" ? { provider_resume: { provider: "codex", session_id: "foreign-provider" } } : {}) });
+    }
+  } finally { store.close(); }
+  const db = new DatabaseSync(f.db);
+  try { db.prepare("UPDATE pending_session_claim SET start_mark = ? WHERE session_id = ?").run("{", "corrupt"); }
+  finally { db.close(); }
+  const restarted = createEdgeServer(f.config, f.edgeOptions);
+  try {
+    await listenOnLoopback(restarted);
+    let grant;
+    for (let n = 0; n < 100; n++) {
+      const check = new AccessStore(f.db);
+      try { grant = check.sessionGrant("cedar", "valid-later"); } finally { check.close(); }
+      if (grant) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(grant?.principalId, "tess");
+    assert.equal(f.other.listCalls(), 1);
   } finally {
     await new Promise<void>(resolve => { restarted.closeAllConnections(); restarted.close(() => resolve()); });
     await f.cleanup();

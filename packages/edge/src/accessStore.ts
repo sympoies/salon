@@ -919,19 +919,43 @@ export class AccessStore {
     return row?.principal_id === principalId;
   }
 
-  savePendingSessionClaim(claim: PendingSessionClaim): void {
-    this.#db.prepare(`INSERT INTO pending_session_claim VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(claim.machine, claim.sessionId, claim.principalId, claim.parentMachine, claim.parentId,
-        claim.parentIncarnation, claim.operationId, JSON.stringify(claim.startMark), claim.expiresAt);
+  savePendingSessionClaim(claim: PendingSessionClaim): boolean {
+    this.#db.exec("BEGIN IMMEDIATE");
+    try {
+      this.#db.prepare("DELETE FROM pending_session_claim WHERE expires_at <= ?").run(Date.now());
+      const row = this.#db.prepare("SELECT count(*) AS count FROM pending_session_claim WHERE principal_id = ?").get(claim.principalId);
+      if (Number(row?.count) >= 128) { this.#db.exec("ROLLBACK"); return false; }
+      this.#db.prepare(`INSERT INTO pending_session_claim VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(claim.machine, claim.sessionId, claim.principalId, claim.parentMachine, claim.parentId,
+          claim.parentIncarnation, claim.operationId, JSON.stringify(claim.startMark), claim.expiresAt);
+      this.#db.exec("COMMIT"); return true;
+    } catch (error) { this.#db.exec("ROLLBACK"); throw error; }
   }
 
   pendingSessionClaims(): PendingSessionClaim[] {
     this.#db.prepare("DELETE FROM pending_session_claim WHERE expires_at <= ?").run(Date.now());
-    return (this.#db.prepare("SELECT * FROM pending_session_claim").all() as Array<Record<string, unknown>>).map(row => ({
-      machine: String(row.machine), sessionId: String(row.session_id), principalId: String(row.principal_id),
-      parentMachine: String(row.parent_machine), parentId: String(row.parent_id), parentIncarnation: String(row.parent_incarnation),
-      operationId: String(row.operation_id), startMark: JSON.parse(String(row.start_mark)) as SessionStartMark, expiresAt: Number(row.expires_at),
-    }));
+    const claims: PendingSessionClaim[] = [];
+    let invalid = 0;
+    for (const row of this.#db.prepare("SELECT * FROM pending_session_claim").all() as Array<Record<string, unknown>>) {
+      try {
+        claims.push({ machine: String(row.machine), sessionId: String(row.session_id), principalId: String(row.principal_id),
+          parentMachine: String(row.parent_machine), parentId: String(row.parent_id), parentIncarnation: String(row.parent_incarnation),
+          operationId: String(row.operation_id), startMark: JSON.parse(String(row.start_mark)) as SessionStartMark, expiresAt: Number(row.expires_at) });
+      } catch { invalid++; }
+    }
+    if (invalid) console.warn(JSON.stringify({ code: "pending-session-recovery-failed", count: invalid }));
+    return claims;
+  }
+
+  removePendingSessionClaim(claim: PendingSessionClaim): void {
+    this.#db.prepare("DELETE FROM pending_session_claim WHERE machine = ? AND session_id = ? AND operation_id = ?")
+      .run(claim.machine, claim.sessionId, claim.operationId);
+  }
+
+  removeMatchingPendingSessionClaim(claim: PendingSessionClaim, incarnation: string): void {
+    this.#db.prepare(`DELETE FROM pending_session_claim WHERE machine = ? AND session_id = ? AND operation_id = ?
+      AND EXISTS (SELECT 1 FROM session_ownership WHERE machine = ? AND session_id = ? AND principal_id = ? AND incarnation = ?)`)
+      .run(claim.machine, claim.sessionId, claim.operationId, claim.machine, claim.sessionId, claim.principalId, incarnation);
   }
 
   settlePendingSessionClaim(claim: PendingSessionClaim, input: OwnershipImportInput): boolean {

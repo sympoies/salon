@@ -759,26 +759,44 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     if (!accessStore || recoveryStopped || recoveryRunning) return;
     recoveryRunning = true;
     try {
+      const snapshots = new Map<string, Promise<DaemonResult | null>>();
+      let failures = 0;
       for (const pending of accessStore.pendingSessionClaims()) {
         if (recoveryStopped) return;
-        const machine = byName.get(pending.machine);
-        const principal = config.principals.find(item => item.id === pending.principalId);
-        if (!machine || machine.active === false || !principal || !principal.machines.includes(machine.name)
-          || machinePreferences?.disabled(principal.id).has(machine.name)
-          || !accessStore.ownsSession(pending.principalId, pending.parentMachine, pending.parentId, pending.parentIncarnation)
-          || accessStore.sessionGrant(pending.machine, pending.sessionId)) continue;
-        const session = await createdSessionSnapshot(machine, pending.sessionId, undefined);
-        if (recoveryStopped) return;
-        const lineage = objectProp(session?.lineage);
-        const parent = objectProp(lineage?.parent);
-        const starter = objectProp(lineage?.starter);
-        if (!session || session.status !== "running" || session.id !== pending.sessionId
-          || parent?.machine !== pending.parentMachine || parent.session_id !== pending.parentId
-          || parent.session_incarnation !== pending.parentIncarnation || starter?.via !== "console") continue;
-        claimCreatedDaemonSession(accessStore, pending.principalId, pending.machine,
-          { status: 200, body: { ok: true, data: { session } } }, pending.sessionId, undefined, pending.startMark, pending);
+        try {
+          const machine = byName.get(pending.machine);
+          const principal = config.principals.find(item => item.id === pending.principalId);
+          if (!machine || machine.active === false || !principal || !principal.machines.includes(machine.name)
+            || machinePreferences?.disabled(principal.id).has(machine.name)
+            || !accessStore.ownsSession(pending.principalId, pending.parentMachine, pending.parentId, pending.parentIncarnation)) continue;
+          const owned = accessStore.sessionGrant(pending.machine, pending.sessionId);
+          if (owned && owned.principalId !== pending.principalId) continue;
+          let snapshot = snapshots.get(machine.name);
+          if (!snapshot) {
+            snapshot = daemonFetch(machine, "/sessions", { timeoutMs: FAILED_CREATE_LOOKUP_REQUEST_MS }).catch(() => null);
+            snapshots.set(machine.name, snapshot);
+          }
+          const result = await snapshot;
+          if (recoveryStopped) return;
+          const sessions = (result?.body as { data?: { sessions?: unknown } } | undefined)?.data?.sessions;
+          const session = result && daemonSucceeded(result) && Array.isArray(sessions)
+            ? sessions.map(objectProp).find(item => item?.id === pending.sessionId) : undefined;
+          if (owned) {
+            if (session && session.session_incarnation === owned.incarnation) accessStore.removeMatchingPendingSessionClaim(pending, owned.incarnation);
+            continue;
+          }
+          const lineage = objectProp(session?.lineage);
+          const parent = objectProp(lineage?.parent);
+          const starter = objectProp(lineage?.starter);
+          if (!session || session.status !== "running" || parent?.machine !== pending.parentMachine
+            || parent.session_id !== pending.parentId || parent.session_incarnation !== pending.parentIncarnation
+            || starter?.via !== "console") continue;
+          claimCreatedDaemonSession(accessStore, pending.principalId, pending.machine,
+            { status: 200, body: { ok: true, data: { session } } }, pending.sessionId, undefined, pending.startMark, pending);
+        } catch { failures++; }
       }
-    } catch { console.warn(JSON.stringify({ code: "pending-session-recovery-failed" })); }
+      if (failures) console.warn(JSON.stringify({ code: "pending-session-recovery-failed", count: failures }));
+    } catch { console.warn(JSON.stringify({ code: "pending-session-recovery-failed", count: 1 })); }
     finally { recoveryRunning = false; }
   };
   const recoveryTimer = accessStore ? setInterval(() => { void recoverPendingSessions(); }, options.pendingRecoveryIntervalMs ?? 60_000) : undefined;
@@ -3481,7 +3499,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       pending = { machine: machine.name, sessionId, principalId: principal.id, parentMachine: recovery.machine,
         parentId: recovery.session_id, parentIncarnation: recovery.session_incarnation, operationId: recovery.operationId,
         startMark: mark ?? {}, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
-      accessStore.savePendingSessionClaim(pending);
+      if (!accessStore.savePendingSessionClaim(pending)) {
+        sendJson(res, 503, { ok: false, error: { code: "pending-claim-capacity" } }); return;
+      }
     }
     let daemonResult: DaemonResult;
     try {
@@ -3514,6 +3534,18 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       && await claimFailedCreate(
         res, principal, machine, requestBody.id, expectedProvider, false, startMark, debug, createDaemonRefusal(daemonResult), pending,
       )) return;
+    const refusal = objectProp(objectProp(daemonResult.body)?.error);
+    const refusalCode = refusal?.code;
+    const details = objectProp(refusal?.details);
+    const capacityRefusal = refusalCode === "session-capacity-exceeded"
+      && typeof details?.max_active_sessions === "number" && Number.isFinite(details.max_active_sessions)
+      && typeof details.active_sessions === "number" && Number.isFinite(details.active_sessions)
+      && details.active_sessions >= details.max_active_sessions
+      && details.retryable === true && objectProp(details.recovery)?.safe_to_retry === true;
+    if (pending && accessStore && !daemonSucceeded(daemonResult)
+      && (capacityRefusal || typeof refusalCode === "string" && DEFINITIVE_CREATE_REFUSALS.has(refusalCode))) {
+      accessStore.removePendingSessionClaim(pending);
+    }
     if (config.multiUser && accessStore && daemonSucceeded(daemonResult)) {
       const mark = await startMark;
       assertRequestAuthorized();
@@ -3871,6 +3903,11 @@ function advanceResumedSessionOwnership(
     );
 }
 
+// These daemon refusals occur before a create is started.
+const DEFINITIVE_CREATE_REFUSALS = new Set(["cwd-unavailable", "invalid-agent", "unsupported-agent", "invalid-account",
+  "unknown-agent-profile", "agent-profile-agent-conflict", "agent-profile-unavailable", "provider-resume-cwd-conflict",
+  "provider-resume-prompt-conflict", "agent-profile-provider-root-unavailable"]);
+
 function claimCreatedDaemonSession(
   store: AccessStore,
   principalId: string,
@@ -3919,7 +3956,11 @@ function claimCreatedDaemonSession(
   };
   if (pending) {
     const existing = store.sessionGrant(machine, created.id);
-    if (existing) return existing.principalId === principalId && existing.incarnation === created.session_incarnation;
+    if (existing) {
+      const matches = existing.principalId === principalId && existing.incarnation === created.session_incarnation;
+      if (matches) store.removeMatchingPendingSessionClaim(pending, existing.incarnation);
+      return matches;
+    }
     return store.settlePendingSessionClaim(pending, input);
   }
   store.claimImport(input);
