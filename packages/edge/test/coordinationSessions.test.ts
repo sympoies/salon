@@ -38,6 +38,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
     assert.equal(req.headers.authorization, `Bearer ${operatorToken}`);
     res.setHeader("content-type", "application/json");
     if (req.method === "GET" && req.url === "/sessions" && state.failList) {
+      listCalls++;
       res.writeHead(500);
       res.end(JSON.stringify({ ok: false, error: { code: "internal", message: "unavailable" } }));
       return;
@@ -51,7 +52,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
         sessions.push(pendingSession);
         pendingSession = undefined;
       }
-      res.end(JSON.stringify({ ok: true, data: { sessions } }));
+      res.end(JSON.stringify({ ok: true, data: { coordination: { remote_messaging_supported: true }, sessions } }));
       return;
     }
     if (req.method === "GET" && req.url?.startsWith("/history/sessions")) {
@@ -72,7 +73,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
       // the lineage, work, and role it was given.
       const session = {
         id: body.id, agent: body.agent, cwd: body.cwd, title: body.title ?? null,
-        status: "running", session_incarnation: `inc-${String(body.id)}`,
+        status: "running", session_incarnation: `inc-${String(body.id)}`, coordination_mode: "advisory", coordination_available: true,
         ...(state.echoLineage && body.lineage ? {
           lineage: { ...(body.lineage as object), root: (body.lineage as any).root ?? { machine: "summit", session_id: body.id, session_created_at: "2026-10-02T11:00:00Z" } },
         } : {}),
@@ -116,7 +117,7 @@ async function fixture(options: EdgeServerOptions = {}, attestedCreate = false, 
   const dir = mkdtempSync(join(tmpdir(), "owned-create-test-"));
   const db = join(dir, "access.sqlite");
   const source = daemon("source-operator", [
-    { id: "dispatcher", agent: "claude", status: "running", session_incarnation: "disp-inc", repo_name: "legacy-root" },
+    { id: "dispatcher", agent: "claude", status: "running", session_incarnation: "disp-inc", coordination_mode: "advisory", coordination_available: true, repo_name: "legacy-root" },
     { id: "unowned", agent: "claude", status: "running", session_incarnation: "unowned-inc" },
   ]);
   const other = daemon("cedar-operator", []);
@@ -140,7 +141,10 @@ async function fixture(options: EdgeServerOptions = {}, attestedCreate = false, 
       { name: otherMachine, url: otherAddr.base, token: "cedar-operator" },
       { name: "maple", url: viewerAddr.base, token: "maple-operator" },
     ],
-    coordinationRelays: [{ machine: "summit", token: "source-relay", ingress_token: "source-ingress" }],
+    coordinationRelays: [
+      { machine: "summit", token: "source-relay", ingress_token: "source-ingress" },
+      { machine: "cedar", token: "cedar-relay", ingress_token: "cedar-ingress" },
+    ],
   });
   const edgeOptions = { ...options, extensions: [{ id: "legacy-fixture", legacyCoordinatorRepositories: ["legacy-root"] }, ...(options.extensions ?? [])] };
   const edge = createEdgeServer(config, edgeOptions);
@@ -234,7 +238,7 @@ test("a restarted edge recovers an authorized create whose response is held", { 
     finally { existing.close(); }
     f.other.sessions.push({ id: "already-owned", status: "running", session_incarnation: "other-inc", lineage: childLineage });
     restarted = createEdgeServer(f.config, f.edgeOptions);
-    await listenOnLoopback(restarted);
+    const restartedAddress = await listenOnLoopback(restarted);
     let grant;
     for (let n = 0; n < 100; n++) {
       const store = new AccessStore(f.db);
@@ -246,6 +250,11 @@ test("a restarted edge recovers an authorized create whose response is held", { 
     assert.equal(grant?.incarnation, `inc-${id}`);
     assert.equal(grant?.dispatcher?.machine, "summit");
     assert.equal(grant?.dispatcher?.sessionId, "dispatcher");
+    const peersResponse = await fetch(`${restartedAddress.base}/api/coordination/peers/v1?source_session_id=dispatcher&source_incarnation=disp-inc`,
+      { headers: { authorization: "Bearer source-relay" } });
+    assert.equal(peersResponse.status, 200);
+    const peers = await peersResponse.json() as { peers: Array<{ machine: string; session_id: string }> };
+    assert.ok(peers.peers.some(peer => peer.machine === "cedar" && peer.session_id === id));
     const verify = new AccessStore(f.db);
     try {
       assert.equal(verify.sessionGrant("cedar", "lineage-only"), undefined);
@@ -312,6 +321,85 @@ test("recovery refuses invalid pending claims and never rebinds an owner", async
       assert.equal(check.sessionGrant("cedar", "already-owned")?.principalId, "dana");
       assert.equal(check.sessionGrant("cedar", "already-owned")?.incarnation, "existing");
       assert.equal(check.pendingSessionClaims().some(item => item.sessionId === "valid" || item.sessionId === "expired" || item.sessionId === "owned-same"), false);
+    } finally { check.close(); }
+  } finally {
+    await new Promise<void>(resolve => { restarted.closeAllConnections(); restarted.close(() => resolve()); });
+    await f.cleanup();
+  }
+});
+
+test("recovery shortens an absent child's claim without extending it on later sweeps", async () => {
+  const f = await fixture({ pendingRecoveryIntervalMs: 30 });
+  const before = Date.now();
+  const store = new AccessStore(f.db);
+  try {
+    store.savePendingSessionClaim({ machine: "cedar", sessionId: "absent", principalId: "tess", parentMachine: "summit",
+      parentId: "dispatcher", parentIncarnation: "disp-inc", operationId: "operation", startMark: {}, expiresAt: before + 24 * 60 * 60_000 });
+  } finally { store.close(); }
+  const restarted = createEdgeServer(f.config, f.edgeOptions);
+  try {
+    await listenOnLoopback(restarted);
+    let firstExpiry: number | undefined;
+    for (let n = 0; n < 100; n++) {
+      const check = new AccessStore(f.db);
+      try { firstExpiry = check.pendingSessionClaims().find(item => item.sessionId === "absent")?.expiresAt; }
+      finally { check.close(); }
+      if (firstExpiry && firstExpiry <= before + 5 * 60_000 + 1000) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.ok(firstExpiry && firstExpiry > before && firstExpiry <= before + 5 * 60_000 + 1000);
+    const firstCalls = f.other.listCalls();
+    for (let n = 0; n < 100 && f.other.listCalls() <= firstCalls; n++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(f.other.listCalls() > firstCalls);
+    const check = new AccessStore(f.db);
+    try { assert.equal(check.pendingSessionClaims().find(item => item.sessionId === "absent")?.expiresAt, firstExpiry); }
+    finally { check.close(); }
+  } finally {
+    await new Promise<void>(resolve => { restarted.closeAllConnections(); restarted.close(() => resolve()); });
+    await f.cleanup();
+  }
+});
+
+test("a failed session list preserves the pending claim expiry", async () => {
+  const f = await fixture({ pendingRecoveryIntervalMs: 30 });
+  f.other.state.failList = true;
+  const expiry = Date.now() + 24 * 60 * 60_000;
+  const store = new AccessStore(f.db);
+  try {
+    store.savePendingSessionClaim({ machine: "cedar", sessionId: "unavailable", principalId: "tess", parentMachine: "summit",
+      parentId: "dispatcher", parentIncarnation: "disp-inc", operationId: "operation", startMark: {}, expiresAt: expiry });
+  } finally { store.close(); }
+  const restarted = createEdgeServer(f.config, f.edgeOptions);
+  try {
+    await listenOnLoopback(restarted);
+    for (let n = 0; n < 100 && f.other.listCalls() < 2; n++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(f.other.listCalls() >= 2);
+    const check = new AccessStore(f.db);
+    try { assert.equal(check.pendingSessionClaims().find(item => item.sessionId === "unavailable")?.expiresAt, expiry); }
+    finally { check.close(); }
+  } finally {
+    await new Promise<void>(resolve => { restarted.closeAllConnections(); restarted.close(() => resolve()); });
+    await f.cleanup();
+  }
+});
+
+test("recovery removes a claim when another principal owns the child", async () => {
+  const f = await fixture();
+  const store = new AccessStore(f.db);
+  try {
+    store.savePendingSessionClaim({ machine: "cedar", sessionId: "foreign", principalId: "tess", parentMachine: "summit",
+      parentId: "dispatcher", parentIncarnation: "disp-inc", operationId: "operation", startMark: {}, expiresAt: Date.now() + 60_000 });
+    store.savePendingSessionClaim({ machine: "cedar", sessionId: "probe", principalId: "tess", parentMachine: "summit", parentId: "dispatcher", parentIncarnation: "disp-inc", operationId: "probe", startMark: {}, expiresAt: Date.now() + 60_000 });
+    store.claimSession({ principalId: "dana", machine: "cedar", sessionId: "foreign", incarnation: "existing" });
+  } finally { store.close(); }
+  const restarted = createEdgeServer(f.config, f.edgeOptions);
+  try {
+    await listenOnLoopback(restarted);
+    for (let n = 0; n < 100 && f.other.listCalls() === 0; n++) await new Promise(resolve => setTimeout(resolve, 10));
+    const check = new AccessStore(f.db);
+    try {
+      assert.equal(check.pendingSessionClaims().some(item => item.sessionId === "foreign"), false);
+      assert.equal(check.sessionGrant("cedar", "foreign")?.principalId, "dana");
     } finally { check.close(); }
   } finally {
     await new Promise<void>(resolve => { restarted.closeAllConnections(); restarted.close(() => resolve()); });
