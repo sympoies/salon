@@ -54,7 +54,7 @@ test("message Markdown keeps only http(s) links and opens them outside the conso
       + "![shot](https://example.com/shot.png)",
   );
   const anchors = [...container.querySelectorAll("a")];
-  assert.deepEqual(anchors.map((anchor) => anchor.getAttribute("href")), ["https://example.com/a"]);
+  assert.deepEqual(anchors.map((anchor) => anchor.getAttribute("href")), ["https://example.com/a", "https://example.com/shot.png"]);
   for (const anchor of anchors) {
     assert.equal(anchor.getAttribute("target"), "_blank");
     assert.equal(anchor.getAttribute("rel"), "noopener noreferrer");

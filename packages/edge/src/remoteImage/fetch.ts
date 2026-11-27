@@ -3,7 +3,7 @@ import * as https from "node:https";
 import { lookup } from "node:dns/promises";
 import { decideTarget, parseRemoteImageUrl, type AllowListEntry } from "./address.ts";
 
-type Reason = "invalid-url" | "blocked-address" | "too-many-redirects" | "upstream-status" | "too-large" | "timeout" | "not-image" | "network";
+type Reason = "access-denied" | "invalid-url" | "blocked-address" | "too-many-redirects" | "upstream-status" | "too-large" | "timeout" | "not-image" | "network";
 type Result = { ok: true; contentType: string; bytes: Buffer } | { ok: false; reason: Reason };
 type Connector = (options: http.RequestOptions, callback: (response: http.IncomingMessage) => void) => http.ClientRequest;
 type Options = {
@@ -55,6 +55,7 @@ export async function fetchRemoteImage(rawUrl: string, options: Options = {}): P
         try { current = new URL(response.headers.location, url).href; } catch { return fail("invalid-url"); }
         continue;
       }
+      if (status === 401 || status === 403) { response.destroy(); return fail("access-denied"); }
       if (status < 200 || status >= 300) { response.destroy(); return fail("upstream-status"); }
       const chunks: Buffer[] = [];
       let size = 0;

@@ -32,31 +32,25 @@ function RetryImage({retry}: { readonly retry: () => void }) {
   return <button type="button" className="conversation-image-retry" onClick={event => { event.stopPropagation(); retry(); }}>Retry</button>;
 }
 const remoteReasons: Record<string,string> = {
-  "invalid-url":"Invalid image URL", "blocked-address":"Address blocked", "too-many-redirects":"Too many redirects",
+  "access-denied":"Access denied or authentication required", "invalid-url":"Invalid image URL", "blocked-address":"Address blocked", "too-many-redirects":"Too many redirects",
   "upstream-status":"Image server refused the request", "too-large":"Image is too large", "timeout":"Request timed out",
   "not-image":"Response is not an image", "network":"Network error", "busy":"Image service is busy",
 };
 const remoteReasonText = (reason: string) => Object.hasOwn(remoteReasons,reason) ? remoteReasons[reason] : "Image could not be loaded";
-function ExternalImage({url,origin,reason}: { readonly url?: string; readonly origin?: string; readonly reason?: string }) {
-  return <div className="conversation-external-image">
-    <span role="status">External image, not loaded{origin ? ` · ${origin}` : ""}{reason ? ` · ${remoteReasonText(reason)}` : ""}</span>
-    {url ? <a href={url} target="_blank" rel="noopener noreferrer"
-      onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
-      onClick={event => {
-        event.preventDefault(); event.stopPropagation();
-        void openExternalTerminalUrl(url);
-      }}>Open link</a> : null}
-  </div>;
-}
 function ImageContent({data,fail,onLoad,retry,sourceName,sourceUrl}: { readonly sourceUrl?: string; readonly data: ConversationImageData; readonly fail: () => void; readonly sourceName?: string;
   readonly onLoad?: (image: HTMLImageElement) => void; readonly retry?: () => void }) {
-  if (data.state === "unavailable" && (data.reason === "remote-url-not-fetched" || sourceUrl))
-    return <ExternalImage url={sourceUrl} reason={data.remoteReason} origin={data.reason === "remote-url-not-fetched" ? data.sourceOrigin : sourceUrl ? new URL(sourceUrl).origin : undefined} />;
-  const unavailable = data.state === "unavailable" && data.reason === "outside-allowed-roots"
-    ? `Not shared: outside the session folder${sourceName ? ` · ${sourceName}` : ""}` : "Image unavailable";
-  return data.state === "ready" ? <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} onLoad={event => onLoad?.(event.currentTarget)} />
-    : <span role="status">{data.state === "deleted" ? "Image deleted" : data.state === "unavailable" ? unavailable : data.state === "error" ? `Couldn't load${data.remoteReason ? ` · ${remoteReasonText(data.remoteReason)}` : ""}` : "Loading image…"}
-      {data.state === "error" && retry ? <RetryImage retry={retry} /> : null}</span>;
+  if (data.state === "ready") return <img src={data.url} alt="Conversation attachment" draggable={false} onError={fail} onLoad={event => onLoad?.(event.currentTarget)} />;
+  if (data.state === "loading") return <span role="status">Loading image…</span>;
+  const label = data.state === "deleted" ? "Image deleted" : data.state === "error"
+    ? `Couldn't load${data.remoteReason ? ` · ${remoteReasonText(data.remoteReason)}` : ""}`
+    : data.reason === "outside-allowed-roots" ? `Not shared: outside the session folder${sourceName ? ` · ${sourceName}` : ""}`
+    : data.reason === "remote-url-not-fetched" ? `External image, not loaded${data.sourceOrigin ? ` · ${data.sourceOrigin}` : ""}${data.remoteReason ? ` · ${remoteReasonText(data.remoteReason)}` : ""}`
+    : data.reason === "unsupported-type" ? "Unsupported image type" : data.reason === "too-large" ? "Image is too large" : "Image unavailable";
+  return <div className="conversation-external-image"><span role="status">{label}</span>
+    {sourceUrl ? <><span>{new URL(sourceUrl).origin}</span><span className="conversation-image-source" title={sourceUrl}>{sourceUrl}</span>
+      <a href={sourceUrl} target="_blank" rel="noopener noreferrer" onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
+        onClick={event => { event.preventDefault(); event.stopPropagation(); void openExternalTerminalUrl(sourceUrl); }}>Open in browser</a></> : null}
+    {data.state === "error" && retry ? <RetryImage retry={retry} /> : null}</div>;
 }
 type ReadyImage = Extract<ConversationImageData,{state:"ready"}>;
 interface MenuState { readonly index: number; readonly x: number; readonly y: number; readonly image: ReadyImage }
@@ -127,14 +121,14 @@ function Thumbnail({target,index,onOpen,onMenu,sourceName,sourceUrl,onResponseFi
     event.preventDefault();
     if (data.state === "ready") onMenu({index,x:event.clientX,y:event.clientY,image:data});
   };
-  if (data.state === "unavailable" && (data.reason === "remote-url-not-fetched" || sourceUrl)) return <div className="conversation-image-frame">
-    <div className="conversation-image-thumbnail is-external"><ImageContent data={data} fail={fail} sourceUrl={sourceUrl} /></div>
+  if (data.state !== "ready" && data.state !== "loading") return <div className="conversation-image-frame">
+    <div className="conversation-image-thumbnail is-external"><ImageContent data={data} fail={fail} retry={retry} sourceName={sourceName} sourceUrl={sourceUrl} /></div>
   </div>;
   return <div className="conversation-image-frame"><button ref={frame} style={sizing} className="conversation-image-thumbnail" type="button" aria-label={`Open image ${index + 1}`} onClick={event => { event.stopPropagation(); onOpen(); }} onContextMenu={contextMenu}>
     <ImageContent data={data} fail={fail} sourceName={sourceName} onLoad={image => {
       if (image.naturalWidth && image.naturalHeight) setSize({width:image.naturalWidth,height:image.naturalHeight});
     }} />
-  </button>{data.state === "error" ? <RetryImage retry={retry} /> : null}</div>;
+  </button></div>;
 }
 const clampZoom = (scale: number) => Math.max(1,Math.min(6,scale));
 interface Point { x: number; y: number }
