@@ -106,3 +106,25 @@ test("host platform identifies desktop-class iPad independently of user agent", 
     await f.close();
   }
 });
+
+test("successful adapter save advances identity only when committed", async () => {
+  const f = await fixture();
+  let release!: () => void;
+  let entered!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    await f.runtime.registerNativeConnectionAdapter({ async load() { return { serverUrl: "https://old.example.test", token: "old" }; },
+      async save() { entered(); await pending; } });
+    const generation = f.runtime.nativeConnectionConfigGeneration();
+    const saving = f.runtime.saveConnectionValues("https://new.example.test", "new");
+    await started;
+    assert.equal(f.runtime.nativeConnectionConfigGeneration(), generation, "pending save retains the old generation");
+    f.runtime.recordNativeAuthentication(generation, true, null);
+    assert.equal(f.runtime.nativePrincipalIsActive(), false, "authentication during a pending save is inactive");
+    release(); await saving;
+    assert.equal(f.runtime.nativeConnectionConfigGeneration(), generation + 1, "successful save advances the generation at commit");
+    assert.equal(f.runtime.loadServerUrl(), "https://new.example.test");
+    assert.equal(f.runtime.nativePrincipalIsActive(), false, "authentication of the old generation cannot activate the new connection");
+  } finally { release(); await f.close(); }
+});
