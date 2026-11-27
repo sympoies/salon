@@ -98,7 +98,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.110 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.111 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -204,7 +204,18 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.110`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.111`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.111
+
+Reply drafts normalize CRLF to LF and tabs to spaces before queueing. Other control characters
+and oversize text produce specific errors while preserving the draft (#761). The usage account
+popover stays within its panel (#763), and Codex rate-limit resets use the account switch key
+(#770).
+
+Pending session recovery claims expire sooner when the child is absent and settle when another
+principal owns the session (#767). On-behalf outbox limits document credential rotation and
+per-caller quotas (#765).
 
 ### Changes retained in SDK 0.1.110
 
