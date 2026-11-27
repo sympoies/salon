@@ -229,15 +229,24 @@ malformed reply stays unconfirmed.
 An exact retry then reads the pinned destination once the first request has
 settled, without sending another create. It claims ownership only for a record with the exact ID,
 role and attested context, and only when the fence row belongs to that operation. The relay never falls back
-to ordinary creation. A reused ID from another operation returns a conflict.
+to ordinary creation.
+
+If a 408, 425 or 429 arrives before the destination creates a record,
+the exact retry reads and returns unavailable; a new operation for the same managed ID
+returns 409. The operation remains unconfirmed. Making this case retryable requires
+destination-side idempotency, with operation-ID proof in a later contract revision.
 
 Reconciliation depends on one relay per destination credential, a durable fence store, and a
 destination that reserves the attested initiator. A compromised credential, a second relay or
 a lost fence store is outside this proof; operator repair is required.
 
-A fence store created after the operation began refuses both to reconcile and to dispatch
-again. Removing a grant takes effect after the relay restarts. The grant and credential
-environment variables are validated at startup even when the capability is off.
+A fence store created more than 60 seconds after the operation was minted refuses both to
+reconcile and to dispatch again. Within that 60-second skew window, a replacement store
+can dispatch again because the operation ID timestamp is the only clock. A conforming
+destination rejects the duplicate managed ID.
+
+Removing a grant takes effect after the relay restarts. The grant and credential environment
+variables are validated at startup even when the capability is off.
 
 ## Console succession stop
 
