@@ -176,8 +176,9 @@ test("#908 existing local Codex reply remains Queued, then delivers once after i
 });
 test("#908 reload while queued retains the message and delivers it once",async()=>{
   const factory=new IDBFactory();let h=await mount(factory);try{
-    await h.render("working");await h.write("survive reload");await h.reply();assert.match(h.queued(),/survive reload/);
-    await h.close();h=await mount(factory);await h.render("working");assert.equal(h.status("survive reload"),"queued");
+    // Keep delivery unavailable until the persisted queued state is observed.
+    await h.render("working",1,{},false,false);await h.write("survive reload");await h.reply();assert.match(h.queued(),/survive reload/);
+    await h.close();h=await mount(factory);await h.render("working",1,{},false,false);assert.equal(h.status("survive reload"),"queued");
     await h.render("idle",2);assert.equal(h.requests.length,1);assert.equal(h.queued(),"");
   }finally{await h.close();}
 });
