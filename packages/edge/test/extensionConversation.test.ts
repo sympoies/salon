@@ -85,13 +85,15 @@ async function fixture(t: TestContext, provider: "codex" | "claude" = "codex", h
     const reply: EdgeRoute["handle"] = async ctx => {
       ctx.sendJson(200, await ctx.conversation.firstReplyAfter(await ctx.readJsonBody() as EdgeFirstReplyQuery));
     };
-    const extension: EdgeExtension = { id: "fixture", permissions: ["relay"], routes: [
+    const extension: EdgeExtension = { id: "fixture", permissions: ["relay", "reply_read"], routes: [
       { id: "inputs", pattern: `${pathPrefix}/inputs`, methods: ["PUT"], permission: "debug", handle() {} },
       { id: "reply", pattern: `${pathPrefix}/reply`, methods: ["POST"], permission: "debug", handle: reply },
       { id: "relay", pattern: `${pathPrefix}/relay`, methods: ["PUT"], permission: "relay",
         ...(variant.admitCapability !== false && { outboxOwnerDispatch: true }), handle() {} },
       { id: "reply-read", pattern: `${pathPrefix}/reply-read`, methods: ["POST"], permission: "relay",
         ...(variant.readCapability !== false && { outboxOwnerReplyRead: true }), handle: reply },
+      { id: "reply-alt", pattern: `${pathPrefix}/reply-alt`, methods: ["POST"], permission: "reply_read",
+        outboxOwnerReplyRead: true, handle: reply },
       { id: "reply-plain", pattern: `${pathPrefix}/reply-plain`, methods: ["POST"], permission: "relay", handle: reply },
     ] };
     const bridge = variant.bridge === undefined ? {} : variant.bridge;
@@ -121,7 +123,7 @@ async function fixture(t: TestContext, provider: "codex" | "claude" = "codex", h
       method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(value),
     });
-  return { call, input, query,
+  return { call, path, input, query,
     /** Read as the bridge through a route that declares the reply-read capability. */
     callRead: (value: EdgeFirstReplyQuery = query, token = "bridge-fixture", route = "reply-read") => call(value, token, route),
     async restart(variant: Variant) {
@@ -281,4 +283,44 @@ test("an on-behalf read needs the owner's history access, not the caller's", asy
   const f = await fixture(t, "codex", "other", {});
   f.setMessages(f.input, assistant(300, "First reply"));
   assert.deepEqual(await (await f.callRead()).json(), forbidden);
+});
+
+test("an on-behalf read needs the caller to hold the admission route's permission, not only the reading route's", async t => {
+  const f = await fixture(t, "codex", principalId, {});
+  f.setMessages(f.input, assistant(300, "First reply"));
+  await f.restart({ bridge: { permissions: ["relay", "reply_read"] } });
+  assert.equal((await (await f.callRead(f.query, "bridge-fixture", "reply-alt")).json()).status, "found");
+  await f.restart({ bridge: { permissions: ["reply_read"] } });
+  assert.deepEqual(await (await f.callRead(f.query, "bridge-fixture", "reply-alt")).json(), forbidden);
+});
+
+test("an on-behalf read must name the stored machine, session and receipt", async t => {
+  const f = await fixture(t, "codex", principalId, {});
+  f.setMessages(f.input, assistant(300, "First reply"));
+  const missing = { status: "unavailable", reason: "receipt_missing" };
+  assert.deepEqual(await (await f.callRead({ ...f.query, target: { ...target, machine: "elsewhere" } })).json(), missing);
+  assert.deepEqual(await (await f.callRead({ ...f.query, target: { ...target, sessionId: "another-session" } })).json(), missing);
+  // An earlier attempt of the same intent resolves the entry but is not the stored receipt.
+  const db = new DatabaseSync(f.path);
+  try {
+    const row = db.prepare("SELECT scope, intent_id FROM outbox_extension_inputs").get() as { scope: string; intent_id: string };
+    db.prepare("INSERT INTO outbox_attempts(request_id,scope,intent_id,payload_hash) VALUES(?,?,?,?)")
+      .run("earlier-attempt", row.scope, row.intent_id, "hash");
+  } finally { db.close(); }
+  assert.deepEqual(await (await f.callRead({ target, receiptRequestId: "earlier-attempt" })).json(), missing);
+  assert.equal(f.historyReads(), 0);
+});
+
+test("an on-behalf read refuses a reply that follows another user's text, while a plain read is unchanged", async t => {
+  const other = { id: `${historyId}-250`, role: "user", text: "Unrelated question", timestamp: "2026-01-01T00:03:30Z" };
+  const rows = (f: { input: unknown }) => [f.input, other, assistant(300, "Reply to another input")];
+  const onBehalf = await fixture(t, "codex", principalId, {});
+  onBehalf.setMessages(...rows(onBehalf));
+  assert.deepEqual(await (await onBehalf.callRead()).json(), { status: "unavailable", reason: "history_order_unavailable" });
+  // Text after the reply cannot change which reply is first.
+  onBehalf.setMessages(onBehalf.input, assistant(300, "First reply"), { ...other, id: `${historyId}-350` });
+  assert.equal((await (await onBehalf.callRead()).json()).status, "found");
+  const plain = await fixture(t);
+  plain.setMessages(...rows(plain));
+  assert.equal((await (await plain.call()).json()).status, "found");
 });

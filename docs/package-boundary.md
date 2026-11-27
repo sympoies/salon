@@ -129,7 +129,13 @@ separate, default-off `outboxOwnerReplyRead: true`. That capability is not impli
 receipt, in its exact incarnation.
 The caller's query must name the caller's own stored record and
 its exact target. Every read repeats the admission checks and requires the history to belong to the
-owner. A failed check returns `forbidden`. No other history of the owner is readable.
+owner. A failed check returns `forbidden`. The read does not list or select any other history.
+It returns `history_order_unavailable` when other user text appears between the receipt and the reply.
+
+A holder of both capabilities can queue a prompt and read back the first reply, up to 16 KiB and
+repeatably. That reply is whatever the owner's agent printed next, so it can include earlier
+conversation. It is not necessarily an answer to the queued prompt. Grant both capabilities only
+to an adapter that you trust with the owner's agent output.
 
 Residual risk: a holder of the route permission on a capability route can queue prompts into any
 exact session incarnation it can name, for that session's current owner. This applies on every

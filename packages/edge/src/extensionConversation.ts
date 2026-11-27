@@ -73,8 +73,12 @@ async function observeTarget(machine: MachineConfig, target: EdgeConversationTar
   return { provider, providerSessionId, profile: typeof session.agent_profile === "string" ? session.agent_profile : undefined };
 }
 
+/**
+ * `onBehalf` reads must return an answer to this input, so any other user text between its receipt
+ * and the reply (the dispatch does not wait for an idle session) makes the order unavailable.
+ */
 function firstInPage(data: Record<string, unknown>, historyId: string, target: EdgeConversationTarget,
-  receipt: PromptReceiptIdentity): EdgeFirstReplyResult {
+  receipt: PromptReceiptIdentity, onBehalf: boolean): EdgeFirstReplyResult {
   // A continuation could hide a conflicting order in the same history.
   if (!Array.isArray(data.messages) || data.next_cursor !== null || data.older_cursor !== null) {
     return unavailable("history_order_unavailable");
@@ -105,6 +109,9 @@ function firstInPage(data: Record<string, unknown>, historyId: string, target: E
     if (binding?.request_id === receipt.request_id) {
       if (anchor) return unavailable("history_order_unavailable");
       anchor = true;
+    }
+    if (onBehalf && anchor && !reply && row.role === "user" && binding?.request_id !== receipt.request_id) {
+      return unavailable("history_order_unavailable");
     }
     if (row.role !== "assistant") continue;
     if (typeof row.text !== "string") return unavailable("history_order_unavailable");
@@ -203,7 +210,7 @@ export function createExtensionConversation(options: ConversationOptions): EdgeC
         if (!canRead()) return { status: "forbidden" };
         if ("error" in after) return after.error;
         if (after.providerSessionId !== providerSessionId || after.profile !== profile) return unavailable("history_unavailable");
-        return firstInPage(page, historyId, exactTarget, receipt);
+        return firstInPage(page, historyId, exactTarget, receipt, onBehalfOwner !== undefined);
       } catch (error) {
         if ((error as NodeJS.ErrnoException)?.code === "ERR_SQLITE_ERROR") return unavailable("durability_unavailable");
         throw error;
