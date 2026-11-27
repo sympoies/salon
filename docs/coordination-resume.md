@@ -229,9 +229,12 @@ malformed reply stays unconfirmed.
 An exact retry then reads the pinned destination once the first request has
 settled, without sending another create. It claims ownership only for a record with the exact ID,
 role and attested context, and only when the fence row belongs to that operation. The relay never falls back
-to ordinary creation. If a 408, 425 or 429 arrives before the destination creates a record,
+to ordinary creation.
+
+If a 408, 425 or 429 arrives before the destination creates a record,
 the exact retry reads and returns unavailable; a new operation for the same managed ID
-returns 409. The operation remains unconfirmed.
+returns 409. The operation remains unconfirmed. Making this case retryable requires
+destination-side idempotency, with operation-ID proof in a later contract revision.
 
 Reconciliation depends on one relay per destination credential, a durable fence store, and a
 destination that reserves the attested initiator. A compromised credential, a second relay or
