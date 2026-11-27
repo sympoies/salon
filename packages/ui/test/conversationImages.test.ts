@@ -12,7 +12,7 @@ afterEach(async () => { while (cleanups.length) await cleanups.pop()?.(); });
 const imageId = (index: number) => `${"a".repeat(16)}.0.${index}.${"b".repeat(32)}`;
 
 async function mountImages(responseFor?: (path: string) => Response, nested = false,
-  images: Array<{id:string}> = [{id:imageId(0)},{id:imageId(1)}], messages?: unknown[], uploadSessionId?: string) {
+  images: Array<{id:string}> = [{id:imageId(0)},{id:imageId(1)}], messages?: unknown[], uploadSessionId?: string, beforeRender?: (window: Window) => void) {
   const window = new Window({ url: "http://localhost" });
   const saved = { window: globalThis.window, document: globalThis.document, HTMLElement: globalThis.HTMLElement,
     IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT, fetch: globalThis.fetch };
@@ -24,6 +24,7 @@ async function mountImages(responseFor?: (path: string) => Response, nested = fa
       return path.includes(`.${1}.`) ? new Response(JSON.stringify({ok:false,error:{code:"history-image-deleted"}}),{status:404})
         : new Response(new Uint8Array([137,80,78,71,13,10,26,10]),{headers:{"content-type":"image/png"}});
     } });
+  beforeRender?.(window);
   const ssr = createUiSsrHarness();
   const root = createRoot(window.document.body.appendChild(window.document.createElement("div")));
   cleanups.push(async () => { await act(async () => root.unmount()); await ssr.close(); Object.assign(globalThis,saved); window.close(); });
@@ -500,8 +501,10 @@ test("Markdown refusal names stay with their descriptors when tool images leave 
 test("refused remote Markdown images explain the source and open links only on request",async () => {
   const urls = Array.from({length:6},(_,index) => `https://images.example.invalid/chart-${index + 1}.png`);
   const images = urls.map((_,index) => ({id:imageId(index),origin:"tool_result"}));
+  const opened: unknown[][] = [];
   const {window,requests} = await mountImages(() => new Response(JSON.stringify({error:{code:"history-image-unavailable"}}),{status:422}),
-    false,[],[{id:"remote-result",role:"assistant",text:urls.map(url => `![](<${url}>)`).join("\n"),images}]);
+    false,[],[{id:"remote-result",role:"assistant",text:urls.map(url => `![](<${url}>)`).join("\n"),images}],undefined,
+    window => { window.open = ((...args: unknown[]) => { opened.push(args); return null; }) as never; });
   const group = window.document.querySelector(".history-tool-output");
   assert.ok(group);
   assert.deepEqual([...group.querySelectorAll('[role="status"]')].map(node => node.textContent),
@@ -512,13 +515,13 @@ test("refused remote Markdown images explain the source and open links only on r
   assertNoElement(group,"img, button a");
   assert.deepEqual(requests.map(path => path.split("/").at(-1)).sort(),images.map(image => image.id).sort());
   assert.ok(requests.every(path => path.startsWith("/api/history/sessions/fixture/history/images/")),"rendering never fetches external images");
-  const opened: unknown[][] = [];
-  window.open = ((...args: unknown[]) => { opened.push(args); return null; }) as never;
   assert.deepEqual(opened,[]);
+  const requestsBeforeClick = [...requests];
   const click = new window.MouseEvent("click",{bubbles:true,cancelable:true});
   await act(async () => links[3]!.dispatchEvent(click));
   assert.equal(click.defaultPrevented,true);
   assert.deepEqual(opened,[[urls[3],"_blank","noopener,noreferrer"]]);
+  assert.deepEqual(requests,requestsBeforeClick,"opening the source sends no image request");
   assertNoElement(window.document,'[role="dialog"]');
 });
 
