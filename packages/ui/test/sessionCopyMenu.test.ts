@@ -191,6 +191,31 @@ test("a failed copy does not change last-success order or announce success", asy
 });
 
 
+test("attach action preserves server commands and existing action order", async () => {
+  const { sessionCardCopyActions, copySessionCardActionToClipboard } = await ssr.loadModule<typeof import("../src/sessionCardCopy.ts")>("/src/sessionCardCopy.ts");
+  const session = { id: managedId, machine: "testhost", agent: "codex", status: "running", provider_resume: { provider: "codex", session_id: providerId } };
+  const ssh = "ssh -t host-a 'tmux attach -t example'";
+  const local = "tmux attach -t example";
+  const actions = sessionCardCopyActions({ ...session, ssh_attach_command: ssh, attach_command: local }, watchExtension.copyFormats);
+  assert.deepEqual(actions, [
+    { id: "attach", label: "Copy attach command", value: ssh },
+    { id: "resume", label: "Copy resume command (new copy)", value: resume },
+    { id: "watch", label: "Copy watch command", value: watch },
+  ]);
+  const writes: string[] = [];
+  await copySessionCardActionToClipboard(actions[0]!, async (value) => { writes.push(value); });
+  assert.deepEqual(writes, [ssh]);
+  const localActions = sessionCardCopyActions({ ...session, status: "stopped", attach_command: local });
+  await copySessionCardActionToClipboard(localActions[0]!, async (value) => { writes.push(value); });
+  assert.equal(writes[1], local);
+  assert.equal(localActions[1]!.label, "Copy resume command");
+  assert.equal(sessionCardCopyActions(session).some((action) => action.id === "attach"), false);
+  const profiled = { ...session, agent: "claude", agent_profile: "profile", attach_command: local };
+  assert.deepEqual(sessionCardCopyActions(profiled, watchExtension.copyFormats).map(({ id, value }) => ({ id, value })), [
+    { id: "attach", value: local }, { id: "provider-session-id", value: providerId }, { id: "watch", value: watch },
+  ]);
+});
+
 test("copy action list retains profile fallback values and appends registered formats that yield a value (#918)", async () => {
   const { sessionCardCopyActions } = await ssr.loadModule<{
     sessionCardCopyActions: (session: Record<string, unknown>, formats?: readonly unknown[]) => readonly CopyAction[];
