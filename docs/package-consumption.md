@@ -43,6 +43,13 @@ Use `nativeConnection()` from `@agent-console/ui/native-connection` in native sh
 current UI configuration synchronously and returns `{ serverUrl, token }` when both values are set,
 or `{ unavailable: true }` when either is missing. Reading the snapshot leaves storage untouched.
 
+A native host can call and await `registerNativeConnectionAdapter({ load, save })` from the same
+entrypoint before mounting the UI. Both functions return promises; `load` returns
+`{ serverUrl, token }` and `save` persists that complete value in host storage. An empty token
+clears the credential while retaining the origin. Storage errors reject with a fixed message and
+never fall back to WebView storage. Hosts must provide secure storage and keep credentials out of
+error messages.
+
 Use the credential only in the authorization header of a request to the configured server's origin.
 Keep it out of URLs, logs, diagnostics and error messages.
 

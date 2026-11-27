@@ -3,7 +3,7 @@ import { BrandTitle } from "./BrandTitle.tsx";
 import { AsyncButton } from "./AsyncButton.tsx";
 import { deviceRequest, pairingConnection, pairingConnectionCurrent, installNativePairing, recipientVerifier,
   type PairingConnection, type DeviceExchange, type PairingStatus } from "./deviceSignIn.ts";
-import { clearPairingLink, isTauri, loadServerUrl, pendingPairingLink, type ImportedPairingLink } from "./runtime.ts";
+import { clearPairingLink, isTauri, loadServerUrl, NativeConnectionStorageError, pendingPairingLink, type ImportedPairingLink } from "./runtime.ts";
 import { clearLandingPairingCode, landingPairingCode } from "./pairingLanding.ts";
 import { OpenPairingLinkInAppButton } from "./PairingLinkActions.tsx";
 
@@ -62,9 +62,10 @@ export function PairingRecipient({ onSignedIn, onCancel, imported }: {
         const issued = await deviceRequest<DeviceExchange>("pairings/exchange", bound, "POST", controller.signal, target);
         if (controller.signal.aborted || !current()) return;
         if (issued.principal !== claim.principal) throw new Error("Unexpected account");
-        if (native) installNativePairing(issued, target);
+        if (native) await installNativePairing(issued, target);
         secrets.current = null; clearLandingPairingCode(); clearPairingLink(imported); setConsented(false); setClaim(null); signedIn.current();
-      } catch {
+      } catch (error) {
+        if (error instanceof NativeConnectionStorageError) { setError("Could not save native connection storage. Try again."); return; }
         if (controller.signal.aborted || !current()) return;
         if (!pairingConnectionCurrent(target)) {
           secrets.current = null; clearLandingPairingCode(); setConsented(false); setClaim(null);

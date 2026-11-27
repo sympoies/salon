@@ -99,11 +99,8 @@ export function isMacTauri(): boolean {
   if (!isTauri() || typeof navigator === "undefined") {
     return false;
   }
-  // The shipped native shells are macOS and Android. WKWebView may omit both
-  // navigator.platform and the macOS tokens from its user agent, so treat any
-  // non-Android Tauri runtime as the desktop shell instead of depending on
-  // browser-controlled platform hints.
-  return !isAndroidTauri();
+  // Desktop WKWebView may omit platform hints.
+  return !isAndroidTauri() && !isIosTauri();
 }
 
 export function isAndroidTauri(): boolean {
@@ -112,6 +109,12 @@ export function isAndroidTauri(): boolean {
   }
   const userAgent = window.navigator?.userAgent ?? navigator.userAgent;
   return userAgent.toLowerCase().includes("android");
+}
+
+export function isIosTauri(): boolean {
+  if (!isTauri() || typeof navigator === "undefined") return false;
+  const nav = window.navigator ?? navigator;
+  return /iphone|ipad|ipod/i.test(`${nav.userAgent} ${nav.platform}`);
 }
 
 export interface AndroidSafeAreaBridge {
@@ -176,23 +179,76 @@ export function normalizeServerUrl(raw: string): string {
   }
 }
 
-export function loadServerUrl(): string {
-  return unscopedLocalStorageGetItem(SERVER_KEY) ?? "";
+export class NativeConnectionStorageError extends Error {
+  constructor(operation: "load" | "save") { super(`Could not ${operation} native connection storage.`); }
 }
-export function saveServerUrl(raw: string): void {
-  if (loadServerUrl() !== normalizeServerUrl(raw)) conversationImageCache.clear();
-  unscopedLocalStorageSetItem(SERVER_KEY, normalizeServerUrl(raw));
+
+export interface NativeConnectionAdapter {
+  load(): Promise<{ serverUrl: string; token: string }>;
+  save(connection: { serverUrl: string; token: string }): Promise<void>;
+}
+let connectionAdapter: NativeConnectionAdapter | undefined;
+let adapterConnection = { serverUrl: "", token: "" };
+let adapterWrites: Promise<void> = Promise.resolve();
+
+/** Register and load before mounting; failures never use WebView storage. */
+export async function registerNativeConnectionAdapter(adapter: NativeConnectionAdapter): Promise<void> {
+  connectionAdapter = adapter;
+  adapterConnection = { serverUrl: "", token: "" };
+  try {
+    const loaded = await adapter.load();
+    adapterConnection = { serverUrl: normalizeServerUrl(loaded.serverUrl), token: loaded.token.trim() };
+  } catch { throw new NativeConnectionStorageError("load"); }
+}
+
+export function loadServerUrl(): string {
+  return connectionAdapter ? adapterConnection.serverUrl : unscopedLocalStorageGetItem(SERVER_KEY) ?? "";
+}
+export function saveServerUrl(raw: string): void | Promise<void> {
+  const serverUrl = normalizeServerUrl(raw);
+  if (loadServerUrl() !== serverUrl) conversationImageCache.clear();
+  if (connectionAdapter) {
+    return saveAdapterConnection(current => ({ serverUrl, token: serverUrl === current.serverUrl ? current.token : "" }));
+  }
+  unscopedLocalStorageSetItem(SERVER_KEY, serverUrl);
   connectionConfigGeneration += 1;
   clearPairingLink();
 }
 export function loadToken(): string {
-  return unscopedLocalStorageGetItem(TOKEN_KEY) ?? "";
+  return connectionAdapter ? adapterConnection.token : unscopedLocalStorageGetItem(TOKEN_KEY) ?? "";
 }
-export function saveToken(v: string): void {
-  if (loadToken() !== v.trim()) conversationImageCache.clear();
-  unscopedLocalStorageSetItem(TOKEN_KEY, v.trim());
+export function saveToken(v: string): void | Promise<void> {
+  const token = v.trim();
+  if (loadToken() !== token) conversationImageCache.clear();
+  if (connectionAdapter) return saveAdapterConnection(current => ({ ...current, token }));
+  unscopedLocalStorageSetItem(TOKEN_KEY, token);
   connectionConfigGeneration += 1;
   clearPairingLink();
+}
+export function saveConnectionValues(raw: string, token?: string): void | Promise<void> {
+  const serverUrl = normalizeServerUrl(raw);
+  if (connectionAdapter) {
+    conversationImageCache.clear();
+    return saveAdapterConnection(current => ({
+      serverUrl,
+      token: token === undefined && serverUrl === current.serverUrl ? current.token : (token ?? "").trim(),
+    }));
+  }
+  saveServerUrl(serverUrl);
+  if (token !== undefined) saveToken(token);
+}
+function saveAdapterConnection(update: (current: { serverUrl: string; token: string }) => { serverUrl: string; token: string }): Promise<void> {
+  const adapter = connectionAdapter!;
+  connectionConfigGeneration += 1;
+  clearPairingLink();
+  const write = adapterWrites.then(async () => {
+    const connection = update(adapterConnection);
+    try { await adapter.save({ ...connection }); }
+    catch { throw new NativeConnectionStorageError("save"); }
+    adapterConnection = connection;
+  });
+  adapterWrites = write.catch(() => {});
+  return write;
 }
 
 // Native clients need a configured server URL + token before they can talk to
@@ -242,7 +298,7 @@ export async function appFetch(path: string, init?: RequestInit): Promise<Respon
     if (!rejected || authenticated !== authenticatedConnection
       || generation !== nativeConnectionConfigGeneration()) return response;
     authenticatedConnection = undefined;
-    if (native) saveToken("");
+    if (native) await saveToken("");
     else browserCookieCleanup = withRequestDeadline(signal =>
       fetch("/api/auth/logout", { method: "POST", credentials: "include", signal }),
     AUTH_TRANSITION_TIMEOUT_MS).then(() => {}, () => {});

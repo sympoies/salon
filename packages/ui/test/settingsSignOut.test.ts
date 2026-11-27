@@ -32,7 +32,7 @@ const fixture: Plugin = {
   },
 };
 
-for (const scenario of ["success", "http-failure", "unreachable", "stalled", "browser"] as const) {
+for (const scenario of ["success", "http-failure", "unreachable", "stalled", "browser", "adapter", "adapter-failure"] as const) {
   test(scenario === "browser" ? "browser Sign out keeps cookie login behavior and leaves device storage untouched"
     : `${scenario} Sign out clears the native token and stays signed out after App reload`, { timeout: 15_000 }, async (t) => {
     // Each scenario is a fresh document; earlier tests must not spend its boot budget.
@@ -98,9 +98,17 @@ for (const scenario of ["success", "http-failure", "unreachable", "stalled", "br
       }
       assert.fail(`Sign out fixture did not reach the expected screen (auth requests: ${authRequests}, logout requests: ${logoutRequests.length})`);
     };
+    let persisted = { serverUrl: "https://console.example.test:8791", token: "synthetic-signout-token-1075" };
     try {
-      runtime.saveServerUrl("https://console.example.test:8791");
-      runtime.saveToken("synthetic-signout-token-1075");
+      if (scenario === "adapter" || scenario === "adapter-failure") {
+        await runtime.registerNativeConnectionAdapter({
+          async load() { return persisted; },
+          async save(value) { if (scenario === "adapter-failure") throw new Error("private detail"); persisted = value; },
+        });
+      } else {
+        runtime.saveServerUrl("https://console.example.test:8791");
+        runtime.saveToken("synthetic-signout-token-1075");
+      }
       const { default: App } = await ssr.loadModule<typeof import("../src/App.tsx")>("/src/App.tsx");
       await act(async () => root.render(createElement(App)));
       await waitFor(() => container.querySelector('[aria-label="Open Settings"]') !== null);
@@ -115,6 +123,13 @@ for (const scenario of ["success", "http-failure", "unreachable", "stalled", "br
       const signOut = Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Sign out");
       assert.ok(signOut);
       await act(async () => signOut.click());
+      if (scenario === "adapter-failure") {
+        assert.match(container.textContent ?? "", /Could not save native connection storage/);
+        assert.equal(runtime.loadToken(), "synthetic-signout-token-1075");
+        assert.equal(logoutRequests.length, 0);
+        return;
+      }
+      if (scenario === "adapter") assert.deepEqual(persisted, { serverUrl: "https://console.example.test:8791", token: "" });
       if (scenario === "stalled") {
         assert.equal(runtime.loadToken() === "", true,
           "native Sign out must remove the saved token before a silent server responds");

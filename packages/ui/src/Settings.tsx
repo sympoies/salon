@@ -13,7 +13,7 @@ import { AsyncButton } from "./AsyncButton.tsx";
 import { BrandTitle } from "./BrandTitle.tsx";
 import {
   loadServerUrl,
-  saveServerUrl,
+  saveConnectionValues,
   loadToken,
   saveToken,
   normalizeServerUrl,
@@ -154,7 +154,7 @@ export function Settings({
     setDraftMachineColors(next);
   }, [machines, machineColors, machineColorDefaults]);
 
-  const saveConnection = (): boolean => {
+  const saveConnection = async (): Promise<boolean> => {
     // Native accessibility/autofill may update the controls without a React
     // change event. Read the submitted values, including replacement/clearing.
     const server = serverInput.current?.value ?? "";
@@ -172,18 +172,24 @@ export function Settings({
       setError(untouched ? "Enter the access token for this server." : "Enter the console access token.");
       return false;
     }
-    saveServerUrl(normalized);
-    if (!keepSaved) saveToken(token);
+    try {
+      await saveConnectionValues(normalized, keepSaved ? undefined : token);
+    } catch {
+      setError("Could not save native connection storage. Try again.");
+      return false;
+    }
     if (tokenInput.current) tokenInput.current.value = "";
     setTokenSaved(true);
     setError(null);
     return true;
   };
 
-  const clearSavedToken = () => {
-    saveToken("");
+  const clearSavedToken = async (): Promise<boolean> => {
+    try { await saveToken(""); }
+    catch { setError("Could not save native connection storage. Try again."); return false; }
     if (tokenInput.current) tokenInput.current.value = "";
     setTokenSaved(false);
+    return true;
   };
 
   const checkConnection = async () => {
@@ -192,18 +198,18 @@ export function Settings({
     setChecking(false);
     if (!failure) return;
     // A rejected token must not keep looking like a valid saved one.
-    if (failure === "rejected") clearSavedToken();
+    if (failure === "rejected" && !await clearSavedToken()) return;
     setError(CONNECT_FAILURE_MESSAGE[failure]);
   };
   const connect = async () => {
-    if (checking || !saveConnection()) return;
+    if (checking || !await saveConnection()) return;
     await checkConnection();
   };
 
   const savedTokenStatus = tokenSaved ? (
     <div className="settings-actions">
       <span className="settings-hint" role="status">Access token saved on this device.</span>
-      <button type="button" className="btn ghost" onClick={clearSavedToken}>
+      <button type="button" className="btn ghost" onClick={() => { void clearSavedToken(); }}>
         Clear saved token
       </button>
     </div>
@@ -289,7 +295,7 @@ export function Settings({
   const signOut = async () => {
     if (native) {
       // Device sign-out is local; a stalled cookie logout must not delay it.
-      clearSavedToken();
+      if (!await clearSavedToken()) return;
       onSignedOut();
       await logout().catch(() => {});
       return;
@@ -379,7 +385,7 @@ export function Settings({
           {versionCopyStatus ? <p className="settings-hint" role="status">{versionCopyStatus}</p> : null}
         </section>
         {!openAccess ? <DeviceSettings key={getPrincipalStorageNamespace() ?? "anonymous"} onSignedOut={() => {
-          if (native) clearSavedToken(); onSignedOut();
+          void (async () => { if (!native || await clearSavedToken()) onSignedOut(); })();
         }} /> : null}
         {native ? (
           <section className="settings-section">
@@ -413,7 +419,7 @@ export function Settings({
                 data-testid="console-sign-in"
                 className="btn primary"
                 onClick={() => {
-                  if (saveConnection()) onSaved();
+                  void (async () => { if (await saveConnection()) await onSaved(); })();
                 }}
               >
                 Save connection

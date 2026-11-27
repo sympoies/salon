@@ -1,3 +1,4 @@
+export { registerNativeConnectionAdapter, type NativeConnectionAdapter } from "./runtime.ts";
 import { loadServerUrl, loadToken } from "./runtime.ts";
 
 /**

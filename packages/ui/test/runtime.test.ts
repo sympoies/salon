@@ -108,6 +108,10 @@ test("native platform detection distinguishes browser, macOS, and Android Tauri"
     assert.equal(isMacTauri(), true, "the desktop shell stays macOS when WKWebView omits platform hints");
     assert.equal(isAndroidTauri(), false);
 
+    setNavigator("iPhone", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)");
+    assert.equal(isMacTauri(), false, "iOS must not take macOS paths");
+    assert.equal(isAndroidTauri(), false);
+
     setNavigator("Linux armv8l", "Mozilla/5.0 (Linux; Android 15)");
     assert.equal(isTauri(), true);
     assert.equal(isMacTauri(), false);
