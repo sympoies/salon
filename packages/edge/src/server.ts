@@ -764,13 +764,16 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       for (const pending of accessStore.pendingSessionClaims()) {
         if (recoveryStopped) return;
         try {
+          const owned = accessStore.sessionGrant(pending.machine, pending.sessionId);
+          if (owned && owned.principalId !== pending.principalId) {
+            accessStore.removeForeignOwnedPendingSessionClaim(pending);
+            continue;
+          }
           const machine = byName.get(pending.machine);
           const principal = config.principals.find(item => item.id === pending.principalId);
           if (!machine || machine.active === false || !principal || !principal.machines.includes(machine.name)
             || machinePreferences?.disabled(principal.id).has(machine.name)
             || !accessStore.ownsSession(pending.principalId, pending.parentMachine, pending.parentId, pending.parentIncarnation)) continue;
-          const owned = accessStore.sessionGrant(pending.machine, pending.sessionId);
-          if (owned && owned.principalId !== pending.principalId) continue;
           let snapshot = snapshots.get(machine.name);
           if (!snapshot) {
             snapshot = daemonFetch(machine, "/sessions", { timeoutMs: FAILED_CREATE_LOOKUP_REQUEST_MS }).catch(() => null);
@@ -783,6 +786,10 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
             ? sessions.map(objectProp).find(item => item?.id === pending.sessionId) : undefined;
           if (owned) {
             if (session && session.session_incarnation === owned.incarnation) accessStore.removeMatchingPendingSessionClaim(pending, owned.incarnation);
+            continue;
+          }
+          if (result && daemonSucceeded(result) && Array.isArray(sessions) && !session) {
+            accessStore.shortenPendingSessionClaim(pending, Date.now() + 5 * 60_000);
             continue;
           }
           const lineage = objectProp(session?.lineage);

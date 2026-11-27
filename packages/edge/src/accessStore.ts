@@ -952,6 +952,18 @@ export class AccessStore {
       .run(claim.machine, claim.sessionId, claim.operationId);
   }
 
+  shortenPendingSessionClaim(claim: PendingSessionClaim, expiresAt: number): void {
+    this.#db.prepare(`UPDATE pending_session_claim SET expires_at = MIN(expires_at, ?)
+      WHERE machine = ? AND session_id = ? AND operation_id = ?`)
+      .run(expiresAt, claim.machine, claim.sessionId, claim.operationId);
+  }
+
+  removeForeignOwnedPendingSessionClaim(claim: PendingSessionClaim): void {
+    this.#db.prepare(`DELETE FROM pending_session_claim WHERE machine = ? AND session_id = ? AND operation_id = ?
+      AND EXISTS (SELECT 1 FROM session_ownership WHERE machine = ? AND session_id = ? AND principal_id != ?)`)
+      .run(claim.machine, claim.sessionId, claim.operationId, claim.machine, claim.sessionId, claim.principalId);
+  }
+
   removeMatchingPendingSessionClaim(claim: PendingSessionClaim, incarnation: string): void {
     this.#db.prepare(`DELETE FROM pending_session_claim WHERE machine = ? AND session_id = ? AND operation_id = ?
       AND EXISTS (SELECT 1 FROM session_ownership WHERE machine = ? AND session_id = ? AND principal_id = ? AND incarnation = ?)`)
