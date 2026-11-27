@@ -43,7 +43,7 @@ export function AttachmentChip({ file }: { readonly file: UploadedFile }) {
 function MessageImage({src}: {readonly src?: string}) {
   const url = src ? validateTerminalUrl(src) : null;
   return <span className="conversation-external-image"><span>Image unavailable</span>{url ? <>
-    <span>{new URL(url).origin}</span><span className="conversation-image-source" title={url}>{url}</span>
+    <span>{new URL(url).origin}</span><span className="conversation-image-source" title={url} aria-label={url}>{url}</span>
     <MessageLink href={url}>Open in browser</MessageLink></> : null}</span>;
 }
 function HiddenMessageImage() { return null; }

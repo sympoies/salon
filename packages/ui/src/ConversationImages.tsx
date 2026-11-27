@@ -47,7 +47,7 @@ function ImageContent({data,fail,onLoad,retry,sourceName,sourceUrl}: { readonly 
     : data.reason === "remote-url-not-fetched" ? `External image, not loaded${data.sourceOrigin ? ` · ${data.sourceOrigin}` : ""}${data.remoteReason ? ` · ${remoteReasonText(data.remoteReason)}` : ""}`
     : data.reason === "unsupported-type" ? "Unsupported image type" : data.reason === "too-large" ? "Image is too large" : "Image unavailable";
   return <div className="conversation-external-image"><span role="status">{label}</span>
-    {sourceUrl ? <><span>{new URL(sourceUrl).origin}</span><span className="conversation-image-source" title={sourceUrl}>{sourceUrl}</span>
+    {sourceUrl ? <><span>{new URL(sourceUrl).origin}</span><span className="conversation-image-source" title={sourceUrl} aria-label={sourceUrl}>{sourceUrl}</span>
       <a href={sourceUrl} target="_blank" rel="noopener noreferrer" onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
         onClick={event => { event.preventDefault(); event.stopPropagation(); void openExternalTerminalUrl(sourceUrl); }}>Open in browser</a></> : null}
     {data.state === "error" && retry ? <RetryImage retry={retry} /> : null}</div>;
