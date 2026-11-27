@@ -181,6 +181,42 @@ async function fixture(factory: IDBFactory | null = new IDBFactory(), renderComp
   }
 }
 
+test("reply normalizes tabs and carriage returns before admission", async () => {
+  const h = await fixture();
+  try {
+    await h.send("first\tsecond\r\nthird\rfourth");
+    assert.equal(h.admissions[0]?.text, "first    second\nthird\nfourth");
+  } finally { await h.close(); }
+});
+
+test("reply with unsupported control characters explains the refusal", async () => {
+  const h = await fixture();
+  try {
+    await h.send("first\u0001second");
+    assert.match(h.container.textContent ?? "", /unsupported control characters/i);
+    assert.equal(h.admissions.length, 0);
+    assert.equal(h.editor().value, "first\u0001second");
+  } finally { await h.close(); }
+});
+
+test("over-limit reply explains the size refusal", async () => {
+  const h = await fixture();
+  try {
+    await h.send("é".repeat(8193));
+    assert.match(h.container.textContent ?? "", /16 KiB/i);
+    assert.equal(h.admissions.length, 0);
+    assert.equal(h.editor().value, "é".repeat(8193));
+  } finally { await h.close(); }
+});
+
+test("plain reply is admitted unchanged", async () => {
+  const h = await fixture();
+  try {
+    await h.send("first line\nsecond line");
+    assert.equal(h.admissions[0]?.text, "first line\nsecond line");
+  } finally { await h.close(); }
+});
+
 test("fixture setup failure releases resources", async () => {
   if (process.env.OUTBOX_SETUP_FAILURE_CHILD === "1") {
     const failure: Plugin = { name: "fixture-setup-failure", enforce: "pre", resolveId(id) {
