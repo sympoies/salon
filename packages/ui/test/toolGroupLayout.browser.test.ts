@@ -60,7 +60,7 @@ test("tool group rows preserve agent columns, visible avatars, timestamp insets 
       load(id) {
         if (id !== "\0group-layout-fixture") return;
         return `import React from 'react';import {createRoot} from 'react-dom/client';import {HistoryConversationView} from '/src/HistoryConversation.tsx';import '/src/styles.css';
-          const text=(id,role='assistant',text='Fernlight sample project. '.repeat(6))=>({id,role,text,timestamp:'2026-01-01T12:00:00'});
+          const text=(id,role='assistant',text='Fernlight sample project. '.repeat(20))=>({id,role,text,timestamp:'2026-01-01T12:00:00'});
           const tool=(id,error=false)=>({...text(id,'assistant',''),timestamp:id.endsWith('2')?'2026-01-01T12:02:00':'2026-01-01T12:01:00',tool_parts:[{kind:'tool_call',id:id+'-call',name:'Read',input_summary:'sample.txt',status:error?'error':'ok'}]});
           const messages=[text('reference'),text('request','user','Inspect the sample.'),tool('normal1'),tool('normal2'),text('after-normal'),tool('error1'),tool('error2',true),text('after-error','assistant','The missing sample needs attention.'),text('single-request','user','Inspect one file.'),tool('single'),text('after-single','assistant','The sample is ready.')];
           createRoot(document.querySelector('#root')).render(React.createElement(HistoryConversationView,{conversation:{session:{id:'sample',machine:'fixture',provider:'codex'},messages,latestMessagePaging:window.live,loading:false,viewportRef:{current:null}},onJumpToLatest(){}}));`;
