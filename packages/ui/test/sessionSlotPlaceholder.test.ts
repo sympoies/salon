@@ -49,3 +49,17 @@ test("a projection-only empty slot offers creation without authoritative assignm
   assert.doesNotMatch(html, />Candidate</);
   assert.match(html, />\+ New session/);
 });
+
+test("an occupied slot with hidden content never offers the empty-slot placeholder", async () => {
+  const module = await ssr.loadModule<{
+    SessionSlot: ComponentType<SessionSlotProps>;
+  }>("/src/SessionSlot.tsx");
+  const session = makeSession();
+  const props = makeSessionSlotProps({ session, options: [session] });
+  const html = renderComponent(module.SessionSlot, {
+    ...props,
+    view: { ...props.view, contentVisible: false },
+  });
+
+  assert.doesNotMatch(html, /Select a session/);
+});

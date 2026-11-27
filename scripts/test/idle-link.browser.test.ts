@@ -301,3 +301,23 @@ for (const view of ["conversation", "terminal"] as const) {
     }
   });
 }
+
+test("Usage keeps occupied terminal panes mounted behind the overlay", { timeout: 25_000 }, async () => {
+  const fixture = await startFixture(2, true);
+  const page = await launchPage();
+  try {
+    await signIn(page, fixture.base);
+    await page.setViewport(1500, 1000, 1);
+    await page.navigate(fixture.base);
+    await until(page, 'document.querySelectorAll(".terminal-slot[data-slot-key]").length === 2', "two slots appear");
+    await until(page, 'document.querySelectorAll(".xterm").length === 2', "terminal panes mount");
+    await page.evaluate('document.querySelector(".header-menu-trigger").click()');
+    await page.evaluate('[...document.querySelectorAll("[role=menuitem]")].find(item => item.textContent.trim() === "Usage").click()');
+    await until(page, 'document.querySelector(".app-shell.has-overlay")', "Usage opens");
+    assert.equal(await page.evaluate('document.querySelectorAll(".terminal-slot[data-slot-key] .xterm").length'), 2);
+    assert.equal(await page.evaluate('document.querySelectorAll(".terminal-slot[data-slot-key] .slot-empty").length'), 0);
+  } finally {
+    await page.close();
+    await fixture.close();
+  }
+});

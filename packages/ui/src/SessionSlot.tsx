@@ -1131,9 +1131,9 @@ export function SessionSlot({
             ) : null}
           </div>
         )
-      ) : (
+      ) : !s ? (
         <div className="slot-empty">Select a session</div>
-      )}
+      ) : null}
     </li>
   );
 }
