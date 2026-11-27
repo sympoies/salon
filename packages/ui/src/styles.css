@@ -3290,8 +3290,8 @@ textarea {
 }
 .session-filter-field-notice > .connection-notice-layer .connection-notice-message-compact, .session-filter-trigger-row > .connection-notice-layer .connection-notice-message-compact { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @container (max-width: 150px) {
-  .session-filter-field-notice > .connection-notice-layer .connection-notice-message-full, .session-filter-trigger-row > .connection-notice-layer .connection-notice-message-full { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .session-filter-field-notice > .connection-notice-layer .connection-notice-message-compact, .session-filter-trigger-row > .connection-notice-layer .connection-notice-message-compact { display: block; }
+  .session-filter-field-notice > .connection-notice-layer.is-clipped .connection-notice-message-full, .session-filter-trigger-row > .connection-notice-layer.is-clipped .connection-notice-message-full { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .session-filter-field-notice > .connection-notice-layer.is-clipped .connection-notice-message-compact, .session-filter-trigger-row > .connection-notice-layer.is-clipped .connection-notice-message-compact { display: block; }
 }
 /* With no free space in the row (phone widths, where the search bar fills it) the toast is visually hidden, still
    announced, and a small red dot inside the search bar's right padding marks the offline host instead. The bar
@@ -3339,9 +3339,12 @@ textarea {
 .connection-notice-layer.is-inline .connection-notice.is-transient.is-tone-ok { --notice-tone: var(--ok); }
 .connection-notice-icon { font-weight: var(--weight-bold); }
 .connection-notice-message { min-width: 0; overflow-wrap: anywhere; }
+.connection-notice-message-full { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .connection-notice-trigger {
-  /* Keep the screen-reader label inside the clipped message. */
-  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
   appearance: none;
   padding: 0;
   border: 0;
@@ -3349,14 +3352,16 @@ textarea {
   color: inherit;
   font: inherit;
   text-align: start;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration: none;
   cursor: pointer;
 }
+.connection-notice-trigger > :is(.connection-notice-message-full, .connection-notice-message-compact) { min-width: 0; flex: 1 1 auto; }
+.connection-notice-cue { flex: none; width: 0.8em; height: 0.8em; margin-inline-start: 0.2em; }
+.connection-notice-trigger[aria-expanded="true"] .connection-notice-cue { transform: rotate(180deg); }
 .connection-notice-trigger:focus-visible,
 .connection-notice-dot:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .connection-notice-detail {
   pointer-events: auto;
