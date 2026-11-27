@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -126,6 +127,7 @@ with open(os.environ["CALLS"], "a") as output:
             self.assertIn("Invalid UI_TEST_CONCURRENCY", result.stderr)
             self.assertFalse(any("--test-name-pattern=^$" in call for call in calls))
 
+    @unittest.skipIf(sys.platform == "darwin", "Linux-only Node wrapper test")
     def test_node_shards_cover_each_partition_once(self):
         with tempfile.TemporaryDirectory(prefix="salon-ui-shards-", dir="/tmp") as directory, \
                 tempfile.TemporaryDirectory(prefix="salon-node-scope-", dir="/tmp") as scope_directory:

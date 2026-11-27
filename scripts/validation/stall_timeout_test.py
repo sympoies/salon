@@ -21,6 +21,7 @@ def run(limit, label, *command):
 
 
 class StallTimeoutTest(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "darwin", "Linux-only process group test")
     def test_silent_step_fails_by_name_and_leaves_no_child(self):
         with tempfile.TemporaryDirectory() as directory:
             pid_file = Path(directory) / "pid"
@@ -52,6 +53,7 @@ class StallTimeoutTest(unittest.TestCase):
         self.assertIn("killed step", result.stderr)
         self.assertIn("signal 9", result.stderr)
 
+    @unittest.skipIf(sys.platform == "darwin", "Linux-only process group test")
     def test_step_that_closes_its_output_but_keeps_running_is_still_stopped(self):
         started = time.monotonic()
         result = run(1, "closed output step", "bash", "-c", "exec >&- 2>&-; sleep 60")
@@ -70,6 +72,7 @@ class StallTimeoutTest(unittest.TestCase):
             with self.assertRaises(ProcessLookupError):
                 os.kill(child, 0)
 
+    @unittest.skipIf(sys.platform == "darwin", "Linux-only process group test")
     def test_cancelling_the_watchdog_stops_the_step_and_exits_conventionally(self):
         with tempfile.TemporaryDirectory() as directory:
             pid_file = Path(directory) / "pid"
