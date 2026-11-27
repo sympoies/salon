@@ -308,6 +308,26 @@ test("Codex ProviderCard distinguishes zero from unknown without offering redemp
   assert.doesNotMatch(unknown, /resets available/);
 });
 
+for (const [name, entry, expected] of [
+  ["switch key", { ...provider({ account: "user@example.com", switch_key: "nick", reset_credits: { available_count: 1 } }) }, "nick"],
+  ["account fallback", { ...provider({ account: "fallback", reset_credits: { available_count: 1 } }), switch_key: undefined }, "fallback"],
+] as const) {
+  test(`Codex reset sends the ${name}`, async () => {
+    const ProviderCard = await loadProviderCard();
+    const mounted = installDom();
+    cleanupStack.push(mounted.cleanup);
+    const accounts: string[] = [];
+    await act(async () => mounted.root.render(createElement(ProviderCard, {
+      provider: entry, now: NOW,
+      onReset: async (account: string) => { accounts.push(account); return { ok: true, outcome: "reset" }; },
+    })));
+    await act(async () => mounted.container.querySelector<HTMLButtonElement>(".usage-reset-trigger")?.click());
+    await act(async () => [...mounted.container.querySelectorAll<HTMLButtonElement>(".usage-reset-modal button")]
+      .find((button) => button.textContent?.trim() === "Use reset")?.click());
+    assert.deepEqual(accounts, [expected]);
+  });
+}
+
 test("Codex reset confirmation defaults to cancel, dedupes clicks, and reuses its UUID on retry", async () => {
   const ProviderCard = await loadProviderCard();
   const mounted = installDom();
