@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -24,6 +25,25 @@ class MacOSBashTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Bash 4", result.stderr)
         self.assertIn("PATH", result.stderr)
+
+    def test_system_bash_clears_stale_marker(self):
+        source = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".agents/scripts").mkdir(parents=True)
+            (root / "scripts").mkdir()
+            for relative in (".agents/scripts/pre-pr.sh", "scripts/validate-project-dev.sh"):
+                shutil.copyfile(source / relative, root / relative)
+            marker = root / ".cache/agent-validation/project-dev.ok"
+            marker.parent.mkdir(parents=True)
+            for relative in (".agents/scripts/pre-pr.sh", "scripts/validate-project-dev.sh"):
+                with self.subTest(entrypoint=relative):
+                    marker.write_text("stale")
+                    result = subprocess.run(["/bin/bash", str(root / relative)],
+                                            capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn("Bash 4", result.stderr)
+                    self.assertFalse(marker.exists(), relative)
 
 
 if __name__ == "__main__":

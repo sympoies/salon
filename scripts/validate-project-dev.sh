@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+marker=".cache/agent-validation/project-dev.ok"
+rm -f "$marker"
+
 if (( BASH_VERSINFO[0] < 4 )); then
   printf 'Bash 4 or newer is required. Install a modern Bash and put it first on PATH, then run the validation again.\n' >&2
   exit 2
 fi
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
-marker=".cache/agent-validation/project-dev.ok"
-rm -f "$marker"
 
 scope=full
 suite=""
@@ -31,7 +32,7 @@ fi
 case "$scope" in docs|edge|ui|full) ;; *) exit 2 ;; esac
 printf 'Validation scope: %s\n' "$scope"
 if [[ "$(uname -s)" == Darwin ]]; then
-  printf 'macOS partial validation: skipping Linux-only validation tests stall_timeout_test.test_silent_step_fails_by_name_and_leaves_no_child, stall_timeout_test.test_step_that_closes_its_output_but_keeps_running_is_still_stopped, stall_timeout_test.test_cancelling_the_watchdog_stops_the_step_and_exits_conventionally, and ui_partition_test.test_node_shards_cover_each_partition_once. Hosted Linux CI is the full gate.\n'
+  printf 'macOS partial validation: hosted Linux CI is the full gate; no validation tests are skipped on macOS.\n'
 fi
 
 for tool in git python3 shellcheck devlog; do
