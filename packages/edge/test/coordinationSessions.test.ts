@@ -38,6 +38,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
     assert.equal(req.headers.authorization, `Bearer ${operatorToken}`);
     res.setHeader("content-type", "application/json");
     if (req.method === "GET" && req.url === "/sessions" && state.failList) {
+      listCalls++;
       res.writeHead(500);
       res.end(JSON.stringify({ ok: false, error: { code: "internal", message: "unavailable" } }));
       return;
@@ -352,6 +353,29 @@ test("recovery shortens an absent child's claim without extending it on later sw
     assert.ok(f.other.listCalls() > firstCalls);
     const check = new AccessStore(f.db);
     try { assert.equal(check.pendingSessionClaims().find(item => item.sessionId === "absent")?.expiresAt, firstExpiry); }
+    finally { check.close(); }
+  } finally {
+    await new Promise<void>(resolve => { restarted.closeAllConnections(); restarted.close(() => resolve()); });
+    await f.cleanup();
+  }
+});
+
+test("a failed session list preserves the pending claim expiry", async () => {
+  const f = await fixture({ pendingRecoveryIntervalMs: 30 });
+  f.other.state.failList = true;
+  const expiry = Date.now() + 24 * 60 * 60_000;
+  const store = new AccessStore(f.db);
+  try {
+    store.savePendingSessionClaim({ machine: "cedar", sessionId: "unavailable", principalId: "tess", parentMachine: "summit",
+      parentId: "dispatcher", parentIncarnation: "disp-inc", operationId: "operation", startMark: {}, expiresAt: expiry });
+  } finally { store.close(); }
+  const restarted = createEdgeServer(f.config, f.edgeOptions);
+  try {
+    await listenOnLoopback(restarted);
+    for (let n = 0; n < 100 && f.other.listCalls() < 2; n++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(f.other.listCalls() >= 2);
+    const check = new AccessStore(f.db);
+    try { assert.equal(check.pendingSessionClaims().find(item => item.sessionId === "unavailable")?.expiresAt, expiry); }
     finally { check.close(); }
   } finally {
     await new Promise<void>(resolve => { restarted.closeAllConnections(); restarted.close(() => resolve()); });
