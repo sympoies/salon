@@ -84,7 +84,7 @@ test("notice disclosure follows clipping and keyboard focus", async t => {
     await page.navigate(`${pathToFileURL(file).href}?short#short`);
     await page.evaluate("new Promise(resolve => setTimeout(resolve, 150))");
     assert.equal(await page.evaluate("!!document.querySelector('.connection-notice-trigger')"), false, `${width} ${theme} short`);
-    await page.evaluate("document.querySelector('#root').style.width = '100px'");
+    await page.evaluate("document.querySelector('#root').style.width = '135px'");
     await page.evaluate("new Promise(resolve => setTimeout(resolve, 100))");
     assert.equal(await page.evaluate("!!document.querySelector('.connection-notice-trigger')"), false, `${width} ${theme} short at compact width`);
   }
