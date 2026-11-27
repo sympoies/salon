@@ -51,13 +51,14 @@ test("image thumbnails retain their sizing and outgoing metadata stays beside th
           createRoot(document.querySelector('#root')).render(React.createElement(HistoryConversationView,{
             conversation:{session:{machine:'fixture',id:'sample'},messages,latestMessagePaging:true,
               loading:false,viewportRef:{current:null}},onJumpToLatest(){}}));
-          const wait=condition=>new Promise((resolve,reject)=>{let attempts=200;function check(){if(condition())resolve();
-            else if(--attempts)setTimeout(check,10);else reject(Error('fixture did not settle'));}check()});
+          const wait=(condition,message='fixture did not settle')=>new Promise((resolve,reject)=>{let attempts=200;function check(){if(condition())resolve();
+            else if(--attempts)setTimeout(check,10);else reject(Error(message));}check()});
           const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}};
           void (async()=>{try {
             await wait(()=>document.querySelectorAll('.conversation-image-thumbnail img').length===6 &&
               [...document.images].every(img=>img.complete && img.naturalWidth));
-            await new Promise(resolve=>setTimeout(resolve,50));
+            await wait(()=>document.querySelector('article .history-image-label')?.textContent==='Review chart.png',
+              'authenticated image filename did not appear');
             const boxes=[...document.querySelectorAll('article')].map(article=>{
               const bubble=article.querySelector('.history-bubble');
               const image=bubble.querySelector('img');const time=article.querySelector('time');
