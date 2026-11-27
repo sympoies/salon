@@ -83,7 +83,7 @@ async function fixture(t: import("node:test").TestContext, multiUser = false) {
   const directory = mkdtempSync(join(tmpdir(), "console-shared-delivery-"));
   const statePath = join(directory, "state.sqlite");
   const state = { incarnation, sessionPresent: true, sessionsAvailable: true, provider: "codex", phase: "working", revision: 1, mode: "busy", posts: [] as Record<string, unknown>[],
-    lookups: [] as string[], receipts: new Map<string, unknown>(), submitted: 0, lookup: "normal", observation: undefined as string | undefined, lookupWait: undefined as Promise<void> | undefined };
+    lookups: [] as string[], receipts: new Map<string, unknown>(), submitted: 0, lookup: "normal", observation: undefined as string | undefined, lookupWait: undefined as Promise<void> | undefined, postWait: undefined as Promise<void> | undefined };
   const daemon = createServer(async (req, res) => {
     res.setHeader("content-type", "application/json");
     if (req.url === "/sessions" && !state.sessionsAvailable) {
@@ -100,6 +100,7 @@ async function fixture(t: import("node:test").TestContext, multiUser = false) {
     if (req.method === "POST" && req.url === "/sessions/session-a/prompt/v2") {
       let text = ""; for await (const chunk of req) text += String(chunk);
       const body = JSON.parse(text) as Record<string, unknown>; state.posts.push(body);
+      await state.postWait;
       const receipt = { request_id: body.request_id, session_id: "session-a", session_incarnation: body.expected_session_incarnation,
         outcome: state.mode === "busy" ? "refused" : state.mode.startsWith("command") ? "command_dispatched" : "submitted",
         code: state.mode === "busy" ? (state.observation ? "composer-unobservable" : "busy") : null,
@@ -343,10 +344,17 @@ test("ownership, CSRF and actual incarnation fence admission and subsequent deli
 });
 
 test("retained admitted replies still protect lifecycle operations after action retirement", async t => {
-  const f = await fixture(t); await f.admit();
-  assert.equal((await f.lifecycle("", "DELETE")).status, 409);
-  assert.equal((await f.lifecycle("/archive", "POST", { expected_session_incarnation: incarnation })).status, 409);
-  assert.equal((await f.list()).items[0]!.text, admission.text);
+  const f = await fixture(t);
+  let release!: () => void;
+  f.state.postWait = new Promise<void>(resolve => { release = resolve; });
+  try {
+    await f.admit();
+    await f.until(() => f.state.posts.length === 1);
+    assert.equal((await f.list()).items[0]!.state, "sending");
+    assert.equal((await f.lifecycle("", "DELETE")).status, 409);
+    assert.equal((await f.lifecycle("/archive", "POST", { expected_session_incarnation: incarnation })).status, 409);
+    assert.equal((await f.list()).items[0]!.text, admission.text);
+  } finally { release(); }
 });
 
 test("a second edge process sharing the DB cannot POST an already claimed intent", async t => {
