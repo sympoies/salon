@@ -1,5 +1,6 @@
 """The validation stall watchdog stops a silent step and spares a printing one."""
 
+import importlib.util
 import os
 from pathlib import Path
 import signal
@@ -8,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 WATCHDOG = Path(__file__).resolve().parents[1] / "stall-timeout.py"
 
@@ -21,6 +23,39 @@ def run(limit, label, *command):
 
 
 class StallTimeoutTest(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin", "macOS exited-group behavior")
+    def test_exited_group_with_open_output_stalls_without_traceback(self):
+        command = 'import subprocess; subprocess.Popen(["sleep", "3"], start_new_session=True)'
+        result = run(1, "exited step", sys.executable, "-c", command)
+        self.assertEqual(result.returncode, 124, result.stderr)
+        self.assertIn("exited step", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_macos_exited_group_during_signal_cleanup(self):
+        spec = importlib.util.spec_from_file_location("stall_timeout", WATCHDOG)
+        watchdog = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(watchdog)
+        for failing_signal in (signal.SIGTERM, signal.SIGKILL):
+            with self.subTest(failing_signal=failing_signal):
+                process = mock.Mock(pid=123)
+                def killpg(_pgid, sig):
+                    if sig == failing_signal:
+                        raise PermissionError(1, "Operation not permitted")
+                with mock.patch.object(watchdog.sys, "platform", "darwin"), \
+                     mock.patch.object(watchdog.os, "killpg", side_effect=killpg), \
+                     mock.patch.object(watchdog.time, "monotonic", side_effect=[0, 6, 6]):
+                    watchdog.stop(process)
+                process.wait.assert_called_once()
+
+    def test_non_macos_signal_permission_error_is_preserved(self):
+        spec = importlib.util.spec_from_file_location("stall_timeout", WATCHDOG)
+        watchdog = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(watchdog)
+        with mock.patch.object(watchdog.sys, "platform", "linux"), \
+             mock.patch.object(watchdog.os, "killpg", side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                watchdog.stop(mock.Mock(pid=123))
+
     def test_silent_step_fails_by_name_and_leaves_no_child(self):
         with tempfile.TemporaryDirectory() as directory:
             pid_file = Path(directory) / "pid"
