@@ -80,8 +80,18 @@ test("owned image upload paths retain exact spaces and quoting without using oth
 
 test("attachment names strip bidi controls and reject invisible-only names", () => {
   assert.equal(sanitizeAttachmentName("safe\u202Ename\u2066.png\u2069"), "safename.png");
-  for (const name of ["\u200B", "\u200C\u200D\uFEFF", " \u200B ", "\u180E\uFE0F"]) {
+  assert.equal(sanitizeAttachmentName("a\u061Cb\u200Fc"), "abc");
+  assert.equal(sanitizeAttachmentName("a".repeat(254) + "\u202Ebc"), "a".repeat(254) + "b");
+  for (const name of ["\u200B", "\u200C\u200D\uFEFF", " \u200B ", "\u200B \u200B", "\u180E\uFE0F"]) {
     assert.equal(sanitizeAttachmentName(name), undefined);
   }
   assert.equal(sanitizeAttachmentName("a\u200Db.png"), "a\u200Db.png");
+});
+
+test("braille blank names are absent", () => {
+  assert.equal(sanitizeAttachmentName("\u2800"), undefined);
+});
+
+test("a dot with invisible characters is absent", () => {
+  assert.equal(sanitizeAttachmentName(".\u200B"), undefined);
 });
