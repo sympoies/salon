@@ -585,6 +585,11 @@ export function assertResumeOwnership(store: AccessStore, principal: PrincipalCo
 }
 
 function relayForRequest(config: EdgeConfig, req: IncomingMessage) {
+  let authorizationCount = 0;
+  for (let i = 0; i < req.rawHeaders.length; i += 2) {
+    if (req.rawHeaders[i]!.toLowerCase() === "authorization") authorizationCount++;
+  }
+  if (authorizationCount !== 1) return undefined;
   const token = bearerToken(req.headers.authorization);
   return token ? config.coordinationRelays?.find(relay => timingSafeEqualStr(relay.token, token)) : undefined;
 }

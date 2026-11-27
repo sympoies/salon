@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -104,7 +104,7 @@ function daemon(operatorToken: string, sessions: Array<Record<string, unknown>>)
   return { server, creates, sessions, state, history, listCalls: () => listCalls };
 }
 
-async function fixture(options: EdgeServerOptions = {}, attestedCreate = false) {
+async function fixture(options: EdgeServerOptions = {}, attestedCreate = false, successionStop = false) {
   const ownerToken = "browser-tess";
   const otherMachine = "cedar";
   const dir = mkdtempSync(join(tmpdir(), "owned-create-test-"));
@@ -124,6 +124,7 @@ async function fixture(options: EdgeServerOptions = {}, attestedCreate = false) 
   const edge = createEdgeServer(makeEdgeConfig({
     openAccess: false, multiUser: true, accessDbPath: db,
     ...(attestedCreate ? { attestedCreateEnabled: true } : {}),
+    ...(successionStop ? { successionStopEnabled: true } : {}),
     principals: [
       { id: "tess", token: ownerToken, machines: ["summit", otherMachine], permissions: [] },
       { id: "dana", token: "browser-dana", machines: ["summit", "maple"], permissions: [] },
@@ -147,6 +148,31 @@ async function fixture(options: EdgeServerOptions = {}, attestedCreate = false) 
     },
   };
 }
+
+test("coordination routes reject missing and duplicate relay authorization before parsing", async () => {
+  const f = await fixture({}, true, true);
+  try {
+    const routes = [
+      ["POST", "/api/coordination/sessions/v1"],
+      ["GET", "/api/coordination/attested-create/v1"],
+      ["POST", "/api/coordination/sessions/summit/dispatcher/stop/v1"],
+    ];
+    for (const [method, path] of routes) {
+      for (const headers of [[], ["Authorization", "Bearer source-relay", "authorization", "Bearer source-relay"]]) {
+        const status = await new Promise<number>((resolve, reject) => {
+          const req = request(`${f.base}${path}`, { method, headers: [...headers, "Host", "localhost", "Content-Length", "1"] }, res => {
+            res.resume();
+            res.on("end", () => { resolve(res.statusCode!); req.destroy(); });
+          });
+          req.on("error", reject);
+          req.setTimeout(2000, () => req.destroy(new Error("response waited for request body")));
+          req.flushHeaders();
+        });
+        assert.equal(status, 401, `${method} ${path} with ${headers.length / 2} authorization headers`);
+      }
+    }
+  } finally { await f.cleanup(); }
+});
 
 const caller = { source_session_id: "dispatcher", source_incarnation: "disp-inc" };
 
