@@ -145,6 +145,12 @@ export interface EdgeRoute {
    * principal only while it owns the exact target session incarnation; the caller is kept for audit.
    */
   readonly outboxOwnerDispatch?: boolean;
+  /**
+   * Default off, separate from `outboxOwnerDispatch`. When true, `conversation.firstReplyAfter` may read the
+   * first reply after an on-behalf record's own submission receipt; the facade rechecks every on-behalf
+   * condition on each read and never reads any other part of the owner's history.
+   */
+  readonly outboxOwnerReplyRead?: boolean;
   handle(ctx: EdgeRouteContext): Promise<void> | void;
 }
 
@@ -250,6 +256,9 @@ export function createEdgeExtensionRegistry(extensions: readonly EdgeExtension[]
       if (typeof route.permission !== "string") throw new Error(`${key}: permission is required`);
       if (route.outboxOwnerDispatch !== undefined && typeof route.outboxOwnerDispatch !== "boolean") {
         throw new Error(`${key}: outboxOwnerDispatch must be a boolean`);
+      }
+      if (route.outboxOwnerReplyRead !== undefined && typeof route.outboxOwnerReplyRead !== "boolean") {
+        throw new Error(`${key}: outboxOwnerReplyRead must be a boolean`);
       }
       if (!CORE_PERMISSIONS.has(route.permission) && !own.has(route.permission)) {
         throw new Error(`${key}: undeclared permission "${route.permission}"`);

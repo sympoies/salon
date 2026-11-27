@@ -122,7 +122,20 @@ The record is dispatched as the owner and stores the caller for audit.
 Every dispatch attempt checks again that the capability exists, the caller still holds the
 permission and machine access, and the owner still owns the incarnation.
 An ownership change refuses the queued item with `outbox-authorization-changed`.
-On-behalf records are not readable through `ctx.conversation`.
+
+On-behalf records are not readable through `ctx.conversation` unless the reading route sets the
+separate, default-off `outboxOwnerReplyRead: true`. That capability is not implied by
+`outboxOwnerDispatch`. The read returns only the first reply after that record's own submission
+receipt, in its exact incarnation.
+The caller's query must name the caller's own stored record and
+its exact target. Every read repeats the admission checks and requires the history to belong to the
+owner. A failed check returns `forbidden`. The read does not list or select any other history.
+It returns `history_order_unavailable` when other user text appears between the receipt and the reply.
+
+A holder of both capabilities can queue a prompt and read back the first reply, up to 16 KiB and
+repeatably. That reply is whatever the owner's agent printed next, so it can include earlier
+conversation. It is not necessarily an answer to the queued prompt. Grant both capabilities only
+to an adapter that you trust with the owner's agent output.
 
 Residual risk: a holder of the route permission on a capability route can queue prompts into any
 exact session incarnation it can name, for that session's current owner. This applies on every
