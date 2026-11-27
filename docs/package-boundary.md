@@ -122,6 +122,7 @@ The record is dispatched as the owner and stores the caller for audit.
 Every dispatch attempt checks again that the capability exists, the caller still holds the
 permission and machine access, and the owner still owns the incarnation.
 An ownership change refuses the queued item with `outbox-authorization-changed`.
+
 Authorization is tied to the caller principal, not to a credential generation: rotating the
 caller's credential alone does not cancel queued on-behalf items. This lets queued work
 survive credential rotation while dispatch still rechecks the principal's current access.
