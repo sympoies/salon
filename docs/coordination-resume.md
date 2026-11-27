@@ -262,6 +262,9 @@ The coordinating service registers a grant with
 contract's media type. The relay derives the owner from its ownership grants, records the
 grant durably and keeps it after revocation. `delegation_id` is the issue idempotency key,
 and one active grant may exist for a predecessor tuple.
+The relay reserves each stop `operation_id` globally when it issues a grant, including
+after revocation. Reuse with another tuple is a conflict; this keeps the outbox receipt
+and destination deduplication tied to one operation rather than allowing ambiguous IDs.
 
 A managed successor stops its predecessor through its source daemon at
 `POST /api/coordination/sessions/{machine}/{id}/stop/v1` and reads the receipt at

@@ -271,3 +271,38 @@ test("a stop operation binds its full tuple and deadline and records its outcome
   assert.deepEqual(store.stopOperation(target, "operation-a"), { state: "stopped", stopResult: "already_stopped", code: null, ...binding });
   assert.throws(() => store.resolveStop(target, "operation-a", "stopped", { stopResult: "exited" }), /operation-id-conflict/);
 });
+
+test("stop refuses malformed target identifiers and detects stored normalization collisions", t => {
+  const dir = mkdtempSync(join(tmpdir(), "outbox-stop-unicode-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new OutboxStore(join(dir, "state.sqlite"));
+  t.after(() => store.close());
+  const malformed = { ...target, sessionId: "session-\ud800" };
+  const collision = { ...target, sessionId: "session-\ud801" };
+  store.admit(malformed, "intent-a", "message", "generation");
+  assert.throws(() => store.beginStop(collision, "operation-a", binding), /outbox-/);
+  assert.throws(() => store.beginStop({ ...target, sessionId: "session-\ufffd" }, "operation-b", binding), /outbox-pending-replies/);
+  const badIssuer = { ...target, principalId: "principal-\ud800" };
+  assert.throws(() => store.beginStop(badIssuer, "operation-c", binding), /outbox-lifecycle-pending/);
+  const validIssuer = { ...target, principalId: "principal-\ufffd", sessionId: "other-session" };
+  store.beginStop(validIssuer, "operation-d", binding);
+  assert.throws(() => store.stopReceipt({ ...validIssuer, principalId: "principal-\ud800" }, "operation-d"), /stop-operation-not-found/);
+});
+
+test("resolution preserves the receipt when its fence is missing or owned by another operation", t => {
+  for (const owner of [null, "another-operation"]) {
+    const dir = mkdtempSync(join(tmpdir(), "outbox-stop-owner-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const path = join(dir, "state.sqlite");
+    const store = new OutboxStore(path);
+    t.after(() => store.close());
+    store.beginStop(target, "operation-a", binding);
+    const db = new DatabaseSync(path);
+    if (owner === null) db.prepare("DELETE FROM outbox_lifecycle").run();
+    else db.prepare("UPDATE outbox_lifecycle SET owner_token=?").run(owner);
+    db.close();
+    assert.throws(() => store.resolveStop(target, "operation-a", "stopped", { stopResult: "exited" }), /outbox-lifecycle-pending/);
+    assert.deepEqual(store.stopReceipt(target, "operation-a"), { state: "pending" });
+    assert.equal(store.lifecycle(target.machine, target.sessionId)?.ownerToken ?? null, owner);
+  }
+});
