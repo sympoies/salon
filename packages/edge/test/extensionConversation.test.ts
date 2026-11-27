@@ -317,6 +317,13 @@ test("an on-behalf read refuses a reply that follows another user's text, while 
   const onBehalf = await fixture(t, "codex", principalId, {});
   onBehalf.setMessages(...rows(onBehalf));
   assert.deepEqual(await (await onBehalf.callRead()).json(), { status: "unavailable", reason: "history_order_unavailable" });
+  // A different receipt does not make intervening user text attributable to this input.
+  onBehalf.setMessages(onBehalf.input, { ...other, prompt_request: { ...onBehalf.receipt, request_id: "other-request" } },
+    assistant(300, "Reply to another input"));
+  assert.deepEqual(await (await onBehalf.callRead()).json(), { status: "unavailable", reason: "history_order_unavailable" });
+  // User text before the receipt cannot affect attribution of the later reply.
+  onBehalf.setMessages({ ...other, id: `${historyId}-100` }, onBehalf.input, assistant(300, "First reply"));
+  assert.equal((await (await onBehalf.callRead()).json()).status, "found");
   // Text after the reply cannot change which reply is first.
   onBehalf.setMessages(onBehalf.input, assistant(300, "First reply"), { ...other, id: `${historyId}-350` });
   assert.equal((await (await onBehalf.callRead()).json()).status, "found");
