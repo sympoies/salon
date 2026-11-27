@@ -36,12 +36,13 @@ export function conversationImageSourceOrigin(value: unknown): string | undefine
   }
   return value;
 }
-/** Matches agent-session's display-name sanitizer; never use a stored path as a name. */
+/** Sanitize an attachment's display basename; never use it as a path. */
 export function sanitizeAttachmentName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const leaf = value.split(/[\\/]/).at(-1)!;
   const name = Array.from(leaf.replace(/[\p{Cc}\p{Bidi_Control}]/gu, "")).slice(0, 255).join("").trim();
-  return name && name !== "." && name !== ".." && name.replace(/[\p{Default_Ignorable_Code_Point}\s]/gu, "") ? name : undefined;
+  const visible = name.replace(/[\p{Default_Ignorable_Code_Point}\s\u2800]/gu, "");
+  return name && name !== ".." && visible && visible !== "." ? name : undefined;
 }
 export function isConversationImageId(value: unknown): value is string {
   if (typeof value !== "string" || value.length > 96) return false;

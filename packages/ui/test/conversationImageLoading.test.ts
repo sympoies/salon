@@ -39,8 +39,8 @@ async function mount(t: TestContext, count: number, fetchImage: (path: string) =
   await beforeRender?.(cache);
   await act(async () => { root.render(createElement(ConversationImages,{machine:"fixture",history:"history",images:Array.from({length:count},(_,i) => ({id:imageId(i)}))})); });
   const visibility = async (visible: boolean, index = 0) => { await act(async () => { observers[index]!(visible); await flush(); }); };
-  const render = async (indices: number[], filenameLabels: "image-only" | "descriptors") => {
-    await act(async () => { root.render(createElement(ConversationImages,{machine:"fixture",history:"history",images:indices.map(i => ({id:imageId(i)})),filenameLabels})); await flush(); });
+  const render = async (indices: number[], filenameLabels: "image-only" | "descriptors", names: Record<number,string> = {}) => {
+    await act(async () => { root.render(createElement(ConversationImages,{machine:"fixture",history:"history",images:indices.map(i => ({id:imageId(i),original_name:names[i]})),filenameLabels})); await flush(); });
   };
   return {window,visibility,observers,instances,cache,unmount,render};
 }
@@ -160,6 +160,8 @@ test("captions follow image identity through reordered responses, rerenders and 
   assert.equal(label(),"Image · second.png");
   await act(async () => { pending.get(0)!(named("first\u202E.png")); await flush(); });
   assert.equal(label(),"first.png · second.png");
+  await render([0,1],"image-only",{0:"descriptor.png"});
+  assert.equal(label(),"descriptor.png · second.png");
   await render([1,0],"image-only");
   assert.equal(label(),"second.png · first.png");
   await render([1,0],"descriptors");
