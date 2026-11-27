@@ -8,6 +8,8 @@ interface KeyBarGeometry {
   readonly overflowX: string;
   readonly scrollLeft: number;
   readonly scrollbarThickness: number;
+  readonly scrollbarWidth: string;
+  readonly hiddenScrollbarRules: string[];
   readonly rowHeight: number;
   readonly expectedRowHeight: number;
 }
@@ -26,12 +28,33 @@ function measureKeyBar(width: number, chromeArgs: readonly string[]): KeyBarGeom
     const cs=getComputedStyle(bar);
     const keyHeight=Math.max(...[...bar.querySelectorAll('.key')].map(k=>k.getBoundingClientRect().height));
     const padding=parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom)+parseFloat(cs.borderTopWidth)+parseFloat(cs.borderBottomWidth);
+    const hiddenScrollbarRules=[];
+    function inspectRules(rules) {
+      for (const rule of rules) {
+        if (rule instanceof CSSMediaRule && !matchMedia(rule.conditionText).matches) continue;
+        if (rule instanceof CSSSupportsRule && !CSS.supports(rule.conditionText)) continue;
+        if (rule.cssRules) inspectRules(rule.cssRules);
+        if (!(rule instanceof CSSStyleRule)) continue;
+        for (const selector of rule.selectorText.split(',')) {
+          const match=selector.trim().match(/^(.*)::-webkit-scrollbar$/i);
+          if (!match || !bar.matches(match[1] || '*')) continue;
+          const style=rule.style;
+          if (style.display === 'none' || ['width','height'].some(property => {
+            const value=style.getPropertyValue(property).trim();
+            return value !== '' && /^0(?:[.]0+)?(?:[a-z%]+)?$/i.test(value);
+          })) hiddenScrollbarRules.push(rule.cssText);
+        }
+      }
+    }
+    for (const sheet of document.styleSheets) inspectRules(sheet.cssRules);
     bar.scrollLeft=50;
     const result={
       coarse:matchMedia('(pointer: coarse)').matches,
       overflows:bar.scrollWidth>bar.clientWidth,
       overflowX:cs.overflowX,
       scrollLeft:bar.scrollLeft,
+      scrollbarWidth:cs.scrollbarWidth,
+      hiddenScrollbarRules,
       scrollbarThickness:bar.offsetHeight-bar.clientHeight-parseFloat(cs.borderTopWidth)-parseFloat(cs.borderBottomWidth),
       rowHeight:bar.getBoundingClientRect().height,
       expectedRowHeight:keyHeight+padding,
@@ -55,6 +78,8 @@ test("a fine-pointer window can scroll the overflowing key row", (t) => {
   if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
   const m = measureKeyBar(384, []);
   assert.equal(m.coarse, false, `the browser uses a fine pointer: ${JSON.stringify(m)}`);
+  assert.notEqual(m.scrollbarWidth, "none", `the scrollbar remains visible: ${JSON.stringify(m)}`);
+  assert.deepEqual(m.hiddenScrollbarRules, [], `no matching rule hides the scrollbar: ${JSON.stringify(m)}`);
   assert.equal(m.overflowX, "auto", `the row stays scrollable: ${JSON.stringify(m)}`);
   assert.equal(m.overflows, true, `the row overflows horizontally: ${JSON.stringify(m)}`);
   assert.ok(m.scrollLeft > 0, `the row can scroll horizontally: ${JSON.stringify(m)}`);
