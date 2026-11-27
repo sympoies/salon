@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,11 +24,19 @@ const primaryToken = "primary-fixture";
 const secondaryToken = "secondary-fixture";
 const bridgeToken = "bridge-fixture";
 
-async function fixture(t: TestContext, outboxPollIntervalMs = 60_000) {
+interface Variant {
+  /** Whether the relay route declares the on-behalf capability. */
+  readonly capability?: boolean;
+  /** The bridge principal's configuration; `null` removes it. */
+  readonly bridge?: { readonly machines?: string[]; readonly permissions?: string[] } | null;
+  readonly ownerPermissions?: string[];
+}
+
+async function fixture(t: TestContext, outboxPollIntervalMs = 60_000, initial: Variant = {}) {
   const directory = mkdtempSync(join(tmpdir(), "extension-outbox-"));
   const path = join(directory, "state.sqlite");
   const ownership = new AccessStore(path);
-  const devices = new DeviceCredentialStore(path, principal => principal === "primary" ? primaryToken : undefined, () => true);
+  const devices = new DeviceCredentialStore(path, principal => principal === "primary" ? primaryToken : principal === "bridge" ? bridgeToken : undefined, () => true);
   ownership.claimSession({ principalId: "primary", machine: input.target.machine, sessionId: input.target.sessionId,
     incarnation: input.target.sessionIncarnation });
   let running = false;
@@ -68,46 +76,63 @@ async function fixture(t: TestContext, outboxPollIntervalMs = 60_000) {
     results.push(result);
     ctx.sendJson(result.status, result);
   };
-  const extension: EdgeExtension = { id: "fixture", permissions: ["relay"], routes: [
-    { id: "inputs", pattern: "/api/ext/fixture/inputs/:inputId", methods: ["PUT", "GET"], permission: "debug", handle },
-    { id: "relay", pattern: "/api/ext/fixture/relay/:inputId", methods: ["PUT", "GET"], permission: "relay",
-      outboxOwnerDispatch: true, handle },
-    { id: "plain-relay", pattern: "/api/ext/fixture/plain-relay/:inputId", methods: ["PUT", "GET"], permission: "relay", handle },
-  ] };
-  const config = makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: path,
-    principals: [
-      { id: "primary", token: primaryToken, machines: ["fixture"], permissions: ["debug"] },
-      { id: "secondary", token: secondaryToken, machines: ["fixture"], permissions: ["debug"] },
-      { id: "bridge", token: bridgeToken, machines: ["fixture"], permissions: ["relay"] },
-      { id: "viewer", token: "viewer-fixture", machines: ["fixture"], permissions: [] },
-    ],
-    machines: [{ name: "fixture", url: upstream.base, token: "upstream-fixture" }] });
-  const edge = createEdgeServer(config, { extensions: [extension], outboxPollIntervalMs });
-  const { base } = await listenOnLoopback(edge);
+  const startEdge = async (variant: Variant) => {
+    const extension: EdgeExtension = { id: "fixture", permissions: ["relay"], routes: [
+      { id: "inputs", pattern: "/api/ext/fixture/inputs/:inputId", methods: ["PUT", "GET"], permission: "debug", handle },
+      { id: "relay", pattern: "/api/ext/fixture/relay/:inputId", methods: ["PUT", "GET"], permission: "relay",
+        ...(variant.capability !== false && { outboxOwnerDispatch: true }), handle },
+      { id: "plain-relay", pattern: "/api/ext/fixture/plain-relay/:inputId", methods: ["PUT", "GET"], permission: "relay", handle },
+      { id: "reply", pattern: "/api/ext/fixture/reply/:intent", methods: ["GET"], permission: "relay",
+        outboxOwnerDispatch: true, async handle(ctx) {
+          ctx.sendJson(200, await ctx.conversation.firstReplyAfter({ outboxIntentId: ctx.params.intent!,
+            target: { ...input.target, sessionCreatedAt: "2026-01-01T00:00:00Z" } }));
+        } },
+    ] };
+    const bridge = variant.bridge === undefined ? {} : variant.bridge;
+    const config = makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: path,
+      principals: [
+        { id: "primary", token: primaryToken, machines: ["fixture"], permissions: ["debug", ...variant.ownerPermissions ?? []] },
+        { id: "secondary", token: secondaryToken, machines: ["fixture"], permissions: ["debug"] },
+        ...(bridge ? [{ id: "bridge", token: bridgeToken, machines: bridge.machines ?? ["fixture"],
+          permissions: bridge.permissions ?? ["relay"] }] : []),
+        { id: "root", token: "root-fixture", machines: ["fixture"], permissions: [] },
+        { id: "viewer", token: "viewer-fixture", machines: ["fixture"], permissions: [] },
+      ],
+      machines: [{ name: "fixture", url: upstream.base, token: "upstream-fixture" }] });
+    const server = createEdgeServer(config, { extensions: [extension], outboxPollIntervalMs });
+    return { server, base: (await listenOnLoopback(server)).base };
+  };
+  const stop = async (server: Server) => {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  };
+  let edge = await startEdge(initial);
   t.after(async () => {
-    for (const server of [edge, daemon]) {
-      server.closeAllConnections();
-      await new Promise<void>(resolve => server.close(() => resolve()));
-    }
+    for (const server of [edge.server, daemon]) await stop(server);
     ownership.close();
     devices.close();
     rmSync(directory, { recursive: true, force: true });
   });
   const call = (method: string, token: string, value?: EdgeOutboxInput, route = "inputs") => fetch(
-    `${base}/api/ext/fixture/${route}/${value?.inputId ?? key.inputId}`, {
+    `${edge.base}/api/ext/fixture/${route}/${value?.inputId ?? key.inputId}`, {
       method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: value && JSON.stringify(value),
     });
   return {
-    call, path, posts, results, initialDispatchObserved: initialDispatchObserved.promise, startSession: () => { running = true; },
-    issueDevice() {
-      const { id, code } = devices.create("primary", primaryToken, undefined, 60_000);
+    base: async () => edge.base, call, path, posts, results, initialDispatchObserved: initialDispatchObserved.promise, startSession: () => { running = true; },
+    /** Stop the edge and start another over the same state, as after a configuration change. */
+    async restart(variant: Variant) {
+      await stop(edge.server);
+      edge = await startEdge(variant);
+    },
+    issueDevice(principal = "primary", token = primaryToken) {
+      const { id, code } = devices.create(principal, token, undefined, 60_000);
       const verifier = "a".repeat(43);
-      const claim = { code, challenge: credentialHash(verifier), origin: base, name: "Fixture device", delivery: "native" } as const;
+      const claim = { code, challenge: credentialHash(verifier), origin: edge.base, name: "Fixture device", delivery: "native" } as const;
       devices.claim(claim);
-      devices.approve(id, "primary", code, claim.challenge);
-      const device = devices.exchange({ ...claim, verifier, principal: "primary", confirmed: true });
-      return { ...device, revoke: () => devices.revoke(device.id, "primary") };
+      devices.approve(id, principal, code, claim.challenge);
+      const device = devices.exchange({ ...claim, verifier, principal, confirmed: true });
+      return { ...device, revoke: () => devices.revoke(device.id, principal) };
     },
     transferSession() {
       const other = new DatabaseSync(path);
@@ -238,8 +263,8 @@ function stored(path: string) {
   const db = new DatabaseSync(path);
   try {
     const admission = db.prepare("SELECT admission FROM outbox_extension_inputs").all() as Array<{ admission: string }>;
-    const items = db.prepare("SELECT scope, value FROM outbox_items").all() as Array<{ scope: string; value: string }>;
-    return { admissions: admission.map(row => JSON.parse(row.admission)), items: items.map(row => ({ scope: row.scope, ...JSON.parse(row.value) })) };
+    const items = db.prepare("SELECT scope, value, device_id FROM outbox_items").all() as Array<{ scope: string; value: string; device_id: string | null }>;
+    return { admissions: admission.map(row => JSON.parse(row.admission)), items: items.map(row => ({ scope: row.scope, deviceId: row.device_id, ...JSON.parse(row.value) })) };
   } finally { db.close(); }
 }
 async function until(condition: () => boolean, message: string) {
@@ -280,6 +305,8 @@ test("an on-behalf route refuses a wrong owner, a stale incarnation, a missing o
   // Core refuses a principal without the route permission before the extension runs.
   assert.equal((await relay(f, "PUT", secondaryToken, owned)).status, 403);
   assert.equal((await relay(f, "PUT", primaryToken, owned)).status, 403);
+  // Root passes the ordinary owner check for dispatch, so the capability must refuse it itself.
+  await expectError(await relay(f, "PUT", bridgeToken, { ...owned, ownerPrincipalId: "root" }), 403, "forbidden");
   assert.deepEqual(stored(f.path).admissions, [], "no refused request leaves a record");
 });
 
@@ -304,4 +331,52 @@ test("dispatch stops after the owner changes", async t => {
   assert.equal(stored(f.path).items[0]!.error_code, "outbox-authorization-changed");
   assert.deepEqual(f.posts, []);
   await expectError(await relay(f, "GET", bridgeToken), 403, "forbidden");
+});
+
+test("an on-behalf route refuses a caller whose machine allowlist excludes the target", async t => {
+  const f = await fixture(t, 60_000, { bridge: { machines: [] } });
+  await expectError(await relay(f, "PUT", bridgeToken, owned), 403, "forbidden");
+  assert.deepEqual(stored(f.path).admissions, []);
+});
+
+test("on-behalf items store no caller device identity", async t => {
+  const f = await fixture(t);
+  const device = f.issueDevice("bridge", bridgeToken);
+  assert.equal((await relay(f, "PUT", device.credential, owned)).status, 201);
+  assert.equal(stored(f.path).items[0]!.deviceId, null);
+});
+
+for (const [name, variant] of [
+  ["the route loses the capability", { capability: false }],
+  ["the caller loses the route permission", { bridge: { permissions: [] } }],
+  ["the caller is no longer configured", { bridge: null }],
+  ["the caller loses access to the machine", { bridge: { machines: [] } }],
+] as const satisfies ReadonlyArray<readonly [string, Variant]>) {
+  test(`a queued on-behalf item is refused without a daemon post when ${name}`, async t => {
+    const f = await fixture(t, 50);
+    assert.equal((await relay(f, "PUT", bridgeToken, owned)).status, 201);
+    await f.restart(variant);
+    f.startSession();
+    await until(() => stored(f.path).items[0]?.state === "refused", "the dispatcher must refuse the queued item");
+    assert.equal(stored(f.path).items[0]!.error_code, "outbox-authorization-changed");
+    assert.deepEqual(f.posts, []);
+  });
+}
+
+test("reading an on-behalf record uses its stored grant, not the current route", async t => {
+  const f = await fixture(t);
+  assert.equal((await relay(f, "PUT", bridgeToken, owned)).status, 201);
+  // The owner now holds the permission, so only the stored on-behalf grant can refuse a read without the capability.
+  await f.restart({ capability: false, ownerPermissions: ["relay"] });
+  await expectError(await relay(f, "GET", bridgeToken), 403, "forbidden");
+});
+
+test("on-behalf records are not readable through the conversation facade", async t => {
+  const f = await fixture(t);
+  const admitted = await relay(f, "PUT", bridgeToken, owned);
+  const { record } = await admitted.json();
+  const read = await fetch(`${await f.base()}/api/ext/fixture/reply/${record.outboxIntentId}`, {
+    headers: { authorization: `Bearer ${bridgeToken}` },
+  });
+  assert.deepEqual(await read.json(), { status: "forbidden" });
 });

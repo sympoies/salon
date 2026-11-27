@@ -116,12 +116,18 @@ The capability is off by default and applies only to that route. The route must 
 Without the capability, any `ownerPrincipalId` returns `403 forbidden`. With it, a missing
 value returns `400 invalid-request`; there is no wildcard and no fallback to the caller.
 
-The edge accepts the input only when the caller holds the route permission and the asserted
-owner currently owns that exact session incarnation. The record is dispatched as the owner
-and stores the caller for audit. Every dispatch attempt checks again that the capability
-exists, the caller still holds the permission and the owner still owns the incarnation.
+The edge accepts the input only when the caller holds the route permission and can access the
+target machine, and the asserted owner currently owns that exact session incarnation.
+The record is dispatched as the owner and stores the caller for audit.
+Every dispatch attempt checks again that the capability exists, the caller still holds the
+permission and machine access, and the owner still owns the incarnation.
 An ownership change refuses the queued item with `outbox-authorization-changed`.
 On-behalf records are not readable through `ctx.conversation`.
+
+Residual risk: a holder of the route permission on a capability route can queue prompts into any
+exact session incarnation it can name, for that session's current owner. This applies on every
+machine the caller and the owner can both access. Grant the permission only to an adapter
+that enforces its own recipient policy.
 
 The outbox store keeps the caller in the existing admission record, so there is no schema
 change and no migration. Rolling back to a build without the capability leaves the item

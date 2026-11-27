@@ -514,7 +514,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
     return { principal, machine };
   };
   // `principal` is the target principal. An on-behalf grant needs the route capability, the caller still
-  // holding the route permission and the owner exactly owning the incarnation (root owns nothing here).
+  // holding the route permission and machine access, and the owner exactly owning the incarnation (root owns nothing here).
   const extensionGrantActive = (target: OutboxTarget, grant: ExtensionOutboxGrant, principal: PrincipalConfig): boolean => {
     const route = extensions.routes.find(route => route.key === grant.routeKey && route.permission === grant.permission
       && route.methods.some(method => method !== "GET"));
@@ -523,6 +523,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       const caller = principalById(grant.callerPrincipalId);
       return route.outboxOwnerDispatch === true && config.multiUser && caller !== undefined && !caller.managedCredential
         && caller.permissions.includes(grant.permission)
+        && principalCanAccessMachine(caller, target.machine)
         && accessStore?.ownsSession(principal.id, target.machine, target.sessionId, target.incarnation) === true;
     }
     return !config.multiUser || (principal.permissions.includes(grant.permission)
