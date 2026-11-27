@@ -28,7 +28,7 @@ function operation(): string {
 const input = { source_session_id: "caller", source_incarnation: incarnation, machine: "target", attest_role: true, no_parent: true, session: { id: sessionId, agent: "codex", cwd: "/workspace" } };
 const context = { initiator: "console-relay", role: "steward", attested_role: "steward" };
 
-type Mode = "normal" | "drop" | "wrong-id" | "wrong-role" | "wrong-context" | "strip-binding" | "rewrite-type" | "strip-all" | "unsupported" | "oversized" | "transient-after-create" | "context-role" | "context-attested" | "redirect" | "capacity" | "internal-after-create" | "unavailable-after-create" | "existing-conflict" | "existing-drop";
+type Mode = "normal" | "drop" | "wrong-id" | "wrong-role" | "wrong-context" | "strip-binding" | "rewrite-type" | "strip-all" | "unsupported" | "oversized" | "transient-after-create" | "transient-before-create" | "context-role" | "context-attested" | "redirect" | "capacity" | "internal-after-create" | "unavailable-after-create" | "existing-conflict" | "existing-drop";
 async function fixture(t: TestContext, enabled = true) {
   const dir = mkdtempSync(join(tmpdir(), "attested-relay-"));
   const servers: Server[] = [];
@@ -87,6 +87,7 @@ async function fixture(t: TestContext, enabled = true) {
     let notifyCreate: (() => void) | undefined;
     let notifyRead: (() => void) | undefined;
     let listUnavailable = false;
+    let reads = 0;
     async function waitForRelease(held: Promise<void>): Promise<boolean> {
       try {
         await within(Promise.race([held, new Promise<void>(resolve => teardown.signal.addEventListener("abort", () => resolve(), { once: true }))]), "held destination response");
@@ -98,6 +99,7 @@ async function fixture(t: TestContext, enabled = true) {
     const server = track(createServer(async (req, res) => {
       res.setHeader("content-type", "application/json");
       if (req.method === "GET" && req.url === "/sessions") {
+        reads++;
         notifyRead?.(); if (holdRead && !await waitForRelease(holdRead)) return void res.destroy(new Error("timed out waiting for held destination read"));
         if (listUnavailable) return void res.writeHead(503).end(JSON.stringify({ ok: false, error: { code: "unavailable" } }));
         return void res.end(JSON.stringify({ ok: true, data: { sessions: records } }));
@@ -136,6 +138,7 @@ async function fixture(t: TestContext, enabled = true) {
         if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.id !== "string" || !value.id
           || ["attest_role", "no_parent", "lineage", "role"].some(key => Object.hasOwn(value, key))) throw new Error();
       } catch { return void reject(400, "console-create-invalid-body"); }
+      if (mode === "transient-before-create") return void reject(transientStatus, "rate-limited");
       if (mode === "capacity") return void reject(409, "session-capacity-exceeded");
       if (mode === "existing-conflict") return void reject(409, "session-exists");
       if (mode === "existing-drop") return void req.socket.destroy();
@@ -170,7 +173,7 @@ async function fixture(t: TestContext, enabled = true) {
       });
       outgoing.on("error", () => res.destroy()); req.pipe(outgoing);
     }));
-    return { server, proxy, seen, records, set mode(value: Mode) { mode = value; redirected = false; }, set upstream(value: string) { upstream = value; }, get upstream() { return upstream; }, set configured(value: boolean) { configured = value; }, set transientStatus(value: number) { transientStatus = value; }, set listUnavailable(value: boolean) { listUnavailable = value; },
+    return { server, proxy, seen, records, get reads() { return reads; }, set mode(value: Mode) { mode = value; redirected = false; }, set upstream(value: string) { upstream = value; }, get upstream() { return upstream; }, set configured(value: boolean) { configured = value; }, set transientStatus(value: number) { transientStatus = value; }, set listUnavailable(value: boolean) { listUnavailable = value; },
       hold(promise: Promise<void>, notify: () => void) { holdRead = promise; notifyRead = notify; },
       holdPost(promise: Promise<void>, notify: () => void) { holdCreate = promise; notifyCreate = notify; } };
   }
@@ -525,5 +528,30 @@ test("transient 4xx replies stay unconfirmed and reconcile instead of burning th
     const replay = await f.post(input, op);
     assert.equal(replay.status, 201, String(status)); assert.equal(replay.body.data.session.id, sessionId);
     assert.equal(f.target.seen.length, 1, String(status));
+  }
+});
+
+
+test("transient 4xx before creation retain the fence and retry only reads", async t => {
+  for (const status of [408, 425, 429]) {
+    const f = await fixture(t); f.target.mode = "transient-before-create"; f.target.transientStatus = status; const op = operation();
+    const first = await f.post(input, op);
+    assert.equal(first.body.error.code, "console-create-attestation-unavailable", String(status));
+    assert.equal(f.target.records.length, 0, String(status));
+    const db = new DatabaseSync(f.db);
+    assert.equal((db.prepare("SELECT outcome FROM attested_create_fence").get() as { outcome: unknown }).outcome, null, String(status));
+    db.close();
+    const reads = f.target.reads;
+    f.target.mode = "normal";
+    const retry = await f.post(input, op);
+    assert.equal(retry.body.error.code, "console-create-attestation-unavailable", String(status));
+    assert.equal(f.target.reads, reads + 1, String(status));
+    assert.equal(f.target.seen.length, 1, String(status));
+    assert.equal(f.target.records.length, 0, String(status));
+    const conflict = await f.post(input, operation());
+    assert.equal(conflict.status, 409, String(status));
+    assert.equal(conflict.body.error.code, "console-start-operation-conflict", String(status));
+    assert.equal(f.target.seen.length, 1, String(status));
+    const store = new AccessStore(f.db); assert.equal(store.sessionGrant("target", sessionId), undefined, String(status)); store.close();
   }
 });
