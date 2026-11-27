@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { usePreviewPinnedPopover } from "./SessionActivityPopover.tsx";
 import { CloseIcon } from "./icons.tsx";
 import { IconButton } from "./IconButton.tsx";
@@ -10,7 +10,7 @@ export function StatusNotice({ notice, onDismiss, surface = "dashboard", inline 
   readonly inline?: boolean;
   readonly surface?: "dashboard" | "shell";
 }) {
-  const { open, popoverId, rootRef, triggerRef, popoverRef, onClick } = usePreviewPinnedPopover();
+  const { open, popoverId, rootRef, triggerRef, popoverRef, onClick, close } = usePreviewPinnedPopover();
   const showDetails = (event: MouseEvent<HTMLButtonElement>) => {
     triggerRef.current = event.currentTarget;
     onClick(event);
@@ -29,16 +29,43 @@ export function StatusNotice({ notice, onDismiss, surface = "dashboard", inline 
     : restored ? "Restored" : notice.kind === "attention" ? "Attention" : notice.kind === "info" ? "Opened terminal" : notice.kind === "transient" ? notice.message : "Offline";
   const expandable = notice.kind === "host-offline" || inline;
   const unreachable = notice.kind === "unreachable";
+  const messageRef = useRef<HTMLSpanElement>(null);
+  const [clipped, setClipped] = useState(false);
+  const wasClipped = useRef(false);
+  useEffect(() => {
+    if (wasClipped.current && !clipped) close();
+    wasClipped.current = clipped;
+  }, [clipped, close]);
+  useLayoutEffect(() => {
+    const message = messageRef.current;
+    if (!expandable) { setClipped(false); return; }
+    if (!message) return;
+    const measure = () => {
+      const full = message.querySelector<HTMLElement>(".connection-notice-message-full");
+      if (!full) return;
+      setClipped(full.scrollWidth > message.clientWidth + 1);
+    };
+    const observer = new window.ResizeObserver(measure);
+    observer.observe(message);
+    if (message.parentElement) observer.observe(message.parentElement);
+    measure();
+    return () => observer.disconnect();
+  }, [expandable, notice.message]);
   return (
-    <span ref={rootRef} className={`connection-notice-layer is-${surface}${inline ? " is-inline" : ""}`}>
+    <span ref={rootRef} className={`connection-notice-layer is-${surface}${inline ? " is-inline" : ""}${clipped ? " is-clipped" : ""}`}>
       <span className={`connection-notice is-${notice.kind}${notice.tone ? ` is-tone-${notice.tone}` : ""}`} role={polite ? "status" : "alert"} aria-live={polite ? "polite" : "assertive"} aria-atomic="true">
         <span className="connection-notice-icon" aria-hidden="true">{ok ? "✓" : notice.kind === "transient" ? "·" : "!"}</span>
         {expandable ? (
-          <button className="connection-notice-message connection-notice-trigger" type="button" title={notice.message} {...detailControl}>
-            <span className="connection-notice-message-full" aria-hidden="true">{notice.message}</span>
-            <span className="sr-only">{detailControl["aria-label"]}</span>
-            <span className="connection-notice-message-compact" aria-hidden="true">{compactLabel}</span>
-          </button>
+          <span ref={messageRef} className="connection-notice-message" title={notice.message}>
+            {clipped ? <button className="connection-notice-trigger" type="button" {...detailControl}>
+              <span className="connection-notice-message-full" aria-hidden="true">{notice.message}</span>
+              <span className="connection-notice-message-compact" aria-hidden="true">{compactLabel}</span>
+              <span className="connection-notice-cue" aria-hidden="true">{open ? "⌃" : "⌄"}</span>
+            </button> : <>
+              <span className="connection-notice-message-full">{notice.message}</span>
+              <span className="connection-notice-message-compact" aria-hidden="true">{compactLabel}</span>
+            </>}
+          </span>
         ) : <span className="connection-notice-message">{notice.message}</span>}
         {unreachable ? <><span className="connection-notice-retrying">Reconnecting</span><span className="connection-notice-spinner" aria-hidden="true" /></> : null}
         <IconButton preset="compact" className="connection-notice-dismiss" type="button" aria-label="Dismiss status notice" onClick={onDismiss}><CloseIcon /></IconButton>

@@ -9,6 +9,7 @@ export interface Page {
   click(x: number, y: number): Promise<void>;
   tap(x: number, y: number): Promise<void>;
   pressEnter(): Promise<void>;
+  pressTab(): Promise<void>;
   pressEscape(): Promise<void>;
   navigate(url: string): Promise<void>;
   evaluate<T>(expression: string): Promise<T>;
@@ -102,6 +103,11 @@ export async function launchPage(options: LaunchOptions = {}): Promise<Page> {
     await send("Page.enable");
     await send("Runtime.enable");
     return {
+      async pressTab() {
+        const key = { key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 };
+        await send("Input.dispatchKeyEvent", { type: "keyDown", ...key });
+        await send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+      },
       async pressEnter() {
         const key = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 };
         await send("Input.dispatchKeyEvent", { type: "keyDown", ...key, text: "\r" });

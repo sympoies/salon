@@ -233,6 +233,7 @@ export function usePreviewPinnedPopover(onOpenChange?: (open: boolean) => void) 
     popoverRef,
     preview,
     scheduleClose,
+    close,
     onClick,
     onBlur,
     pin,
