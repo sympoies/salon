@@ -98,7 +98,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.107 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.108 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -204,7 +204,16 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.107`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.108`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.108
+
+The release sanitizes attachment display names (#692), fences outbox stops across
+principals (#693), preserves paired device names on rename (#701), and adds
+attested root and succession-stop relays (#703, #719). Both relays require an
+operator flag and remain disabled by default. It also improves macOS validation
+cleanup (#721, #727), explains unavailable conversation images and offers their
+source (#731), and adds a disclosure cue for clipped status notices (#732).
 
 ### Changes retained in SDK 0.1.107
 
