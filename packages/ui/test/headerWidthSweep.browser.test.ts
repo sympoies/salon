@@ -1,8 +1,10 @@
 import { strict as assert } from "node:assert";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { hasHeadlessChrome } from "./support/browserLayout.ts";
-import { headerFixture, measureHeaderMarkup } from "./support/headerFixture.ts";
+import { closeHeaderMeasurementPage, headerFixture, measureHeaderMarkupWhenReady } from "./support/headerFixture.ts";
 import { isPhoneWidth } from "../src/phoneTier.ts";
+
+after(() => closeHeaderMeasurementPage());
 
 // #238: the workspace header is laid out by the available width, not by device type. Menu/logo,
 // New session and More always stay; lower-priority parts shrink, move or hide before anything overlaps.
@@ -47,7 +49,7 @@ for (const width of [320, 360, 412, 480, 600, 700, 760, 761, 800, 900, 1024, 128
       const fixture = await headerFixture();
       try {
         const tier = isPhoneWidth(width, false, android);
-        const m = measureHeaderMarkup<Sweep>(fixture.markup(width, false, focused, true, undefined, "", grid), width, script(), false, 800, [], tierScript(tier, grid, mac));
+        const m = await measureHeaderMarkupWhenReady<Sweep>(fixture.markup(width, false, focused, true, undefined, "", grid), width, script(), tierScript(tier, grid, mac));
         const detail = JSON.stringify(m);
         assert.deepEqual(m.overlaps, [], `no component overlaps another: ${detail}`);
         assert.deepEqual(m.outside, [], `every component stays inside the header: ${detail}`);
@@ -68,7 +70,8 @@ for (const focused of [false, true]) {
     try {
       // The focused header needs the roomier fixture to show both whole entries.
       const widths = [320, 360, 412, 480, 600, 700, 760, 900, 1024, 1280, 1440];
-      const shown = widths.map(width => measureHeaderMarkup<Sweep>(fixture.markup(width, false, focused, true), width, script(), false, 800, [], tierScript(true, false)).quota);
+      const shown: number[] = [];
+      for (const width of widths) shown.push((await measureHeaderMarkupWhenReady<Sweep>(fixture.markup(width, false, focused, true), width, script(), tierScript(true, false))).quota);
       const detail = JSON.stringify(Object.fromEntries(widths.map((width, i) => [width, shown[i]])));
       assert.equal(shown[0], 0, `the quota strip is gone at 320px: ${detail}`);
       assert.ok(shown.every((count, i) => i === 0 || count >= shown[i - 1]), `a narrower header never shows more accounts: ${detail}`);
@@ -85,7 +88,7 @@ for (const width of [2400, 3000]) {
     if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
     const fixture = await headerFixture();
     try {
-      const m = measureHeaderMarkup<Sweep>(fixture.markup(width, false, false, false), width, script(), false, 800, [], tierScript(false, false));
+      const m = await measureHeaderMarkupWhenReady<Sweep>(fixture.markup(width, false, false, false), width, script(), tierScript(false, false));
       const detail = JSON.stringify(m);
       assert.deepEqual(m.overlaps, [], `no component overlaps another: ${detail}`);
       assert.ok(m.sizes.pager && m.sizes.pane, `the pager arrows and pane buttons are on screen: ${detail}`);
@@ -101,8 +104,8 @@ for (const mac of [false, true]) for (const width of [900, 1280]) {
     if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
     const fixture = await headerFixture();
     try {
-      const m = measureHeaderMarkup<Sweep>(fixture.markup(width, false, false, true), width,
-        `document.querySelector('.workspace-head').dataset.headerCompact='5';${script()}`, false, 800, [], tierScript(false, false, mac));
+      const m = await measureHeaderMarkupWhenReady<Sweep>(fixture.markup(width, false, false, true), width,
+        `document.querySelector('.workspace-head').dataset.headerCompact='5';${script()}`, tierScript(false, false, mac));
       const detail = JSON.stringify(m);
       assert.deepEqual(m.overlaps, [], `no component overlaps another: ${detail}`);
       assert.ok(m.sizes.layout && m.sizes.new && m.sizes.more, `More, New and the layout trigger are on screen: ${detail}`);
