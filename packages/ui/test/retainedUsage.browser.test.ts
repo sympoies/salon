@@ -202,3 +202,66 @@ test("marked last-good usage stays visibly stale in quota views at desktop and p
     await page.close();
   }
 });
+
+test("usage account identities stay inside the panel in both columns", async (t) => {
+  if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
+  const bundle = await build({
+    configFile: false, root: new URL("..", import.meta.url).pathname, logLevel: "silent",
+    define: { "process.env.NODE_ENV": JSON.stringify("production") }, resolve: { conditions: ["source"] },
+    plugins: [{ name: "usage-fixture", resolveId(id) { if (id.endsWith("usage-fixture")) return "\0usage-fixture"; },
+      load(id) { if (id === "\0usage-fixture") return fixture; } }],
+    build: { write: false, lib: { entry: "usage-fixture", name: "UsageFixture", formats: ["iife"] } },
+  });
+  const output = Array.isArray(bundle) ? bundle[0] : bundle;
+  assert.ok(output && "output" in output);
+  const code = output.output.find(chunk => chunk.type === "chunk")?.code;
+  assert.ok(code);
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const page = await launchPage();
+  try {
+    const allResults = [];
+    for (const width of [800, 1280]) {
+      await page.setViewport(width, 900, 1);
+      await page.navigate("data:text/html,<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><div id=root></div>");
+      await page.evaluate(`window.fixtureTheme = "dark"; document.head.insertAdjacentHTML("beforeend", ${JSON.stringify("<style>" + css + "</style>")});
+        window.providers = ${JSON.stringify(providers.map((provider, i) => ({ ...provider, account: `person${i}@example.test`, switch_key: `sample${i}` })))};
+        window.fetch = async () => Response.json({ ok: true, data: { providers: window.providers, reachable: true } });`);
+      await page.evaluate(code);
+      const results = await page.evaluate<{ panel: number[]; cards: number[][]; popovers: { rect: number[]; visible: boolean }[] }>(String.raw`
+        (async () => {
+          const wait = async selector => { for (let i = 0; i < 100; i++) { const el = document.querySelector(selector); if (el) return el; await new Promise(r => setTimeout(r, 10)); } throw Error(selector); };
+          (await wait('.header-usage')).click();
+          await wait('.usage-providers[aria-busy="false"] .usage-provider-account-trigger');
+          const cards = [...document.querySelectorAll('.usage-provider')];
+          const rect = el => { const r = el.getBoundingClientRect(); return [r.left, r.right, r.top]; };
+          const panel = document.querySelector('.usage-panel');
+          const popovers = [];
+          for (const card of cards) {
+            card.querySelector('.usage-provider-account-trigger').click();
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            const popover = await wait('.usage-provider-account-detail');
+            const range = document.createRange(); range.selectNodeContents(popover);
+            const text = range.getBoundingClientRect(), box = popover.getBoundingClientRect(), panelBox = panel.getBoundingClientRect();
+            popovers.push({ rect: rect(popover), visible: text.width > 0 && text.left >= panelBox.left && text.right <= panelBox.right && text.left >= box.left && text.right <= box.right });
+            card.querySelector('.usage-provider-account-trigger').click();
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+          }
+          return { panel: rect(panel), cards: cards.map(rect), popovers };
+        })()
+      `);
+      if (process.env.POPOVER_CAPTURE_DIR) {
+        await page.evaluate("document.querySelector('.usage-provider-account-trigger').click()");
+        writeFileSync(join(process.env.POPOVER_CAPTURE_DIR, `${width}.png`), await page.screenshot());
+      }
+      allResults.push({ width, results });
+    }
+    for (const { width, results } of allResults) {
+      assert.equal(results.cards.length, 2);
+      assert.equal(results.cards[0][2], results.cards[1][2], `two columns at ${width}`);
+      for (const popover of results.popovers) {
+        assert.ok(popover.rect[0] >= results.panel[0] && popover.rect[1] <= results.panel[1] && popover.rect[0] >= 0 && popover.rect[1] <= width, JSON.stringify({ width, results }));
+        assert.equal(popover.visible, true, `identity visible at ${width}: ${JSON.stringify(results)}`);
+      }
+    }
+  } finally { await page.close(); }
+});

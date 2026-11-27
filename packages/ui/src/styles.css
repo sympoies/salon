@@ -6388,6 +6388,7 @@ textarea {
   line-height: 1.4;
 }
 .usage-provider-id {
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -6418,6 +6419,7 @@ textarea {
 }
 .usage-provider-account-disclosure {
   position: relative;
+  flex: 1 1 auto;
   min-width: 0;
   pointer-events: auto;
 }
@@ -6445,6 +6447,12 @@ textarea {
 }
 .usage-provider-account-detail {
   overflow-wrap: anywhere;
+}
+:root:not([data-phone-tier="true"]) .usage-provider-account-detail {
+  left: 0;
+  right: auto;
+  box-sizing: border-box;
+  width: min(340px, 100%);
 }
 /* Hosts whose login is unreadable. */
 .usage-provider-hosts {
