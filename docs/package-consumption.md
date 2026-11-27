@@ -98,7 +98,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.109 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.110 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -204,7 +204,19 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.109`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.110`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.110
+
+A separate, default-off route capability allows `firstReplyAfter` to read the first reply after
+an on-behalf item's own receipt in its exact session incarnation (#751). It returns
+`history_order_unavailable` when another user message intervenes. A holder of both dispatch
+and read capabilities can read back the first reply, which may include earlier conversation;
+see [the capability boundary](package-boundary.md) before granting them.
+
+Startup recovery settles interrupted session ownership only under bounded pending-claim
+conditions, with a per-principal cap (#755). Stale shared-reply sync warnings clear when nothing
+is pending; a pending admission offers Retry (#694).
 
 ### Changes retained in SDK 0.1.109
 
