@@ -98,7 +98,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.108 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.109 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -204,7 +204,17 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.108`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.109`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.109
+
+The release rejects blank-looking attachment names (#739), protects outbox stop
+fences from text normalization (#744), and admits extension outbox items on
+behalf of a session owner with a per-route capability disabled by default (#747).
+It keeps pane content visible behind overlays (#756) and adds a copy action for
+managed attach commands (#754). It also stabilizes UI layout tests (#738, #741),
+expands attested create coverage (#745), and fixes package-consumer containment
+test paths (#748).
 
 ### Changes retained in SDK 0.1.108
 
