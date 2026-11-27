@@ -382,7 +382,7 @@ function quotaDetails(value: unknown): Record<string, string | number> | undefin
 // members to forward in the daemon create body. The lookup never rejects.
 // `reserve`, called once the body is valid, supplies the session id, or answers
 // the request itself and returns null when no create may follow.
-export type OwnedSessionCreator = (principal: PrincipalConfig, machine: MachineConfig, session: Record<string, unknown>, startMark: () => Promise<SessionStartMark>, lineage: Record<string, unknown>, reserve?: () => string | null) => Promise<boolean>;
+export type OwnedSessionCreator = (principal: PrincipalConfig, machine: MachineConfig, session: Record<string, unknown>, startMark: () => Promise<SessionStartMark>, lineage: Record<string, unknown>, reserve?: () => string | null, recovery?: Identity & { operationId: string }) => Promise<boolean>;
 // Starter kinds whose lineage names a parent (session-lineage-work-v1).
 // Legacy starter values still require exact-parent authentication.
 const PARENTED_STARTERS = new Set(["session", "main-agent"]);
@@ -968,6 +968,7 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
         const owners = ownersOnMachine(machine.name);
         return owners.length ? [{ machine, owners: sessionOwners ?? new Set(owners) }] : [];
       });
+      let unknownOwnershipCount = 0;
       const excluded: Array<{ machine: string; session_id: string; reason: "ownership-binding-stale" }> = [];
       const peers = (await Promise.all(candidates.map(async ({ machine, owners }) => {
         let state: Snapshot;
@@ -975,7 +976,10 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
         catch { return []; }
         return state.sessions.flatMap(session => {
           const target = identity({ machine: machine.name, session_id: session.id, session_incarnation: session.session_incarnation });
-          if (!target || !owners.has(store.sessionGrant(target.machine, target.session_id)?.principalId ?? "")) return [];
+          if (!target) return [];
+          const owner = store.sessionGrant(target.machine, target.session_id);
+          if (!owner && session.status === "running") unknownOwnershipCount++;
+          if (!owner || !owners.has(owner.principalId)) return [];
           try { grant(store, target, state); }
           catch (error) {
             if (!(error instanceof RelayError)) throw error;
@@ -998,6 +1002,7 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
           return [{ ...target, ...peerDiagnostics(state, session) }];
         });
       }))).flat();
+      if (unknownOwnershipCount) console.warn(JSON.stringify({ code: "ownership-unknown", count: unknownOwnershipCount }));
       sendJson(res, 200, { schema_version: "agent-session.remote-peers.v1", peers, excluded });
       return;
     }
@@ -1125,7 +1130,11 @@ export async function handleCoordinationRelay(config: EdgeConfig, store: AccessS
           ...(callerDepth !== null ? { treeDepth: callerDepth + 1 } : {}),
         };
       };
-      if (!await createSession(principal, machine, session, startMark, lineage)) return fail(400, "invalid-request", "invalid session create request");
+      const starter = object(object(lineage.lineage)?.starter);
+      const recoverable = !rootStart && starter?.via === "console" && object(object(lineage.lineage)?.parent);
+      const operationId = typeof req.headers["x-agent-session-operation-id"] === "string"
+        ? req.headers["x-agent-session-operation-id"] : randomUUID();
+      if (!await createSession(principal, machine, session, startMark, lineage, undefined, recoverable ? { ...caller, operationId } : undefined)) return fail(400, "invalid-request", "invalid session create request");
       return;
     }
     if (req.method !== "POST" || url.pathname !== "/api/coordination/relay/v1") return fail(404, "route-not-found", "unknown coordination route");
