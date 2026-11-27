@@ -224,7 +224,8 @@ into the adapter. Sign-out retains the origin, and changing the origin clears th
 credential. Storage errors are reported without falling back to WebView storage, including a
 retry for pairing saves. Rejected writes on authorization failure or self-revocation still sign
 out. Hosts can declare iOS to avoid Android and macOS routing. Existing browser, Android and
-macOS behavior remains unchanged without an adapter (#773).
+macOS behavior remains unchanged without an adapter (#773). Native device and simulator
+acceptance is pending.
 
 ### Changes retained in SDK 0.1.111
 
