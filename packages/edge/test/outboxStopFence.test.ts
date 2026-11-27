@@ -273,20 +273,34 @@ test("a stop operation binds its full tuple and deadline and records its outcome
 });
 
 test("stop refuses malformed target identifiers and detects stored normalization collisions", t => {
-  const dir = mkdtempSync(join(tmpdir(), "outbox-stop-unicode-"));
+  for (const field of ["machine", "sessionId", "incarnation"] as const) {
+    const dir = mkdtempSync(join(tmpdir(), "outbox-stop-unicode-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const store = new OutboxStore(join(dir, "state.sqlite"));
+    t.after(() => store.close());
+    store.admit({ ...target, [field]: "id-\ud800" }, "intent-a", "message", "generation");
+    assert.throws(() => store.beginStop({ ...target, [field]: "id-\ud801" }, "operation-a", binding), /outbox-lifecycle-pending/, field);
+    assert.throws(() => store.beginStop({ ...target, [field]: "id-\ufffd" }, "operation-b", binding), /outbox-pending-replies/, field);
+  }
+  const dir = mkdtempSync(join(tmpdir(), "outbox-stop-issuer-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const store = new OutboxStore(join(dir, "state.sqlite"));
   t.after(() => store.close());
-  const malformed = { ...target, sessionId: "session-\ud800" };
-  const collision = { ...target, sessionId: "session-\ud801" };
-  store.admit(malformed, "intent-a", "message", "generation");
-  assert.throws(() => store.beginStop(collision, "operation-a", binding), /outbox-/);
-  assert.throws(() => store.beginStop({ ...target, sessionId: "session-\ufffd" }, "operation-b", binding), /outbox-pending-replies/);
   const badIssuer = { ...target, principalId: "principal-\ud800" };
   assert.throws(() => store.beginStop(badIssuer, "operation-c", binding), /outbox-lifecycle-pending/);
   const validIssuer = { ...target, principalId: "principal-\ufffd", sessionId: "other-session" };
   store.beginStop(validIssuer, "operation-d", binding);
   assert.throws(() => store.stopReceipt({ ...validIssuer, principalId: "principal-\ud800" }, "operation-d"), /stop-operation-not-found/);
+});
+
+test("constructor closes an opened database after initialization fails", t => {
+  const dir = mkdtempSync(join(tmpdir(), "outbox-stop-close-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, "state.sqlite");
+  writeFileSync(path, "not a database");
+  const close = t.mock.method(DatabaseSync.prototype, "close");
+  assert.throws(() => new OutboxStore(path), /outbox-durability-unavailable/);
+  assert.equal(close.mock.callCount(), 1);
 });
 
 test("resolution preserves the receipt when its fence is missing or owned by another operation", t => {
