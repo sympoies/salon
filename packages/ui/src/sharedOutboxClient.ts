@@ -1,6 +1,6 @@
 import { uploadedFilePaths, type OutgoingAttachment } from "./attachmentPaths.ts";
 import { useEffect, useSyncExternalStore } from "react";
-import { validOutboxText, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
+import { SHARED_OUTBOX_MAX_TEXT_BYTES, validOutboxText, type RefusedOutboxAction, type SharedOutboxItem, type SharedOutboxSnapshot } from "@agent-console/shared/shared-outbox";
 import { actOnRefusedSharedOutbox, admitSharedOutbox, readSharedOutbox, SharedOutboxRequestError, type SharedOutboxTarget } from "./api.ts";
 import { apiBase, nativeConnectionConfigGeneration, nativePrincipalIsActive } from "./runtime.ts";
 import { getPrincipalStorageNamespace } from "./storage.ts";
@@ -243,6 +243,9 @@ export class SharedOutboxClient {
   }
   async enqueue(session: Session, text: string, attachments: readonly OutgoingAttachment[] = []): Promise<string> {
     this.requireActive();
+    text = text.replace(/\r\n?/g, "\n").replace(/\t/g, "    ");
+    if (/[\u0000-\u0009\u000b-\u001f\u007f]/.test(text)) throw new Error("The reply contains unsupported control characters. Your draft has been kept.");
+    if (new TextEncoder().encode(text).length > SHARED_OUTBOX_MAX_TEXT_BYTES) throw new Error("The reply exceeds the 16 KiB limit. Your draft has been kept.");
     if (!usesSharedOutbox(session) || !validOutboxText(text)) throw new Error("This reply cannot be queued. Keep the draft and check the target and text.");
     const target = sharedOutboxTarget(session), id = crypto.randomUUID();
     const paths = uploadedFilePaths(text, session.id);
