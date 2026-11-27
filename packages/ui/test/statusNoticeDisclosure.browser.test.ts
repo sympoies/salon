@@ -47,7 +47,7 @@ test("notice disclosure follows clipping and keyboard focus", async t => {
       if (evidence) writeFileSync(join(evidence, `${width}-${theme}-open.png`), await page.screenshot());
       continue;
     }
-    const state = await page.evaluate(`(() => { const b=document.querySelector('.connection-notice-trigger'); return {button:!!b, cue:b?.textContent.includes('⌄'), decoration:b && getComputedStyle(b).textDecorationLine}; })()`);
+    const state = await page.evaluate(`(() => { const b=document.querySelector('.connection-notice-trigger'); return {button:!!b, cue:!!b?.querySelector('.connection-notice-cue') && getComputedStyle(b.querySelector('.connection-notice-cue')).transform === 'none', decoration:b && getComputedStyle(b).textDecorationLine}; })()`);
     assert.deepEqual(state, {button:true,cue:true,decoration:"none"}, `${width} ${theme} clipped`);
     assert.deepEqual(await page.evaluate(`(() => { const cue=document.querySelector('.connection-notice-cue'), notice=cue.closest('.connection-notice'), dismiss=notice.querySelector('.connection-notice-dismiss'); const c=cue.getBoundingClientRect(), n=notice.getBoundingClientRect(), d=dismiss.getBoundingClientRect(); return {tone:getComputedStyle(cue).color===getComputedStyle(notice).color, inside:c.right<=n.right, width:d.width, height:d.height}; })()`), {tone:true,inside:true,width:16,height:16}, "cue stays inside the notice and dismiss remains usable");
     await page.evaluate(`(() => { const root=document.querySelector('#root'), message=document.querySelector('.connection-notice-message'), full=message.querySelector('.connection-notice-message-full'); root.style.width = (root.clientWidth + full.scrollWidth - message.clientWidth - 4) + 'px'; })()`);
@@ -62,7 +62,7 @@ test("notice disclosure follows clipping and keyboard focus", async t => {
     assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.connection-notice-trigger')).outlineStyle !== 'none'"), true);
     const point = await page.evaluate<[number, number]>("(() => { const r = document.querySelector('.connection-notice-trigger').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()");
     await page.tap(...point);
-    assert.equal(await page.evaluate("document.querySelector('.connection-notice-trigger').getAttribute('aria-expanded') === 'true' && document.querySelector('.connection-notice-trigger').textContent.includes('⌃') && !!document.querySelector('.connection-notice-detail')"), true);
+    assert.equal(await page.evaluate("document.querySelector('.connection-notice-trigger').getAttribute('aria-expanded') === 'true' && getComputedStyle(document.querySelector('.connection-notice-cue')).transform !== 'none' && !!document.querySelector('.connection-notice-detail')"), true);
     await page.evaluate("document.querySelector('#root').style.width = '1400px'");
     await page.evaluate("new Promise(resolve => setTimeout(resolve, 100))");
     assert.equal(await page.evaluate("!document.querySelector('.connection-notice-trigger') && !document.querySelector('.connection-notice-detail')"), true, "resizing an open notice closes its details");

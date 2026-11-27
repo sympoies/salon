@@ -3356,7 +3356,8 @@ textarea {
   cursor: pointer;
 }
 .connection-notice-trigger > :is(.connection-notice-message-full, .connection-notice-message-compact) { min-width: 0; flex: 1 1 auto; }
-.connection-notice-cue { flex: none; margin-inline-start: 0.2em; }
+.connection-notice-cue { flex: none; width: 0.8em; height: 0.8em; margin-inline-start: 0.2em; }
+.connection-notice-trigger[aria-expanded="true"] .connection-notice-cue { transform: rotate(180deg); }
 .connection-notice-trigger:focus-visible,
 .connection-notice-dot:focus-visible {
   outline: 2px solid var(--accent);

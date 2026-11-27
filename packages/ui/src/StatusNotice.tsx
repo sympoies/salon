@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { usePreviewPinnedPopover } from "./SessionActivityPopover.tsx";
-import { CloseIcon } from "./icons.tsx";
+import { CloseIcon, SelectChevronIcon } from "./icons.tsx";
 import { IconButton } from "./IconButton.tsx";
 import type { StatusNotice as StatusNoticeState } from "./statusNoticeModel.ts";
 
@@ -60,7 +60,7 @@ export function StatusNotice({ notice, onDismiss, surface = "dashboard", inline 
             {clipped ? <button className="connection-notice-trigger" type="button" {...detailControl}>
               <span className="connection-notice-message-full" aria-hidden="true">{notice.message}</span>
               <span className="connection-notice-message-compact" aria-hidden="true">{compactLabel}</span>
-              <span className="connection-notice-cue" aria-hidden="true">{open ? "⌃" : "⌄"}</span>
+              <SelectChevronIcon className="connection-notice-cue" />
             </button> : <>
               <span className="connection-notice-message-full">{notice.message}</span>
               <span className="connection-notice-message-compact" aria-hidden="true">{compactLabel}</span>

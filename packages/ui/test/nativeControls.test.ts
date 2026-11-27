@@ -91,7 +91,7 @@ const composedTitleHints = [
   'SessionTitleMenu.tsx IconButton "Move here: swap into the current position"', // Named move action.
   'SessionTitleMenu.tsx summary "Open session menu"', // Name includes the session.
   'SessionTitleMenu.tsx span {savedDraftLabel}', // Visible draft text.
-  'StatusNotice.tsx button {notice.message}', // The button opens the full message.
+  'StatusNotice.tsx span {notice.message}', // Clipped messages expose the full text through the disclosure.
   'TerminalPane.tsx button {`Copy ${visibleTouchMenu.linkUrl}`}', // URL in the Links picker.
   'TerminalPane.tsx button {entry.url}',
 ];
