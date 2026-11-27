@@ -126,5 +126,7 @@ test("successful adapter save advances identity only when committed", async () =
     assert.equal(f.runtime.nativeConnectionConfigGeneration(), generation + 1, "successful save advances the generation at commit");
     assert.equal(f.runtime.loadServerUrl(), "https://new.example.test");
     assert.equal(f.runtime.nativePrincipalIsActive(), false, "authentication of the old generation cannot activate the new connection");
+    f.runtime.recordNativeAuthentication(f.runtime.nativeConnectionConfigGeneration(), true, null);
+    assert.equal(f.runtime.nativePrincipalIsActive(), true, "a new authentication activates the committed connection");
   } finally { release(); await f.close(); }
 });
