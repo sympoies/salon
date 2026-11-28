@@ -39,6 +39,8 @@ async function fixture(t: TestContext, outboxPollIntervalMs = 60_000, initial: V
   const devices = new DeviceCredentialStore(path, principal => principal === "primary" ? primaryToken : principal === "bridge" ? bridgeToken : undefined, () => true);
   ownership.claimSession({ principalId: "primary", machine: input.target.machine, sessionId: input.target.sessionId,
     incarnation: input.target.sessionIncarnation });
+  ownership.claimSession({ principalId: "primary", machine: "other", sessionId: input.target.sessionId,
+    incarnation: input.target.sessionIncarnation });
   let running = false;
   let observation: { entered(): void; resume: Promise<void> } | undefined;
   const posts: string[] = [];
@@ -91,7 +93,7 @@ async function fixture(t: TestContext, outboxPollIntervalMs = 60_000, initial: V
     const bridge = variant.bridge === undefined ? {} : variant.bridge;
     const config = makeEdgeConfig({ openAccess: false, multiUser: true, accessDbPath: path,
       principals: [
-        { id: "primary", token: primaryToken, machines: ["fixture"], permissions: ["debug", ...variant.ownerPermissions ?? []] },
+        { id: "primary", token: primaryToken, machines: ["fixture", "other"], permissions: ["debug", ...variant.ownerPermissions ?? []] },
         { id: "secondary", token: secondaryToken, machines: ["fixture"], permissions: ["debug"] },
         ...(bridge ? [{ id: "bridge", token: bridgeToken, machines: bridge.machines ?? ["fixture"],
           permissions: bridge.permissions ?? ["relay"], ...(bridge.dispatchMachines && { dispatchMachines: bridge.dispatchMachines }) }] : []),
