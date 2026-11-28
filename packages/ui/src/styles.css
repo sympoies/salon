@@ -7580,6 +7580,7 @@ textarea {
 .session-filter-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .session-filter-chips.are-expanded .session-filter-chip {
   align-items: center;
+  padding: var(--space-xs) var(--space-sm);
   height: auto;
   max-width: 100%;
 }

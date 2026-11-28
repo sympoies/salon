@@ -220,3 +220,17 @@ test("long active workspace chips keep their label inside padding and the remove
     }
   } finally { await harness.close(); }
 });
+
+test("wrapped expanded filter chips keep text inset on every side", t => {
+  if (!hasHeadlessChrome()) { t.skip("headless Chrome unavailable"); return; }
+  const markup = `<header class="workspace-head"><div class="session-filter-chips are-expanded" style="width:180px"><button class="control-chip btn session-filter-chip"><span class="session-filter-chip-label">A long active filter value that wraps across several lines</span><span> ×</span></button></div></header>`;
+  for (const width of [412, 1280]) {
+    const m = measureUiMarkup<{ top:number; right:number; bottom:number; left:number; lines:number }>(markup, width, `
+      const chip=document.querySelector('.session-filter-chip'), label=chip.querySelector('.session-filter-chip-label');
+      const c=chip.getBoundingClientRect(), l=label.getBoundingClientRect(), s=getComputedStyle(chip);
+      const result={top:l.top-c.top-parseFloat(s.borderTopWidth),right:parseFloat(s.paddingRight),bottom:c.bottom-l.bottom-parseFloat(s.borderBottomWidth),left:l.left-c.left-parseFloat(s.borderLeftWidth),lines:(()=>{const range=document.createRange();range.selectNodeContents(label);return range.getClientRects().length})()};
+    `);
+    assert.ok(m.lines > 1, `${width}px label wraps`);
+    assert.ok(m.top >= 6 && m.right >= 6 && m.bottom >= 6 && m.left >= 6, `${width}px text has an inset on all sides: ${JSON.stringify(m)}`);
+  }
+});
