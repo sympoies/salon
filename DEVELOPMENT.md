@@ -7,7 +7,7 @@ acceptance status.
 
 ## Prerequisites
 
-Use Git, Bash, Python 3.11 or newer, ShellCheck and the `devlog` CLI from
+Use Git, Bash 4 or newer, Python 3.11 or newer, ShellCheck and the `devlog` CLI from
 [nils-cli](https://github.com/sympoies/nils-cli). Select Node 24 from
 `.node-version` and pnpm 11.9.0 from `packageManager`.
 
@@ -65,8 +65,10 @@ for native Node tooling), package tests, boundary/privacy checks and isolated
 packed-package consumption. The browser checks are headless fixtures; native/device and
 real provider acceptance remain separate.
 
-It removes any stale success marker before checking and writes
-`.cache/agent-validation/project-dev.ok` only after every check passes.
+It removes any stale success marker before checking. A successful full run on
+Linux writes `.cache/agent-validation/project-dev.ok`. On macOS the full local
+run reports partial validation and does not write that marker; hosted Linux CI
+remains the full gate. The macOS run does not skip validation tests.
 
 ### Check documentation readability
 
