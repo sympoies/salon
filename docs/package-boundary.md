@@ -217,3 +217,18 @@ target and use the event ID as an opaque claim key.
 Claude history exposes transcript order. The current daemon lacks an
 authoritative binding from its submitted prompt receipt to a user history row,
 so the facade returns `unavailable` with `provider_order_unavailable`.
+
+### Owner-dispatch machine grants
+
+A principal in `AGENT_CONSOLE_PRINCIPALS` may set `dispatchMachines` to an array of
+configured machine names. These grants allow the principal to submit input through an
+extension route that explicitly enables owner dispatch, provided it also holds that
+route's permission and the target session belongs to the asserted owner. They do not
+grant session creation, listing, terminal access, or other machine access. For a
+dispatch-only principal, set `machines` to an empty array and grant the extension's
+route permission. Names must be distinct and must not also appear in `machines`.
+
+Queued input is rechecked against the current grant before dispatch. The same grant
+also satisfies the caller machine check for routes enabling `outboxOwnerReplyRead`.
+Root and managed tester principals cannot configure `dispatchMachines`. Unknown
+principal fields cause startup to fail; remove them from configuration before upgrading.
