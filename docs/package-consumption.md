@@ -108,7 +108,7 @@ The [source manifest](core-source-manifest.json) records baseline hashes and fin
 retained local adaptations across package metadata, owner command entrypoints, and existing
 license/comment/EOF adjustments. It records implementation input/final hashes for the image-toolbar
 files and preserves the original reviewed snapshot and completed downstream distribution-test
-transfer. The three package metadata adaptation hashes reflect the final 0.1.112 versions.
+transfer. The three package metadata adaptation hashes reflect the final 0.1.113 versions.
 The manifest also retains the upstream hashes and historical/input identities.
 
 No upstream Git history, private composition or environment files are imported.
@@ -214,7 +214,21 @@ continues to expire after ten minutes, as do windows without the opt-in.
 ## Publish and consume the public SDK
 
 Publication is reserved for the authorized publisher after designated review and merge. The
-checked-in SDK version is `0.1.112`. The publisher creates a GitHub prerelease with `latest=false`.
+checked-in SDK version is `0.1.113`. The publisher creates a GitHub prerelease with `latest=false`.
+
+### Changes retained in SDK 0.1.113
+
+Principals can receive `dispatchMachines` for owner-dispatch extension input without
+session creation, terminal access, other machine-scoped access or machine listings.
+The grant also satisfies the opt-in `outboxOwnerReplyRead` check. Managed principals
+and the root principal cannot receive this grant; existing principals retain their
+previous behavior (#779).
+
+Unknown principal fields now fail startup. Check the configured principal list before
+upgrading and before rolling back to an older edge after adopting `dispatchMachines`.
+
+Wrapped session-filter chips have inner padding in the open filter panel (#780).
+Local validation platform prerequisites are clarified without a runtime change (#776).
 
 ### Changes retained in SDK 0.1.112
 
