@@ -434,11 +434,16 @@ test("dispatch machine grants validate configured distinct non-overlapping names
   const principal = { id: "bridge", token: "fixture", machines: [], permissions: [], dispatchMachines: ["maple"] };
   assert.deepEqual(parsePrincipals(JSON.stringify([principal]), machines)[0]?.dispatchMachines, ["maple"]);
   for (const invalid of [
+    { ...principal, id: "root" },
     { ...principal, unknown: true },
     { ...principal, dispatchMachines: ["missing"] },
     { ...principal, dispatchMachines: ["maple", "maple"] },
     { ...principal, dispatchMachines: [""] },
     { ...principal, dispatchMachines: "maple" },
+    { ...principal, dispatchMachines: 0 },
+    { ...principal, dispatchMachines: "" },
+    { ...principal, dispatchMachines: false },
+    { id: "tester-fixture", managedCredential: true, machines: [], permissions: [], dispatchMachines: ["maple"] },
     { ...principal, machines: ["maple"] },
   ]) assert.throws(() => parsePrincipals(JSON.stringify([invalid]), machines));
 });

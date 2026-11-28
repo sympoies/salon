@@ -98,7 +98,8 @@ async function fixture(t: TestContext, outboxPollIntervalMs = 60_000, initial: V
         { id: "root", token: "root-fixture", machines: ["fixture"], permissions: [] },
         { id: "viewer", token: "viewer-fixture", machines: ["fixture"], permissions: [] },
       ],
-      machines: [{ name: "fixture", url: upstream.base, token: "upstream-fixture" }] });
+      machines: [{ name: "fixture", url: upstream.base, token: "upstream-fixture" },
+        { name: "other", url: upstream.base, token: "other-upstream" }] });
     const server = createEdgeServer(config, { extensions: [extension], outboxPollIntervalMs });
     return { server, base: (await listenOnLoopback(server)).base };
   };
@@ -353,9 +354,13 @@ test("dispatch-only grants admit owner input without machine or terminal access"
     assert.equal(response.status, 403, `${method} ${path}`);
     await response.arrayBuffer();
   }
-  const listing = await fetch(`${base}/api/sessions`, { headers });
-  assert.equal(listing.status, 200);
-  assert.deepEqual((await listing.json()).data.sessions, []);
+  for (const [path, field] of [["/api/sessions", "sessions"], ["/api/machines", "machines"], ["/api/machine-preferences", "machines"]]) {
+    const listing = await fetch(`${base}${path}`, { headers });
+    assert.equal(listing.status, 200);
+    assert.deepEqual((await listing.json()).data[field!], []);
+  }
+  await expectError(await relay(f, "PUT", bridgeToken, { ...owned, inputId: "other-input",
+    target: { ...owned.target, machine: "other" } }), 403, "forbidden");
   const url = new URL(base);
   const status = await new Promise<number>((resolve, reject) => {
     const req = request({ hostname: url.hostname, port: url.port, path: "/api/sessions/fixture/fixture-session/attach",
@@ -365,6 +370,15 @@ test("dispatch-only grants admit owner input without machine or terminal access"
     req.once("error", reject); req.end();
   });
   assert.equal(status, 403);
+});
+
+test("dispatch-only input is refused if its owner changes", async t => {
+  const f = await fixture(t, 50, { bridge: { machines: [], dispatchMachines: ["fixture"] } });
+  assert.equal((await relay(f, "PUT", bridgeToken, owned)).status, 201);
+  f.transferSession();
+  f.startSession();
+  await until(() => stored(f.path).items[0]?.state === "refused", "owner change must refuse queued input");
+  assert.deepEqual(f.posts, []);
 });
 
 test("removing a dispatch-only grant refuses queued input", async t => {

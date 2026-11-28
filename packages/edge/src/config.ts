@@ -526,6 +526,9 @@ export function parsePrincipals(
     if (value.dispatchMachines !== undefined && (!Array.isArray(value.dispatchMachines) || !value.dispatchMachines.every(isNonEmptyString))) {
       throw new Error(`AGENT_CONSOLE_PRINCIPALS[${index}].dispatchMachines must be a string array`);
     }
+    if (value.dispatchMachines !== undefined && (managed || value.id === "root")) {
+      throw new Error(`principal ${value.id} cannot configure dispatchMachines`);
+    }
     const dispatchMachines = value.dispatchMachines as string[] | undefined;
     if (dispatchMachines && (new Set(dispatchMachines).size !== dispatchMachines.length
       || dispatchMachines.some(name => !configuredMachines.has(name) || (value.machines as string[]).includes(name)))) {
