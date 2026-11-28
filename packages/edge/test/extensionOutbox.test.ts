@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createServer, type Server } from "node:http";
+import { createServer, request, type Server } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,7 +28,7 @@ interface Variant {
   /** Whether the relay route declares the on-behalf capability. */
   readonly capability?: boolean;
   /** The bridge principal's configuration; `null` removes it. */
-  readonly bridge?: { readonly machines?: string[]; readonly permissions?: string[] } | null;
+  readonly bridge?: { readonly machines?: string[]; readonly dispatchMachines?: string[]; readonly permissions?: string[] } | null;
   readonly ownerPermissions?: string[];
 }
 
@@ -94,7 +94,7 @@ async function fixture(t: TestContext, outboxPollIntervalMs = 60_000, initial: V
         { id: "primary", token: primaryToken, machines: ["fixture"], permissions: ["debug", ...variant.ownerPermissions ?? []] },
         { id: "secondary", token: secondaryToken, machines: ["fixture"], permissions: ["debug"] },
         ...(bridge ? [{ id: "bridge", token: bridgeToken, machines: bridge.machines ?? ["fixture"],
-          permissions: bridge.permissions ?? ["relay"] }] : []),
+          permissions: bridge.permissions ?? ["relay"], ...(bridge.dispatchMachines && { dispatchMachines: bridge.dispatchMachines }) }] : []),
         { id: "root", token: "root-fixture", machines: ["fixture"], permissions: [] },
         { id: "viewer", token: "viewer-fixture", machines: ["fixture"], permissions: [] },
       ],
@@ -331,6 +331,49 @@ test("dispatch stops after the owner changes", async t => {
   assert.equal(stored(f.path).items[0]!.error_code, "outbox-authorization-changed");
   assert.deepEqual(f.posts, []);
   await expectError(await relay(f, "GET", bridgeToken), 403, "forbidden");
+});
+
+test("dispatch-only grants admit owner input without machine or terminal access", async t => {
+  const f = await fixture(t, 50, { bridge: { machines: [], dispatchMachines: ["fixture"] } });
+  const admitted = await relay(f, "PUT", bridgeToken, owned);
+  assert.equal(admitted.status, 201);
+  f.startSession();
+  await until(() => f.posts.length > 0, "dispatch-only input must reach the owner session");
+  const base = await f.base();
+  const headers = { authorization: `Bearer ${bridgeToken}`, "content-type": "application/json" };
+  for (const [method, path] of [
+    ["POST", "/api/sessions/fixture"],
+    ["POST", "/api/sessions/fixture/fixture-session/send"],
+    ["POST", "/api/sessions/fixture/fixture-session/attach-ticket"],
+    ["GET", "/api/sessions/fixture/fixture-session/buffer"],
+    ["GET", "/api/machines/fixture/runtime/health"],
+    ["POST", "/api/shells/fixture"],
+  ]) {
+    const response = await fetch(`${base}${path}`, { method, headers, ...(method === "GET" ? {} : { body: "{}" }) });
+    assert.equal(response.status, 403, `${method} ${path}`);
+    await response.arrayBuffer();
+  }
+  const listing = await fetch(`${base}/api/sessions`, { headers });
+  assert.equal(listing.status, 200);
+  assert.deepEqual((await listing.json()).data.sessions, []);
+  const url = new URL(base);
+  const status = await new Promise<number>((resolve, reject) => {
+    const req = request({ hostname: url.hostname, port: url.port, path: "/api/sessions/fixture/fixture-session/attach",
+      headers: { ...headers, connection: "Upgrade", upgrade: "websocket" } });
+    req.once("response", res => { res.resume(); resolve(res.statusCode!); });
+    req.once("upgrade", (_res, socket) => { socket.destroy(); resolve(101); });
+    req.once("error", reject); req.end();
+  });
+  assert.equal(status, 403);
+});
+
+test("removing a dispatch-only grant refuses queued input", async t => {
+  const f = await fixture(t, 50, { bridge: { machines: [], dispatchMachines: ["fixture"] } });
+  assert.equal((await relay(f, "PUT", bridgeToken, owned)).status, 201);
+  await f.restart({ bridge: { machines: [], dispatchMachines: [] } });
+  f.startSession();
+  await until(() => stored(f.path).items[0]?.state === "refused", "removed grant must refuse queued input");
+  assert.deepEqual(f.posts, []);
 });
 
 test("an on-behalf route refuses a caller whose machine allowlist excludes the target", async t => {

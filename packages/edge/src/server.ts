@@ -525,7 +525,7 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       const caller = principalById(grant.callerPrincipalId);
       return route.outboxOwnerDispatch === true && config.multiUser && caller !== undefined && !caller.managedCredential
         && caller.permissions.includes(grant.permission)
-        && principalCanAccessMachine(caller, target.machine)
+        && (principalCanAccessMachine(caller, target.machine) || caller.dispatchMachines?.includes(target.machine) === true)
         && accessStore?.ownsSession(principal.id, target.machine, target.sessionId, target.incarnation) === true;
     }
     return !config.multiUser || (principal.permissions.includes(grant.permission)
@@ -1236,6 +1236,12 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       && !principalCanUseTerminal(_principal)) {
       sendJson(res, 403, { ok: false, error: { message: "forbidden" } });
       return;
+    }
+
+    const scopedMachine = route.params.machine;
+    if (config.multiUser && scopedMachine && _principal.dispatchMachines?.includes(scopedMachine)
+      && !principalCanAccessMachine(_principal, scopedMachine)) {
+      sendJson(res, 403, { ok: false, error: { message: "machine is not granted" } }); return;
     }
 
     let rootSessionIncarnation: string | undefined;
@@ -3703,6 +3709,9 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       if (ticket?.isAuthorized?.() === false || !principal || (principal.managedCredential && ticket
         && ticket.credentialFingerprint !== principal.token)) { reject("401 Unauthorized"); return; }
       if (config.multiUser && !principalCanUseTerminal(principal)) { reject("403 Forbidden"); return; }
+      if (machine && principal.dispatchMachines?.includes(machine.name) && !principalCanAccessMachine(principal, machine.name)) {
+        reject("403 Forbidden"); return;
+      }
       if (!machine || !principalCanAccessMachine(principal, machine.name)
         || ticket && (ticket.principalId !== principal.id || ticket.incarnation !== shellTarget.incarnation)) {
         reject("404 Not Found"); return;
@@ -3744,6 +3753,11 @@ export function createEdgeServer(config: EdgeConfig, options: EdgeServerOptions 
       return;
     }
     const machine = byName.get(m.machine);
+    if (machine && requestPrincipal?.dispatchMachines?.includes(m.machine)
+      && !principalCanAccessMachine(requestPrincipal, m.machine)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      socket.destroy(); return;
+    }
     let ticketIncarnationMatches = !ticket;
     let ownsCurrent = !config.multiUser;
     try {

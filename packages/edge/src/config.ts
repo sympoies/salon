@@ -88,6 +88,8 @@ export interface PrincipalConfig {
   /** A read-only tester credential issued/revoked through the owner-local SQLite tool. */
   readonly managedCredential?: boolean;
   readonly machines: readonly string[];
+  /** Machines available only for extension owner dispatch. */
+  readonly dispatchMachines?: readonly string[];
   /** Core permissions (PrincipalPermission) and permissions declared by edge extensions. */
   readonly permissions: readonly string[];
   /** Secondary machines enabled by default on a browser/device with no saved choice. */
@@ -495,6 +497,10 @@ export function parsePrincipals(
       throw new Error(`AGENT_CONSOLE_PRINCIPALS[${index}] must be an object`);
     }
     const value = entry as Record<string, unknown>;
+    const allowedKeys = ["id", "token", "managedCredential", "machines", "dispatchMachines", "permissions", "defaultVisibleMachines", "defaultCreateMachine"];
+    if (Object.keys(value).some(key => !allowedKeys.includes(key))) {
+      throw new Error(`AGENT_CONSOLE_PRINCIPALS[${index}] contains unknown fields`);
+    }
     if (typeof value.id !== "string" || !SAFE_PRINCIPAL_ID.test(value.id)) {
       throw new Error(`AGENT_CONSOLE_PRINCIPALS[${index}].id is invalid`);
     }
@@ -516,6 +522,14 @@ export function parsePrincipals(
     }
     if (!Array.isArray(value.permissions) || !value.permissions.every(isNonEmptyString)) {
       throw new Error(`AGENT_CONSOLE_PRINCIPALS[${index}].permissions must be a string array`);
+    }
+    if (value.dispatchMachines !== undefined && (!Array.isArray(value.dispatchMachines) || !value.dispatchMachines.every(isNonEmptyString))) {
+      throw new Error(`AGENT_CONSOLE_PRINCIPALS[${index}].dispatchMachines must be a string array`);
+    }
+    const dispatchMachines = value.dispatchMachines as string[] | undefined;
+    if (dispatchMachines && (new Set(dispatchMachines).size !== dispatchMachines.length
+      || dispatchMachines.some(name => !configuredMachines.has(name) || (value.machines as string[]).includes(name)))) {
+      throw new Error(`AGENT_CONSOLE_PRINCIPALS[${index}].dispatchMachines must contain distinct configured machines outside machines`);
     }
     const allowedMachines = [...new Set(value.machines)];
     const permissions = [...new Set(value.permissions)];
@@ -569,6 +583,7 @@ export function parsePrincipals(
       token,
       ...(managed ? { managedCredential: true } : {}),
       machines: allowedMachines,
+      ...(dispatchMachines === undefined ? {} : { dispatchMachines }),
       permissions,
       ...(defaultVisibleMachines === undefined ? {} : { defaultVisibleMachines }),
       ...(defaultCreateMachine === undefined ? {} : { defaultCreateMachine }),
